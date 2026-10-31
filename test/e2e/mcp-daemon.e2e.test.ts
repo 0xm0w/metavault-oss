@@ -1,25 +1,33 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import type { Server as HttpServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Effect, Layer } from "effect";
-import { afterAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { Brain } from "../../packages/brain/src/brain.js";
 import { Connector } from "../../packages/core/src/connector.js";
 import { parseOpenVaultUrl } from "../../packages/app/src/deeplink.js";
 import { startVaultDaemon } from "../../packages/daemon/src/server.js";
-import { createOpenVaultMcpServer } from "../../packages/mcp/src/server.js";
 
 // MCP <-> daemon e2e (Task 7): a real vaultd HTTP server on an ephemeral
 // port (stub Brain layer + fake connector — no network, no Ollama) driven
-// by a real MCP client through the OpenVault MCP server's default fetch.
-// Flow asserted end to end: enroll -> human seed -> request -> approve ->
-// execute -> revoke -> denied.
+// by a REAL MCP stdio subprocess: the built dist entry spawned with node
+// and spoken to over StdioClientTransport, the same launch shape as
+// scripts/check-mcp-hosts.mjs. Flow asserted end to end:
+// enroll -> human seed -> request -> approve -> execute -> revoke -> denied.
 const SECRET = "e2e-secret-must-stay-inside-the-daemon-1234567890";
 const MASTER_KEY = Buffer.alloc(32, 7);
 const TOKEN = "e2e-daemon-token-0123456789abcdef";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, "..", "..");
+// Built MCP entry, exactly as scripts/check-mcp-hosts.mjs launches it.
+const MCP_ENTRY = join(repoRoot, "dist", "packages", "mcp", "src", "server.js");
+const TSC_BIN = join(repoRoot, "node_modules", "typescript", "bin", "tsc");
 
 const BrainStub = Layer.succeed(Brain, {
   assess: (req) =>
@@ -49,11 +57,6 @@ function textOf(result: ToolResult): string {
   return (result.content ?? []).map((c) => c.text ?? "").join("\n");
 }
 
-const closers: (() => Promise<void>)[] = [];
-afterAll(async () => {
-  await Promise.all(closers.splice(0).map((close) => close()));
-});
-
 function closeHttp(server: HttpServer): Promise<void> {
   return new Promise((resolve) => {
     server.closeAllConnections();
@@ -63,43 +66,61 @@ function closeHttp(server: HttpServer): Promise<void> {
   });
 }
 
-describe("MCP <-> daemon e2e (ephemeral port, stub brain, fake connector)", () => {
+beforeAll(() => {
+  // Ensure the dist MCP entry exists at test time, via the repo's existing
+  // build command (`tsc -p tsconfig.json --outDir dist`, the packages/mcp
+  // "build" script). Invoke the compiler through node directly so this is
+  // deterministic on Windows (no npx.cmd shim).
+  execFileSync(process.execPath, [TSC_BIN, "-p", join(repoRoot, "tsconfig.json"), "--outDir", join(repoRoot, "dist")], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  if (!existsSync(MCP_ENTRY)) {
+    throw new Error(`built MCP entry missing after build: ${MCP_ENTRY}`);
+  }
+}, 180_000);
+
+describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain, fake connector)", () => {
   it(
     "enroll -> human seed -> request -> approve -> execute -> revoke, end to end",
     async () => {
       const dir = mkdtempSync(join(tmpdir(), "openvault-e2e-"));
-      const dbPath = join(dir, "openvault.db");
-      const daemon = await startVaultDaemon({
-        port: 0,
-        dbPath,
-        masterKey: MASTER_KEY,
-        daemonToken: TOKEN,
-        brain: BrainStub,
-        connector: FakeConnector,
-      });
-      closers.push(() => closeHttp(daemon));
+      let daemon: HttpServer | undefined;
+      let client: Client | undefined;
       try {
+        daemon = await startVaultDaemon({
+          port: 0,
+          dbPath: join(dir, "openvault.db"),
+          masterKey: MASTER_KEY,
+          daemonToken: TOKEN,
+          brain: BrainStub,
+          connector: FakeConnector,
+        });
         const address = daemon.address();
         if (address === null || typeof address === "string") {
           throw new Error("daemon has no port");
         }
         const base = `http://127.0.0.1:${String(address.port)}`;
 
-        const mcpServer = createOpenVaultMcpServer({
-          daemonUrl: base,
-          agentId: "e2e-agent",
-          ide: "Cursor",
+        // Real MCP stdio server as a subprocess (built dist entry via node),
+        // pointed at the test daemon exactly like an IDE host would be.
+        const transport = new StdioClientTransport({
+          command: process.execPath,
+          args: [MCP_ENTRY],
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            OPENVAULT_DAEMON_URL: base,
+            OPENVAULT_AGENT_ID: "e2e-agent",
+            OPENVAULT_IDE: "Cursor",
+          },
         });
-        const client = new Client({ name: "e2e-client", version: "0.0.1" });
-        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-        await mcpServer.connect(serverTransport);
-        await client.connect(clientTransport);
-        closers.push(async () => {
-          await client.close();
-        });
+        client = new Client({ name: "e2e-client", version: "0.0.1" });
+        await client.connect(transport);
+        const activeClient = client;
 
         // 1. Enroll: agent asks the human to add a credential it does not have.
-        const enroll = (await client.callTool({
+        const enroll = (await activeClient.callTool({
           name: "request_enrollment",
           arguments: { alias: "github", scope: "repos.read", website: "github.com", reason: "e2e" },
         })) as ToolResult;
@@ -116,7 +137,7 @@ describe("MCP <-> daemon e2e (ephemeral port, stub brain, fake connector)", () =
           enrollmentId,
         });
 
-        const pendingStatus = (await client.callTool({
+        const pendingStatus = (await activeClient.callTool({
           name: "enrollment_status",
           arguments: { enrollmentId },
         })) as ToolResult;
@@ -143,18 +164,18 @@ describe("MCP <-> daemon e2e (ephemeral port, stub brain, fake connector)", () =
         expect(seeded.status).toBe(201);
         expect(await seeded.text()).not.toContain(SECRET);
 
-        const completedStatus = (await client.callTool({
+        const completedStatus = (await activeClient.callTool({
           name: "enrollment_status",
           arguments: { enrollmentId },
         })) as ToolResult;
         expect(completedStatus.structuredContent?.["status"]).toBe("completed");
 
-        const aliases = (await client.callTool({ name: "list_aliases", arguments: {} })) as ToolResult;
+        const aliases = (await activeClient.callTool({ name: "list_aliases", arguments: {} })) as ToolResult;
         expect(textOf(aliases)).toContain("github");
         expect(JSON.stringify(aliases)).not.toContain(SECRET);
 
         // 3. Request: the stub marshal parks it for human approval.
-        const requested = (await client.callTool({
+        const requested = (await activeClient.callTool({
           name: "request_capability",
           arguments: { alias: "github", scope: "repos.read", reason: "e2e read repos" },
         })) as ToolResult;
@@ -190,14 +211,14 @@ describe("MCP <-> daemon e2e (ephemeral port, stub brain, fake connector)", () =
         expect(connectorSecrets).toEqual([SECRET]);
 
         // 5. Revoke through MCP, then prove the agent is denied afterwards.
-        const revoked = (await client.callTool({
+        const revoked = (await activeClient.callTool({
           name: "revoke",
           arguments: { target: "e2e-agent" },
         })) as ToolResult;
         expect(revoked.isError).not.toBe(true);
         expect(textOf(revoked)).toContain("revoked");
 
-        const afterRevoke = (await client.callTool({
+        const afterRevoke = (await activeClient.callTool({
           name: "request_capability",
           arguments: { alias: "github", scope: "repos.read", reason: "e2e after revoke" },
         })) as ToolResult;
@@ -217,13 +238,21 @@ describe("MCP <-> daemon e2e (ephemeral port, stub brain, fake connector)", () =
         expect(stages).toContain("enrollment-completed");
         expect(stages).toContain("executed");
       } finally {
+        // Cleanup order matters on Windows: stop the stdio subprocess and
+        // close the daemon (releasing the sqlite handle) BEFORE rmSync.
+        if (client !== undefined) {
+          await client.close().catch(() => undefined);
+        }
+        if (daemon !== undefined) {
+          await closeHttp(daemon);
+        }
         try {
-          rmSync(dir, { recursive: true, force: true });
+          rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
         } catch {
-          // best effort: the daemon's sqlite handle may still be open on Windows
+          // best effort: leave the temp dir to the OS if a handle lingers
         }
       }
     },
-    30_000,
+    60_000,
   );
 });
