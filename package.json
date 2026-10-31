@@ -1,0 +1,27 @@
+{
+  "name": "openvault",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0"
+  },
+  "dependencies": {
+    "@effect/platform": "^0",
+    "@effect/platform-node": "^0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "better-sqlite3": "^11",
+    "effect": "^3"
+  },
+  "devDependencies": {
+    "@effect/vitest": "^0.18.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "electron": "^45.2.1",
+    "eslint": "^9",
+    "typescript": "^5",
+    "typescript-eslint": "^8",
+    "vitest": "^2"
+  }
+}

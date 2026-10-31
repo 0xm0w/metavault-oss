@@ -1,0 +1,29 @@
+import { Schema } from "effect";
+
+// Shared daemon API schemas. The HTTP handler and the MCP adapter both
+// decode untrusted input with these exact schemas — one dialect, reused.
+export const CapabilityRequestSchema = Schema.Struct({
+  agentId: Schema.String,
+  ide: Schema.String,
+  tool: Schema.String,
+  alias: Schema.String,
+  requestedScope: Schema.String,
+  reason: Schema.String,
+});
+
+export const GrantIdSchema = Schema.Struct({ grantId: Schema.String });
+export const RevokeSchema = Schema.Struct({ target: Schema.String });
+
+// Response contract for GET /policies: enforced ceilings (alias -> scope
+// ceiling) plus current standing approvals. Metadata only by construction —
+// no secret values, no ciphertext, no credential material of any kind.
+export const PoliciesResponseSchema = Schema.Struct({
+  ceilings: Schema.Record({ key: Schema.String, value: Schema.String }),
+  standingApprovals: Schema.Array(
+    Schema.Struct({
+      agentId: Schema.String,
+      alias: Schema.String,
+      scope: Schema.String,
+    }),
+  ),
+});
