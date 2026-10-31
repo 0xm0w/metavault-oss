@@ -79,6 +79,14 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(text);
 }
 
+export class HttpBodyError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -86,7 +94,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     size += buf.length;
     if (size > 65_536) {
-      throw new Error("request body too large");
+      throw new HttpBodyError(413, "request body too large");
     }
     chunks.push(buf);
   }
@@ -94,7 +102,24 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   if (text === "") {
     return {};
   }
-  return JSON.parse(text) as unknown;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new HttpBodyError(400, "malformed JSON body");
+  }
+}
+
+export function isSafeAlias(alias: string): boolean {
+  if (alias === "" || alias.length > 128 || alias === "." || alias === "..") {
+    return false;
+  }
+  for (let i = 0; i < alias.length; i += 1) {
+    const code = alias.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      return false;
+    }
+  }
+  return !alias.includes("/") && !alias.includes("\\");
 }
 
 async function run<A, E>(effect: Effect.Effect<A, E>): Promise<{ status: number; body: unknown }> {
@@ -211,10 +236,14 @@ export async function handleVaultRequest(
   body?: unknown,
   options?: VaultRequestOptions,
 ): Promise<{ status: number; body: unknown }> {
+  // Fail closed: a protected route with no configured token is denied,
+  // never open. Callers that bypass the token (in-process service calls)
+  // do not go through this handler's protected routes.
   if (
-    options?.daemonToken !== undefined &&
     isTokenProtected(method, path) &&
-    !tokenMatches(options.daemonToken, options.providedToken)
+    (options?.daemonToken === undefined ||
+      options.daemonToken === "" ||
+      !tokenMatches(options.daemonToken, options.providedToken))
   ) {
     return UNAUTHORIZED;
   }
@@ -297,7 +326,7 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     const alias = decoded.alias.trim();
-    if (alias === WARDEN_KEY_ALIAS) {
+    if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
       return BAD_REQUEST;
     }
     const scope = decoded.scope.trim();
@@ -333,7 +362,7 @@ export async function handleVaultRequest(
     // store INSERT OR REPLACE stays for CLI/test seeding, but this
     // endpoint never replaces an existing credential.
     const alias = decoded.alias.trim();
-    if (alias === WARDEN_KEY_ALIAS) {
+    if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
       return BAD_REQUEST;
     }
     const scope = decoded.scope.trim();
@@ -443,6 +472,12 @@ export function createVaultHttpServer(
   service: VaultServiceService,
   options: VaultHttpServerOptions = {},
 ): Server {
+  // Fail closed: without a configured token, guard protected routes with
+  // an ephemeral token nobody knows, so they stay 401 over the wire.
+  const guardToken =
+    options.daemonToken !== undefined && options.daemonToken !== ""
+      ? options.daemonToken
+      : randomBytes(32).toString("hex");
   return createServer((req, res) => {
     void (async () => {
       try {
@@ -455,12 +490,18 @@ export function createVaultHttpServer(
         const header = req.headers[DAEMON_TOKEN_HEADER];
         const providedToken = Array.isArray(header) ? header[0] : header;
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
-          ...(options.daemonToken !== undefined ? { daemonToken: options.daemonToken } : {}),
+          daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
         });
         sendJson(res, out.status, out.body);
-      } catch {
-        sendJson(res, 500, { error: { _tag: "InternalError", message: "internal error" } });
+      } catch (err) {
+        if (err instanceof HttpBodyError) {
+          sendJson(res, err.status, {
+            error: { _tag: err.status === 413 ? "PayloadTooLarge" : "BadRequest", message: err.message },
+          });
+        } else {
+          sendJson(res, 500, { error: { _tag: "InternalError", message: "internal error" } });
+        }
       }
     })();
   });

@@ -18,6 +18,7 @@ import { readSecretHidden, runCli, type CliDeps } from "../src/cli.js";
 
 const CANARY = "sk-test-CANARY-9f8e7d6c5b";
 const MASTER_KEY = Buffer.alloc(32, 7);
+const DAEMON_TOKEN = "cli-test-daemon-token";
 
 const BrainLowRisk = Layer.succeed(Brain, {
   assess: () =>
@@ -58,7 +59,12 @@ const cliFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<R
   const method = init?.method ?? "GET";
   const body: unknown =
     typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
-  const out = await handleVaultRequest(service, method, url.pathname, body);
+  const headers = (init?.headers ?? {}) as Record<string, string>;
+  const providedToken = headers["x-openvault-token"];
+  const out = await handleVaultRequest(service, method, url.pathname, body, {
+    daemonToken: DAEMON_TOKEN,
+    ...(providedToken !== undefined ? { providedToken } : {}),
+  });
   return new Response(JSON.stringify(out.body), {
     status: out.status,
     headers: { "content-type": "application/json" },
@@ -123,6 +129,7 @@ async function requestPending(): Promise<string> {
 }
 
 beforeAll(async () => {
+  writeFileSync(join(workDir, "openvault.token"), DAEMON_TOKEN, "utf8");
   service = await Effect.runPromise(
     Effect.gen(function* () {
       return yield* VaultService;

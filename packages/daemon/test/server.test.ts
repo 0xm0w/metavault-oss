@@ -14,6 +14,8 @@ const FakeConnector = Layer.succeed(Connector, {
   execute: (_a, _s, secret) => Effect.succeed({ echoedLength: secret.length }),
 });
 
+const TOKEN = "server-test-token";
+const withToken = { daemonToken: TOKEN, providedToken: TOKEN };
 let service: VaultServiceService;
 
 beforeAll(async () => {
@@ -49,12 +51,12 @@ describe("vaultd HTTP edge (handler level)", () => {
     const grantId = firstBody["grantId"] as string;
     expect(typeof grantId).toBe("string");
 
-    const done = await handleVaultRequest(service, "POST", "/approve", { grantId });
+    const done = await handleVaultRequest(service, "POST", "/approve", { grantId }, withToken);
     expect(done.status).toBe(200);
     expect((done.body as Record<string, unknown>)["status"]).toBe("executed");
     expect(JSON.stringify(done.body)).not.toContain("[REDACTED]");
 
-    const again = await handleVaultRequest(service, "POST", "/approve", { grantId });
+    const again = await handleVaultRequest(service, "POST", "/approve", { grantId }, withToken);
     expect(again.status).toBe(409);
     expect(JSON.stringify(again.body)).toContain("GrantExpired");
     expect(JSON.stringify(again.body)).not.toContain("[REDACTED]");
@@ -81,9 +83,9 @@ describe("vaultd HTTP edge (handler level)", () => {
       reason: "list",
     });
     const grantId = (pending.body as Record<string, unknown>)["grantId"] as string;
-    const denied = await handleVaultRequest(service, "POST", "/deny", { grantId });
+    const denied = await handleVaultRequest(service, "POST", "/deny", { grantId }, withToken);
     expect(denied.status).toBe(200);
-    const approveDenied = await handleVaultRequest(service, "POST", "/approve", { grantId });
+    const approveDenied = await handleVaultRequest(service, "POST", "/approve", { grantId }, withToken);
     expect(approveDenied.status).toBe(409);
 
     const revoked = await handleVaultRequest(service, "POST", "/revoke", { target: "cursor" });

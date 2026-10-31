@@ -8,6 +8,8 @@ import { makeVaultServiceLive, VaultService, type VaultServiceService } from "..
 
 const CANARY = "sk-pending-canary-1234567890";
 
+const TOKEN = "pending-test-token";
+const withToken = { daemonToken: TOKEN, providedToken: TOKEN };
 const FakeConnector = Layer.succeed(Connector, {
   execute: (_a, _s, secret) => Effect.succeed({ echoedLength: secret.length }),
 });
@@ -53,7 +55,7 @@ describe("pending approvals queue", () => {
     const service = await makeService(brainReturning("low", "charges.read", true));
     const created = await handleVaultRequest(service, "POST", "/request", req);
     expect(created.status).toBe(200);
-    const pending = await handleVaultRequest(service, "GET", "/pending");
+    const pending = await handleVaultRequest(service, "GET", "/pending", undefined, withToken);
     expect(pending.status).toBe(200);
     const body = pending.body as { approvals: Record<string, unknown>[] };
     expect(body.approvals).toHaveLength(1);
@@ -72,14 +74,14 @@ describe("pending approvals queue", () => {
     const service = await makeService(brainReturning("low", "charges.read", true));
     const created = await handleVaultRequest(service, "POST", "/request", req);
     const grantId = (created.body as Record<string, unknown>)["grantId"] as string;
-    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId });
+    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId }, withToken);
     expect(always.status).toBe(200);
     expect((always.body as Record<string, unknown>)["status"]).toBe("executed");
     expect(JSON.stringify(always.body)).not.toContain(CANARY);
 
     const second = await handleVaultRequest(service, "POST", "/request", req);
     expect((second.body as Record<string, unknown>)["status"]).toBe("executed");
-    const pending = await handleVaultRequest(service, "GET", "/pending");
+    const pending = await handleVaultRequest(service, "GET", "/pending", undefined, withToken);
     expect((pending.body as { approvals: unknown[] }).approvals).toHaveLength(0);
   });
 
@@ -91,7 +93,7 @@ describe("pending approvals queue", () => {
     expect(typeof writeGrant).toBe("string");
     const writeAlways = await handleVaultRequest(writeService, "POST", "/approve-always", {
       grantId: writeGrant,
-    });
+    }, withToken);
     expect(writeAlways.status).toBe(403);
     expect(JSON.stringify(writeAlways.body)).toContain("PolicyDenied");
 
@@ -100,7 +102,7 @@ describe("pending approvals queue", () => {
     const mediumGrant = (mediumCreated.body as Record<string, unknown>)["grantId"] as string;
     const mediumAlways = await handleVaultRequest(mediumService, "POST", "/approve-always", {
       grantId: mediumGrant,
-    });
+    }, withToken);
     expect(mediumAlways.status).toBe(403);
   });
 
@@ -108,11 +110,11 @@ describe("pending approvals queue", () => {
     const service = await makeService(brainReturning("low", "charges.read", true));
     const created = await handleVaultRequest(service, "POST", "/request", req);
     const grantId = (created.body as Record<string, unknown>)["grantId"] as string;
-    const denied = await handleVaultRequest(service, "POST", "/deny", { grantId });
+    const denied = await handleVaultRequest(service, "POST", "/deny", { grantId }, withToken);
     expect(denied.status).toBe(200);
-    const pending = await handleVaultRequest(service, "GET", "/pending");
+    const pending = await handleVaultRequest(service, "GET", "/pending", undefined, withToken);
     expect((pending.body as { approvals: unknown[] }).approvals).toHaveLength(0);
-    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId });
+    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId }, withToken);
     expect(always.status).toBe(409);
   });
 });

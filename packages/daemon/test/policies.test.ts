@@ -8,6 +8,8 @@ import { handleVaultRequest } from "../src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../src/service.js";
 
 const CANARY = "[REDACTED]";
+const TOKEN = "policies-test-token";
+const withToken = { daemonToken: TOKEN, providedToken: TOKEN };
 
 const FakeConnector = Layer.succeed(Connector, {
   execute: (_a, _s, secret) => Effect.succeed({ echoedLength: secret.length }),
@@ -72,7 +74,7 @@ describe("GET /policies (real policy state, metadata only)", () => {
     const service = await makeService(brainReturning("low", "charges.read", true));
     const created = await handleVaultRequest(service, "POST", "/request", req);
     const grantId = (created.body as Record<string, unknown>)["grantId"] as string;
-    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId });
+    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId }, withToken);
     expect(always.status).toBe(200);
 
     const res = await handleVaultRequest(service, "GET", "/policies");
@@ -124,7 +126,7 @@ describe("approve-always ordering (standing approval only after successful execu
     const grantId = (created.body as Record<string, unknown>)["grantId"] as string;
     expect(typeof grantId).toBe("string");
 
-    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId });
+    const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId }, withToken);
     expect(always.status).toBe(502);
     expect(JSON.stringify(always.body)).toContain("ConnectorFailed");
 
