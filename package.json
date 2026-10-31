@@ -17,7 +17,7 @@
     "effect": "^3"
   },
   "devDependencies": {
-    "@effect/vitest": "^0.18.0",
+    "@effect/vitest": "^4.0.7",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^2.1.9",
