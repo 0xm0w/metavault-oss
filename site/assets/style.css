@@ -1,5 +1,5 @@
-/* OpenVault site — Mailbazooka design system applied verbatim:
-   void canvas #0a0a0a, Bazooka Orange #ff7a17, Inter display,
+/* OpenVault site — Mailbazooka design system structure:
+   void canvas #0a0a0a, teal accent #2dd4bf, Inter display,
    Geist Mono tracked eyebrows, pill buttons, 8px cards, zero emoji. */
 :root {
   --primary: #ffffff; --on-primary: #0a0a0a;
@@ -7,7 +7,7 @@
   --body: #dadbdf; --mute: #7d8187;
   --hairline: #212327;
   --canvas: #0a0a0a; --canvas-soft: #1a1c20; --canvas-card: #191919; --canvas-mid: #363a3f;
-  --accent: #ff7a17; --accent-soft: #ffc285;
+  --accent: #2dd4bf; --accent-soft: #99f6e4;
   --accent-dusk: #7c3aed; --accent-twilight: #c4b5fd;
   --accent-breeze: #a0c3ec; --accent-midnight: #0d1726;
   --green: #3fb950; --red: #f87171; --amber: #f59e0b;
@@ -44,8 +44,8 @@ h3 { font-size: 20px; font-weight: 500; line-height: 28px; color: var(--ink); ma
 .btn:hover { background: var(--ink-hover); color: var(--on-primary); }
 .btn.ghost { background: var(--canvas); color: var(--ink); border-color: var(--hairline); }
 .btn.ghost:hover { border-color: var(--canvas-mid); color: var(--ink); }
-.btn.orange { background: var(--accent); border-color: var(--accent); color: #1a0d00; }
-.btn.orange:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+.btn.accent { background: var(--accent); border-color: var(--accent); color: #04211c; }
+.btn.accent:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
 
 .band { padding: 72px 0; border-bottom: 1px solid var(--hairline); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 36px; }
@@ -62,7 +62,7 @@ table.levels th { font-family: "Geist Mono", ui-monospace, monospace; font-size:
 table.levels td.model { color: var(--ink); font-weight: 500; }
 .pill { display: inline-block; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1px; padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--hairline); }
 .pill.low { color: var(--mute); } .pill.med { color: var(--accent-breeze); border-color: #2b4365; }
-.pill.high { color: var(--accent-soft); border-color: #6b3a12; } .pill.max { color: var(--accent-twilight); border-color: var(--accent-dusk); }
+.pill.high { color: var(--accent-soft); border-color: #134e4a; } .pill.max { color: var(--accent-twilight); border-color: var(--accent-dusk); }
 
 .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 36px; counter-reset: step; }
 .flow .step { background: var(--canvas-card); border: 1px solid var(--hairline); border-radius: 8px; padding: 20px; }
