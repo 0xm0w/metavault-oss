@@ -10,6 +10,8 @@ import {
 import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 
+export const MCP_VERSION: string = "0.1.0-alpha.1";
+
 export type DaemonFetch = typeof fetch;
 
 export interface OpenVaultMcpOptions {
@@ -208,7 +210,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
 
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const server = new Server(
-    { name: "openvault", version: "0.1.0" },
+    { name: "openvault", version: MCP_VERSION },
     { capabilities: { tools: {} } },
   );
 
