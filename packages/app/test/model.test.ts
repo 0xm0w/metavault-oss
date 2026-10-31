@@ -275,9 +275,9 @@ describe("credential form helpers", () => {
   });
 
   it("requires all credential fields non-empty", () => {
-    expect(isCredentialFormComplete("Stripe", "charges.read", "sk-live")).toBe(true);
-    expect(isCredentialFormComplete("", "charges.read", "sk-live")).toBe(false);
-    expect(isCredentialFormComplete("Stripe", "  ", "sk-live")).toBe(false);
+    expect(isCredentialFormComplete("Stripe", "charges.read", "test-secret")).toBe(true);
+    expect(isCredentialFormComplete("", "charges.read", "test-secret")).toBe(false);
+    expect(isCredentialFormComplete("Stripe", "  ", "test-secret")).toBe(false);
     expect(isCredentialFormComplete("Stripe", "charges.read", "")).toBe(false);
     expect(isCredentialFormComplete("  Stripe  ", " charges.read ", "x")).toBe(true);
   });
