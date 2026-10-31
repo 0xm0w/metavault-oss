@@ -51,16 +51,16 @@ describe("parseMarshalDecision", () => {
   });
 
   it("rejects malformed model output as MarshalInvalidOutput (escalate to human)", () => {
-    expect(() => Effect.runSync(parseMarshalDecision("sure, looks fine!"))).toThrowError(
+    expect(() => Effect.runSync(parseMarshalDecision("sure, looks fine!"))).toThrow(
       /MarshalInvalidOutput/,
     );
-    expect(() => Effect.runSync(parseMarshalDecision('{"risk":"banana"}'))).toThrowError(
+    expect(() => Effect.runSync(parseMarshalDecision('{"risk":"banana"}'))).toThrow(
       /MarshalInvalidOutput/,
     );
   });
 
   it("rejects JSON missing required fields as MarshalInvalidOutput", () => {
-    expect(() => Effect.runSync(parseMarshalDecision('{"risk":"low"}'))).toThrowError(
+    expect(() => Effect.runSync(parseMarshalDecision('{"risk":"low"}'))).toThrow(
       /MarshalInvalidOutput/,
     );
   });
