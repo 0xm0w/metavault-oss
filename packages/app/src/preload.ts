@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CapabilityRequestLike, DeeplinkAddParams, VaultApi } from "./renderer/types.js";
+import type { CapabilityRequestLike, DeeplinkAddParams, VaultApi, WardenSettingsPatch } from "./renderer/types.js";
 
 // Thin IPC bridge: the sandboxed preload has no filesystem, network, or
 // token access. It only forwards the fixed VaultApi operations to the main
@@ -9,7 +9,7 @@ import type { CapabilityRequestLike, DeeplinkAddParams, VaultApi } from "./rende
 const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
 const DEEPLINK_CHANNEL = "openvault:deeplink-add";
 
-function invoke(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<unknown> {
+function invoke(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<unknown> {
   return ipcRenderer.invoke(
     DAEMON_CALL_CHANNEL,
     body !== undefined ? { method, path, body } : { method, path },
@@ -55,6 +55,11 @@ const api: VaultApi = {
     invoke("PATCH", `/credentials/${encodeURIComponent(alias)}`, patch),
   deleteCredential: (alias: string) =>
     invoke("DELETE", `/credentials/${encodeURIComponent(alias)}`),
+  getWardenSettings: () => invoke("GET", "/settings/warden"),
+  updateWardenSettings: (patch: WardenSettingsPatch) => invoke("PATCH", "/settings/warden", patch),
+  setWardenKey: (key: string) => invoke("PUT", "/settings/warden/key", { key }),
+  deleteWardenKey: () => invoke("DELETE", "/settings/warden/key"),
+  wardenKeyStatus: () => invoke("GET", "/settings/warden/key"),
 };
 
 contextBridge.exposeInMainWorld("openvault", api);

@@ -9,6 +9,11 @@ import type {
   PoliciesData,
   Risk,
   StandingApproval,
+  WardenEffort,
+  WardenKeyStatusLike,
+  WardenProvider,
+  WardenSettingsLike,
+  WardenSettingsPatch,
 } from "./types.js";
 
 // Unified warm theme (promoted from the Vault page). These exact hex
@@ -848,4 +853,132 @@ export async function runDeeplinkAddFlow(
   await deps.renderVault();
   deps.closeModalIfOpen();
   deps.openAddModal(params);
+}
+
+// ---------------------------------------------------------------------------
+// Warden settings (Task 6). The renderer mirrors the daemon catalogue in
+// packages/brain/src/ollama.ts (OLLAMA_MODELS) and the effort semantics in
+// packages/brain/src/brain.ts; it cannot import those modules (they pull in
+// Effect/daemon code), so the values are duplicated here as data only.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_WARDEN_SETTINGS: WardenSettingsLike = {
+  provider: "ollama",
+  model: "llama3.2:3b",
+  effort: "standard",
+  metaApiBaseUrl: "https://api.llama.com/v1",
+};
+
+export interface OllamaModelOption {
+  readonly id: string;
+  readonly tier: "Medium" | "High" | "Maximum-local";
+  readonly label: string;
+}
+
+export const OLLAMA_MODEL_OPTIONS: readonly OllamaModelOption[] = [
+  { id: "llama3.2:3b", tier: "Medium", label: "Llama 3.2 3B \u2014 Medium (fast local)" },
+  { id: "llama3.1:8b", tier: "High", label: "Llama 3.1 8B \u2014 High" },
+  { id: "llama3.3:70b", tier: "Maximum-local", label: "Llama 3.3 70B \u2014 Maximum-local" },
+];
+
+export interface EffortOption {
+  readonly id: WardenEffort;
+  readonly label: string;
+  readonly description: string;
+}
+
+export const EFFORT_OPTIONS: readonly EffortOption[] = [
+  { id: "fast", label: "Fast", description: "Single marshal pass, 10s timeout \u2014 quickest check." },
+  { id: "standard", label: "Standard", description: "Single marshal pass, 30s timeout \u2014 balanced latency and strictness." },
+  { id: "deep", label: "Deep", description: "Two passes (assess + verify), 60s timeout \u2014 disagreement escalates to approval and keeps the narrower scope." },
+];
+
+export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
+  { id: "none", label: "None (policy only)" },
+  { id: "ollama", label: "Local \u2014 Ollama" },
+  { id: "meta-api", label: "Meta API (cloud)" },
+];
+
+export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
+export const VAULT_PATH_DISPLAY = "openvault.db (in vaultd's working directory; OPENVAULT_DB_PATH can override it)";
+export const APP_VERSION_DISPLAY = "0.1.0";
+
+const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api"];
+const WARDEN_EFFORTS_LIST: readonly WardenEffort[] = ["fast", "standard", "deep"];
+
+export function projectWardenSettings(raw: unknown): WardenSettingsLike | null {
+  if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) {
+    return null;
+  }
+  const provider = raw["provider"];
+  const effort = raw["effort"];
+  const model = raw["model"];
+  const metaApiBaseUrl = raw["metaApiBaseUrl"];
+  if (typeof provider !== "string" || !(WARDEN_PROVIDERS_LIST as readonly string[]).includes(provider)) return null;
+  if (typeof effort !== "string" || !(WARDEN_EFFORTS_LIST as readonly string[]).includes(effort)) return null;
+  if (typeof model !== "string" || typeof metaApiBaseUrl !== "string") return null;
+  return { provider: provider as WardenProvider, model, effort: effort as WardenEffort, metaApiBaseUrl };
+}
+
+export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null {
+  if (!isRecord(raw)) return null;
+  // Strict shape: exactly configured + last4. Any extra field (above all a
+  // key-shaped one) fails closed \u2014 status must never carry key material.
+  for (const key of Object.keys(raw)) {
+    if (key !== "configured" && key !== "last4") return null;
+  }
+  const configured = raw["configured"];
+  const last4 = raw["last4"];
+  if (typeof configured !== "boolean") return null;
+  if (last4 !== null && typeof last4 !== "string") return null;
+  return { configured, last4: typeof last4 === "string" && last4 !== "" ? last4 : null };
+}
+
+export function wardenKeyStatusText(status: WardenKeyStatusLike): string {
+  if (!status.configured) return "Not configured";
+  return status.last4 !== null && status.last4 !== "" ? `Configured \u2022\u2022\u2022\u2022${status.last4}` : "Configured";
+}
+
+export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPatch {
+  return {
+    provider: settings.provider,
+    model: settings.model.trim(),
+    effort: settings.effort,
+    metaApiBaseUrl: settings.metaApiBaseUrl.trim(),
+  };
+}
+
+export function isWardenFormComplete(settings: WardenSettingsLike): boolean {
+  if (settings.provider === "none") return true;
+  if (settings.model.trim() === "") return false;
+  if (settings.provider === "meta-api" && settings.metaApiBaseUrl.trim() === "") return false;
+  return true;
+}
+
+export function isKnownOllamaModel(model: string): boolean {
+  return OLLAMA_MODEL_OPTIONS.some((option) => option.id === model);
+}
+
+export interface WardenTestResult {
+  readonly ok: boolean;
+  readonly message: string;
+}
+
+// Test-connection verdict from data already fetched through vaultd. The
+// daemon has no provider self-check route, so this verifies vaultd
+// reachability plus key configuration only \u2014 it must never claim the
+// cloud provider itself was called (vaultd makes that call, with the key
+// decrypted in-daemon, on the next capability request).
+export function wardenTestResult(settings: WardenSettingsLike, status: WardenKeyStatusLike): WardenTestResult {
+  if (settings.provider === "none") {
+    return { ok: true, message: "Policy-only mode: vaultd reachable, no warden provider to test." };
+  }
+  if (settings.provider === "ollama") {
+    return { ok: true, message: `Vaultd reachable. Ollama model ${settings.model} is called by vaultd on the next request.` };
+  }
+  if (!status.configured) {
+    return { ok: false, message: "Meta API key is not configured. Save a key first." };
+  }
+  const suffix = status.last4 !== null && status.last4 !== "" ? ` (\u2022\u2022\u2022\u2022${status.last4})` : "";
+  return { ok: true, message: `Vaultd reachable and Meta API key configured${suffix}. Vaultd will call the Meta API on the next request.` };
 }

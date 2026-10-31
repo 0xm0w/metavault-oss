@@ -27,8 +27,17 @@ import {
   shouldShowAgentComputerWarning,
   sortApprovals,
   wardenVerdict,
+  DEFAULT_WARDEN_SETTINGS,
+  EFFORT_OPTIONS,
+  OLLAMA_MODEL_OPTIONS,
+  buildWardenPatch,
+  isWardenFormComplete,
+  projectWardenKeyStatus,
+  projectWardenSettings,
+  wardenKeyStatusText,
+  wardenTestResult,
 } from "../src/renderer/model.js";
-import type { AuditEventLike, DeeplinkAddParams, PendingApproval } from "../src/renderer/types.js";
+import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
 const approval = (over: Partial<PendingApproval> = {}): PendingApproval => ({
   grantId: "g1",
@@ -753,5 +762,62 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
     expect(projected?.latencyMs).toBeUndefined();
     expect(projected?.decisionSource).toBeUndefined();
     expect(projected?.explanation).toBeUndefined();
+  });
+});
+
+describe("warden settings form state (Task 6)", () => {
+  it("mirrors daemon defaults and the OLLAMA_MODELS catalogue with tier labels", () => {
+    expect(DEFAULT_WARDEN_SETTINGS).toEqual({
+      provider: "ollama",
+      model: "llama3.2:3b",
+      effort: "standard",
+      metaApiBaseUrl: "https://api.llama.com/v1",
+    });
+    expect(OLLAMA_MODEL_OPTIONS.map((m) => [m.id, m.tier])).toEqual([
+      ["llama3.2:3b", "Medium"],
+      ["llama3.1:8b", "High"],
+      ["llama3.3:70b", "Maximum-local"],
+    ]);
+    expect(EFFORT_OPTIONS.map((e) => e.id)).toEqual(["fast", "standard", "deep"]);
+    for (const e of EFFORT_OPTIONS) expect(e.description.length).toBeGreaterThan(10);
+  });
+
+  it("projects warden settings whitelisted fields only and validates enums", () => {
+    expect(projectWardenSettings({ provider: "meta-api", model: "llama-4", effort: "deep", metaApiBaseUrl: "https://api.llama.com/v1", extra: 1 })).toEqual({
+      provider: "meta-api", model: "llama-4", effort: "deep", metaApiBaseUrl: "https://api.llama.com/v1",
+    });
+    expect(projectWardenSettings({ provider: "evil", model: "x", effort: "standard", metaApiBaseUrl: "u" })).toBeNull();
+    expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "turbo", metaApiBaseUrl: "u" })).toBeNull();
+    expect(projectWardenSettings(null)).toBeNull();
+    expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "fast", metaApiBaseUrl: "u", apiKey: "canary" })).toBeNull();
+  });
+
+  it("projects key status without ever exposing a key and formats status text", () => {
+    expect(projectWardenKeyStatus({ configured: true, last4: "1234" })).toEqual({ configured: true, last4: "1234" });
+    expect(projectWardenKeyStatus({ configured: false, last4: null })).toEqual({ configured: false, last4: null });
+    expect(projectWardenKeyStatus({ configured: true, last4: "1234", key: "canary" })).toBeNull();
+    expect(projectWardenKeyStatus("nope")).toBeNull();
+    expect(wardenKeyStatusText({ configured: false, last4: null })).toBe("Not configured");
+    expect(wardenKeyStatusText({ configured: true, last4: "1234" })).toBe("Configured \u2022\u2022\u2022\u20221234");
+    expect(wardenKeyStatusText({ configured: true, last4: null })).toBe("Configured");
+  });
+
+  it("builds a trimmed patch and checks form completeness", () => {
+    const s: WardenSettingsLike = { provider: "meta-api", model: "  llama-4  ", effort: "fast", metaApiBaseUrl: " https://api.llama.com/v1 " };
+    expect(buildWardenPatch(s)).toEqual({ provider: "meta-api", model: "llama-4", effort: "fast", metaApiBaseUrl: "https://api.llama.com/v1" });
+    expect(isWardenFormComplete(s)).toBe(true);
+    expect(isWardenFormComplete({ ...s, model: "  " })).toBe(false);
+    expect(isWardenFormComplete({ ...s, metaApiBaseUrl: "" })).toBe(false);
+    expect(isWardenFormComplete({ provider: "none", model: "", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
+    expect(isWardenFormComplete({ provider: "ollama", model: "llama3.2:3b", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
+  });
+
+  it("derives honest test-connection results", () => {
+    expect(wardenTestResult(DEFAULT_WARDEN_SETTINGS, { configured: false, last4: null }).ok).toBe(true);
+    expect(wardenTestResult({ ...DEFAULT_WARDEN_SETTINGS, provider: "meta-api" }, { configured: false, last4: null }).ok).toBe(false);
+    const ok = wardenTestResult({ ...DEFAULT_WARDEN_SETTINGS, provider: "meta-api" }, { configured: true, last4: "1234" });
+    expect(ok.ok).toBe(true);
+    expect(ok.message).toContain("1234");
+    expect(ok.message).not.toContain("canary");
   });
 });

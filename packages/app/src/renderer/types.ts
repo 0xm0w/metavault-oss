@@ -87,6 +87,28 @@ export interface DeeplinkAddParams {
   readonly enrollmentId: string;
 }
 
+export type WardenProvider = "none" | "ollama" | "meta-api";
+export type WardenEffort = "fast" | "standard" | "deep";
+
+export interface WardenSettingsLike {
+  readonly provider: WardenProvider;
+  readonly model: string;
+  readonly effort: WardenEffort;
+  readonly metaApiBaseUrl: string;
+}
+
+export interface WardenSettingsPatch {
+  readonly provider?: WardenProvider;
+  readonly model?: string;
+  readonly effort?: WardenEffort;
+  readonly metaApiBaseUrl?: string;
+}
+
+export interface WardenKeyStatusLike {
+  readonly configured: boolean;
+  readonly last4: string | null;
+}
+
 export interface CredentialPatch {
   readonly scope?: string;
   readonly website?: string;
@@ -108,6 +130,11 @@ export interface VaultApi {
   readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
   readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;
   readonly deleteCredential: (alias: string) => Promise<unknown>;
+  readonly getWardenSettings: () => Promise<unknown>;
+  readonly updateWardenSettings: (patch: WardenSettingsPatch) => Promise<unknown>;
+  readonly setWardenKey: (key: string) => Promise<unknown>;
+  readonly deleteWardenKey: () => Promise<unknown>;
+  readonly wardenKeyStatus: () => Promise<unknown>;
 }
 
 declare global {

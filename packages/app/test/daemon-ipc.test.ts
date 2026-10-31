@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALLOWED_DAEMON_CALLS,
   DAEMON_CALL_CHANNEL,
+  callDaemon,
   isAllowedDaemonCall,
   validateDaemonCall,
 } from "../src/daemon-client.js";
@@ -53,6 +54,11 @@ describe("main-process daemon whitelist", () => {
       { method: "GET", path: "/pending" },
       { method: "GET", path: "/policies" },
       { method: "POST", path: "/credentials" },
+      { method: "GET", path: "/settings/warden" },
+      { method: "PATCH", path: "/settings/warden" },
+      { method: "GET", path: "/settings/warden/key" },
+      { method: "PUT", path: "/settings/warden/key" },
+      { method: "DELETE", path: "/settings/warden/key" },
     ]);
     for (const call of ALLOWED_DAEMON_CALLS) {
       expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);
@@ -109,5 +115,80 @@ describe("main-process daemon whitelist", () => {
     expect(clientSource).toContain("openvault.token");
     expect(clientSource).toContain("x-openvault-token");
     expect(clientSource).not.toContain("electron");
+  });
+});
+
+describe("warden settings IPC whitelist (Task 6)", () => {
+  const wardenCalls = [
+    { method: "GET", path: "/settings/warden" },
+    { method: "PATCH", path: "/settings/warden" },
+    { method: "GET", path: "/settings/warden/key" },
+    { method: "PUT", path: "/settings/warden/key" },
+    { method: "DELETE", path: "/settings/warden/key" },
+  ] as const;
+
+  it("whitelists exactly the warden settings routes", () => {
+    for (const call of wardenCalls) {
+      expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);
+    }
+    expect(isAllowedDaemonCall("POST", "/settings/warden")).toBe(false);
+    expect(isAllowedDaemonCall("PUT", "/settings/warden")).toBe(false);
+    expect(isAllowedDaemonCall("DELETE", "/settings/warden")).toBe(false);
+    expect(isAllowedDaemonCall("POST", "/settings/warden/key")).toBe(false);
+    expect(isAllowedDaemonCall("PATCH", "/settings/warden/key")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/settings")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/settings/warden/extra")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/settings/warden/key/extra")).toBe(false);
+    expect(() => validateDaemonCall({ method: "POST", path: "/settings/warden/key", body: { key: "x" } })).toThrow(/not allowed/);
+    expect(() => validateDaemonCall({ method: "GET", path: "/settings/warden/../credentials" })).toThrow(/not allowed/);
+  });
+
+  it("forwards warden calls to the daemon with the token header (token stays in main)", async () => {
+    process.env["OPENVAULT_DAEMON_TOKEN"] = "test-token-warden";
+    const seen: { url: string; init: RequestInit }[] = [];
+    const originalFetch = globalThis.fetch;
+    const mockFetch = async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      seen.push({ url: typeof url === "string" ? url : url instanceof URL ? url.href : url.url, init: init ?? {} });
+      await Promise.resolve();
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    globalThis.fetch = mockFetch;
+    try {
+      await callDaemon({ method: "GET", path: "/settings/warden" });
+      await callDaemon({ method: "PATCH", path: "/settings/warden", body: { provider: "ollama", model: "llama3.1:8b", effort: "deep" } });
+      await callDaemon({ method: "PUT", path: "/settings/warden/key", body: { key: "meta-key-12345678" } });
+      await callDaemon({ method: "GET", path: "/settings/warden/key" });
+      await callDaemon({ method: "DELETE", path: "/settings/warden/key" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env["OPENVAULT_DAEMON_TOKEN"];
+    }
+    expect(seen.map((s) => s.url)).toEqual([
+      "http://127.0.0.1:7077/settings/warden",
+      "http://127.0.0.1:7077/settings/warden",
+      "http://127.0.0.1:7077/settings/warden/key",
+      "http://127.0.0.1:7077/settings/warden/key",
+      "http://127.0.0.1:7077/settings/warden/key",
+    ]);
+    expect(seen.map((s) => s.init.method)).toEqual(["GET", "PATCH", "PUT", "GET", "DELETE"]);
+    for (const call of seen) {
+      const headers = call.init.headers as Record<string, string>;
+      expect(headers["x-openvault-token"]).toBe("test-token-warden");
+    }
+    expect(JSON.parse(seen[2]?.init.body as string)).toEqual({ key: "meta-key-12345678" });
+  });
+
+  it("preload exposes named warden methods forwarding to the whitelisted routes and no token", () => {
+    const preload = readFileSync(join(appRoot, "src", "preload.ts"), "utf8");
+    expect(preload).toContain("getWardenSettings");
+    expect(preload).toContain("updateWardenSettings");
+    expect(preload).toContain("setWardenKey");
+    expect(preload).toContain("deleteWardenKey");
+    expect(preload).toContain("wardenKeyStatus");
+    expect(preload).toContain('"/settings/warden"');
+    expect(preload).toContain('"/settings/warden/key"');
+    expect(preload).not.toContain("x-openvault-token");
+    expect(preload).not.toContain("OPENVAULT_DAEMON_TOKEN");
+    expect(preload).not.toContain("openvault.token");
   });
 });
