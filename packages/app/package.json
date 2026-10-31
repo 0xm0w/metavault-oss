@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "OpenVault desktop app — Electron shell over vaultd. Holds no secrets.",
+  "description": "OpenVault desktop app â€” Electron shell over vaultd. Holds no secrets.",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "pack:win": "electron-builder --win",
     "pack:mac": "electron-builder --mac"
   },
@@ -22,7 +22,14 @@
       "package.json"
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -32,7 +39,15 @@
       "createStartMenuShortcut": true
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.productivity",
       "identity": null
     },
@@ -40,8 +55,17 @@
       "sign": false
     },
     "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "category": "Utility"
-    }
-  }
+    },
+    "electronVersion": "45.2.1"
+  },
+  "author": "OpenVault contributors"
 }

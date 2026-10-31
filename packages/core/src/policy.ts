@@ -36,6 +36,17 @@ export function evaluatePolicy(
   if (historyCount >= cfg.rateLimitPerHour) {
     return { allowedScope: null, requireApproval: false, reason: "rate-limit" };
   }
+  // A scope the AGENT itself requested above the ceiling is a denial, not
+  // a downgrade: silently substituting the ceiling would execute an
+  // operation (or resource) the agent never asked for. Marshal
+  // recommendations above the ceiling still clamp below - only the
+  // agent's own requested scope is judged here.
+  if (isWriteScope(req.requestedScope) && !isWriteScope(ceiling)) {
+    return { allowedScope: null, requireApproval: false, reason: "scope-above-ceiling" };
+  }
+  if (resourcePrefix(req.requestedScope) !== resourcePrefix(ceiling)) {
+    return { allowedScope: null, requireApproval: false, reason: "scope-above-ceiling" };
+  }
 
   const candidate = decision?.recommendedScope ?? req.requestedScope;
   let allowedScope = candidate;

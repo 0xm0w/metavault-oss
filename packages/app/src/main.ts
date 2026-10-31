@@ -1,17 +1,19 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, nativeImage, Tray } from "electron";
-import { buildWindowOptions, shouldHideOnClose } from "./window-options.js";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
+import { DAEMON_CALL_CHANNEL, callDaemon } from "./daemon-client.js";
+import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 
 // OpenVault desktop shell: a window over vaultd, in the wallet pattern.
-// This process holds no secrets and never talks to anything but the local
-// daemon (via the preload bridge). Closing the window minimises to the
+// This main process owns the daemon HTTP client and the daemon token (see
+// daemon-client.ts); the token stays in main and never crosses IPC into
+// the preload or renderer. It talks to nothing but the local daemon. Closing the window minimises to the
 // tray so approval prompts can still surface; quitting from the tray stops
 // only this UI — vaultd keeps running and queues approvals until the UI or
 // CLI next connects.
 
 const here = dirname(fileURLToPath(import.meta.url));
-const preloadPath = join(here, "preload.js");
+const preloadPath = join(here, PRELOAD_FILE_NAME);
 const rendererPath = join(here, "renderer", "index.html");
 
 let mainWindow: BrowserWindow | null = null;
@@ -83,6 +85,7 @@ if (!hasLock) {
     showWindow();
   });
   void app.whenReady().then(() => {
+    ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
     createWindow();
     createTray();
     app.on("activate", () => {

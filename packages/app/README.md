@@ -37,10 +37,8 @@ carries no `grantId`), so two additive endpoints were added:
 $env:OPENVAULT_MASTER_KEY = "<base64 32 bytes>"
 node --experimental-strip-types packages/daemon/src/server.ts  # or the compiled daemon entry
 
-# 2. Build the app and stage its static assets
-npx tsc -p packages/app/tsconfig.json
-Copy-Item packages/app/src/renderer/index.html packages/app/dist/renderer/
-Copy-Item packages/app/src/renderer/styles.css packages/app/dist/renderer/
+# 2. Build the app (CommonJS preload.cjs + renderer assets staged into dist)
+npm --prefix packages/app run build
 
 # 3. Launch
 npx electron packages/app/dist/main.js

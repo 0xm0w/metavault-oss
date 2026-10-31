@@ -41,10 +41,38 @@ describe("evaluatePolicy", () => {
     const d = { risk: "medium" as const, recommendedScope: "charges.read", requireApproval: false, explanation: "x" };
     expect(evaluatePolicy(req, d, c2, 0).requireApproval).toBe(true);
   });
-  it("clamps a request above the ceiling when there is no marshal", () => {
+  it("denies a requested write above a read ceiling when there is no marshal", () => {
     const result = evaluatePolicy({ ...req, requestedScope: "charges.write" }, null, cfg, 0);
+    expect(result.allowedScope).toBeNull();
+    expect(result.requireApproval).toBe(false);
+    expect(result.reason).toBe("scope-above-ceiling");
+  });
+  it("denies a requested write under a read ceiling even with a low-risk marshal decision", () => {
+    const d = { risk: "low" as const, recommendedScope: "charges.write", requireApproval: false, explanation: "x" };
+    const result = evaluatePolicy({ ...req, requestedScope: "charges.write" }, d, cfg, 0);
+    expect(result.allowedScope).toBeNull();
+    expect(result.requireApproval).toBe(false);
+    expect(result.reason).toBe("scope-above-ceiling");
+  });
+  it("denies a requested write under a read ceiling even with a standing approval present", () => {
+    const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
+    const d = { risk: "low" as const, recommendedScope: "charges.write", requireApproval: false, explanation: "x" };
+    const result = evaluatePolicy({ ...req, requestedScope: "charges.write" }, d, c2, 0);
+    expect(result.allowedScope).toBeNull();
+    expect(result.requireApproval).toBe(false);
+    expect(result.reason).toBe("scope-above-ceiling");
+  });
+  it("denies a cross-resource requested scope instead of remapping to the ceiling", () => {
+    const d = { risk: "low" as const, recommendedScope: "payments.read", requireApproval: false, explanation: "x" };
+    const result = evaluatePolicy({ ...req, requestedScope: "payments.read" }, d, cfg, 0);
+    expect(result.allowedScope).toBeNull();
+    expect(result.requireApproval).toBe(false);
+    expect(result.reason).toBe("scope-above-ceiling");
+  });
+  it("narrows a marshal-recommended cross-resource scope back to the requested scope", () => {
+    const d = { risk: "low" as const, recommendedScope: "payments.read", requireApproval: false, explanation: "x" };
+    const result = evaluatePolicy(req, d, cfg, 0);
     expect(result.allowedScope).toBe("charges.read");
-    expect(result.requireApproval).toBe(true);
   });
   it("never lets a write be auto-approved by a low-risk marshal decision", () => {
     const c2 = { ...cfg, ceilings: { stripe: "charges.write" } };

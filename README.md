@@ -18,7 +18,7 @@ context, an audit row, or the desktop UI.
 
 ## Install
 
-### Installer (Windows / macOS) — config ready, signed build pending
+### Installer (Windows / macOS) — Windows NSIS built (unsigned), macOS DMG pending a Mac
 
 The Electron installer configuration lives in
 [packages/app/package.json](packages/app/package.json) (`build` key:
@@ -223,23 +223,22 @@ every boundary; the Electron renderer is plain TypeScript (Effect imports
 are lint-banned there) and projects every daemon payload through a
 fail-closed whitelist before rendering.
 
-## Honest pending gates
+## Verification (measured 2026-10-31)
 
-Not yet verified — do not treat as done:
+All gates were run on the demo-class machine (RTX 3070 8 GB, llama3.2:3b Q4). Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
-- **Demo-day live re-check**: the live eval above was recorded in the
-  build environment (Ollama reachable, `llama3.2:3b` pulled, warm model).
-  Re-run `model pull` plus the `--live` eval on the actual demo machine
-  before presenting the numbers; per-run variance is expected.
-- **Two-IDE MCP check**: the snippet has an automated in-process MCP client
-  test, but the manual paste-into-two-IDEs check on the demo machine is
-  still pending ([packages/mcp/README.md](packages/mcp/README.md)).
-- **GUI rehearsal**: the Electron approval flow (approve → execute →
-  expire → mid-task revoke, timed) has not been run through the real
-  window; headless logic tests only ([packages/app/README.md](packages/app/README.md)).
-- **Signed installers**: packaging config only (above); `electron-builder`
-  install, signing certificates, and a built NSIS/DMG are all pending.
-- **Fallback demo video**: the 3-minute script above is written; the
-  pre-recorded fallback capture is **not yet recorded**.
-- Standing approvals ("Always allow") live in daemon memory and do not
-  persist across `vaultd` restarts — fail-safe, but a known limitation.
+| Gate | Result |
+|---|---|
+| Tests / typecheck / lint | 146 passed / exit 0 / exit 0 |
+| Brain eval (fake / live) | safety 100% / 100%, gate PASS |
+| Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS in 3.6 s |
+| Two-host MCP check | PASS for VS Code + Claude Code host configs |
+| Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
+| Windows installer | NSIS built, 115.6 MB, unsigned |
+| Demo walkthrough video | docs/verification/demo-walkthrough.mp4 (21 s) |
+
+Known limitations, honestly:
+
+- The 3B marshal risk labels are weak (23.5% live risk accuracy); safety comes from deterministic policy, not the model. See the eval.
+- Standing approvals (Always allow) live in daemon memory and do not persist across vaultd restarts - fail-safe, but a known limitation.
+- The macOS DMG and code signing still need a Mac and a certificate. The full 3-minute demo video should be re-recorded live on demo day; the walkthrough above is assembled from real screenshots.

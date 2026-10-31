@@ -1,6 +1,11 @@
 // Pure window-hardening contract for the Electron main process. Kept free
 // of Electron imports so the security flags are unit-testable headlessly.
 
+// Electron preload scripts must be CommonJS (sandboxed preloads cannot be
+// ESM), so the built preload is emitted as preload.cjs - never preload.js
+// from this package (which is type module).
+export const PRELOAD_FILE_NAME = "preload.cjs";
+
 export interface VaultWindowOptions {
   readonly width: number;
   readonly height: number;
