@@ -42,6 +42,8 @@ let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let selectedGrantId: string | null = null;
 let auditFilter = "";
 let auditFilterWasFocused = false;
+let auditFilterSelectionStart: number | null = null;
+let auditFilterSelectionEnd: number | null = null;
 const expandedAuditIds = new Set<string>();
 let busy = false;
 let notice: string | null = null;
@@ -672,30 +674,44 @@ function renderAudit(view: HTMLElement): void {
       const expanded = expandedAuditIds.has(group.requestId);
       const node = el("article", "row audit-row");
       const summary = el("div", "audit-summary");
+      const allowedText = group.allowedScope ?? "—";
       const scopeText =
-        group.requestedScope !== "" && group.requestedScope !== group.allowedScope
-          ? `${group.requestedScope} → ${group.allowedScope}`
-          : group.allowedScope || group.requestedScope;
-      const chainText =
-        group.requestId === "legacy"
-          ? `legacy · ${group.alias} · ${scopeText}`
-          : `${group.agentId} · ${group.alias} · ${scopeText}`;
+        group.requestedScope !== "" && group.requestedScope !== allowedText
+          ? `${group.requestedScope} → ${allowedText}`
+          : allowedText || group.requestedScope;
+      // The legacy bucket mixes unrelated pre-requestId admin events, so
+      // no single outcome/warden verdict describes it: label it honestly
+      // and suppress both chips for that row.
+      const chainText = group.isLegacy
+        ? `Earlier activity · ${String(group.events.length)} ${group.events.length === 1 ? "event" : "events"}`
+        : `${group.agentId} · ${group.alias} · ${scopeText}`;
       summary.append(el("div", "chain", chainText));
-      const chips = el("div", "audit-chips");
-      chips.append(el("span", `chip outcome-chip outcome-${verdict.outcome}`, verdict.outcomeLabel));
-      const wardenClass =
-        verdict.risk !== null ? `chip warden-chip risk-${verdict.risk}` : "chip warden-chip is-policy";
-      chips.append(el("span", wardenClass, verdict.wardenLabel));
-      if (verdict.escalated) {
-        chips.append(el("span", "chip warden-chip is-escalated", "escalated"));
+      if (!group.isLegacy) {
+        const chips = el("div", "audit-chips");
+        chips.append(el("span", `chip outcome-chip outcome-${verdict.outcome}`, verdict.outcomeLabel));
+        const wardenClass =
+          verdict.risk !== null ? `chip warden-chip risk-${verdict.risk}` : "chip warden-chip is-policy";
+        chips.append(el("span", wardenClass, verdict.wardenLabel));
+        if (verdict.escalated) {
+          chips.append(el("span", "chip warden-chip is-escalated", "escalated"));
+        }
+        if (verdict.narrowed) {
+          chips.append(el("span", "chip warden-chip is-narrowed", "narrowed"));
+        }
+        summary.append(chips);
       }
-      summary.append(chips);
       node.append(summary);
       node.append(el("div", "when", group.lastTs));
       const toggle = el(
         "button",
         "action audit-toggle",
-        expanded ? "Hide verification" : "Show verification",
+        group.isLegacy
+          ? expanded
+            ? "Hide details"
+            : "Show details"
+          : expanded
+            ? "Hide verification"
+            : "Show verification",
       ) as HTMLButtonElement;
       toggle.type = "button";
       toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
@@ -747,12 +763,21 @@ function renderAudit(view: HTMLElement): void {
     }
   };
 
+  const rememberSelection = (): void => {
+    auditFilterSelectionStart = filterInput.selectionStart;
+    auditFilterSelectionEnd = filterInput.selectionEnd;
+  };
   filterInput.addEventListener("input", () => {
     auditFilter = filterInput.value;
+    rememberSelection();
     renderList();
   });
+  filterInput.addEventListener("select", rememberSelection);
+  filterInput.addEventListener("keyup", rememberSelection);
+  filterInput.addEventListener("click", rememberSelection);
   filterInput.addEventListener("focus", () => {
     auditFilterWasFocused = true;
+    rememberSelection();
   });
   filterInput.addEventListener("blur", () => {
     auditFilterWasFocused = false;
@@ -760,7 +785,9 @@ function renderAudit(view: HTMLElement): void {
   renderList();
   if (auditFilterWasFocused) {
     filterInput.focus();
-    filterInput.setSelectionRange(filterInput.value.length, filterInput.value.length);
+    const start = Math.min(auditFilterSelectionStart ?? filterInput.value.length, filterInput.value.length);
+    const end = Math.min(auditFilterSelectionEnd ?? start, filterInput.value.length);
+    filterInput.setSelectionRange(start, end);
   }
 }
 
@@ -839,6 +866,14 @@ function renderPolicies(view: HTMLElement): void {
 
 function render(): void {
   const view = mustElement("#view");
+  // Capture the audit filter caret before the old input is discarded, so
+  // a poll re-render can restore focus and selection exactly.
+  const oldFilter = document.querySelector<HTMLInputElement>("#audit-filter");
+  if (oldFilter !== null && document.activeElement === oldFilter) {
+    auditFilterWasFocused = true;
+    auditFilterSelectionStart = oldFilter.selectionStart;
+    auditFilterSelectionEnd = oldFilter.selectionEnd;
+  }
   view.replaceChildren();
   showBanner(notice);
   if (currentView === "approval") {

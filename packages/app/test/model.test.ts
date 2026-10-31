@@ -575,6 +575,80 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
     expect(groups[2]?.requestId).toBe("legacy");
   });
 
+  it("sorts events within a bucket by ts regardless of input order", () => {
+    const shuffled: AuditEventLike[] = [
+      chain({ stage: "executed", ts: "2026-10-31T10:00:04.000Z" }),
+      chain({ stage: "requested", ts: "2026-10-31T10:00:00.000Z" }),
+      chain({ stage: "approved", ts: "2026-10-31T10:00:03.000Z" }),
+      chain({ stage: "marshal", ts: "2026-10-31T10:00:01.000Z" }),
+    ];
+    const group = firstGroup(shuffled);
+    expect(group.events.map((e) => e.stage)).toEqual(["requested", "marshal", "approved", "executed"]);
+    expect(group.firstTs).toBe("2026-10-31T10:00:00.000Z");
+    expect(group.lastTs).toBe("2026-10-31T10:00:04.000Z");
+    expect(group.isLegacy).toBe(false);
+  });
+
+  it("marks the no-requestId bucket as legacy", () => {
+    const groups = groupAuditByRequest([
+      auditEvent({ stage: "credential-added", agentId: "human", detail: "credential added: stripe (charges.read)" }),
+      auditEvent({ stage: "executed", agentId: "cursor", detail: "executed" }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.requestId).toBe("legacy");
+    expect(groups[0]?.isLegacy).toBe(true);
+  });
+
+  it("derives a human-denied verdict and never shows the requested scope as allowed", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-human-denied", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.read" }),
+      chain({
+        requestId: "req-human-denied",
+        stage: "marshal",
+        ts: "2026-10-31T10:00:01.000Z",
+        scope: "charges.read",
+        detail: "marshal decision",
+        modelId: "llama3.2:3b",
+        risk: "low",
+        recommendedScope: "charges.read",
+        decisionSource: "marshal",
+        explanation: "read-only",
+      }),
+      chain({ requestId: "req-human-denied", stage: "policy", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", detail: "approval-required", decisionSource: "marshal+policy" }),
+      chain({ requestId: "req-human-denied", stage: "denied", ts: "2026-10-31T10:00:03.000Z", scope: "charges.read", detail: "denied by human", decisionSource: "human" }),
+    ];
+    const group = firstGroup(events);
+    expect(group.allowedScope).toBeNull();
+    const verdict = wardenVerdict(group);
+    expect(verdict.outcome).toBe("denied");
+    expect(verdict.outcomeLabel).toBe("Denied");
+    expect(verdict.decisionSource).toBe("human");
+    expect(verdict.allowedScope).toBeNull();
+    expect(verdict.requestedScope).toBe("charges.read");
+  });
+
+  it("treats routine narrowing as narrowed, not escalated", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-narrow", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.write" }),
+      chain({
+        requestId: "req-narrow",
+        stage: "marshal",
+        ts: "2026-10-31T10:00:01.000Z",
+        scope: "charges.write",
+        detail: "marshal decision",
+        modelId: "llama3.2:3b",
+        risk: "low",
+        recommendedScope: "charges.read",
+        decisionSource: "marshal",
+        explanation: "read is enough",
+      }),
+      chain({ requestId: "req-narrow", stage: "executed", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", decisionSource: "marshal+policy" }),
+    ];
+    const verdict = wardenVerdict(firstGroup(events));
+    expect(verdict.escalated).toBe(false);
+    expect(verdict.narrowed).toBe(true);
+  });
+
   it("derives an executed verdict with risk + model from the marshal event", () => {
     const verdict = wardenVerdict(firstGroup(executedChain));
     expect(verdict.outcome).toBe("executed");
@@ -598,6 +672,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
     ];
     const verdict = wardenVerdict(firstGroup(events));
     expect(verdict.outcome).toBe("denied");
+    expect(verdict.allowedScope).toBeNull();
     expect(verdict.isPolicyOnly).toBe(true);
     expect(verdict.wardenLabel).toBe("policy-only");
     expect(verdict.risk).toBeNull();
@@ -628,6 +703,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
     expect(group.allowedScope).toBe("charges.read");
     const verdict = wardenVerdict(group);
     expect(verdict.escalated).toBe(true);
+    expect(verdict.narrowed).toBe(true);
     expect(verdict.wardenLabel).toBe("high · llama3.1:8b");
     expect(verdict.outcome).toBe("pending");
     expect(verdict.recommendedScope).toBe("charges.read");
@@ -639,6 +715,8 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
       chain({ requestId: "r-exp", stage: "expired", ts: "2026-10-31T10:05:00.000Z" }),
     ]);
     expect(wardenVerdict(expired).outcome).toBe("expired");
+    expect(wardenVerdict(expired).allowedScope).toBeNull();
+    expect(expired.allowedScope).toBeNull();
     const revoked = firstGroup([
       chain({ requestId: "r-rev", stage: "requested" }),
       chain({ requestId: "r-rev", stage: "revoked", ts: "2026-10-31T10:05:00.000Z" }),

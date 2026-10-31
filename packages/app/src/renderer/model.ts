@@ -626,13 +626,14 @@ const OUTCOME_LABELS: Record<AuditOutcome, string> = {
 
 export interface AuditRequestGroup {
   readonly requestId: string;
+  readonly isLegacy: boolean;
   readonly events: readonly AuditEventLike[];
   readonly firstTs: string;
   readonly lastTs: string;
   readonly agentId: string;
   readonly alias: string;
   readonly requestedScope: string;
-  readonly allowedScope: string;
+  readonly allowedScope: string | null;
   readonly outcome: AuditOutcome;
   readonly outcomeLabel: string;
 }
@@ -649,8 +650,9 @@ export interface WardenVerdict {
   readonly latencyMs: number | null;
   readonly explanation: string | null;
   readonly requestedScope: string;
-  readonly allowedScope: string;
+  readonly allowedScope: string | null;
   readonly escalated: boolean;
+  readonly narrowed: boolean;
 }
 
 function lastEventWith<T>(
@@ -691,26 +693,34 @@ export function groupAuditByRequest(events: readonly AuditEventLike[]): AuditReq
   }
   const groups: AuditRequestGroup[] = [];
   for (const [requestId, bucket] of byId.entries()) {
-    const requested = bucket.find((e) => e.stage === "requested") ?? bucket[0];
-    const firstNonEmptyScope = bucket.find((e) => e.scope.length > 0);
+    const sorted = [...bucket].sort((a, b) => a.ts.localeCompare(b.ts));
+    const requested = sorted.find((e) => e.stage === "requested") ?? sorted[0];
+    const firstNonEmptyScope = sorted.find((e) => e.scope.length > 0);
     const requestedScope = requested?.scope ?? firstNonEmptyScope?.scope ?? "";
-    const allowedCandidate = lastEventWith(bucket, (e) =>
+    const allowedCandidate = lastEventWith(sorted, (e) =>
       (e.stage === "executed" || e.stage === "approved" || e.stage === "policy") &&
       e.scope.length > 0
         ? e.scope
         : undefined,
     );
-    const lastScope = lastEventWith(bucket, (e) => (e.scope.length > 0 ? e.scope : undefined));
-    const outcome = deriveOutcome(bucket);
+    const lastScope = lastEventWith(sorted, (e) => (e.scope.length > 0 ? e.scope : undefined));
+    const outcome = deriveOutcome(sorted);
+    // A denied/expired chain allowed nothing: never present the requested
+    // (or any observed) scope as if it had been allowed.
+    const allowedScope =
+      outcome === "denied" || outcome === "expired"
+        ? null
+        : (allowedCandidate ?? lastScope ?? requestedScope);
     groups.push({
       requestId,
-      events: [...bucket],
-      firstTs: bucket[0]?.ts ?? "",
-      lastTs: bucket[bucket.length - 1]?.ts ?? "",
-      agentId: requested?.agentId ?? bucket[0]?.agentId ?? "",
-      alias: requested?.alias ?? bucket[0]?.alias ?? "",
+      isLegacy: requestId === "legacy",
+      events: sorted,
+      firstTs: sorted[0]?.ts ?? "",
+      lastTs: sorted[sorted.length - 1]?.ts ?? "",
+      agentId: requested?.agentId ?? sorted[0]?.agentId ?? "",
+      alias: requested?.alias ?? sorted[0]?.alias ?? "",
       requestedScope,
-      allowedScope: allowedCandidate ?? lastScope ?? requestedScope,
+      allowedScope,
       outcome,
       outcomeLabel: OUTCOME_LABELS[outcome],
     });
@@ -752,11 +762,14 @@ export function wardenVerdict(group: AuditRequestGroup): WardenVerdict {
     : modelId !== null
       ? `${risk} · ${modelId}`
       : risk;
-  const escalated =
-    risk === "high" ||
-    (recommendedScope !== null &&
-      group.requestedScope.length > 0 &&
-      recommendedScope !== group.requestedScope);
+  const narrowed =
+    recommendedScope !== null &&
+    group.requestedScope.length > 0 &&
+    recommendedScope !== group.requestedScope;
+  // Escalation means the marshal pushed the request to human approval
+  // (high risk forces requireApproval in policy). Routine narrowing of
+  // the recommended scope is not an escalation; it is reported separately.
+  const escalated = risk === "high";
   return {
     outcome: group.outcome,
     outcomeLabel: group.outcomeLabel,
@@ -771,6 +784,7 @@ export function wardenVerdict(group: AuditRequestGroup): WardenVerdict {
     requestedScope: group.requestedScope,
     allowedScope: group.allowedScope,
     escalated,
+    narrowed,
   };
 }
 
@@ -791,7 +805,8 @@ export function filterAuditGroups(
       group.outcomeLabel,
       verdict.wardenLabel,
       group.requestedScope,
-      group.allowedScope,
+      group.allowedScope ?? "—",
+      ...(group.isLegacy ? ["legacy", "earlier activity"] : []),
     ]
       .join(" ")
       .toLowerCase();

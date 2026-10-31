@@ -233,6 +233,7 @@ button.action:disabled { opacity: 0.5; cursor: default; }
 .outcome-pending { color: var(--muted); }
 .warden-chip.is-policy { color: var(--muted); }
 .warden-chip.is-escalated { color: var(--danger); }
+.warden-chip.is-narrowed { color: var(--muted); }
 .audit-toggle { margin-top: 8px; padding: 6px 12px; font-size: 12px; background: transparent; color: var(--ink); border-color: var(--border); }
 .audit-timeline { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .audit-step { border-left: 2px solid var(--border); padding-left: 12px; }
