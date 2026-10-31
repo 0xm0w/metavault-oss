@@ -40,17 +40,22 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band"><div class="wrap">
   <p class="eyebrow dim">The problem</p>
   <h2>Your keys are already leaked. You just haven't seen the bill yet.</h2>
+  <p class="sub">Three failure modes, one root cause: <strong>the key was somewhere it never needed to be.</strong> In a transcript. In a tool's storage. In someone else's cloud.</p>
   <div class="grid">
-    <div class="card"><span class="tag">Rotation fatigue</span><h3>Stop rotating keys because you pasted them</h3><p>Every paste into a chatbox, an IDE prompt, or a support ticket is a future 2 a.m. rotation. Transcripts persist. Context windows get logged. The key outlives the conversation.</p></div>
-    <div class="card"><span class="tag">The nightmare scenario</span><h3>Keys stored in a tool get leaked. Next morning: a $4,000 bill.</h3><p>It has happened to teams again and again — credentials sitting inside a dev tool are exfiltrated, and bots burn them within hours. If the key was never in the tool, there is nothing to steal.</p></div>
-    <div class="card"><span class="tag">Cloud trust</span><h3>Stop trusting cloud password managers with agent access</h3><p>Cloud vaults were built for humans logging in, not autonomous agents asking mid-task, fifty times a day. OpenVault keeps keys on your machine, encrypted at rest, under your OS keychain.</p></div>
+    <div class="card"><span class="tag">Rotation fatigue</span><h3>Stop rotating keys because you pasted them</h3><p>Every paste into a chatbox, an IDE prompt, or a support ticket is a future 2 a.m. rotation. Transcripts persist. Context windows get logged. <strong>The key outlives the conversation.</strong></p></div>
+    <div class="card"><span class="tag">The nightmare scenario</span><h3>Keys stored in a tool get leaked. Next morning: <span class="t-bad">a $4,000 bill.</span></h3><p>It has happened to teams again and again — credentials sitting inside a dev tool are exfiltrated, and bots burn them within hours. <strong>If the key was never in the tool, there is nothing to steal.</strong></p></div>
+    <div class="card"><span class="tag">Cloud trust</span><h3>Stop trusting cloud password managers with agent access</h3><p>Cloud vaults were built for humans logging in, not autonomous agents asking mid-task, fifty times a day. OpenVault keeps keys <strong>on your machine</strong>, encrypted at rest, under your OS keychain.</p></div>
   </div>
 </div></section>
 
 <section class="band"><div class="wrap">
   <p class="eyebrow">How it works</p>
   <h2>A dumb vault. A smart warden.</h2>
-  <p class="lede">Like a crypto wallet — except the payloads are API requests and they are far more complex than a signature. The vault is deliberately dumb: encrypted keys, hard policy ceilings, expiring grants. The warden is a Meta LLM that assesses every requestor and every request. The warden never sees plaintext keys. Ever.</p>
+  <p class="lede">Like a crypto wallet — except the payloads are API requests, and they are far more complex than a signature.</p>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    <div class="card"><span class="tag">Layer 1 · The vault</span><h3>Dumb by design</h3><p>Encrypted keys, hard policy ceilings, expiring grants. <strong>No intelligence, no surprises.</strong> Secure with the model switched off.</p></div>
+    <div class="card"><span class="tag">Layer 2 · The warden</span><h3>Smart by design</h3><p>A Meta LLM assesses every requestor and every request: scope, history, intent. <em>It never sees plaintext keys. Ever.</em></p></div>
+  </div>
   <div class="flow">
     <div class="step"><span class="n">01</span><b>Store once</b><p>Add each key once. AES-256-GCM at rest, master key in your OS keychain.</p></div>
     <div class="step"><span class="n">02</span><b>Agent requests a capability</b><p>Via one MCP snippet in any IDE: <span class="mono">stripe · charges.read</span> — never the key.</p></div>
@@ -63,7 +68,8 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band"><div class="wrap">
   <p class="eyebrow dim">LLM Security Levels</p>
   <h2>Stronger warden. Stronger vault.</h2>
-  <p class="lede">The vault is secure with no model at all — deterministic policy is the floor. Each warden tier adds judgement: spotting writes phrased as reads, slow scope-creep, and malicious requests from rogue agents you are testing.</p>
+  <p class="lede">The vault is secure with no model at all — <strong>deterministic policy is the floor.</strong></p>
+  <p class="sub">Each warden tier adds judgement on top of that floor: spotting <span class="t-warn">writes phrased as reads</span>, <span class="t-warn">slow scope-creep</span>, and <span class="t-bad">malicious requests from rogue agents</span> you are testing. The floor itself never moves.</p>
   <table class="levels">
     <tr><th>Level</th><th>Warden</th><th>Runs</th><th>What you get</th></tr>
     <tr><td><span class="pill low">STANDARD · LOW</span></td><td class="model">None — policy only</td><td>Anywhere</td><td>Hard ceilings, expiry, manual approval for everything sensitive. Safe, blunt.</td></tr>
@@ -76,7 +82,11 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band"><div class="wrap">
   <p class="eyebrow">Request Logs</p>
   <h2>Know exactly what is being requested.</h2>
-  <p class="lede">Every request, marshal assessment, policy decision, your approval, execution, expiry, and revocation — in one timeline, with the model named on every warden row. If an agent asked for something at 3 a.m., you will see it, what the warden said, and what happened.</p>
+  <p class="lede">One timeline per request, with the model named on every warden row. <em>If an agent asked for something at 3 a.m., you will see it — and exactly what happened next.</em></p>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    <div class="card"><span class="tag t-ok">Always logged</span><h3>Who asked, what, and what happened</h3><p>Agent and IDE, requested scope, the warden's assessment, the policy decision, <strong>your approval or denial</strong>, execution, expiry, revocation. Timestamped, in order.</p></div>
+    <div class="card"><span class="tag t-bad">Never logged</span><h3>The secret itself</h3><p>No key value, fragment, or hash ever reaches the log — or any transcript. <span class="t-ok"><strong>A canary test scans 17 surfaces in CI and fails the build on a single hit.</strong></span></p></div>
+  </div>
   <div class="stat-row">
     <div class="stat"><b>146</b><span>automated tests, all passing</span></div>
     <div class="stat"><b>100%</b><span>safety rate, live brain eval (17 attack scenarios)</span></div>
