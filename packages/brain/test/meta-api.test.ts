@@ -169,6 +169,58 @@ describe("effort levels", () => {
     expect(decision.risk).toBe("high");
   });
 
+  it("deep effort: prefix disagreement keeps the more specific scope and escalates", async () => {
+    const contents = [
+      '{"risk":"low","recommendedScope":"charges","requireApproval":false,"explanation":"first"}',
+      '{"risk":"low","recommendedScope":"charges.read","requireApproval":false,"explanation":"verify"}',
+    ];
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() =>
+        Promise.resolve(metaResponse(contents[call++] ?? contents[0] ?? "{}")),
+      ),
+    );
+    const decision = await assessMeta({ ...settings, effort: "deep" });
+    expect(decision.recommendedScope).toBe("charges.read");
+    expect(decision.requireApproval).toBe(true);
+  });
+
+  it("deep effort: empty first scope never wins over a real scope", async () => {
+    const contents = [
+      '{"risk":"low","recommendedScope":"","requireApproval":false,"explanation":"first"}',
+      '{"risk":"low","recommendedScope":"charges.read","requireApproval":false,"explanation":"verify"}',
+    ];
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() =>
+        Promise.resolve(metaResponse(contents[call++] ?? contents[0] ?? "{}")),
+      ),
+    );
+    const decision = await assessMeta({ ...settings, effort: "deep" });
+    expect(decision.recommendedScope).toBe("charges.read");
+    expect(decision.requireApproval).toBe(true);
+  });
+
+  it("deep effort: incomparable scopes keep the first verdict and escalate", async () => {
+    const contents = [
+      '{"risk":"low","recommendedScope":"charges.read","requireApproval":false,"explanation":"first"}',
+      '{"risk":"medium","recommendedScope":"invoices.read","requireApproval":false,"explanation":"verify"}',
+    ];
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() =>
+        Promise.resolve(metaResponse(contents[call++] ?? contents[0] ?? "{}")),
+      ),
+    );
+    const decision = await assessMeta({ ...settings, effort: "deep" });
+    expect(decision.recommendedScope).toBe("charges.read");
+    expect(decision.requireApproval).toBe(true);
+    expect(decision.risk).toBe("medium");
+  });
+
   it("deep effort: agreement returns the verdict after two passes", async () => {
     const content =
       '{"risk":"low","recommendedScope":"charges.read","requireApproval":false,"explanation":"ok"}';

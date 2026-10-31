@@ -61,4 +61,32 @@ describe("warden provider none", () => {
     expect(calls).toBe(1);
     expect(second.status).toBe("executed");
   });
+
+  it("audit modelId reflects the settings model for Meta verdicts", async () => {
+    const brain = Layer.succeed(Brain, {
+      assess: () =>
+        Effect.succeed({
+          risk: "low" as const,
+          recommendedScope: "charges.read",
+          requireApproval: false,
+          explanation: "ok",
+        }),
+    });
+    const service = await makeService(brain);
+    await Effect.runPromise(service.seedCredential("stripe", "charges.read", "[REDACTED]"));
+    await Effect.runPromise(
+      service.updateWardenSettings({
+        provider: "meta-api",
+        model: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      }),
+    );
+    const result = await Effect.runPromise(service.requestCapability(req));
+    expect(result.status).toBe("executed");
+    const audit = await Effect.runPromise(service.listAudit());
+    const marshal = audit.filter((e) => e.stage === "marshal");
+    expect(marshal.length).toBeGreaterThan(0);
+    expect(marshal.every((e) => e.modelId === "Llama-4-Maverick-17B-128E-Instruct-FP8")).toBe(
+      true,
+    );
+  });
 });

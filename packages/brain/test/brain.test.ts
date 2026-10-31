@@ -1,6 +1,12 @@
 import { Effect, Fiber, TestClock, TestContext } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Brain, BrainOllamaLive, buildMarshalPrompt, parseMarshalDecision } from "../src/brain.js";
+import {
+  Brain,
+  BrainOllamaLive,
+  buildMarshalPrompt,
+  narrowerScope,
+  parseMarshalDecision,
+} from "../src/brain.js";
 
 const req = {
   agentId: "cursor",
@@ -114,6 +120,32 @@ describe("buildMarshalPrompt", () => {
     const p = buildMarshalPrompt(evil, history, "stripe ceiling=charges.read");
     expect(p).not.toContain("\r");
     expect(p.split("\n").filter((line) => line.startsWith("Policy digest:"))).toHaveLength(1);
+  });
+});
+
+describe("narrowerScope", () => {
+  it("prefix pair: the dot-extended (more specific) scope is narrower, both orders", () => {
+    expect(narrowerScope("charges.read", "charges")).toBe("charges.read");
+    expect(narrowerScope("charges", "charges.read")).toBe("charges.read");
+  });
+
+  it("empty string is never narrower", () => {
+    expect(narrowerScope("", "charges.read")).toBe("charges.read");
+    expect(narrowerScope("charges.read", "")).toBe("charges.read");
+    expect(narrowerScope("", "")).toBe("");
+  });
+
+  it("read is narrower than write for the same resource, both orders", () => {
+    expect(narrowerScope("charges.read", "charges.write")).toBe("charges.read");
+    expect(narrowerScope("charges.write", "charges.read")).toBe("charges.read");
+    expect(narrowerScope("charges:write", "charges:read")).toBe("charges:read");
+  });
+
+  it("incomparable scopes keep the first verdict's scope", () => {
+    expect(narrowerScope("charges.read", "invoices.read")).toBe("charges.read");
+    expect(narrowerScope("invoices.read", "charges.read")).toBe("invoices.read");
+    expect(narrowerScope("charges.read", "invoices.write")).toBe("charges.read");
+    expect(narrowerScope("invoices.write", "charges.read")).toBe("invoices.write");
   });
 });
 

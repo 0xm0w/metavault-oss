@@ -54,16 +54,38 @@ export type WardenKeyProvider = () => Effect.Effect<string | null>;
 
 const RISK_RANK: Record<MarshalDecision["risk"], number> = { low: 0, medium: 1, high: 2 };
 
-// Narrower scope wins: a read outranks a write; otherwise a scope that is
-// a prefix of the other (shorter) wins; otherwise the shorter string wins.
+// Mirrors resourcePrefix in packages/core/src/policy.ts: the resource is
+// everything before the final "." or ":" segment.
+function resourcePrefix(scope: string): string {
+  const index = Math.max(scope.lastIndexOf("."), scope.lastIndexOf(":"));
+  return index > 0 ? scope.slice(0, index) : scope;
+}
+
+function isExtensionOf(longer: string, shorter: string): boolean {
+  return (
+    longer.length > shorter.length &&
+    longer.startsWith(shorter) &&
+    (longer[shorter.length] === "." || longer[shorter.length] === ":")
+  );
+}
+
+// Narrower is only defined for comparable scopes. A dot/colon-extended
+// scope is narrower (more specific) than its prefix; for the same
+// resource, a read is narrower than a write (isWriteScope mirrors
+// policy.ts). The empty string is never narrower. Incomparable scopes
+// have no narrower one, so the first verdict's scope is kept.
 export function narrowerScope(a: string, b: string): string {
   if (a === b) return a;
-  const aWrite = isWriteScope(a);
-  const bWrite = isWriteScope(b);
-  if (aWrite !== bWrite) return aWrite ? b : a;
-  if (a.startsWith(b)) return b;
-  if (b.startsWith(a)) return a;
-  return a.length <= b.length ? a : b;
+  if (a === "") return b;
+  if (b === "") return a;
+  if (isExtensionOf(a, b)) return a;
+  if (isExtensionOf(b, a)) return b;
+  if (resourcePrefix(a) === resourcePrefix(b)) {
+    const aWrite = isWriteScope(a);
+    const bWrite = isWriteScope(b);
+    if (aWrite !== bWrite) return aWrite ? b : a;
+  }
+  return a;
 }
 
 export function buildVerifyPrompt(prompt: string, first: MarshalDecision): string {
