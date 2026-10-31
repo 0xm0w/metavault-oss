@@ -1,0 +1,225 @@
+/* Direction B — Marshal Light (design spec Section 7.1).
+   Tokens mirror TOKENS in model.ts exactly. */
+:root {
+  --surface: #FFFFFF;
+  --surface-alt: #F8FAFC;
+  --navy: #1E3A5F;
+  --approve: #16A34A;
+  --deny: #DC2626;
+  --warn: #D97706;
+  --ink: #17233B;
+  --border: #DBE3EE;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--surface-alt);
+  color: var(--ink);
+  font-family: "Segoe UI", -apple-system, "San Francisco", system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mono { font-family: "JetBrains Mono", Consolas, monospace; }
+
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand { font-weight: 700; letter-spacing: 0.08em; font-size: 13px; color: var(--navy); }
+
+.header-right { display: flex; align-items: center; gap: 14px; }
+
+.marshal-line { font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; color: var(--navy); }
+
+.daemon-status { font-size: 11.5px; color: var(--warn); }
+.daemon-status.is-ok { color: var(--approve); }
+.daemon-status.is-down { color: var(--deny); }
+
+.app-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  display: flex;
+  gap: 4px;
+}
+
+.nav-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.nav-btn.is-active { color: var(--navy); border-bottom-color: var(--navy); }
+
+.banner {
+  margin: 14px 20px 0;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  background: #FEF3C7;
+  border: 1px solid var(--warn);
+  color: var(--ink);
+}
+
+.view { padding: 20px; flex: 1; width: 100%; max-width: 860px; margin: 0 auto; }
+
+.view h1 { font-size: 18px; color: var(--navy); margin-bottom: 6px; }
+.view .sub { font-size: 13px; opacity: 0.7; margin-bottom: 16px; line-height: 1.5; }
+
+.label { font-size: 10.5px; letter-spacing: 0.14em; font-weight: 700; opacity: 0.6; margin-bottom: 8px; }
+
+/* Approval hero */
+.hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(30, 58, 95, 0.08);
+}
+
+.hero .want { font-size: 16px; line-height: 1.45; margin-bottom: 6px; }
+.hero .reason { font-size: 13px; font-style: italic; opacity: 0.75; margin-bottom: 14px; }
+
+.assess {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+
+.assess b { display: block; font-size: 12px; letter-spacing: 0.06em; color: var(--navy); margin-bottom: 5px; }
+
+.risk-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 20px;
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
+.risk-low { background: #DCFCE7; color: var(--approve); }
+.risk-medium { background: #FEF3C7; color: var(--warn); }
+.risk-high { background: #FEE2E2; color: var(--deny); }
+
+.fine { font-size: 11.5px; opacity: 0.65; line-height: 1.5; margin-bottom: 16px; }
+
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+button.action {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+button.action:disabled { opacity: 0.5; cursor: default; }
+
+.btn-approve { background: var(--approve); color: #FFFFFF; }
+.btn-deny { background: transparent; color: var(--deny); border-color: var(--deny); }
+.btn-always { background: transparent; color: var(--navy); border-color: var(--navy); }
+.btn-revoke { background: transparent; color: var(--deny); border-color: var(--deny); padding: 7px 12px; }
+
+.queue { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+.queue-item {
+  font: inherit;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queue-item.is-selected { border-color: var(--navy); }
+
+.empty {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 28px 20px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+/* Vault cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.card h2 { font-size: 15px; color: var(--navy); margin-bottom: 8px; }
+.card .meta { font-size: 12px; opacity: 0.7; margin-top: 10px; }
+
+.chip {
+  display: inline-block;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  margin: 2px 2px 2px 0;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  color: var(--navy);
+}
+
+/* Audit + policies rows */
+.rows { display: flex; flex-direction: column; gap: 8px; }
+
+.row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.row .chain { font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; color: var(--navy); }
+.row .detail { opacity: 0.8; }
+.row .when { font-size: 11px; opacity: 0.55; }
+
+.policy-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.policy-row .grow { flex: 1; }
+
+.app-footer {
+  padding: 12px 20px;
+  font-size: 11.5px;
+  opacity: 0.6;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}

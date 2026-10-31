@@ -1,0 +1,352 @@
+import { execFileSync } from "node:child_process";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
+import { Brain, BrainOllamaLive } from "../../brain/src/brain.js";
+import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
+import { Connector } from "../../core/src/connector.js";
+import { VaultStoreLive } from "../../core/src/storage.js";
+import type { CapabilityRequest } from "../../core/src/types.js";
+import {
+  CapabilityRequestSchema,
+  GrantIdSchema,
+  PoliciesResponseSchema,
+  RevokeSchema,
+} from "./schemas.js";
+import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./service.js";
+
+export {
+  CapabilityRequestSchema,
+  GrantIdSchema,
+  PoliciesResponseSchema,
+  RevokeSchema,
+} from "./schemas.js";
+
+export function statusForErrorTag(tag: string): number {
+  switch (tag) {
+    case "GrantExpired":
+    case "GrantRevoked":
+      return 409;
+    case "PolicyDenied":
+    case "UnknownAlias":
+      return 403;
+    case "ConnectorFailed":
+      return 502;
+    default:
+      return 500;
+  }
+}
+
+interface SafeErrorBody {
+  readonly error: { readonly _tag: string; readonly message: string };
+}
+
+function safeErrorBody(err: unknown): SafeErrorBody {
+  if (typeof err === "object" && err !== null && "_tag" in err) {
+    const tag = String(err._tag);
+    const message =
+      "message" in err && typeof err.message === "string" ? err.message : tag;
+    return { error: { _tag: tag, message } };
+  }
+  return { error: { _tag: "InternalError", message: "internal error" } };
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(text);
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    size += buf.length;
+    if (size > 65_536) {
+      throw new Error("request body too large");
+    }
+    chunks.push(buf);
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  if (text === "") {
+    return {};
+  }
+  return JSON.parse(text) as unknown;
+}
+
+async function run<A, E>(effect: Effect.Effect<A, E>): Promise<{ status: number; body: unknown }> {
+  const exit = await Effect.runPromiseExit(effect);
+  if (Exit.isSuccess(exit)) {
+    return { status: 200, body: exit.value };
+  }
+  const failure = Cause.failureOption(exit.cause);
+  if (failure._tag === "Some") {
+    const body = safeErrorBody(failure.value);
+    return { status: statusForErrorTag(body.error._tag), body };
+  }
+  return { status: 500, body: { error: { _tag: "InternalError", message: "internal error" } } };
+}
+
+async function decode<A, I>(schema: Schema.Schema<A, I>, body: unknown): Promise<A | null> {
+  const exit = await Effect.runPromiseExit(Schema.decodeUnknown(schema)(body));
+  return Exit.isSuccess(exit) ? exit.value : null;
+}
+
+const BAD_REQUEST: { status: number; body: unknown } = {
+  status: 400,
+  body: { error: { _tag: "BadRequest", message: "invalid request body" } },
+};
+
+export const DAEMON_TOKEN_HEADER = "x-openvault-token";
+
+// The daemon token gates the human-decision routes. Without it any local
+// process (including the agent asking for a capability) could approve its
+// own grants, so /approve, /approve-always, /deny and the pending queue
+// require it. Agent-facing and safe-direction routes (/request, /aliases,
+// /audit, /policies, /revoke) stay open: requesting never grants anything
+// and revoking only ever removes access.
+export function daemonTokenFilePath(dbPath: string): string {
+  return join(dirname(dbPath), "openvault.token");
+}
+
+export function resolveDaemonToken(dbPath: string): string {
+  const fromEnv = process.env["OPENVAULT_DAEMON_TOKEN"];
+  if (fromEnv !== undefined && fromEnv !== "") {
+    return fromEnv;
+  }
+  const token = randomBytes(32).toString("hex");
+  try {
+    // Best-effort restrictive perms; the token is exposed only via this
+    // file (or OPENVAULT_DAEMON_TOKEN), never via an API response or log.
+    writeFileSync(daemonTokenFilePath(dbPath), token, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    // A read-only vault directory must not stop the daemon from starting;
+    // the in-memory token still guards this process.
+  }
+  return token;
+}
+
+export interface VaultRequestOptions {
+  readonly daemonToken?: string;
+  readonly providedToken?: string;
+}
+
+const UNAUTHORIZED: { status: number; body: unknown } = {
+  status: 401,
+  body: { error: { _tag: "Unauthorized", message: "unauthorized" } },
+};
+
+function isTokenProtected(method: string, path: string): boolean {
+  return (
+    (method === "POST" &&
+      (path === "/approve" || path === "/approve-always" || path === "/deny")) ||
+    (method === "GET" && path === "/pending")
+  );
+}
+
+function tokenMatches(expected: string, provided: string | undefined): boolean {
+  if (provided === undefined) {
+    return false;
+  }
+  const expectedBuf = Buffer.from(expected, "utf8");
+  const providedBuf = Buffer.from(provided, "utf8");
+  return expectedBuf.length === providedBuf.length && timingSafeEqual(expectedBuf, providedBuf);
+}
+
+export async function handleVaultRequest(
+  service: VaultServiceService,
+  method: string,
+  path: string,
+  body?: unknown,
+  options?: VaultRequestOptions,
+): Promise<{ status: number; body: unknown }> {
+  if (
+    options?.daemonToken !== undefined &&
+    isTokenProtected(method, path) &&
+    !tokenMatches(options.daemonToken, options.providedToken)
+  ) {
+    return UNAUTHORIZED;
+  }
+  if (method === "GET" && path === "/aliases") {
+    return run(service.listAliases().pipe(Effect.map((aliases) => ({ aliases }))));
+  }
+  if (method === "GET" && path === "/audit") {
+    return run(service.listAudit().pipe(Effect.map((events) => ({ events }))));
+  }
+  if (method === "GET" && path === "/pending") {
+    return run(service.listPendingApprovals().pipe(Effect.map((approvals) => ({ approvals }))));
+  }
+  if (method === "GET" && path === "/policies") {
+    // Schema-validated response: the payload is checked against
+    // PoliciesResponseSchema before it leaves the daemon (metadata only).
+    return run(
+      service
+        .listPolicies()
+        .pipe(
+          Effect.flatMap((policies) => Schema.decodeUnknown(PoliciesResponseSchema)(policies)),
+        ),
+    );
+  }
+  if (method === "POST" && path === "/request") {
+    const decoded = await decode(CapabilityRequestSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const request: CapabilityRequest = decoded;
+    return run(service.requestCapability(request));
+  }
+  if (method === "POST" && path === "/approve") {
+    const decoded = await decode(GrantIdSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    return run(service.approve(decoded.grantId));
+  }
+  if (method === "POST" && path === "/approve-always") {
+    const decoded = await decode(GrantIdSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    return run(service.approveAlways(decoded.grantId));
+  }
+  if (method === "POST" && path === "/deny") {
+    const decoded = await decode(GrantIdSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    return run(service.deny(decoded.grantId).pipe(Effect.map(() => ({ status: "denied" as const }))));
+  }
+  if (method === "POST" && path === "/revoke") {
+    const decoded = await decode(RevokeSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    return run(service.revoke(decoded.target).pipe(Effect.map(() => ({ status: "revoked" as const }))));
+  }
+  return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
+}
+
+export interface VaultHttpServerOptions {
+  readonly daemonToken?: string;
+}
+
+export function createVaultHttpServer(
+  service: VaultServiceService,
+  options: VaultHttpServerOptions = {},
+): Server {
+  return createServer((req, res) => {
+    void (async () => {
+      try {
+        const url = new URL(req.url ?? "/", "http://127.0.0.1");
+        const isPost = (req.method ?? "GET") === "POST";
+        const body: unknown = isPost ? await readBody(req) : undefined;
+        const header = req.headers[DAEMON_TOKEN_HEADER];
+        const providedToken = Array.isArray(header) ? header[0] : header;
+        const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
+          ...(options.daemonToken !== undefined ? { daemonToken: options.daemonToken } : {}),
+          ...(providedToken !== undefined ? { providedToken } : {}),
+        });
+        sendJson(res, out.status, out.body);
+      } catch {
+        sendJson(res, 500, { error: { _tag: "InternalError", message: "internal error" } });
+      }
+    })();
+  });
+}
+
+export function resolveDaemonMasterKey(): Buffer {
+  const fromEnv = process.env["OPENVAULT_MASTER_KEY"];
+  if (fromEnv !== undefined && fromEnv !== "") {
+    const decoded = Buffer.from(fromEnv, "base64");
+    if (decoded.length !== 32) {
+      throw new Error("OPENVAULT_MASTER_KEY must be base64-encoded 32 bytes");
+    }
+    return decoded;
+  }
+  try {
+    let raw = "";
+    if (process.platform === "darwin") {
+      raw = execFileSync(
+        "security",
+        ["find-generic-password", "-s", "openvault", "-a", "master-key", "-w"],
+        { encoding: "utf8" },
+      ).trim();
+    } else if (process.platform === "linux") {
+      raw = execFileSync(
+        "secret-tool",
+        ["lookup", "service", "openvault", "account", "master-key"],
+        { encoding: "utf8" },
+      ).trim();
+    } else {
+      throw new Error(`no keychain command for platform ${process.platform}`);
+    }
+    const decoded = Buffer.from(raw, "base64");
+    if (decoded.length !== 32) {
+      throw new Error("keychain master key must be base64-encoded 32 bytes");
+    }
+    return decoded;
+  } catch {
+    throw new Error(
+      "master key unavailable: set OPENVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
+    );
+  }
+}
+
+export interface VaultDaemonOptions {
+  readonly port?: number;
+  readonly dbPath?: string;
+  readonly masterKey?: Buffer;
+  // Dependency-injection seams (tests pass fakes / local presets through
+  // these); production defaults are the real layers below.
+  readonly connector?: Layer.Layer<Connector>;
+  readonly connectorPresets?: ConnectorPresets;
+  readonly brain?: Layer.Layer<Brain>;
+  readonly daemonToken?: string;
+}
+
+export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promise<Server> {
+  const masterKey = options.masterKey ?? resolveDaemonMasterKey();
+  const port = options.port ?? Number(process.env["OPENVAULT_PORT"] ?? "7077");
+  const dbPath = options.dbPath ?? join(process.cwd(), "openvault.db");
+  const daemonToken = options.daemonToken ?? resolveDaemonToken(dbPath);
+  // The real connector layer (Task 6): approved grants execute against the
+  // preset upstream URLs with the secret injected inside the daemon.
+  const connectorLayer =
+    options.connector ??
+    (options.connectorPresets !== undefined
+      ? makeConnectorLive(options.connectorPresets)
+      : ConnectorLive);
+  const layers = Layer.mergeAll(
+    VaultStoreLive(dbPath, masterKey),
+    options.brain ?? BrainOllamaLive(),
+    connectorLayer,
+  );
+  const runtime = ManagedRuntime.make(
+    Layer.provide(makeVaultServiceLive({ masterKey }), layers),
+  );
+  const service = await runtime.runPromise(
+    Effect.gen(function* () {
+      return yield* VaultService;
+    }),
+  );
+  const server = createVaultHttpServer(service, { daemonToken });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      resolve();
+    });
+  });
+  return server;
+}
+
+const entry = process.argv[1];
+if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+  startVaultDaemon().catch((err: unknown) => {
+    process.stderr.write(`${err instanceof Error ? err.message : "failed to start vaultd"}\n`);
+    process.exitCode = 1;
+  });
+}

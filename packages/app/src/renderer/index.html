@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenVault</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">OPENVAULT</div>
+  <div class="header-right">
+    <span id="marshal-line" class="marshal-line">Marshal · Llama 3.2 3B · On-device</span>
+    <span id="daemon-status" class="daemon-status" title="vaultd connection">● connecting</span>
+  </div>
+</header>
+<nav class="app-nav" aria-label="Views">
+  <button type="button" data-view="approval" class="nav-btn is-active">Approval</button>
+  <button type="button" data-view="vault" class="nav-btn">Vault</button>
+  <button type="button" data-view="audit" class="nav-btn">Audit</button>
+  <button type="button" data-view="policies" class="nav-btn">Policies</button>
+</nav>
+<div id="banner" class="banner" hidden></div>
+<main id="view" class="view"></main>
+<footer class="app-footer">Agents never see your secrets. vaultd holds the keys; this window only approves.</footer>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
