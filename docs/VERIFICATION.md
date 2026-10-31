@@ -23,6 +23,28 @@ to this file. Re-run any gate with the commands shown.
 Raw outputs: `eval-fake.txt`, `eval-live.txt`, `rehearsal.txt`,
 `mcp-two-host.txt` in this directory.
 
+## Coverage baseline (Task 7, measured before thresholds)
+
+Measured with `npm run test:coverage` (Vitest + `@vitest/coverage-v8`,
+247 tests passing) **before** any coverage thresholds were configured and
+before the Task 7 canary/e2e tests were added. Statements and lines are
+identical for every row in this codebase (V8 provider, one statement per
+line in the measured output).
+
+| Package / file | Statements | Lines | Plan target (statements/lines) | Meets target? |
+|---|---|---|---|---|
+| `packages/core` | 97.46% | 97.46% | ≥ 90% | yes |
+| `packages/daemon` | 88.96% | 88.96% | ≥ 85% | yes |
+| `packages/brain` | 96.34% | 96.34% | ≥ 85% | yes |
+| `packages/mcp` | 87.98% | 87.98% | ≥ 85% | yes |
+| `packages/app/src/renderer/model.ts` | 95.09% | 95.09% | ≥ 90% | yes |
+
+All five measured values already met the plan targets, so the thresholds
+in `vitest.config.ts` were set exactly at the plan targets (90 / 85 / 85 /
+85 / 90) with no lowering. Renderer DOM code (`main.ts`) and the Electron
+main process are excluded from thresholds and covered by smoke
+screenshots instead, as stated in the config comments.
+
 ## How to read the live eval
 
 The 3B marshal's risk labels are weak (23.5% risk accuracy live) and we
