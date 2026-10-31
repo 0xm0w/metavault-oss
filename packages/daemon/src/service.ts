@@ -163,6 +163,7 @@ export interface VaultServiceOptions {
 
 export const DEFAULT_ENROLLMENT_TTL_MS = 600_000;
 export const ENROLLMENT_REASON_MAX_LENGTH = 256;
+export const MAX_PENDING_ENROLLMENTS = 100;
 
 const DEFAULT_GRANT_TTL_MS = 60_000;
 const DEFAULT_RATE_LIMIT_PER_HOUR = 20;
@@ -393,7 +394,12 @@ export function makeVaultServiceLive(
               new StorageError({ message: "credential no longer exists", operation: "getCredential" }),
             );
           }
-          const result = yield* executeGrant(grantReq, consumed.allowedScope, credential.ciphertext);
+          const execExit = yield* Effect.exit(executeGrant(grantReq, consumed.allowedScope, credential.ciphertext));
+          if (Exit.isFailure(execExit)) {
+            yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "denied", "connector-failed", true, undefined, grantAuditExtras(auditCtx, "human"));
+            return yield* Effect.failCause(execExit.cause);
+          }
+          const result = execExit.value;
           yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", true, undefined, grantAuditExtras(auditCtx, "human"));
           return { status: "executed", result } as const;
         });
@@ -445,6 +451,21 @@ export function makeVaultServiceLive(
             }
             const now = yield* Clock.currentTimeMillis;
             yield* purgeExpiredEnrollments(now);
+            // Bound the pending registry: evict the oldest pending
+            // enrollments beyond the cap so agent floods cannot grow it
+            // without limit inside the TTL window.
+            yield* Ref.update(enrollments, (map) => {
+              const pending = [...map.values()].filter((r) => r.status === "pending");
+              if (pending.length < MAX_PENDING_ENROLLMENTS) {
+                return map;
+              }
+              const next = new Map(map);
+              const evictCount = pending.length - MAX_PENDING_ENROLLMENTS + 1;
+              for (const record of pending.slice(0, evictCount)) {
+                next.delete(record.enrollmentId);
+              }
+              return next;
+            });
             const enrollmentId = yield* Effect.sync(() => randomUUID());
             const record: EnrollmentRecord = { enrollmentId, alias, scope, website: website ?? "", status: "pending", expiresAtMs: now + enrollmentTtlMs };
             yield* Ref.update(enrollments, (map) => { const next = new Map(map); next.set(enrollmentId, record); return next; });
@@ -659,7 +680,7 @@ export function makeVaultServiceLive(
             yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
             const exit = yield* Effect.exit(executeGrant(req, allowedScope, credential.ciphertext));
             if (Exit.isFailure(exit)) {
-              yield* audit(req.agentId, req.alias, allowedScope, "executed", "connector-failed", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
+              yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
               return { status: "denied", reason: "connector-failed" } as const;
             }
             yield* audit(req.agentId, req.alias, allowedScope, "executed", "executed", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
