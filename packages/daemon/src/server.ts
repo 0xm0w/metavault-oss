@@ -18,6 +18,8 @@ import {
   PoliciesResponseSchema,
   RevokeSchema,
   UpdateCredentialSchema,
+  WardenKeyPutSchema,
+  WardenSettingsPatchSchema,
 } from "./schemas.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./service.js";
 
@@ -30,6 +32,8 @@ export {
   PoliciesResponseSchema,
   RevokeSchema,
   UpdateCredentialSchema,
+  WardenKeyPutSchema,
+  WardenSettingsPatchSchema,
 } from "./schemas.js";
 
 export function buildEnrollmentDeeplink(record: { enrollmentId: string; alias: string; scope: string; website: string }): string {
@@ -174,6 +178,15 @@ function isTokenProtected(method: string, path: string): boolean {
   if ((method === "PATCH" || method === "DELETE") && path.startsWith("/credentials/")) {
     return true;
   }
+  if (path === "/settings/warden" && (method === "GET" || method === "PATCH")) {
+    return true;
+  }
+  if (
+    path === "/settings/warden/key" &&
+    (method === "GET" || method === "PUT" || method === "DELETE")
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -226,6 +239,49 @@ export async function handleVaultRequest(
           Effect.flatMap((policies) => Schema.decodeUnknown(PoliciesResponseSchema)(policies)),
         ),
     );
+  }
+  if (method === "GET" && path === "/settings/warden") {
+    return run(service.getWardenSettings());
+  }
+  if (method === "PATCH" && path === "/settings/warden") {
+    const decoded = await decode(WardenSettingsPatchSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    if (decoded.model !== undefined && decoded.model.trim() === "") {
+      return BAD_REQUEST;
+    }
+    if (decoded.metaApiBaseUrl !== undefined && decoded.metaApiBaseUrl.trim() === "") {
+      return BAD_REQUEST;
+    }
+    const patch: {
+      provider?: "none" | "ollama" | "meta-api";
+      model?: string;
+      effort?: "fast" | "standard" | "deep";
+      metaApiBaseUrl?: string;
+    } = {};
+    if (decoded.provider !== undefined) patch.provider = decoded.provider;
+    if (decoded.model !== undefined) patch.model = decoded.model;
+    if (decoded.effort !== undefined) patch.effort = decoded.effort;
+    if (decoded.metaApiBaseUrl !== undefined) patch.metaApiBaseUrl = decoded.metaApiBaseUrl;
+    return run(service.updateWardenSettings(patch));
+  }
+  if (method === "GET" && path === "/settings/warden/key") {
+    return run(service.wardenKeyStatus());
+  }
+  if (method === "PUT" && path === "/settings/warden/key") {
+    const decoded = await decode(WardenKeyPutSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const key = decoded.key ?? decoded.apiKey ?? decoded.secret;
+    if (key === undefined || key.trim() === "") {
+      return BAD_REQUEST;
+    }
+    return run(service.setWardenKey(key));
+  }
+  if (method === "DELETE" && path === "/settings/warden/key") {
+    return run(service.deleteWardenKey());
   }
   if (method === "POST" && path === "/enrollments") {
     const decoded = await decode(EnrollmentRequestSchema, body ?? {});
@@ -379,7 +435,9 @@ export function createVaultHttpServer(
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         const reqMethod = req.method ?? "GET";
         const body: unknown =
-          reqMethod === "POST" || reqMethod === "PATCH" ? await readBody(req) : undefined;
+          reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT"
+            ? await readBody(req)
+            : undefined;
         const header = req.headers[DAEMON_TOKEN_HEADER];
         const providedToken = Array.isArray(header) ? header[0] : header;
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {

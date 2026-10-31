@@ -12,6 +12,12 @@ import {
 } from "../../core/src/errors.js";
 import { createGrant, makeGrantRegistry, type Grant } from "../../core/src/grants.js";
 import { evaluatePolicy, isWriteScope, type PolicyConfig } from "../../core/src/policy.js";
+import {
+  WARDEN_KEY_ALIAS,
+  WARDEN_KEY_SCOPE,
+  type WardenKeyStatus,
+  type WardenSettings,
+} from "../../core/src/settings.js";
 import { VaultStore } from "../../core/src/storage.js";
 import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 
@@ -52,6 +58,11 @@ export interface PoliciesState {
     readonly scope: string;
   }[];
 }
+
+export { WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE };
+export type { WardenKeyStatus, WardenSettings };
+
+export type WardenSettingsPatch = Partial<WardenSettings>;
 
 export type EnrollmentStatusValue = "pending" | "completed" | "expired";
 export interface EnrollmentRecord {
@@ -111,6 +122,13 @@ export interface VaultServiceService {
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
   readonly listPendingApprovals: () => Effect.Effect<PendingApproval[], StorageError>;
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
+  readonly getWardenSettings: () => Effect.Effect<WardenSettings, StorageError>;
+  readonly updateWardenSettings: (
+    patch: WardenSettingsPatch,
+  ) => Effect.Effect<WardenSettings, StorageError>;
+  readonly setWardenKey: (key: string) => Effect.Effect<WardenKeyStatus, StorageError>;
+  readonly deleteWardenKey: () => Effect.Effect<WardenKeyStatus, StorageError>;
+  readonly wardenKeyStatus: () => Effect.Effect<WardenKeyStatus, StorageError>;
 }
 
 export class VaultService extends Context.Tag("VaultService")<VaultService, VaultServiceService>() {}
@@ -424,12 +442,16 @@ export function makeVaultServiceLive(
             return true;
           }),
 
-        listCredentialMeta: () => store.listCredentials(),
+        listCredentialMeta: () =>
+          Effect.map(store.listCredentials(), (metas) =>
+            metas.filter((m) => m.alias !== WARDEN_KEY_ALIAS),
+          ),
 
         requestCapability: (req) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
-            const credential = yield* store.getCredential(req.alias);
+            const storedCredential = yield* store.getCredential(req.alias);
+            const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;
             const auditEvents = yield* store.listAudit();
             yield* audit(req.agentId, req.alias, req.requestedScope, "requested", "capability requested", false);
 
@@ -637,7 +659,9 @@ export function makeVaultServiceLive(
         listAliases: () =>
           Effect.flatMap(store.listCredentialAliases(), (fromDb) =>
             Ref.get(aliases).pipe(
-              Effect.map((seen) => [...new Set([...fromDb, ...seen])].sort()),
+              Effect.map((seen) =>
+                [...new Set([...fromDb, ...seen])].filter((a) => a !== WARDEN_KEY_ALIAS).sort(),
+              ),
             ),
           ),
         listAudit: () => store.listAudit(),
@@ -676,9 +700,73 @@ export function makeVaultServiceLive(
         // Real policy state for the Policies view: the enforced ceiling for
         // every enrolled alias (read back from the vault, never inferred
         // from audit) plus the standing approvals currently in force.
+        getWardenSettings: () => store.getWardenSettings(),
+
+        updateWardenSettings: (patch) =>
+          Effect.gen(function* () {
+            const current = yield* store.getWardenSettings();
+            const next: WardenSettings = {
+              provider: patch.provider ?? current.provider,
+              model: patch.model !== undefined ? patch.model.trim() : current.model,
+              effort: patch.effort ?? current.effort,
+              metaApiBaseUrl:
+                patch.metaApiBaseUrl !== undefined
+                  ? patch.metaApiBaseUrl.trim()
+                  : current.metaApiBaseUrl,
+            };
+            yield* store.setWardenSettings(next);
+            if (
+              patch.provider !== undefined ||
+              patch.model !== undefined ||
+              patch.effort !== undefined ||
+              patch.metaApiBaseUrl !== undefined
+            ) {
+              yield* audit(
+                "human",
+                "warden",
+                "",
+                "settings-changed",
+                `warden settings changed: provider=${next.provider} model=${next.model}`,
+                false,
+              );
+            }
+            return next;
+          }),
+
+        setWardenKey: (key) =>
+          Effect.gen(function* () {
+            const trimmed = key.trim();
+            const blob = yield* Effect.sync(() => encryptSecret(masterKey, trimmed));
+            yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, blob, "");
+            return { configured: true, last4: trimmed.slice(-4) } as const;
+          }),
+
+        deleteWardenKey: () =>
+          Effect.gen(function* () {
+            yield* store.deleteCredential(WARDEN_KEY_ALIAS);
+            return { configured: false, last4: null } as const;
+          }),
+
+        wardenKeyStatus: () =>
+          Effect.gen(function* () {
+            const credential = yield* store.getCredential(WARDEN_KEY_ALIAS);
+            if (credential === undefined) {
+              return { configured: false, last4: null } as const;
+            }
+            const plain = yield* decrypt(credential.ciphertext).pipe(
+              Effect.catchAll(() => Effect.succeed("")),
+            );
+            return {
+              configured: true,
+              last4: plain.length >= 4 ? plain.slice(-4) : null,
+            } as const;
+          }),
+
         listPolicies: () =>
           Effect.gen(function* () {
-            const credentialAliases = yield* store.listCredentialAliases();
+            const credentialAliases = (yield* store.listCredentialAliases()).filter(
+              (a) => a !== WARDEN_KEY_ALIAS,
+            );
             const ceilings: Record<string, string> = {};
             for (const alias of [...credentialAliases].sort()) {
               const credential = yield* store.getCredential(alias);

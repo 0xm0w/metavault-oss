@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
+import { DEFAULT_WARDEN_SETTINGS, type WardenSettings } from "./settings.js";
 import type { AuditEvent } from "./types.js";
 
 export interface CredentialRecord {
@@ -36,6 +37,8 @@ export interface VaultStoreService {
   readonly listCredentialAliases: () => Effect.Effect<string[], StorageError>;
   readonly appendAudit: (e: AuditEvent) => Effect.Effect<void, StorageError>;
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
+  readonly getWardenSettings: () => Effect.Effect<WardenSettings, StorageError>;
+  readonly setWardenSettings: (settings: WardenSettings) => Effect.Effect<void, StorageError>;
 }
 
 export class VaultStore extends Context.Tag("VaultStore")<VaultStore, VaultStoreService>() {}
@@ -54,6 +57,13 @@ interface CredentialMetaRow {
 
 interface AliasRow {
   readonly alias: string;
+}
+
+interface WardenSettingsRow {
+  readonly provider: string;
+  readonly model: string;
+  readonly effort: string;
+  readonly meta_api_base_url: string;
 }
 
 interface AuditRow {
@@ -84,6 +94,13 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
        alias TEXT PRIMARY KEY,
        ceiling TEXT NOT NULL,
        ciphertext TEXT NOT NULL
+     );
+     CREATE TABLE IF NOT EXISTS warden_settings (
+       id INTEGER PRIMARY KEY CHECK (id = 1),
+       provider TEXT NOT NULL,
+       model TEXT NOT NULL,
+       effort TEXT NOT NULL,
+       meta_api_base_url TEXT NOT NULL
      );
      CREATE TABLE IF NOT EXISTS audit (
        ts TEXT NOT NULL,
@@ -117,6 +134,12 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   );
   const insertAudit = db.prepare(
     "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  );
+  const upsertSettings = db.prepare(
+    "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url",
+  );
+  const selectSettings = db.prepare(
+    "SELECT provider, model, effort, meta_api_base_url FROM warden_settings WHERE id = 1",
   );
   const selectAudit = db.prepare(
     "SELECT ts, agent, alias, scope, stage, detail, model_id FROM audit ORDER BY rowid ASC",
@@ -194,6 +217,29 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
           });
         },
         catch: toStorageError("listAudit"),
+      }),
+    getWardenSettings: () =>
+      Effect.try({
+        try: () => {
+          const row = selectSettings.get() as WardenSettingsRow | undefined;
+          if (row === undefined) {
+            return { ...DEFAULT_WARDEN_SETTINGS };
+          }
+          return {
+            provider: row.provider as WardenSettings["provider"],
+            model: row.model,
+            effort: row.effort as WardenSettings["effort"],
+            metaApiBaseUrl: row.meta_api_base_url,
+          };
+        },
+        catch: toStorageError("getWardenSettings"),
+      }),
+    setWardenSettings: (settings) =>
+      Effect.try({
+        try: () => {
+          upsertSettings.run(settings.provider, settings.model, settings.effort, settings.metaApiBaseUrl);
+        },
+        catch: toStorageError("setWardenSettings"),
       }),
   };
 }
