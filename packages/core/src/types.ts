@@ -7,8 +7,11 @@ export interface CapabilityRequest {
 export interface MarshalDecision {
   risk: Risk; recommendedScope: string; requireApproval: boolean; explanation: string;
 }
+export type DecisionSource = "policy" | "marshal" | "marshal+policy" | "human";
 export interface AuditEvent {
   ts: string; agentId: string; alias: string; scope: string;
   stage: "requested"|"marshal"|"policy"|"approved"|"denied"|"executed"|"expired"|"revoked"|"credential-added"|"credential-deleted"|"enrollment-created"|"enrollment-completed"|"settings-changed";
   detail: string; modelId?: string;
+  requestId?: string; risk?: Risk; recommendedScope?: string;
+  decisionSource?: DecisionSource; latencyMs?: number; explanation?: string;
 }
