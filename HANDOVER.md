@@ -52,21 +52,9 @@ Private remote: `https://github.com/0xm0w/openvault`
 - **Must-fix #3 (version test surface)**: Added fifth surface `packages/mcp/package.json` to `test/version.test.ts`.
 - **Low (phantom Policies rows)**: Updated `derivePolicies` in `packages/app/src/renderer/model.ts` to skip administrative/lifecycle events (`settings-changed`, `enrollment-created`, `enrollment-completed`). Regression test added in `packages/app/test/model.test.ts`.
 - **Full gates & rebuild**: 271 tests passing, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
+- **Release v0.1.0-alpha.1 published**: Tag `v0.1.0-alpha.1` pushed. GitHub Release created at https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1 with NSIS installer and SHA256SUMS attached. Site and README links updated and redeployed.
 
 ## Remaining tasks (in order)
-
-### 4. Tag v0.1.0-alpha.1 and publish GitHub release
-
-- CI and CodeQL are now verified green on `main`:
-  - CI: https://github.com/0xm0w/openvault/actions/runs/41223410981
-  - CodeQL: https://github.com/0xm0w/openvault/actions/runs/41223410962
-- When ready: `git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1`
-  `release.yml` (SHA-pinned `softprops/action-gh-release@v2.6.2`, locked
-  `electron-builder@26.18.0`, `prerelease: true`) will build the Windows NSIS
-  installer + SHA256SUMS and attach them to a GitHub prerelease.
-- Verify the prerelease page shows the installer + checksums; link it from
-  `README.md` and the site, then redeploy the site:
-  `npx -y wrangler pages deploy site --project-name openvault --branch main --commit-dirty=true`
 
 ### 5. Manual GitHub repo settings (owner only, ~5 minutes)
 

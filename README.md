@@ -18,21 +18,16 @@ context, an audit row, or the desktop UI.
 
 ## Install
 
-### Installer (Windows / macOS) — Windows NSIS built (unsigned), macOS DMG pending a Mac
+### Windows Installer (v0.1.0-alpha.1)
 
-The Electron installer configuration lives in
-[packages/app/package.json](packages/app/package.json) (`build` key:
-NSIS installer for Windows x64, DMG for macOS x64 + arm64, product
-`OpenVault`, appId `dev.openvault.app`). It is **config only**: no signed
-installer has been built yet, because `electron-builder` is not installed in
-this repo and no code-signing certificate is configured (`signAndEditExecutable: false`,
-macOS `identity: null`). To produce an unsigned test installer once
-`electron-builder` is available:
+Download the Windows NSIS installer (`OpenVault-0.1.0-alpha.1-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1).
+
+To build the installer locally from source:
 
 ```powershell
 cd packages/app
-npm run build            # tsc -> dist/; also copy src/renderer/{index.html,styles.css} into dist/renderer/
-npx electron-builder --win   # or --mac on a Mac
+npm run build
+npx electron-builder --win
 ```
 
 ### From source (works today)
