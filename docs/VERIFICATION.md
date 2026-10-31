@@ -128,7 +128,7 @@ in no rendered view before saving each shot.
 | Screenshot | What it proves |
 |---|---|
 | `docs/verification/approval-dialog.png` | Pending request with agent/scope/reason, LOW RISK marshal assessment + explanation, expiry, and **Approve once / Deny / Always allow** buttons |
-| `docs/verification/audit-verdict.png` | Audit view with one executed request expanded: Requested → Marshal → Policy → Approved → Executed, with explanation, recommended scope, `0ms` latency, decision sources and model `llama3.2:3b` |
+| `docs/verification/audit-verdict.png` | Audit view with one executed request expanded: Requested → Marshal → Policy → Approved → Executed, with explanation, recommended scope, `1ms` latency, decision sources and model `llama3.2:3b` |
 | `docs/verification/enroll-flow.png` | Deeplink-prefilled Add-credential modal (`github` / `repos.read` / `github.com`), secret field empty |
 | `docs/verification/settings.png` | Settings page (refreshed): warden provider radios, Ollama model catalogue, effort — key field empty |
 
