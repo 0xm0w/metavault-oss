@@ -60,6 +60,7 @@ const api: VaultApi = {
   setWardenKey: (key: string) => invoke("PUT", "/settings/warden/key", { key }),
   deleteWardenKey: () => invoke("DELETE", "/settings/warden/key"),
   wardenKeyStatus: () => invoke("GET", "/settings/warden/key"),
+  testWarden: () => invoke("POST", "/settings/warden/test"),
 };
 
 contextBridge.exposeInMainWorld("openvault", api);

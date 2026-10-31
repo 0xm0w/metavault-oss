@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
-import { Brain } from "../../brain/src/brain.js";
+import { Brain, MarshalUnavailable } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
 import { encryptSecret } from "../../core/src/crypto.js";
 import { WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE } from "../../core/src/settings.js";
@@ -26,14 +26,14 @@ const FakeConnector = Layer.succeed(Connector, {
   execute: (_a, _s, secret) => Effect.succeed({ echoedLength: secret.length }),
 });
 
-async function makeService(): Promise<VaultServiceService> {
+async function makeService(brain: Layer.Layer<Brain> = BrainLowRisk): Promise<VaultServiceService> {
   return Effect.runPromise(
     Effect.gen(function* () {
       return yield* VaultService;
     }).pipe(
       Effect.provide(makeVaultServiceLive({ masterKey: Buffer.alloc(32, 7) })),
       Effect.provide(
-        Layer.mergeAll(VaultStoreTest(Buffer.alloc(32, 7)), BrainLowRisk, FakeConnector),
+        Layer.mergeAll(VaultStoreTest(Buffer.alloc(32, 7)), brain, FakeConnector),
       ),
     ),
   );
@@ -331,6 +331,70 @@ describe("warden settings routes", () => {
         });
       });
     }
+  });
+
+  it("POST /settings/warden/test runs one synthetic marshal assessment, with no audit rows or grants", async () => {
+    const seen: unknown[] = [];
+    const capturing = Layer.succeed(Brain, {
+      assess: (req) => {
+        seen.push(req);
+        return Effect.succeed({ risk: "low" as const, recommendedScope: "selfcheck.read", requireApproval: false, explanation: "ok" });
+      },
+    });
+    const service = await makeService(capturing);
+    const auditBefore = await Effect.runPromise(service.listAudit());
+    const noToken = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, auth);
+    expect(noToken.status).toBe(401);
+    expect(seen).toHaveLength(0);
+    const res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body as object).sort()).toEqual(["detail", "latencyMs", "model", "ok", "provider"]);
+    const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
+    expect(body.ok).toBe(true);
+    expect(body.provider).toBe("ollama");
+    expect(body.model).toBe("llama3.2:3b");
+    expect(typeof body.latencyMs).toBe("number");
+    expect(body.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(body.detail).toBe("ok");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ agentId: "openvault-selfcheck", alias: "selfcheck", requestedScope: "selfcheck.read", reason: "warden connection test" });
+    const auditAfter = await Effect.runPromise(service.listAudit());
+    expect(auditAfter).toHaveLength(auditBefore.length);
+    expect(await Effect.runPromise(service.listPendingApprovals())).toHaveLength(0);
+  });
+
+  it("POST /settings/warden/test maps brain failure to ok:false with a fixed safe detail", async () => {
+    const failing = Layer.succeed(Brain, {
+      assess: () => Effect.fail(new MarshalUnavailable({ message: "MarshalUnavailable: provider exploded apiKey=canary-secret-9999" })),
+    });
+    const service = await makeService(failing);
+    const auditBefore = await Effect.runPromise(service.listAudit());
+    const res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect(res.status).toBe(200);
+    const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
+    expect(body.ok).toBe(false);
+    expect(body.provider).toBe("ollama");
+    expect(body.detail).toBe("warden unavailable");
+    expect(JSON.stringify(res.body)).not.toContain("canary");
+    expect(JSON.stringify(res.body)).not.toContain("provider exploded");
+    expect(await Effect.runPromise(service.listAudit())).toHaveLength(auditBefore.length);
+    expect(await Effect.runPromise(service.listPendingApprovals())).toHaveLength(0);
+  });
+
+  it("POST /settings/warden/test returns policy-only for provider none without calling the brain", async () => {
+    let calls = 0;
+    const counting = Layer.succeed(Brain, {
+      assess: () => { calls += 1; return Effect.succeed({ risk: "low" as const, recommendedScope: "selfcheck.read", requireApproval: false, explanation: "ok" }); },
+    });
+    const service = await makeService(counting);
+    await handleVaultRequest(service, "PATCH", "/settings/warden", { provider: "none" }, withToken);
+    const auditBefore = await Effect.runPromise(service.listAudit());
+    const res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, provider: "none", detail: "policy-only" });
+    expect(typeof (res.body as { latencyMs: unknown }).latencyMs).toBe("number");
+    expect(calls).toBe(0);
+    expect(await Effect.runPromise(service.listAudit())).toHaveLength(auditBefore.length);
   });
 
   it("all settings routes are 401 without a token (MCP-side fetch cannot read settings)", async () => {

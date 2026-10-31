@@ -183,6 +183,9 @@ function isTokenProtected(method: string, path: string): boolean {
   if (path === "/settings/warden" && (method === "GET" || method === "PATCH")) {
     return true;
   }
+  if (path === "/settings/warden/test" && method === "POST") {
+    return true;
+  }
   if (
     path === "/settings/warden/key" &&
     (method === "GET" || method === "PUT" || method === "DELETE")
@@ -267,6 +270,9 @@ export async function handleVaultRequest(
     if (decoded.effort !== undefined) patch.effort = decoded.effort;
     if (decoded.metaApiBaseUrl !== undefined) patch.metaApiBaseUrl = decoded.metaApiBaseUrl;
     return run(service.updateWardenSettings(patch));
+  }
+  if (method === "POST" && path === "/settings/warden/test") {
+    return run(service.testWarden());
   }
   if (method === "GET" && path === "/settings/warden/key") {
     return run(service.wardenKeyStatus());

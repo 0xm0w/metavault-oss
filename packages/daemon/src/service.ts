@@ -65,6 +65,23 @@ export type { WardenKeyStatus, WardenSettings };
 
 export type WardenSettingsPatch = Partial<WardenSettings>;
 
+export interface WardenTestResult {
+  readonly ok: boolean;
+  readonly provider: WardenSettings["provider"];
+  readonly model: string;
+  readonly latencyMs: number;
+  readonly detail: string;
+}
+
+export const WARDEN_SELFCHECK_REQUEST: CapabilityRequest = {
+  agentId: "openvault-selfcheck",
+  ide: "OpenVault",
+  tool: "selfcheck",
+  alias: "selfcheck",
+  requestedScope: "selfcheck.read",
+  reason: "warden connection test",
+};
+
 export type EnrollmentStatusValue = "pending" | "completed" | "expired";
 export interface EnrollmentRecord {
   readonly enrollmentId: string;
@@ -130,6 +147,7 @@ export interface VaultServiceService {
   readonly setWardenKey: (key: string) => Effect.Effect<WardenKeyStatus, StorageError>;
   readonly deleteWardenKey: () => Effect.Effect<WardenKeyStatus, StorageError>;
   readonly wardenKeyStatus: () => Effect.Effect<WardenKeyStatus, StorageError>;
+  readonly testWarden: () => Effect.Effect<WardenTestResult, StorageError>;
 }
 
 export class VaultService extends Context.Tag("VaultService")<VaultService, VaultServiceService>() {}
@@ -859,6 +877,28 @@ export function makeVaultServiceLive(
               configured: true,
               last4: plain.length > 4 ? plain.slice(-4) : null,
             } as const;
+          }),
+
+        // One synthetic metadata-only marshal assessment through the
+        // current settings/provider. Never audits and never creates grants:
+        // it calls the brain directly, not requestCapability.
+        testWarden: () =>
+          Effect.gen(function* () {
+            const settings = yield* store.getWardenSettings();
+            const model = settings.model.trim() !== "" ? settings.model : modelId;
+            if (settings.provider === "none") {
+              return { ok: true, provider: settings.provider, model, latencyMs: 0, detail: "policy-only" } as const;
+            }
+            const started = yield* Clock.currentTimeMillis;
+            const exit = yield* Effect.exit(
+              brain.assess(WARDEN_SELFCHECK_REQUEST, { requests24h: 0, denials24h: 0 }, "selfcheck"),
+            );
+            const ended = yield* Clock.currentTimeMillis;
+            const latencyMs = Math.max(0, ended - started);
+            if (Exit.isSuccess(exit)) {
+              return { ok: true, provider: settings.provider, model, latencyMs, detail: "ok" } as const;
+            }
+            return { ok: false, provider: settings.provider, model, latencyMs, detail: "warden unavailable" } as const;
           }),
 
         listPolicies: () =>

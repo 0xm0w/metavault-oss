@@ -35,7 +35,8 @@ import {
   projectWardenKeyStatus,
   projectWardenSettings,
   wardenKeyStatusText,
-  wardenTestResult,
+  projectWardenTestResult,
+  wardenTestMessage,
 } from "./model.js";
 import type { AuditEventLike, CredentialMeta, DeeplinkAddParams, PendingApproval, PoliciesData, WardenKeyStatusLike, WardenSettingsLike } from "./types.js";
 
@@ -1034,14 +1035,13 @@ function renderSettings(view: HTMLElement): void {
   testBtn.disabled = settingsBusy;
   testBtn.addEventListener("click", () => {
     void runSettingsAction(async () => {
-      const [settingsRaw, statusRaw] = await Promise.all([
-        window.openvault.getWardenSettings(),
-        window.openvault.wardenKeyStatus(),
-      ]);
-      const projectedSettings = projectWardenSettings(settingsRaw);
-      const projectedStatus = projectWardenKeyStatus(statusRaw);
-      if (projectedStatus !== null) wardenKeyStatusState = projectedStatus;
-      const result = wardenTestResult(projectedSettings ?? wardenDraft, wardenKeyStatusState);
+      const raw = await window.openvault.testWarden();
+      const projected = projectWardenTestResult(raw);
+      if (projected === null) {
+        settingsMessage = { text: "Warden test failed \u2014 vaultd returned an unexpected response.", ok: false };
+        return;
+      }
+      const result = wardenTestMessage(projected);
       settingsMessage = { text: result.message, ok: result.ok };
     });
   });
@@ -1059,7 +1059,7 @@ function renderSettings(view: HTMLElement): void {
   });
   keyBtns.append(saveKeyBtn, testBtn, deleteKeyBtn);
   keySection.append(keyBtns);
-  keySection.append(el("p", "settings-copy", "Test connection checks that vaultd is reachable and (for Meta API) that a key is configured. Vaultd makes the actual provider call, with the key decrypted in-daemon, on the next capability request."));
+  keySection.append(el("p", "settings-copy", "Test connection runs one metadata-only warden self-check through vaultd using the saved provider and model (save settings changes first to test them). It creates no grants and writes no audit entries."));
   view.append(keySection);
 
   if (settingsMessage !== null) {

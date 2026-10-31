@@ -59,6 +59,7 @@ describe("main-process daemon whitelist", () => {
       { method: "GET", path: "/settings/warden/key" },
       { method: "PUT", path: "/settings/warden/key" },
       { method: "DELETE", path: "/settings/warden/key" },
+      { method: "POST", path: "/settings/warden/test" },
     ]);
     for (const call of ALLOWED_DAEMON_CALLS) {
       expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);
@@ -125,6 +126,7 @@ describe("warden settings IPC whitelist (Task 6)", () => {
     { method: "GET", path: "/settings/warden/key" },
     { method: "PUT", path: "/settings/warden/key" },
     { method: "DELETE", path: "/settings/warden/key" },
+    { method: "POST", path: "/settings/warden/test" },
   ] as const;
 
   it("whitelists exactly the warden settings routes", () => {
@@ -139,6 +141,8 @@ describe("warden settings IPC whitelist (Task 6)", () => {
     expect(isAllowedDaemonCall("GET", "/settings")).toBe(false);
     expect(isAllowedDaemonCall("GET", "/settings/warden/extra")).toBe(false);
     expect(isAllowedDaemonCall("GET", "/settings/warden/key/extra")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/settings/warden/test")).toBe(false);
+    expect(isAllowedDaemonCall("POST", "/settings/warden/test/extra")).toBe(false);
     expect(() => validateDaemonCall({ method: "POST", path: "/settings/warden/key", body: { key: "x" } })).toThrow(/not allowed/);
     expect(() => validateDaemonCall({ method: "GET", path: "/settings/warden/../credentials" })).toThrow(/not allowed/);
   });
@@ -159,6 +163,7 @@ describe("warden settings IPC whitelist (Task 6)", () => {
       await callDaemon({ method: "PUT", path: "/settings/warden/key", body: { key: "meta-key-12345678" } });
       await callDaemon({ method: "GET", path: "/settings/warden/key" });
       await callDaemon({ method: "DELETE", path: "/settings/warden/key" });
+      await callDaemon({ method: "POST", path: "/settings/warden/test" });
     } finally {
       globalThis.fetch = originalFetch;
       delete process.env["OPENVAULT_DAEMON_TOKEN"];
@@ -169,8 +174,9 @@ describe("warden settings IPC whitelist (Task 6)", () => {
       "http://127.0.0.1:7077/settings/warden/key",
       "http://127.0.0.1:7077/settings/warden/key",
       "http://127.0.0.1:7077/settings/warden/key",
+      "http://127.0.0.1:7077/settings/warden/test",
     ]);
-    expect(seen.map((s) => s.init.method)).toEqual(["GET", "PATCH", "PUT", "GET", "DELETE"]);
+    expect(seen.map((s) => s.init.method)).toEqual(["GET", "PATCH", "PUT", "GET", "DELETE", "POST"]);
     for (const call of seen) {
       const headers = call.init.headers as Record<string, string>;
       expect(headers["x-openvault-token"]).toBe("test-token-warden");
@@ -185,6 +191,8 @@ describe("warden settings IPC whitelist (Task 6)", () => {
     expect(preload).toContain("setWardenKey");
     expect(preload).toContain("deleteWardenKey");
     expect(preload).toContain("wardenKeyStatus");
+    expect(preload).toContain("testWarden");
+    expect(preload).toContain('"/settings/warden/test"');
     expect(preload).toContain('"/settings/warden"');
     expect(preload).toContain('"/settings/warden/key"');
     expect(preload).not.toContain("x-openvault-token");

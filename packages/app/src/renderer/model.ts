@@ -14,6 +14,7 @@ import type {
   WardenProvider,
   WardenSettingsLike,
   WardenSettingsPatch,
+  WardenTestResultLike,
 } from "./types.js";
 
 // Unified warm theme (promoted from the Vault page). These exact hex
@@ -964,21 +965,30 @@ export interface WardenTestResult {
   readonly message: string;
 }
 
-// Test-connection verdict from data already fetched through vaultd. The
-// daemon has no provider self-check route, so this verifies vaultd
-// reachability plus key configuration only \u2014 it must never claim the
-// cloud provider itself was called (vaultd makes that call, with the key
-// decrypted in-daemon, on the next capability request).
-export function wardenTestResult(settings: WardenSettingsLike, status: WardenKeyStatusLike): WardenTestResult {
-  if (settings.provider === "none") {
-    return { ok: true, message: "Policy-only mode: vaultd reachable, no warden provider to test." };
+// Real warden self-check result from POST /settings/warden/test: vaultd
+// ran one synthetic metadata-only marshal assessment. The renderer only
+// projects the fixed safe shape; any secret-like field fails closed.
+export function projectWardenTestResult(raw: unknown): WardenTestResultLike | null {
+  if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) return null;
+  const ok = raw["ok"];
+  const provider = raw["provider"];
+  const model = raw["model"];
+  const latencyMs = raw["latencyMs"];
+  const detail = raw["detail"];
+  if (typeof ok !== "boolean") return null;
+  if (typeof provider !== "string" || !(WARDEN_PROVIDERS_LIST as readonly string[]).includes(provider)) return null;
+  if (typeof model !== "string") return null;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) return null;
+  if (typeof detail !== "string" || detail === "") return null;
+  return { ok, provider: provider as WardenProvider, model, latencyMs, detail };
+}
+
+export function wardenTestMessage(result: WardenTestResultLike): WardenTestResult {
+  if (result.provider === "none" || result.detail === "policy-only") {
+    return { ok: result.ok, message: "Policy-only mode: no warden provider to test \u2014 deterministic policy is deciding requests." };
   }
-  if (settings.provider === "ollama") {
-    return { ok: true, message: `Vaultd reachable. Ollama model ${settings.model} is called by vaultd on the next request.` };
+  if (result.ok) {
+    return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };
   }
-  if (!status.configured) {
-    return { ok: false, message: "Meta API key is not configured. Save a key first." };
-  }
-  const suffix = status.last4 !== null && status.last4 !== "" ? ` (\u2022\u2022\u2022\u2022${status.last4})` : "";
-  return { ok: true, message: `Vaultd reachable and Meta API key configured${suffix}. Vaultd will call the Meta API on the next request.` };
+  return { ok: false, message: `Warden connection failed \u2014 ${result.provider} \u00b7 ${result.model} did not respond. Check the provider is running and the saved settings are correct, then try again.` };
 }

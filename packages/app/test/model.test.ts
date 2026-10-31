@@ -35,7 +35,8 @@ import {
   projectWardenKeyStatus,
   projectWardenSettings,
   wardenKeyStatusText,
-  wardenTestResult,
+  projectWardenTestResult,
+  wardenTestMessage,
 } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
@@ -812,12 +813,26 @@ describe("warden settings form state (Task 6)", () => {
     expect(isWardenFormComplete({ provider: "ollama", model: "llama3.2:3b", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
   });
 
-  it("derives honest test-connection results", () => {
-    expect(wardenTestResult(DEFAULT_WARDEN_SETTINGS, { configured: false, last4: null }).ok).toBe(true);
-    expect(wardenTestResult({ ...DEFAULT_WARDEN_SETTINGS, provider: "meta-api" }, { configured: false, last4: null }).ok).toBe(false);
-    const ok = wardenTestResult({ ...DEFAULT_WARDEN_SETTINGS, provider: "meta-api" }, { configured: true, last4: "1234" });
-    expect(ok.ok).toBe(true);
-    expect(ok.message).toContain("1234");
-    expect(ok.message).not.toContain("canary");
+  it("projects real warden test results strictly and maps them to honest copy", () => {
+    const raw = { ok: true, provider: "meta-api", model: "llama-4", latencyMs: 42, detail: "ok" };
+    expect(projectWardenTestResult(raw)).toEqual(raw);
+    expect(projectWardenTestResult({ ...raw, ok: "yes" })).toBeNull();
+    expect(projectWardenTestResult({ ...raw, provider: "evil" })).toBeNull();
+    expect(projectWardenTestResult({ ...raw, latencyMs: -1 })).toBeNull();
+    expect(projectWardenTestResult({ ...raw, apiKey: "canary" })).toBeNull();
+    expect(projectWardenTestResult(null)).toBeNull();
+    const okMsg = wardenTestMessage({ ok: true, provider: "meta-api", model: "llama-4", latencyMs: 42, detail: "ok" });
+    expect(okMsg.ok).toBe(true);
+    expect(okMsg.message).toContain("meta-api");
+    expect(okMsg.message).toContain("llama-4");
+    expect(okMsg.message).toContain("42");
+    expect(okMsg.message).not.toContain("canary");
+    const failMsg = wardenTestMessage({ ok: false, provider: "ollama", model: "llama3.2:3b", latencyMs: 7, detail: "warden unavailable" });
+    expect(failMsg.ok).toBe(false);
+    expect(failMsg.message.toLowerCase()).toContain("fail");
+    expect(failMsg.message).not.toContain("reachable");
+    const noneMsg = wardenTestMessage({ ok: true, provider: "none", model: "llama3.2:3b", latencyMs: 0, detail: "policy-only" });
+    expect(noneMsg.ok).toBe(true);
+    expect(noneMsg.message.toLowerCase()).toContain("policy-only");
   });
 });

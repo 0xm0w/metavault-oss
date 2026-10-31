@@ -109,6 +109,14 @@ export interface WardenKeyStatusLike {
   readonly last4: string | null;
 }
 
+export interface WardenTestResultLike {
+  readonly ok: boolean;
+  readonly provider: WardenProvider;
+  readonly model: string;
+  readonly latencyMs: number;
+  readonly detail: string;
+}
+
 export interface CredentialPatch {
   readonly scope?: string;
   readonly website?: string;
@@ -135,6 +143,7 @@ export interface VaultApi {
   readonly setWardenKey: (key: string) => Promise<unknown>;
   readonly deleteWardenKey: () => Promise<unknown>;
   readonly wardenKeyStatus: () => Promise<unknown>;
+  readonly testWarden: () => Promise<unknown>;
 }
 
 declare global {

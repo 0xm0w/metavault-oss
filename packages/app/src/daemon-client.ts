@@ -35,6 +35,7 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "GET", path: "/settings/warden/key" },
   { method: "PUT", path: "/settings/warden/key" },
   { method: "DELETE", path: "/settings/warden/key" },
+  { method: "POST", path: "/settings/warden/test" },
 ];
 
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(
