@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest a new capability or improvement for OpenVault
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. OpenVault is local-first: no cloud
+        accounts, sync, or telemetry. Please keep proposals inside that
+        guarantee, and never paste real secrets.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What is hard or impossible today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should OpenVault do instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Desktop app (renderer / Settings / Audit / Approvals)
+        - Daemon (vaultd HTTP API)
+        - MCP server / IDE host integration
+        - Brain / warden (Ollama or Meta API)
+        - Core policy / storage
+        - Docs / website
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: security-impact
+    attributes:
+      label: Security / threat-model impact
+      description: |
+        Does this affect secrets, policy ceilings, approvals, the token
+        guard, audit trails, or what an agent/model can see? If unsure,
+        say so — maintainers will assess.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, workarounds, or "none".
+    validations:
+      required: false
