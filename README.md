@@ -41,7 +41,7 @@ npx electron-builder --win   # or --mac on a Mac
 git clone <this repo> openvault
 cd openvault
 npm install
-npm test            # full suite (117/117 at Task 10 verification)
+npm test            # full suite (268/268 at Task 10 verification)
 ```
 
 ## Setup
@@ -86,10 +86,10 @@ npm test            # full suite (117/117 at Task 10 verification)
    from the CLI (`approve <grantId>`, `audit`, `revoke <target>`).
 7. **Connect your IDE** with the MCP snippet below.
 
-## MCP snippet (one per IDE)
+## Install via MCP (one snippet per IDE)
 
-Paste into your IDE/agent MCP config (Cursor, Claude Code, Codex, VS Code —
-adjust the path and identity):
+Build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, VS Code, Codex and OpenCode** — each with its own `OPENVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `openvault-mcp` bin from `packages/mcp/package.json`); the server reads `OPENVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `OPENVAULT_AGENT_ID` and `OPENVAULT_IDE`.
+Example (Cursor shape; other hosts differ only in wrapping — see [docs/MCP.md](docs/MCP.md)):
 
 ```json
 {
@@ -107,9 +107,48 @@ adjust the path and identity):
 }
 ```
 
-Tools exposed to agents: `request_capability({alias, scope, reason, tool?, payload?})`,
-`list_aliases()`, `revoke({target})`. Agents receive `executed`,
-`awaiting-approval` (with a `grantId`), or `denied` — never a secret value.
+Tools exposed to agents (exactly five): `request_capability({alias, scope, reason, tool?, payload?})`, `list_aliases()`, `request_enrollment({alias, scope, website?})`, `enrollment_status({enrollmentId})`, `revoke({target})`. There is deliberately no approve tool — approval belongs to the human, in the app. Agents receive `executed`, `awaiting-approval` (with a `grantId`), or `denied` — never a secret value.
+## Settings: the warden (Settings page)
+
+The desktop app's **Settings** page chooses who judges capability requests. Deterministic policy stays the floor in every configuration: the warden can narrow or escalate, never widen.
+
+- **Warden provider:** `None (policy only)` / `Local — Ollama` / `Meta API (cloud)`. Meta API sends request metadata (agent, alias, scope, reason — never secrets) off-device; the page says so plainly.
+- **Model:** for Ollama, the catalogue below (or any free-text model id); for Meta API, the API model id plus an editable base URL (default `https://api.llama.com/v1`).
+- **Effort:** `Fast` (one marshal pass, 10s timeout), `Standard` (one pass, 30s), `Deep` (two passes — assess + verify — 60s; on disagreement it escalates to you and keeps the narrower scope). Effort never changes policy ceilings.
+- **Meta API key:** paste once and Save; the field clears and is never repopulated. Status shows only `Not configured` or `Configured ••••last4`. The key is stored as an ordinary encrypted credential (alias `warden-meta-api`) and decrypted only inside the daemon at call time. **Test connection** runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.
+- **Daemon / Security defaults:** read-only daemon URL, vault path and version, plus a policy-floor summary with a jump to Policies. Settings apply on the next request — no daemon restart needed. All settings routes require the daemon token; agents cannot read or change them.
+
+### Security levels (warden tiers)
+
+These are exactly the tiers the daemon and Settings use (`OLLAMA_MODELS` in [packages/brain/src/ollama.ts](packages/brain/src/ollama.ts), plus the Meta API provider). Higher tiers buy judgement, not permission:
+
+| Tier | Warden | Runs |
+|---|---|---|
+| Policy only | provider `none` — no model | anywhere |
+| Medium | `llama3.2:3b` (Ollama) | on-device, 8 GB GPU (default) |
+| High | `llama3.1:8b` (Ollama) | on-device |
+| Maximum-local | `llama3.3:70b` (Ollama) | on-device, large GPU |
+| Meta API (cloud) | any Meta API model id | Meta API, metadata only |
+
+## End-to-end agent flows (real screenshots)
+
+Captured from the real running app against a real daemon, seeded with a fake test credential — never a real secret. Full-size copies: `docs/verification/`.
+
+1. **Agent asks to save a key.** MCP `request_enrollment` → daemon returns an `openvault://add` deeplink → prefilled modal (alias/scope/website filled, secret empty) → you paste the secret → agent polls `enrollment_status` → `completed`.
+
+   ![Prefilled enrollment modal](docs/verification/enroll-flow.png)
+
+2. **Agent requests a capability.** `request_capability` → policy check, then the warden scores metadata only → the Approval view shows agent, scope, reason, risk and the warden explanation with **Approve once / Deny / Always allow** (Always allow is standing approval: read-only, low-risk only — writes always ask) → vaultd injects the credential into that one call and returns only the result.
+
+   ![Approval dialog](docs/verification/approval-dialog.png)
+
+3. **Audit: the warden verdict.** The Audit view groups events by request; expanding a row shows requested → marshal → policy → approved/denied → executed with the marshal explanation, recommended scope, latency, decision source and model named.
+
+   ![Expanded warden verdict in Audit](docs/verification/audit-verdict.png)
+
+4. **Settings.** Provider/model/effort plus the Meta key status (key field empty, as it always is after saving).
+
+   ![Settings page](docs/verification/settings.png)
 
 ## Security model
 
@@ -229,7 +268,7 @@ All gates were run on the demo-class machine (RTX 3070 8 GB, llama3.2:3b Q4). Fu
 
 | Gate | Result |
 |---|---|
-| Tests / typecheck / lint | 146 passed / exit 0 / exit 0 |
+| Tests / typecheck / lint | 268 passed / exit 0 / exit 0 |
 | Brain eval (fake / live) | safety 100% / 100%, gate PASS |
 | Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS in 3.6 s |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |

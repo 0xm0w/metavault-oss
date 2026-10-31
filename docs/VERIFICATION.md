@@ -9,7 +9,7 @@ to this file. Re-run any gate with the commands shown.
 
 | Gate | Command | Result |
 |---|---|---|
-| Unit + integration tests | `npm test` | **146 passed**, 0 failed |
+| Unit + integration tests | `npm test` | **268 passed** (33 files), 0 failed |
 | Typecheck (strict) | `npm run typecheck` | exit 0 |
 | Lint (max-warnings 0) | `npm run lint` | exit 0 |
 | Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (1.2 s wall) |
@@ -112,7 +112,45 @@ packaging item, along with code signing.
 above. It is a walkthrough, not a screen recording of a live session;
 record the full 3-minute script (README) on demo day as the fallback.
 
+## Task 10 — docs screenshots + agent flows (2026-10-31)
+
+Four screenshots were captured from the **real running app** (built
+Electron renderer + real preload + real main-process daemon client)
+against a real daemon (`startVaultDaemon`) with a stub warden brain and a
+mock upstream. State was generated through the daemon HTTP API only,
+seeded with a fake test credential (`sk-test-FAKE-…`, never a real
+secret); the executed chain was produced by `POST /request` →
+`POST /approve` (token-guarded) against the mock upstream, and the
+enrollment by `POST /enrollments` → the real `openvault://add` deeplink.
+The harness asserted the fake secret appears in no daemon response and
+in no rendered view before saving each shot.
+
+| Screenshot | What it proves |
+|---|---|
+| `docs/verification/approval-dialog.png` | Pending request with agent/scope/reason, LOW RISK marshal assessment + explanation, expiry, and **Approve once / Deny / Always allow** buttons |
+| `docs/verification/audit-verdict.png` | Audit view with one executed request expanded: Requested → Marshal → Policy → Approved → Executed, with explanation, recommended scope, `0ms` latency, decision sources and model `llama3.2:3b` |
+| `docs/verification/enroll-flow.png` | Deeplink-prefilled Add-credential modal (`github` / `repos.read` / `github.com`), secret field empty |
+| `docs/verification/settings.png` | Settings page (refreshed): warden provider radios, Ollama model catalogue, effort — key field empty |
+
+The same four images are wired into the site docs page
+(`site/docs/index.html`, served at `/docs/` under
+`/assets/shots/`) and into the README's end-to-end flows section. The
+site docs and README gained an MCP install section (five hosts, five
+tools), a Settings/warden section, and a security-levels table aligned
+with the Task 3 tiers (`none` / `llama3.2:3b` Medium / `llama3.1:8b`
+High / `llama3.3:70b` Maximum-local / Meta API cloud; effort
+Fast 10s / Standard 30s / Deep 60s). Semantic data-flow charting stays
+deferred, per the plan.
+
+Gates for this task (run in-session): `npm run test` — **268 passed**
+(33 files); `npm run typecheck` — exit 0; `npm run lint` — exit 0.
+
+Site redeploy: `npx -y wrangler pages deploy site --project-name openvault --branch main --commit-dirty=true`. Deployment and route
+checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) are
+recorded in the Task 10 report
+(`.superpowers/sdd/2026-10-31-openvault-hardening-release/task-10-report.md`).
+
 ## Codebase
 
-43 TypeScript files, 6,649 lines (packages + root canary test), 146
+43 TypeScript files, 6,649 lines (packages + root canary test), 268
 tests. Secrets appear in the repo only as fake canary/test strings.
