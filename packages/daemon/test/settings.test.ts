@@ -2,7 +2,9 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
-import { VaultStoreTest } from "../../core/src/storage.js";
+import { encryptSecret } from "../../core/src/crypto.js";
+import { WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE } from "../../core/src/settings.js";
+import { VaultStore, VaultStoreTest } from "../../core/src/storage.js";
 import { createVaultHttpServer, handleVaultRequest } from "../src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../src/service.js";
 
@@ -246,6 +248,57 @@ describe("warden settings routes", () => {
       withToken,
     );
     expect(after.body).toEqual({ configured: false, last4: null });
+  });
+
+  it("rejects short warden keys (<=4 chars and <8 chars) with 400, stores nothing, and echoes nothing", async () => {
+    const service = await makeService();
+    for (const shortKey of ["abcd", "abc", "abcdefg"]) {
+      const put = await handleVaultRequest(
+        service,
+        "PUT",
+        "/settings/warden/key",
+        { key: shortKey },
+        withToken,
+      );
+      expect(put.status, `key length ${String(shortKey.length)}`).toBe(400);
+      expect(JSON.stringify(put.body)).not.toContain(shortKey);
+      const status = await handleVaultRequest(
+        service,
+        "GET",
+        "/settings/warden/key",
+        undefined,
+        withToken,
+      );
+      expect(status.body).toEqual({ configured: false, last4: null });
+      expect(JSON.stringify(status.body)).not.toContain(shortKey);
+    }
+    // Service-level callers must not be able to store/echo a short key either.
+    const exit = await Effect.runPromiseExit(service.setWardenKey("abcd"));
+    expect(exit._tag).toBe("Failure");
+    const status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: false, last4: null });
+  });
+
+  it("status never echoes a pre-existing short warden key in full (last4 is null when length <= 4)", async () => {
+    const masterKey = Buffer.alloc(32, 7);
+    const planted = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* VaultStore;
+        const svc = yield* VaultService;
+        yield* store.addCredential(
+          WARDEN_KEY_ALIAS,
+          WARDEN_KEY_SCOPE,
+          encryptSecret(masterKey, "abcd"),
+          "",
+        );
+        return yield* svc.wardenKeyStatus();
+      }).pipe(
+        Effect.provide(makeVaultServiceLive({ masterKey })),
+        Effect.provide(Layer.mergeAll(VaultStoreTest(masterKey), BrainLowRisk, FakeConnector)),
+      ),
+    );
+    expect(planted).toEqual({ configured: true, last4: null });
+    expect(JSON.stringify(planted)).not.toContain("abcd");
   });
 
   it("serves PUT /settings/warden/key over real HTTP (body is read for PUT)", async () => {

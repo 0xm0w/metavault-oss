@@ -1,7 +1,8 @@
-import { Effect, Layer } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
+import { WARDEN_KEY_ALIAS } from "../../core/src/settings.js";
 import { VaultStoreTest } from "../../core/src/storage.js";
 import { handleVaultRequest } from "../src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../src/service.js";
@@ -87,6 +88,27 @@ describe("enrollments", () => {
     const service = await makeService();
     expect((await handleVaultRequest(service, "GET", "/enrollments/%E0%A4%A")).status).toBe(400);
     expect((await handleVaultRequest(service, "GET", "/enrollments/%zz")).status).toBe(400);
+  });
+  it("rejects the reserved warden alias on POST /enrollments (agent-open route)", async () => {
+    const service = await makeService();
+    const created = await handleVaultRequest(service, "POST", "/enrollments", { alias: WARDEN_KEY_ALIAS, scope: "warden.meta" });
+    expect(created.status).toBe(400);
+    expect(JSON.stringify(created.body)).not.toContain(SECRET);
+    // Service-level guard: direct callers cannot create it either.
+    const exit = await Effect.runPromiseExit(service.createEnrollment(WARDEN_KEY_ALIAS, "warden.meta"));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+  it("rejects the reserved warden alias in seedCredential and on POST /credentials", async () => {
+    const service = await makeService();
+    const exit = await Effect.runPromiseExit(service.seedCredential(WARDEN_KEY_ALIAS, "warden.meta", SECRET));
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(await Effect.runPromise(service.hasCredential(WARDEN_KEY_ALIAS))).toBe(false);
+    const saved = await handleVaultRequest(service, "POST", "/credentials", { alias: WARDEN_KEY_ALIAS, scope: "warden.meta", secret: SECRET }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(saved.status).toBe(400);
+    expect(JSON.stringify(saved.body)).not.toContain(SECRET);
+    expect(await Effect.runPromise(service.hasCredential(WARDEN_KEY_ALIAS))).toBe(false);
+    const aliases = await handleVaultRequest(service, "GET", "/aliases");
+    expect(JSON.stringify(aliases.body)).not.toContain(WARDEN_KEY_ALIAS);
   });
   it("expires after TTL", async () => {
     const service = await makeService(1);

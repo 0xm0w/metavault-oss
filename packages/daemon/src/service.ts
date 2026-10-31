@@ -14,6 +14,7 @@ import { createGrant, makeGrantRegistry, type Grant } from "../../core/src/grant
 import { evaluatePolicy, isWriteScope, type PolicyConfig } from "../../core/src/policy.js";
 import {
   WARDEN_KEY_ALIAS,
+  WARDEN_KEY_MIN_LENGTH,
   WARDEN_KEY_SCOPE,
   type WardenKeyStatus,
   type WardenSettings,
@@ -59,7 +60,7 @@ export interface PoliciesState {
   }[];
 }
 
-export { WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE };
+export { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, WARDEN_KEY_SCOPE };
 export type { WardenKeyStatus, WardenSettings };
 
 export type WardenSettingsPatch = Partial<WardenSettings>;
@@ -344,7 +345,11 @@ export function makeVaultServiceLive(
 
       const service: VaultServiceService = {
         seedCredential: (alias, ceiling, plaintextSecret, website, enrollmentId) =>
-          Effect.flatMap(Effect.sync(() => encryptSecret(masterKey, plaintextSecret)), (blob) =>
+          alias === WARDEN_KEY_ALIAS
+            ? Effect.fail(
+                new StorageError({ message: "reserved alias", operation: "seedCredential" }),
+              )
+            : Effect.flatMap(Effect.sync(() => encryptSecret(masterKey, plaintextSecret)), (blob) =>
             Effect.flatMap(store.addCredential(alias, ceiling, blob, website ?? ""), () =>
               Effect.flatMap(
                 Ref.update(aliases, (set) => {
@@ -378,6 +383,11 @@ export function makeVaultServiceLive(
 
         createEnrollment: (alias, scope, website, reason) =>
           Effect.gen(function* () {
+            if (alias === WARDEN_KEY_ALIAS) {
+              return yield* Effect.fail(
+                new StorageError({ message: "reserved alias", operation: "createEnrollment" }),
+              );
+            }
             const now = yield* Clock.currentTimeMillis;
             yield* purgeExpiredEnrollments(now);
             const enrollmentId = yield* Effect.sync(() => randomUUID());
@@ -736,6 +746,11 @@ export function makeVaultServiceLive(
         setWardenKey: (key) =>
           Effect.gen(function* () {
             const trimmed = key.trim();
+            if (trimmed.length < WARDEN_KEY_MIN_LENGTH) {
+              return yield* Effect.fail(
+                new StorageError({ message: "warden key too short", operation: "setWardenKey" }),
+              );
+            }
             const blob = yield* Effect.sync(() => encryptSecret(masterKey, trimmed));
             yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, blob, "");
             return { configured: true, last4: trimmed.slice(-4) } as const;
@@ -758,7 +773,7 @@ export function makeVaultServiceLive(
             );
             return {
               configured: true,
-              last4: plain.length >= 4 ? plain.slice(-4) : null,
+              last4: plain.length > 4 ? plain.slice(-4) : null,
             } as const;
           }),
 

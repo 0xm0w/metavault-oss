@@ -8,6 +8,7 @@ import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
 import { Brain, BrainOllamaLive } from "../../brain/src/brain.js";
 import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
 import { Connector } from "../../core/src/connector.js";
+import { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH } from "../../core/src/settings.js";
 import { VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
@@ -275,7 +276,7 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     const key = decoded.key ?? decoded.apiKey ?? decoded.secret;
-    if (key === undefined || key.trim() === "") {
+    if (key === undefined || key.trim() === "" || key.trim().length < WARDEN_KEY_MIN_LENGTH) {
       return BAD_REQUEST;
     }
     return run(service.setWardenKey(key));
@@ -289,6 +290,9 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     const alias = decoded.alias.trim();
+    if (alias === WARDEN_KEY_ALIAS) {
+      return BAD_REQUEST;
+    }
     const scope = decoded.scope.trim();
     const website = (decoded.website ?? "").trim();
     const reason = (decoded.reason ?? "").trim().slice(0, 256);
@@ -322,6 +326,9 @@ export async function handleVaultRequest(
     // store INSERT OR REPLACE stays for CLI/test seeding, but this
     // endpoint never replaces an existing credential.
     const alias = decoded.alias.trim();
+    if (alias === WARDEN_KEY_ALIAS) {
+      return BAD_REQUEST;
+    }
     const scope = decoded.scope.trim();
     const exists = await run(service.hasCredential(alias));
     if (exists.status !== 200) {

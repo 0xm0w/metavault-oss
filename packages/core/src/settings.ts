@@ -26,6 +26,7 @@ export const WardenSettingsSchema = Schema.Struct({
 
 export const WARDEN_KEY_ALIAS = "warden-meta-api";
 export const WARDEN_KEY_SCOPE = "warden.meta";
+export const WARDEN_KEY_MIN_LENGTH = 8;
 
 export interface WardenKeyStatus {
   readonly configured: boolean;
