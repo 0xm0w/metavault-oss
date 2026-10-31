@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenVault — Meta Hackathon Pitch</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="deck">
+<nav><div class="nav-in">
+  <a class="logo" href="/">OPEN<span>VAULT</span></a>
+  <div class="nav-links"><a href="/docs/">Docs</a><a href="/architecture/">Architecture</a><a href="/hackathon/" class="active">Hackathon</a><a href="https://github.com/0xm0w/openvault">GitHub</a></div>
+</div></nav>
+
+<section><div class="wrap">
+  <p class="eyebrow">Meta Global AI Developer Hackathon · Indie Track</p>
+  <p class="big">Tired of pasting API keys into <span class="hl">all your coding IDEs?</span></p>
+  <p class="lede" style="margin-top:24px">So is every developer on Earth. We did it this morning. The key is in a transcript now. Forever.</p>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow dim">Problem</p>
+  <p class="big">Your keys are stored inside your tools. When a tool leaks, <span class="hl">you wake up to a $4,000 bill.</span></p>
+  <p class="lede" style="margin-top:24px">It keeps happening: credentials sitting in dev tools get exfiltrated and burned by bots within hours. Tired of rotating keys because you pasted one? Tired of manually revoking? Tired of trusting cloud password managers with your agent's hands?</p>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow">Solution</p>
+  <p class="big">One vault for all your keys. <span class="hl">Meta LLMs guard it</span> from the requestors.</p>
+  <p class="lede" style="margin-top:24px">OpenVault puts every credential in one local, encrypted vault. Agents in Cursor, Claude Code, Codex, and VS Code request scoped capabilities over MCP. A Meta LLM warden assesses each requestor. You approve once. The key is injected inside the daemon and never enters a chat, a prompt, or a model.</p>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow dim">Security</p>
+  <p class="big">A dumb vault. <span class="hl">A smart warden.</span> <span class="dim">A tripwire on every grant.</span></p>
+  <div class="grid">
+    <div class="card"><span class="tag">The vault</span><h3>Deliberately dumb</h3><p>AES-256-GCM at rest, OS-keychain master key, hard policy ceilings, single-use grants. Secure with no AI at all.</p></div>
+    <div class="card"><span class="tag">The warden</span><h3>Meta LLMs on guard</h3><p>Llama 3.2 3B locally today; Muse Glimmer 30B; Muse Spark and Wonder at maximum. Wardens see metadata only — never plaintext keys. A stronger warden detects attacks from rogue agents mid-flight.</p></div>
+    <div class="card"><span class="tag">The tripwire</span><h3>Auto-revocation</h3><p>Grants die after use, after TTL, after events, or on one click — mid-task. Manual revocation is over.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow">Why Meta models are load-bearing</p>
+  <p class="big">The warden makes <span class="hl">access decisions</span>, not chat replies.</p>
+  <p class="lede" style="margin-top:24px">Every request is risk-scored by a Meta model with a published, measured eval: 17 attack scenarios — disguised writes, scope escalation, prompt injection, bursts. Live Llama 3.2 3B on an 8 GB GPU: <b style="color:var(--ink)">safety 100%</b>. Its risk labels are weak (23.5%) and we publish that too — because deterministic policy holds the floor either way. OpenVault is secure even if the AI is wrong, and measurably safer when it's smart.</p>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow dim">Proof, not promises</p>
+  <div class="stat-row">
+    <div class="stat"><b>146</b><span>tests passing, strict TS + lint gated</span></div>
+    <div class="stat"><b>7/7</b><span>live rehearsal checks in 3.6 s</span></div>
+    <div class="stat"><b>17</b><span>canary-scanned surfaces, zero leaks</span></div>
+    <div class="stat"><b>3</b><span>real bugs caught by our own gates (and fixed)</span></div>
+  </div>
+  <p class="lede" style="margin-top:28px">Built by the team behind <a href="https://keythings.xyz">Keythings Wallet</a>. Same discipline as a crypto wallet — except the payloads are API requests, and they are far more complex than signatures. Roadmap: air-gapped vaults, secure enclaves, hardened devices.</p>
+</div></section>
+
+<section><div class="wrap" style="text-align:left">
+  <p class="eyebrow">The new standard</p>
+  <p class="big">NEVER LEAK YOUR KEYS ANYMORE. <span class="hl">This is the new standard.</span></p>
+  <div class="btns" style="margin-top:36px">
+    <a class="btn" href="https://github.com/0xm0w/openvault/releases">Download for Windows</a>
+    <a class="btn ghost" href="https://github.com/0xm0w/openvault">Open source — Apache-2.0</a>
+    <a class="btn ghost" href="/">keythings.xyz</a>
+  </div>
+  <p class="mute" style="margin-top:24px">The future is secure, easy, and has infinite possibilities.</p>
+</div></section>
+
+<footer><div class="wrap foot">
+  <span>OPENVAULT — agents never see your secrets.</span>
+  <span><a href="/">Home</a> · <a href="/docs/">Docs</a> · <a href="/architecture/">Architecture</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
+  <span>Indie track. Built in the open.</span>
+</div></footer>
+</body>
+</html>

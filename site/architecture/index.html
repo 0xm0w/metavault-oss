@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Architecture — OpenVault</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav><div class="nav-in">
+  <a class="logo" href="/">OPEN<span>VAULT</span></a>
+  <div class="nav-links"><a href="/docs/">Docs</a><a href="/architecture/" class="active">Architecture</a><a href="/hackathon/">Hackathon</a><a href="https://github.com/0xm0w/openvault">GitHub</a></div>
+</div></nav>
+
+<div class="wrap doc-layout">
+  <aside class="side">
+    <a href="#shape">Shape</a><a href="#flow">Request flow</a><a href="#invariants">Invariants</a><a href="#warden">The warden</a><a href="#wallet">vs crypto wallets</a><a href="#evidence">Measured evidence</a><a href="#future">Future</a>
+  </aside>
+  <main class="doc">
+    <p class="eyebrow">Architecture</p>
+    <h2 id="shape">A wallet, its wardens, and the law</h2>
+    <p>Three layers, one rule: the layer that holds secrets never talks to agents, and the layer that talks to agents never holds secrets.</p>
+    <pre><code>┌─ Electron app (plain TypeScript) ─────────────┐
+│  Approval · Vault · Request Logs · Policies   │  holds no secrets
+└──────────────┬────────────────────────────────┘
+               │ whitelisted IPC (main process)
+┌──────────────▼────────────────────────────────┐
+│  vaultd — the dumb vault                      │
+│  AES-256-GCM store · OS-keychain master key   │
+│  deterministic policy (the law) · grants/TTL  │
+│  in-daemon secret injection · audit log       │
+└──────┬───────────────────────────▲────────────┘
+       │ MCP (stdio)               │ metadata only
+┌──────▼──────────────┐   ┌────────┴────────────┐
+│ Agents in any IDE   │   │ Meta LLM wardens    │
+│ Cursor·Claude·Codex │   │ 3B → Glimmer → Spark│
+└─────────────────────┘   └─────────────────────┘</code></pre>
+
+    <h2 id="flow">Request flow</h2>
+    <ul>
+      <li>Agent calls <code>request_capability(alias, scope, reason)</code> over MCP.</li>
+      <li>Policy pre-check: unknown alias, rate limit, or a requested write above a read ceiling → denied before any model call.</li>
+      <li>The warden (Meta LLM) scores metadata only and returns strict JSON: risk, recommended scope, approval need, one-line explanation.</li>
+      <li>Policy clamps: the warden can narrow, never widen. Writes always require the human; standing approval covers only read-only low-risk repeats.</li>
+      <li>Human approves in the app (daemon-token-guarded route — an agent approving itself gets 401).</li>
+      <li><code>vaultd</code> decrypts in-memory, injects the credential into that single connector call, returns only the tool result. Grant expires immediately (tripwire: after use, after TTL, or on revoke).</li>
+    </ul>
+
+    <h2 id="invariants">Invariants (tested, not promised)</h2>
+    <ul>
+      <li>No secret value in any MCP response, HTTP response, log, audit row, UI payload, or model prompt — enforced by a canary test scanning 17 surfaces; the build fails on a hit.</li>
+      <li>Plaintext exists only inside <code>vaultd</code> during one connector execution.</li>
+      <li>The model can narrow scope, never widen it beyond policy ceilings.</li>
+      <li>Grants are single-use and expiring; revoke is immediate and also interrupts in-flight work where the connector supports it.</li>
+      <li>The daemon binds to localhost only. Human-decision routes require the daemon token; MCP exposes no approval tool.</li>
+      <li>Secure with no warden on duty: model down, malformed, or fooled → policy + human decide. The floor never moves.</li>
+    </ul>
+
+    <h2 id="warden">The warden (Meta LLMs)</h2>
+    <p>Effect-TS services with tagged errors (<code>MarshalUnavailable</code>, <code>GrantExpired</code>, …) and Effect Schema at every boundary. The warden prompt treats all agent-supplied fields as untrusted data; output is schema-decoded, never hand-parsed. Levels: none → Llama 3.2 3B (local) → Muse Glimmer 30B (local) → Muse Spark / Wonder (Meta Model API). Stronger wardens detect attacks — writes phrased as reads, injection in the reason field, slow scope-creep — and can flag rogue agents mid-testing.</p>
+
+    <h2 id="wallet">How this compares to a crypto wallet</h2>
+    <p>Same skeleton: an encrypted vault, a human approval surface, keys that are used but never displayed. Different payload: a wallet signs one predictable transaction; OpenVault authorises arbitrary API behaviour, so approval needs context a signature prompt never had — who is asking, what scope, what history, what the warden thinks. That context is the product.</p>
+
+    <h2 id="evidence">Measured evidence (2026-10-31, RTX 3070 8 GB)</h2>
+    <ul>
+      <li>146 tests passing; strict typecheck and lint clean.</li>
+      <li>Brain eval, 17 labelled scenarios (benign, disguised writes, escalation, injection, bursts): fake brain safety 100%; <b>live Llama 3.2 3B safety 100%</b>, risk-label accuracy 23.5% — weak labels, unbroken floor.</li>
+      <li>Live rehearsal: 7/7 checks in 3.6 s; warm marshal decision ~1.9 s; revoke denial ~10 ms.</li>
+      <li>Two independent MCP hosts (VS Code + Claude Code configs) verified against one daemon.</li>
+      <li>Windows NSIS installer built (115.6 MB, unsigned). Full log: <code>docs/VERIFICATION.md</code> in the repo.</li>
+    </ul>
+
+    <h2 id="future">Future</h2>
+    <p>Air-gapped vault mode (no network path at all), secure-enclave and hardened-device deployments, a browser extension approval surface, and per-team policy packs. The architecture already isolates the vault from every network-facing surface except localhost — air-gapping is a packaging decision, not a redesign.</p>
+  </main>
+</div>
+
+<footer><div class="wrap foot">
+  <span>OPENVAULT — agents never see your secrets.</span>
+  <span><a href="/">Home</a> · <a href="/docs/">Docs</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
+  <span>Apache-2.0. Local-first. No telemetry.</span>
+</div></footer>
+</body>
+</html>

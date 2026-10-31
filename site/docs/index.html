@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Docs — OpenVault</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav><div class="nav-in">
+  <a class="logo" href="/">OPEN<span>VAULT</span></a>
+  <div class="nav-links"><a href="/docs/" class="active">Docs</a><a href="/architecture/">Architecture</a><a href="/hackathon/">Hackathon</a><a href="https://github.com/0xm0w/openvault">GitHub</a></div>
+</div></nav>
+
+<div class="wrap doc-layout">
+  <aside class="side">
+    <a href="#install">Install</a><a href="#firstrun">First run</a><a href="#mcp">Connect your IDE</a><a href="#cli">CLI</a><a href="#levels">LLM Security Levels</a><a href="#tripwire">Tripwires</a><a href="#logs">Request Logs</a><a href="#policies">Policies</a><a href="#oss">Open source</a>
+  </aside>
+  <main class="doc">
+    <p class="eyebrow">Documentation</p>
+    <h2 id="install">Install (Windows first)</h2>
+    <p>Download the Windows installer from the <a href="https://github.com/0xm0w/openvault/releases">releases page</a>, or build from source:</p>
+    <pre><code>git clone https://github.com/0xm0w/openvault
+cd openvault
+npm install
+npm test   # 146 tests</code></pre>
+    <p>You also need <a href="https://ollama.com">Ollama</a> for the local warden. OpenVault runs entirely on your machine; there is no account and no telemetry.</p>
+
+    <h2 id="firstrun">First run</h2>
+    <pre><code>openvault init
+openvault model pull        # detects your GPU, pulls llama3.2:3b (~2 GB on 8 GB cards)
+openvault add stripe --scope charges.read</code></pre>
+    <p><code>init</code> creates the encrypted vault (AES-256-GCM; master key in Windows Credential Manager). <code>add</code> reads the secret from a hidden prompt and never echoes it. Aliases and scope ceilings are all any agent will ever learn.</p>
+
+    <h2 id="mcp">Connect your IDE (one MCP snippet)</h2>
+    <p>Every MCP-capable IDE or agent uses the same snippet. This is the only per-IDE step:</p>
+    <pre><code>{
+  "mcpServers": {
+    "openvault": {
+      "command": "node",
+      "args": ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "env": { "OPENVAULT_AGENT_ID": "cursor", "OPENVAULT_IDE": "Cursor" }
+    }
+  }
+}</code></pre>
+    <p>Tools exposed: <code>request_capability</code>, <code>list_aliases</code> (aliases + ceilings only), <code>revoke</code>. There is deliberately no approve tool — approval belongs to the human, in the app. An agent that tries to approve its own request over the daemon HTTP API gets a 401; those routes require the daemon token, which only the app and CLI hold.</p>
+
+    <h2 id="cli">CLI</h2>
+    <pre><code>openvault add &lt;alias&gt; --scope &lt;scope&gt;   # enrol a credential (hidden prompt)
+openvault approve &lt;grantId&gt;              # approve a pending request
+openvault audit                            # request log with marshal decisions
+openvault revoke &lt;agent-or-alias&gt;        # kill pending + future grants
+openvault model pull                       # fetch/upgrade the warden model</code></pre>
+
+    <h2 id="levels">LLM Security Levels</h2>
+    <p>The vault is secure at every level — deterministic policy ceilings, single-use expiring grants, and human approval cannot be overridden by any model. Higher levels buy judgement, not permission:</p>
+    <ul>
+      <li><b>STANDARD (Low)</b> — no model. Policy only. Everything sensitive asks you.</li>
+      <li><b>GUARDED (Medium)</b> — Llama 3.2 3B Q4 on-device (default; runs well on an 8 GB GPU). Risk labels, scope recommendations, explanations.</li>
+      <li><b>FORTIFIED (High)</b> — Muse Glimmer 30B on-device (24 GB-class GPU). Pattern-spotting across request history; stronger injection resistance.</li>
+      <li><b>MAXIMUM</b> — Muse Spark / Muse Wonder via the Meta Model API. Frontier reasoning over request metadata. Opt-in; metadata only, never keys.</li>
+    </ul>
+    <p>Measured on the reference machine: live marshal call ~1.9 s warm; eval safety 100% at every level (see <a href="/architecture/">Architecture</a>).</p>
+
+    <h2 id="tripwire">Tripwires (auto-revocation)</h2>
+    <ul>
+      <li><b>After use</b> — every grant is single-purpose and expires the moment the call completes.</li>
+      <li><b>After TTL</b> — pending approvals die in 60 seconds by default; standing approvals can carry their own TTL.</li>
+      <li><b>After event</b> — one click (or one CLI command, or one MCP <code>revoke</code>) cancels pending grants and blocks all future ones for that agent or credential, effective immediately.</li>
+    </ul>
+
+    <h2 id="logs">Request Logs</h2>
+    <p>The Audit view (and <code>openvault audit</code>) shows the full timeline per request: agent → scope → marshal assessment (model named) → policy → your decision → executed/expired/revoked. If it happened, it is in the log; if it is in the log, it contains no secret — the canary test enforces that in CI.</p>
+
+    <h2 id="policies">Policies</h2>
+    <p>Per-alias ceilings cap what any agent can ever receive (e.g. <code>stripe → charges.read</code>). A requested write under a read ceiling is denied outright. "Always allow" creates a standing approval only for read-only, warden-rated low-risk scopes; writes ask every time. Standing approvals live in daemon memory and clear on restart — fail-safe by design.</p>
+
+    <h2 id="oss">Open source readiness</h2>
+    <p>Apache-2.0. 146 automated tests, strict TypeScript, lint-gated Effect discipline in the daemon core, a canary secrecy test that fails the build on any leak, and public <code>CONTRIBUTING.md</code> / <code>SECURITY.md</code> in the repo. macOS packaging is parked; Windows is the supported platform today.</p>
+  </main>
+</div>
+
+<footer><div class="wrap foot">
+  <span>OPENVAULT — agents never see your secrets.</span>
+  <span><a href="/">Home</a> · <a href="/architecture/">Architecture</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
+  <span>Apache-2.0. Local-first. No telemetry.</span>
+</div></footer>
+</body>
+</html>
