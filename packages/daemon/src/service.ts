@@ -504,8 +504,11 @@ export function makeVaultServiceLive(
             const policyDigest = `${req.alias} ceiling=${credential.scopeCeiling}`;
             // The ONLY place marshal errors are absorbed: recovered to a null
             // decision for evaluatePolicy, with an audit event saying so.
-            const decision: MarshalDecision | null = yield* brain
-              .assess(req, historySummary, policyDigest)
+            const wardenSettings = yield* store.getWardenSettings();
+            const decision: MarshalDecision | null =
+              wardenSettings.provider === "none"
+                ? null
+                : yield* brain.assess(req, historySummary, policyDigest)
               .pipe(
                 Effect.catchTags({
                   MarshalUnavailable: () =>

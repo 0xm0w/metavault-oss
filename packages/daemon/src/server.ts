@@ -5,11 +5,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
-import { Brain, BrainOllamaLive } from "../../brain/src/brain.js";
+import { assessFromSettings, Brain, MarshalUnavailable } from "../../brain/src/brain.js";
 import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
 import { Connector } from "../../core/src/connector.js";
 import { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH } from "../../core/src/settings.js";
-import { VaultStoreLive } from "../../core/src/storage.js";
+import { decryptSecret } from "../../core/src/crypto.js";
+import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
   CapabilityRequestSchema,
@@ -521,9 +522,46 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
     (options.connectorPresets !== undefined
       ? makeConnectorLive(options.connectorPresets)
       : ConnectorLive);
+  // Brain is built from stored warden settings and re-read per request,
+  // so a settings PATCH takes effect without a daemon restart. The Meta
+  // API key is decrypted here, in-daemon only, via the getKey callback.
+  const dynamicBrain = Layer.effect(
+    Brain,
+    Effect.gen(function* () {
+      const store = yield* VaultStore;
+      const getKey = () =>
+        Effect.flatMap(store.getCredential(WARDEN_KEY_ALIAS), (cred) =>
+          cred === undefined
+            ? Effect.succeed<string | null>(null)
+            : Effect.try({
+                try: () => decryptSecret(masterKey, cred.ciphertext) as string | null,
+                catch: () => null,
+              }),
+        ).pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+      return {
+        assess: (
+          req: Parameters<typeof assessFromSettings>[2],
+          historySummary: Parameters<typeof assessFromSettings>[3],
+          policyDigest: string,
+        ) =>
+          Effect.flatMap(store.getWardenSettings(), (settings) =>
+            assessFromSettings(settings, getKey, req, historySummary, policyDigest),
+          ).pipe(
+            Effect.catchTag("StorageError", () =>
+              Effect.fail(
+                new MarshalUnavailable({
+                  message: "MarshalUnavailable: warden settings unavailable",
+                }),
+              ),
+            ),
+          ),
+      };
+    }),
+  );
+  const storeLayer = VaultStoreLive(dbPath, masterKey);
   const layers = Layer.mergeAll(
-    VaultStoreLive(dbPath, masterKey),
-    options.brain ?? BrainOllamaLive(),
+    storeLayer,
+    options.brain ?? Layer.provide(dynamicBrain, storeLayer),
     connectorLayer,
   );
   const runtime = ManagedRuntime.make(

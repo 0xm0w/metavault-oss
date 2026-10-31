@@ -7,6 +7,18 @@ import { parseMarshalDecision } from "./schema.js";
 export const OLLAMA_CHAT_URL = "http://localhost:11434/api/chat";
 export const DEFAULT_MARSHAL_MODEL = "llama3.2:3b";
 
+export interface OllamaModelInfo {
+  readonly id: string;
+  readonly tier: "Medium" | "High" | "Maximum-local";
+  readonly label: string;
+}
+
+export const OLLAMA_MODELS: readonly OllamaModelInfo[] = [
+  { id: "llama3.2:3b", tier: "Medium", label: "Llama 3.2 3B — Medium (fast local)" },
+  { id: "llama3.1:8b", tier: "High", label: "Llama 3.1 8B — High" },
+  { id: "llama3.3:70b", tier: "Maximum-local", label: "Llama 3.3 70B — Maximum-local" },
+];
+
 const OllamaChatResponseSchema = Schema.Struct({
   message: Schema.Struct({
     content: Schema.String,
@@ -16,6 +28,7 @@ const OllamaChatResponseSchema = Schema.Struct({
 export function requestOllamaDecision(
   model: string,
   prompt: string,
+  timeoutMs: number = 10_000,
 ): Effect.Effect<MarshalDecision, MarshalUnavailable | MarshalInvalidOutput, HttpClient.HttpClient> {
   const program = Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
@@ -54,7 +67,7 @@ export function requestOllamaDecision(
   });
   return program.pipe(
     Effect.timeoutFail({
-      duration: "10 seconds",
+      duration: timeoutMs,
       onTimeout: () => new MarshalUnavailable({ message: "MarshalUnavailable: Ollama request timed out" }),
     }),
   );
