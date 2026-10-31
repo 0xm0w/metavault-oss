@@ -3,11 +3,18 @@ import type {
   AuditStage,
   CredentialMeta,
   CredentialPatch,
+  DecisionSource,
   DeeplinkAddParams,
   PendingApproval,
   PoliciesData,
   Risk,
   StandingApproval,
+  WardenEffort,
+  WardenKeyStatusLike,
+  WardenProvider,
+  WardenSettingsLike,
+  WardenSettingsPatch,
+  WardenTestResultLike,
 } from "./types.js";
 
 // Unified warm theme (promoted from the Vault page). These exact hex
@@ -202,6 +209,8 @@ function numberField(record: Record<string, unknown>, key: string): number | nul
 
 const RISKS: readonly Risk[] = ["low", "medium", "high"];
 
+const DECISION_SOURCES: readonly DecisionSource[] = ["policy", "marshal", "marshal+policy", "human"];
+
 export function projectApproval(raw: unknown): PendingApproval | null {
   if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) {
     return null;
@@ -287,6 +296,7 @@ const AUDIT_STAGES: readonly AuditStage[] = [
   "credential-deleted",
   "enrollment-created",
   "enrollment-completed",
+  "settings-changed",
 ];
 
 export function projectAuditEvent(raw: unknown): AuditEventLike | null {
@@ -306,9 +316,53 @@ export function projectAuditEvent(raw: unknown): AuditEventLike | null {
   if (ts === null || agentId === null || alias === null || typeof scope !== "string" || detail === null || stage === null) {
     return null;
   }
-  const base: AuditEventLike = { ts, agentId, alias, scope, stage, detail };
+  const projected: {
+    ts: string;
+    agentId: string;
+    alias: string;
+    scope: string;
+    stage: AuditStage;
+    detail: string;
+    modelId?: string;
+    requestId?: string;
+    risk?: Risk;
+    recommendedScope?: string;
+    decisionSource?: DecisionSource;
+    latencyMs?: number;
+    explanation?: string;
+  } = { ts, agentId, alias, scope, stage, detail };
   const modelId = raw["modelId"];
-  return typeof modelId === "string" && modelId.length > 0 ? { ...base, modelId } : base;
+  if (typeof modelId === "string" && modelId.length > 0) {
+    projected.modelId = modelId;
+  }
+  const requestId = raw["requestId"];
+  if (typeof requestId === "string" && requestId.length > 0) {
+    projected.requestId = requestId;
+  }
+  const riskRaw = raw["risk"];
+  if (typeof riskRaw === "string" && (RISKS as readonly string[]).includes(riskRaw)) {
+    projected.risk = riskRaw as Risk;
+  }
+  const recommendedScope = raw["recommendedScope"];
+  if (typeof recommendedScope === "string" && recommendedScope.length > 0) {
+    projected.recommendedScope = recommendedScope;
+  }
+  const decisionSourceRaw = raw["decisionSource"];
+  if (
+    typeof decisionSourceRaw === "string" &&
+    (DECISION_SOURCES as readonly string[]).includes(decisionSourceRaw)
+  ) {
+    projected.decisionSource = decisionSourceRaw as DecisionSource;
+  }
+  const latencyMs = raw["latencyMs"];
+  if (typeof latencyMs === "number" && Number.isFinite(latencyMs) && latencyMs >= 0) {
+    projected.latencyMs = latencyMs;
+  }
+  const explanation = raw["explanation"];
+  if (typeof explanation === "string" && explanation.length > 0) {
+    projected.explanation = explanation;
+  }
+  return projected;
 }
 
 export function projectAuditResponse(raw: unknown): AuditEventLike[] {
@@ -453,9 +507,15 @@ export interface PolicyRow {
 export function derivePolicies(events: readonly AuditEventLike[]): PolicyRow[] {
   const byAgent = new Map<string, { scopes: Set<string>; requestCount: number; lastSeenTs: string | null }>();
   for (const event of events) {
-    // Adding a credential is not agent activity: it must not create a
-    // phantom "human" agent row.
-    if (event.stage === "credential-added" || event.stage === "credential-deleted") {
+    // Administrative and lifecycle events are not agent activity: they must
+    // not create phantom "human" or "agent" rows.
+    if (
+      event.stage === "credential-added" ||
+      event.stage === "credential-deleted" ||
+      event.stage === "settings-changed" ||
+      event.stage === "enrollment-created" ||
+      event.stage === "enrollment-completed"
+    ) {
       continue;
     }
     const entry = byAgent.get(event.agentId) ?? { scopes: new Set<string>(), requestCount: 0, lastSeenTs: null };
@@ -552,6 +612,7 @@ const STAGE_LABELS: Record<AuditStage, string> = {
   "credential-deleted": "Credential deleted",
   "enrollment-created": "Enrollment created",
   "enrollment-completed": "Enrollment completed",
+  "settings-changed": "Settings changed",
 };
 
 export function stageLabel(stage: AuditStage): string {
@@ -561,6 +622,208 @@ export function stageLabel(stage: AuditStage): string {
 export interface AuditRow extends AuditEventLike {
   readonly stageLabel: string;
   readonly chain: string;
+}
+
+export type AuditOutcome = "executed" | "denied" | "expired" | "revoked" | "pending";
+
+const AUDIT_OUTCOMES: readonly AuditOutcome[] = ["executed", "denied", "expired", "revoked"];
+
+const OUTCOME_LABELS: Record<AuditOutcome, string> = {
+  executed: "Executed",
+  denied: "Denied",
+  expired: "Expired",
+  revoked: "Revoked",
+  pending: "Pending",
+};
+
+export interface AuditRequestGroup {
+  readonly requestId: string;
+  readonly isLegacy: boolean;
+  readonly events: readonly AuditEventLike[];
+  readonly firstTs: string;
+  readonly lastTs: string;
+  readonly agentId: string;
+  readonly alias: string;
+  readonly requestedScope: string;
+  readonly allowedScope: string | null;
+  readonly outcome: AuditOutcome;
+  readonly outcomeLabel: string;
+}
+
+export interface WardenVerdict {
+  readonly outcome: AuditOutcome;
+  readonly outcomeLabel: string;
+  readonly wardenLabel: string;
+  readonly risk: Risk | null;
+  readonly modelId: string | null;
+  readonly isPolicyOnly: boolean;
+  readonly decisionSource: DecisionSource | null;
+  readonly recommendedScope: string | null;
+  readonly latencyMs: number | null;
+  readonly explanation: string | null;
+  readonly requestedScope: string;
+  readonly allowedScope: string | null;
+  readonly escalated: boolean;
+  readonly narrowed: boolean;
+}
+
+function lastEventWith<T>(
+  events: readonly AuditEventLike[],
+  pick: (event: AuditEventLike) => T | undefined,
+): T | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event === undefined) {
+      continue;
+    }
+    const value = pick(event);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function deriveOutcome(events: readonly AuditEventLike[]): AuditOutcome {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const stage = events[i]?.stage;
+    if (stage !== undefined && (AUDIT_OUTCOMES as readonly string[]).includes(stage)) {
+      return stage as AuditOutcome;
+    }
+  }
+  return "pending";
+}
+
+export function groupAuditByRequest(events: readonly AuditEventLike[]): AuditRequestGroup[] {
+  const byId = new Map<string, AuditEventLike[]>();
+  for (const event of events) {
+    const key =
+      event.requestId !== undefined && event.requestId.length > 0 ? event.requestId : "legacy";
+    const bucket = byId.get(key) ?? [];
+    bucket.push(event);
+    byId.set(key, bucket);
+  }
+  const groups: AuditRequestGroup[] = [];
+  for (const [requestId, bucket] of byId.entries()) {
+    const sorted = [...bucket].sort((a, b) => a.ts.localeCompare(b.ts));
+    const requested = sorted.find((e) => e.stage === "requested") ?? sorted[0];
+    const firstNonEmptyScope = sorted.find((e) => e.scope.length > 0);
+    const requestedScope = requested?.scope ?? firstNonEmptyScope?.scope ?? "";
+    const allowedCandidate = lastEventWith(sorted, (e) =>
+      (e.stage === "executed" || e.stage === "approved" || e.stage === "policy") &&
+      e.scope.length > 0
+        ? e.scope
+        : undefined,
+    );
+    const lastScope = lastEventWith(sorted, (e) => (e.scope.length > 0 ? e.scope : undefined));
+    const outcome = deriveOutcome(sorted);
+    // A denied/expired chain allowed nothing: never present the requested
+    // (or any observed) scope as if it had been allowed.
+    const allowedScope =
+      outcome === "denied" || outcome === "expired"
+        ? null
+        : (allowedCandidate ?? lastScope ?? requestedScope);
+    groups.push({
+      requestId,
+      isLegacy: requestId === "legacy",
+      events: sorted,
+      firstTs: sorted[0]?.ts ?? "",
+      lastTs: sorted[sorted.length - 1]?.ts ?? "",
+      agentId: requested?.agentId ?? sorted[0]?.agentId ?? "",
+      alias: requested?.alias ?? sorted[0]?.alias ?? "",
+      requestedScope,
+      allowedScope,
+      outcome,
+      outcomeLabel: OUTCOME_LABELS[outcome],
+    });
+  }
+  return groups.sort((a, b) => {
+    if (a.lastTs === b.lastTs) {
+      return b.firstTs.localeCompare(a.firstTs);
+    }
+    return b.lastTs.localeCompare(a.lastTs);
+  });
+}
+
+export function wardenVerdict(group: AuditRequestGroup): WardenVerdict {
+  const events = group.events;
+  const marshalEvent =
+    [...events].reverse().find((e) => e.stage === "marshal" && e.risk !== undefined) ??
+    [...events].reverse().find((e) => e.stage === "marshal") ??
+    null;
+  const risk =
+    marshalEvent?.risk ??
+    lastEventWith(events, (e) => e.risk) ??
+    null;
+  const modelId =
+    marshalEvent?.modelId ??
+    lastEventWith(events, (e) => (e.modelId !== undefined && e.modelId !== "" ? e.modelId : undefined)) ??
+    null;
+  const decisionSource =
+    lastEventWith(events, (e) => e.decisionSource) ?? null;
+  const recommendedScope =
+    marshalEvent?.recommendedScope ??
+    lastEventWith(events, (e) => e.recommendedScope) ??
+    null;
+  const latencyMs = marshalEvent?.latencyMs ?? lastEventWith(events, (e) => e.latencyMs) ?? null;
+  const explanation =
+    marshalEvent?.explanation ?? lastEventWith(events, (e) => e.explanation) ?? null;
+  const isPolicyOnly = risk === null;
+  const wardenLabel = isPolicyOnly
+    ? "policy-only"
+    : modelId !== null
+      ? `${risk} · ${modelId}`
+      : risk;
+  const narrowed =
+    recommendedScope !== null &&
+    group.requestedScope.length > 0 &&
+    recommendedScope !== group.requestedScope;
+  // Escalation means the marshal pushed the request to human approval
+  // (high risk forces requireApproval in policy). Routine narrowing of
+  // the recommended scope is not an escalation; it is reported separately.
+  const escalated = risk === "high";
+  return {
+    outcome: group.outcome,
+    outcomeLabel: group.outcomeLabel,
+    wardenLabel,
+    risk,
+    modelId,
+    isPolicyOnly,
+    decisionSource,
+    recommendedScope,
+    latencyMs,
+    explanation,
+    requestedScope: group.requestedScope,
+    allowedScope: group.allowedScope,
+    escalated,
+    narrowed,
+  };
+}
+
+export function filterAuditGroups(
+  groups: readonly AuditRequestGroup[],
+  query: string,
+): AuditRequestGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return [...groups];
+  }
+  return groups.filter((group) => {
+    const verdict = wardenVerdict(group);
+    const haystack = [
+      group.agentId,
+      group.alias,
+      group.outcome,
+      group.outcomeLabel,
+      verdict.wardenLabel,
+      group.requestedScope,
+      group.allowedScope ?? "—",
+      ...(group.isLegacy ? ["legacy", "earlier activity"] : []),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(needle);
+  });
 }
 
 export function buildAuditRows(events: readonly AuditEventLike[]): AuditRow[] {
@@ -597,4 +860,141 @@ export async function runDeeplinkAddFlow(
   await deps.renderVault();
   deps.closeModalIfOpen();
   deps.openAddModal(params);
+}
+
+// ---------------------------------------------------------------------------
+// Warden settings (Task 6). The renderer mirrors the daemon catalogue in
+// packages/brain/src/ollama.ts (OLLAMA_MODELS) and the effort semantics in
+// packages/brain/src/brain.ts; it cannot import those modules (they pull in
+// Effect/daemon code), so the values are duplicated here as data only.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_WARDEN_SETTINGS: WardenSettingsLike = {
+  provider: "ollama",
+  model: "llama3.2:3b",
+  effort: "standard",
+  metaApiBaseUrl: "https://api.llama.com/v1",
+};
+
+export interface OllamaModelOption {
+  readonly id: string;
+  readonly tier: "Medium" | "High" | "Maximum-local";
+  readonly label: string;
+}
+
+export const OLLAMA_MODEL_OPTIONS: readonly OllamaModelOption[] = [
+  { id: "llama3.2:3b", tier: "Medium", label: "Llama 3.2 3B \u2014 Medium (fast local)" },
+  { id: "llama3.1:8b", tier: "High", label: "Llama 3.1 8B \u2014 High" },
+  { id: "llama3.3:70b", tier: "Maximum-local", label: "Llama 3.3 70B \u2014 Maximum-local" },
+];
+
+export interface EffortOption {
+  readonly id: WardenEffort;
+  readonly label: string;
+  readonly description: string;
+}
+
+export const EFFORT_OPTIONS: readonly EffortOption[] = [
+  { id: "fast", label: "Fast", description: "Single marshal pass, 10s timeout \u2014 quickest check." },
+  { id: "standard", label: "Standard", description: "Single marshal pass, 30s timeout \u2014 balanced latency and strictness." },
+  { id: "deep", label: "Deep", description: "Two passes (assess + verify), 60s timeout \u2014 disagreement escalates to approval and keeps the narrower scope." },
+];
+
+export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
+  { id: "none", label: "None (policy only)" },
+  { id: "ollama", label: "Local \u2014 Ollama" },
+  { id: "meta-api", label: "Meta API (cloud)" },
+];
+
+export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
+export const VAULT_PATH_DISPLAY = "openvault.db (in vaultd's working directory; OPENVAULT_DB_PATH can override it)";
+export const APP_VERSION_DISPLAY = "0.1.0-alpha.1";
+
+const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api"];
+const WARDEN_EFFORTS_LIST: readonly WardenEffort[] = ["fast", "standard", "deep"];
+
+export function projectWardenSettings(raw: unknown): WardenSettingsLike | null {
+  if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) {
+    return null;
+  }
+  const provider = raw["provider"];
+  const effort = raw["effort"];
+  const model = raw["model"];
+  const metaApiBaseUrl = raw["metaApiBaseUrl"];
+  if (typeof provider !== "string" || !(WARDEN_PROVIDERS_LIST as readonly string[]).includes(provider)) return null;
+  if (typeof effort !== "string" || !(WARDEN_EFFORTS_LIST as readonly string[]).includes(effort)) return null;
+  if (typeof model !== "string" || typeof metaApiBaseUrl !== "string") return null;
+  return { provider: provider as WardenProvider, model, effort: effort as WardenEffort, metaApiBaseUrl };
+}
+
+export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null {
+  if (!isRecord(raw)) return null;
+  // Strict shape: exactly configured + last4. Any extra field (above all a
+  // key-shaped one) fails closed \u2014 status must never carry key material.
+  for (const key of Object.keys(raw)) {
+    if (key !== "configured" && key !== "last4") return null;
+  }
+  const configured = raw["configured"];
+  const last4 = raw["last4"];
+  if (typeof configured !== "boolean") return null;
+  if (last4 !== null && typeof last4 !== "string") return null;
+  return { configured, last4: typeof last4 === "string" && last4 !== "" ? last4 : null };
+}
+
+export function wardenKeyStatusText(status: WardenKeyStatusLike): string {
+  if (!status.configured) return "Not configured";
+  return status.last4 !== null && status.last4 !== "" ? `Configured \u2022\u2022\u2022\u2022${status.last4}` : "Configured";
+}
+
+export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPatch {
+  return {
+    provider: settings.provider,
+    model: settings.model.trim(),
+    effort: settings.effort,
+    metaApiBaseUrl: settings.metaApiBaseUrl.trim(),
+  };
+}
+
+export function isWardenFormComplete(settings: WardenSettingsLike): boolean {
+  if (settings.provider === "none") return true;
+  if (settings.model.trim() === "") return false;
+  if (settings.provider === "meta-api" && settings.metaApiBaseUrl.trim() === "") return false;
+  return true;
+}
+
+export function isKnownOllamaModel(model: string): boolean {
+  return OLLAMA_MODEL_OPTIONS.some((option) => option.id === model);
+}
+
+export interface WardenTestResult {
+  readonly ok: boolean;
+  readonly message: string;
+}
+
+// Real warden self-check result from POST /settings/warden/test: vaultd
+// ran one synthetic metadata-only marshal assessment. The renderer only
+// projects the fixed safe shape; any secret-like field fails closed.
+export function projectWardenTestResult(raw: unknown): WardenTestResultLike | null {
+  if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) return null;
+  const ok = raw["ok"];
+  const provider = raw["provider"];
+  const model = raw["model"];
+  const latencyMs = raw["latencyMs"];
+  const detail = raw["detail"];
+  if (typeof ok !== "boolean") return null;
+  if (typeof provider !== "string" || !(WARDEN_PROVIDERS_LIST as readonly string[]).includes(provider)) return null;
+  if (typeof model !== "string") return null;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) return null;
+  if (typeof detail !== "string" || detail === "") return null;
+  return { ok, provider: provider as WardenProvider, model, latencyMs, detail };
+}
+
+export function wardenTestMessage(result: WardenTestResultLike): WardenTestResult {
+  if (result.provider === "none" || result.detail === "policy-only") {
+    return { ok: result.ok, message: "Policy-only mode: no warden provider to test \u2014 deterministic policy is deciding requests." };
+  }
+  if (result.ok) {
+    return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };
+  }
+  return { ok: false, message: `Warden connection failed \u2014 ${result.provider} \u00b7 ${result.model} did not respond. Check the provider is running and the saved settings are correct, then try again.` };
 }

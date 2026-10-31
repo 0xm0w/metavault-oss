@@ -1,11 +1,13 @@
 {
   "name": "openvault",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@effect/platform": "^0",
@@ -18,7 +20,9 @@
     "@effect/vitest": "^0.18.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^2.1.9",
     "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "eslint": "^9",
     "typescript": "^5",
     "typescript-eslint": "^8",

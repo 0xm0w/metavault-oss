@@ -5,10 +5,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
-import { Brain, BrainOllamaLive } from "../../brain/src/brain.js";
+import { assessFromSettings, Brain, MarshalUnavailable } from "../../brain/src/brain.js";
 import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
 import { Connector } from "../../core/src/connector.js";
-import { VaultStoreLive } from "../../core/src/storage.js";
+import { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH } from "../../core/src/settings.js";
+import { decryptSecret } from "../../core/src/crypto.js";
+import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
   CapabilityRequestSchema,
@@ -18,6 +20,8 @@ import {
   PoliciesResponseSchema,
   RevokeSchema,
   UpdateCredentialSchema,
+  WardenKeyPutSchema,
+  WardenSettingsPatchSchema,
 } from "./schemas.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./service.js";
 
@@ -30,6 +34,8 @@ export {
   PoliciesResponseSchema,
   RevokeSchema,
   UpdateCredentialSchema,
+  WardenKeyPutSchema,
+  WardenSettingsPatchSchema,
 } from "./schemas.js";
 
 export function buildEnrollmentDeeplink(record: { enrollmentId: string; alias: string; scope: string; website: string }): string {
@@ -73,6 +79,14 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(text);
 }
 
+export class HttpBodyError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -80,7 +94,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     size += buf.length;
     if (size > 65_536) {
-      throw new Error("request body too large");
+      throw new HttpBodyError(413, "request body too large");
     }
     chunks.push(buf);
   }
@@ -88,7 +102,24 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   if (text === "") {
     return {};
   }
-  return JSON.parse(text) as unknown;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new HttpBodyError(400, "malformed JSON body");
+  }
+}
+
+export function isSafeAlias(alias: string): boolean {
+  if (alias === "" || alias.length > 128 || alias === "." || alias === "..") {
+    return false;
+  }
+  for (let i = 0; i < alias.length; i += 1) {
+    const code = alias.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      return false;
+    }
+  }
+  return !alias.includes("/") && !alias.includes("\\");
 }
 
 async function run<A, E>(effect: Effect.Effect<A, E>): Promise<{ status: number; body: unknown }> {
@@ -174,6 +205,18 @@ function isTokenProtected(method: string, path: string): boolean {
   if ((method === "PATCH" || method === "DELETE") && path.startsWith("/credentials/")) {
     return true;
   }
+  if (path === "/settings/warden" && (method === "GET" || method === "PATCH")) {
+    return true;
+  }
+  if (path === "/settings/warden/test" && method === "POST") {
+    return true;
+  }
+  if (
+    path === "/settings/warden/key" &&
+    (method === "GET" || method === "PUT" || method === "DELETE")
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -193,10 +236,14 @@ export async function handleVaultRequest(
   body?: unknown,
   options?: VaultRequestOptions,
 ): Promise<{ status: number; body: unknown }> {
+  // Fail closed: a protected route with no configured token is denied,
+  // never open. Callers that bypass the token (in-process service calls)
+  // do not go through this handler's protected routes.
   if (
-    options?.daemonToken !== undefined &&
     isTokenProtected(method, path) &&
-    !tokenMatches(options.daemonToken, options.providedToken)
+    (options?.daemonToken === undefined ||
+      options.daemonToken === "" ||
+      !tokenMatches(options.daemonToken, options.providedToken))
   ) {
     return UNAUTHORIZED;
   }
@@ -227,16 +274,66 @@ export async function handleVaultRequest(
         ),
     );
   }
+  if (method === "GET" && path === "/settings/warden") {
+    return run(service.getWardenSettings());
+  }
+  if (method === "PATCH" && path === "/settings/warden") {
+    const decoded = await decode(WardenSettingsPatchSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    if (decoded.model !== undefined && decoded.model.trim() === "") {
+      return BAD_REQUEST;
+    }
+    if (decoded.metaApiBaseUrl !== undefined && decoded.metaApiBaseUrl.trim() === "") {
+      return BAD_REQUEST;
+    }
+    const patch: {
+      provider?: "none" | "ollama" | "meta-api";
+      model?: string;
+      effort?: "fast" | "standard" | "deep";
+      metaApiBaseUrl?: string;
+    } = {};
+    if (decoded.provider !== undefined) patch.provider = decoded.provider;
+    if (decoded.model !== undefined) patch.model = decoded.model;
+    if (decoded.effort !== undefined) patch.effort = decoded.effort;
+    if (decoded.metaApiBaseUrl !== undefined) patch.metaApiBaseUrl = decoded.metaApiBaseUrl;
+    return run(service.updateWardenSettings(patch));
+  }
+  if (method === "POST" && path === "/settings/warden/test") {
+    return run(service.testWarden());
+  }
+  if (method === "GET" && path === "/settings/warden/key") {
+    return run(service.wardenKeyStatus());
+  }
+  if (method === "PUT" && path === "/settings/warden/key") {
+    const decoded = await decode(WardenKeyPutSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const key = decoded.key ?? decoded.apiKey ?? decoded.secret;
+    if (key === undefined || key.trim() === "" || key.trim().length < WARDEN_KEY_MIN_LENGTH) {
+      return BAD_REQUEST;
+    }
+    return run(service.setWardenKey(key));
+  }
+  if (method === "DELETE" && path === "/settings/warden/key") {
+    return run(service.deleteWardenKey());
+  }
   if (method === "POST" && path === "/enrollments") {
     const decoded = await decode(EnrollmentRequestSchema, body ?? {});
     if (decoded === null || decoded.alias.trim() === "" || decoded.scope.trim() === "" || decoded.alias.length > 128 || decoded.scope.length > 256 || (decoded.website !== undefined && decoded.website.length > 253)) {
       return BAD_REQUEST;
     }
     const alias = decoded.alias.trim();
+    if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
+      return BAD_REQUEST;
+    }
     const scope = decoded.scope.trim();
     const website = (decoded.website ?? "").trim();
     const reason = (decoded.reason ?? "").trim().slice(0, 256);
-    const created = await run(service.createEnrollment(alias, scope, website, reason === "" ? undefined : reason));
+    const agentId = decoded.agentId !== undefined ? decoded.agentId.trim().slice(0, 128) : "";
+    const created = await run(service.createEnrollment(alias, scope, website, reason === "" ? undefined : reason, agentId === "" ? undefined : agentId));
     if (created.status !== 200) { return created; }
     const record = created.body as { enrollmentId: string; alias: string; scope: string; website: string };
     return { status: 201, body: { enrollmentId: record.enrollmentId, deeplink: buildEnrollmentDeeplink(record) } };
@@ -266,6 +363,9 @@ export async function handleVaultRequest(
     // store INSERT OR REPLACE stays for CLI/test seeding, but this
     // endpoint never replaces an existing credential.
     const alias = decoded.alias.trim();
+    if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
+      return BAD_REQUEST;
+    }
     const scope = decoded.scope.trim();
     const exists = await run(service.hasCredential(alias));
     if (exists.status !== 200) {
@@ -373,22 +473,36 @@ export function createVaultHttpServer(
   service: VaultServiceService,
   options: VaultHttpServerOptions = {},
 ): Server {
+  // Fail closed: without a configured token, guard protected routes with
+  // an ephemeral token nobody knows, so they stay 401 over the wire.
+  const guardToken =
+    options.daemonToken !== undefined && options.daemonToken !== ""
+      ? options.daemonToken
+      : randomBytes(32).toString("hex");
   return createServer((req, res) => {
     void (async () => {
       try {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         const reqMethod = req.method ?? "GET";
         const body: unknown =
-          reqMethod === "POST" || reqMethod === "PATCH" ? await readBody(req) : undefined;
+          reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT"
+            ? await readBody(req)
+            : undefined;
         const header = req.headers[DAEMON_TOKEN_HEADER];
         const providedToken = Array.isArray(header) ? header[0] : header;
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
-          ...(options.daemonToken !== undefined ? { daemonToken: options.daemonToken } : {}),
+          daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
         });
         sendJson(res, out.status, out.body);
-      } catch {
-        sendJson(res, 500, { error: { _tag: "InternalError", message: "internal error" } });
+      } catch (err) {
+        if (err instanceof HttpBodyError) {
+          sendJson(res, err.status, {
+            error: { _tag: err.status === 413 ? "PayloadTooLarge" : "BadRequest", message: err.message },
+          });
+        } else {
+          sendJson(res, 500, { error: { _tag: "InternalError", message: "internal error" } });
+        }
       }
     })();
   });
@@ -456,9 +570,46 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
     (options.connectorPresets !== undefined
       ? makeConnectorLive(options.connectorPresets)
       : ConnectorLive);
+  // Brain is built from stored warden settings and re-read per request,
+  // so a settings PATCH takes effect without a daemon restart. The Meta
+  // API key is decrypted here, in-daemon only, via the getKey callback.
+  const dynamicBrain = Layer.effect(
+    Brain,
+    Effect.gen(function* () {
+      const store = yield* VaultStore;
+      const getKey = () =>
+        Effect.flatMap(store.getCredential(WARDEN_KEY_ALIAS), (cred) =>
+          cred === undefined
+            ? Effect.succeed<string | null>(null)
+            : Effect.try({
+                try: () => decryptSecret(masterKey, cred.ciphertext) as string | null,
+                catch: () => null,
+              }),
+        ).pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+      return {
+        assess: (
+          req: Parameters<typeof assessFromSettings>[2],
+          historySummary: Parameters<typeof assessFromSettings>[3],
+          policyDigest: string,
+        ) =>
+          Effect.flatMap(store.getWardenSettings(), (settings) =>
+            assessFromSettings(settings, getKey, req, historySummary, policyDigest),
+          ).pipe(
+            Effect.catchTag("StorageError", () =>
+              Effect.fail(
+                new MarshalUnavailable({
+                  message: "MarshalUnavailable: warden settings unavailable",
+                }),
+              ),
+            ),
+          ),
+      };
+    }),
+  );
+  const storeLayer = VaultStoreLive(dbPath, masterKey);
   const layers = Layer.mergeAll(
-    VaultStoreLive(dbPath, masterKey),
-    options.brain ?? BrainOllamaLive(),
+    storeLayer,
+    options.brain ?? Layer.provide(dynamicBrain, storeLayer),
     connectorLayer,
   );
   const runtime = ManagedRuntime.make(

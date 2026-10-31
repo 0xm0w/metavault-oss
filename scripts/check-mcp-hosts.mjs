@@ -40,6 +40,8 @@ const daemon = await startVaultDaemon({
 });
 const daemonUrl = `http://127.0.0.1:${daemon.address().port}`;
 
+const EXPECTED_TOOLS = ["enrollment_status", "list_aliases", "request_capability", "request_enrollment", "revoke"];
+
 let failures = 0;
 for (const host of ["vscode", "claude-code"]) {
   const transport = new StdioClientTransport({
@@ -50,6 +52,9 @@ for (const host of ["vscode", "claude-code"]) {
   const client = new Client({ name: `openvault-check-${host}`, version: "0.0.0" });
   const t = performance.now();
   await client.connect(transport);
+  const listed = await client.listTools();
+  const toolNames = listed.tools.map((tool) => tool.name).sort();
+  const okTools = JSON.stringify(toolNames) === JSON.stringify(EXPECTED_TOOLS);
   const aliases = await client.callTool({ name: "list_aliases", arguments: {} });
   const aliasesText = JSON.stringify(aliases);
   const okAliases = aliasesText.includes("stripe") && !aliasesText.includes(SECRET);
@@ -59,8 +64,8 @@ for (const host of ["vscode", "claude-code"]) {
   });
   const resultText = JSON.stringify(result);
   const okResult = !resultText.includes(SECRET) && (resultText.includes("executed") || resultText.includes("awaiting-approval"));
-  console.log(`${okAliases && okResult ? "PASS" : "FAIL"}  host=${host.padEnd(11)} list_aliases=${okAliases} request=${okResult} (${Math.round(performance.now() - t)} ms)`);
-  if (!(okAliases && okResult)) failures++;
+  console.log(`${okAliases && okResult && okTools ? "PASS" : "FAIL"}  host=${host.padEnd(11)} tools=${okTools} list_aliases=${okAliases} request=${okResult} (${Math.round(performance.now() - t)} ms)`);
+  if (!(okAliases && okResult && okTools)) failures++;
   await client.close();
 }
 

@@ -49,7 +49,16 @@ export function parseOpenVaultUrl(raw: unknown): DeeplinkAddParams | null {
   if (url.protocol !== "openvault:" || url.hostname !== "add") {
     return null;
   }
+  // Duplicate known params are ambiguous: reject instead of picking one.
+  for (const key of ["alias", "scope", "website", "enrollment"]) {
+    if (url.searchParams.getAll(key).length > 1) {
+      return null;
+    }
+  }
   const alias = capped(url.searchParams.get("alias"), MAX_ALIAS_LENGTH);
+  if (alias !== null && (alias.includes("/") || alias.includes("\\") || alias === "." || alias === "..")) {
+    return null;
+  }
   const scope = capped(url.searchParams.get("scope"), MAX_SCOPE_LENGTH);
   if (alias === null || scope === null) {
     return null;

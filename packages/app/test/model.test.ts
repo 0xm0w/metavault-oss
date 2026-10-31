@@ -9,6 +9,8 @@ import {
   derivePolicies,
   deriveVaultCards,
   faviconUrl,
+  filterAuditGroups,
+  groupAuditByRequest,
   findSecretLikeKeys,
   formatExpiry,
   formatLastUsed,
@@ -24,8 +26,19 @@ import {
   runDeeplinkAddFlow,
   shouldShowAgentComputerWarning,
   sortApprovals,
+  wardenVerdict,
+  DEFAULT_WARDEN_SETTINGS,
+  EFFORT_OPTIONS,
+  OLLAMA_MODEL_OPTIONS,
+  buildWardenPatch,
+  isWardenFormComplete,
+  projectWardenKeyStatus,
+  projectWardenSettings,
+  wardenKeyStatusText,
+  projectWardenTestResult,
+  wardenTestMessage,
 } from "../src/renderer/model.js";
-import type { AuditEventLike, DeeplinkAddParams, PendingApproval } from "../src/renderer/types.js";
+import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
 const approval = (over: Partial<PendingApproval> = {}): PendingApproval => ({
   grantId: "g1",
@@ -349,6 +362,32 @@ describe("credential form helpers", () => {
     expect(mixed.map((r) => r.agentId)).toEqual(["cursor"]);
   });
 
+  it("does not create phantom policy rows from admin or enrollment lifecycle events", () => {
+    const rows = derivePolicies([
+      auditEvent({
+        stage: "settings-changed",
+        agentId: "human",
+        detail: "warden settings changed: provider=none model=llama3.2:3b",
+      }),
+      auditEvent({
+        stage: "enrollment-created",
+        agentId: "agent",
+        detail: "enrollment created: stripe",
+      }),
+      auditEvent({
+        stage: "enrollment-completed",
+        agentId: "agent",
+        detail: "enrollment completed: stripe",
+      }),
+      auditEvent({
+        stage: "credential-deleted",
+        agentId: "human",
+        detail: "credential deleted: stripe",
+      }),
+    ]);
+    expect(rows).toEqual([]);
+  });
+
   it("projects credential-added audit events", () => {
     expect(projectAuditEvent(auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }))).toEqual(
       auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }),
@@ -517,5 +556,309 @@ describe("deeplink add flow sequencing", () => {
       }),
     ).rejects.toThrow("view missing");
     expect(opened).toBe(false);
+  });
+});
+
+describe("audit request grouping and warden verdicts (Task 5)", () => {
+  const chain = (over: Partial<AuditEventLike> = {}): AuditEventLike =>
+    auditEvent({ requestId: "req-1", ...over });
+
+  const firstGroup = (events: readonly AuditEventLike[]) => {
+    const group = groupAuditByRequest(events)[0];
+    if (group === undefined) {
+      throw new Error("expected an audit group");
+    }
+    return group;
+  };
+
+  const executedChain: AuditEventLike[] = [
+    chain({ stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.read" }),
+    chain({
+      stage: "marshal",
+      ts: "2026-10-31T10:00:01.000Z",
+      scope: "charges.read",
+      detail: "marshal decision",
+      modelId: "llama3.2:3b",
+      risk: "low",
+      recommendedScope: "charges.read",
+      decisionSource: "marshal",
+      latencyMs: 42,
+      explanation: "low-risk read of charges",
+    }),
+    chain({ stage: "policy", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", detail: "within ceiling", decisionSource: "marshal+policy" }),
+    chain({ stage: "approved", ts: "2026-10-31T10:00:03.000Z", scope: "charges.read", detail: "auto-approved by policy", decisionSource: "marshal+policy" }),
+    chain({ stage: "executed", ts: "2026-10-31T10:00:04.000Z", scope: "charges.read", detail: "executed", decisionSource: "marshal+policy" }),
+  ];
+
+  it("groups one row per requestId, legacy under legacy, newest first, events chronological", () => {
+    const older: AuditEventLike[] = [
+      chain({ requestId: "req-old", stage: "requested", ts: "2026-10-31T09:00:00.000Z", alias: "github", scope: "repos.read" }),
+      chain({ requestId: "req-old", stage: "denied", ts: "2026-10-31T09:00:01.000Z", alias: "github", scope: "repos.read", decisionSource: "policy" }),
+    ];
+    const legacy: AuditEventLike[] = [
+      auditEvent({ stage: "credential-added", agentId: "human", ts: "2026-10-31T08:00:00.000Z", detail: "credential added: stripe (charges.read)" }),
+    ];
+    const groups = groupAuditByRequest([...legacy, ...older, ...executedChain]);
+    expect(groups.map((g) => g.requestId)).toEqual(["req-1", "req-old", "legacy"]);
+    const first = groups[0];
+    expect(first?.events.map((e) => e.stage)).toEqual(["requested", "marshal", "policy", "approved", "executed"]);
+    expect(first?.agentId).toBe("cursor");
+    expect(first?.alias).toBe("stripe");
+    expect(first?.requestedScope).toBe("charges.read");
+    expect(first?.allowedScope).toBe("charges.read");
+    expect(first?.outcome).toBe("executed");
+    expect(groups[2]?.events).toHaveLength(1);
+    expect(groups[2]?.requestId).toBe("legacy");
+  });
+
+  it("sorts events within a bucket by ts regardless of input order", () => {
+    const shuffled: AuditEventLike[] = [
+      chain({ stage: "executed", ts: "2026-10-31T10:00:04.000Z" }),
+      chain({ stage: "requested", ts: "2026-10-31T10:00:00.000Z" }),
+      chain({ stage: "approved", ts: "2026-10-31T10:00:03.000Z" }),
+      chain({ stage: "marshal", ts: "2026-10-31T10:00:01.000Z" }),
+    ];
+    const group = firstGroup(shuffled);
+    expect(group.events.map((e) => e.stage)).toEqual(["requested", "marshal", "approved", "executed"]);
+    expect(group.firstTs).toBe("2026-10-31T10:00:00.000Z");
+    expect(group.lastTs).toBe("2026-10-31T10:00:04.000Z");
+    expect(group.isLegacy).toBe(false);
+  });
+
+  it("marks the no-requestId bucket as legacy", () => {
+    const groups = groupAuditByRequest([
+      auditEvent({ stage: "credential-added", agentId: "human", detail: "credential added: stripe (charges.read)" }),
+      auditEvent({ stage: "executed", agentId: "cursor", detail: "executed" }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.requestId).toBe("legacy");
+    expect(groups[0]?.isLegacy).toBe(true);
+  });
+
+  it("derives a human-denied verdict and never shows the requested scope as allowed", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-human-denied", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.read" }),
+      chain({
+        requestId: "req-human-denied",
+        stage: "marshal",
+        ts: "2026-10-31T10:00:01.000Z",
+        scope: "charges.read",
+        detail: "marshal decision",
+        modelId: "llama3.2:3b",
+        risk: "low",
+        recommendedScope: "charges.read",
+        decisionSource: "marshal",
+        explanation: "read-only",
+      }),
+      chain({ requestId: "req-human-denied", stage: "policy", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", detail: "approval-required", decisionSource: "marshal+policy" }),
+      chain({ requestId: "req-human-denied", stage: "denied", ts: "2026-10-31T10:00:03.000Z", scope: "charges.read", detail: "denied by human", decisionSource: "human" }),
+    ];
+    const group = firstGroup(events);
+    expect(group.allowedScope).toBeNull();
+    const verdict = wardenVerdict(group);
+    expect(verdict.outcome).toBe("denied");
+    expect(verdict.outcomeLabel).toBe("Denied");
+    expect(verdict.decisionSource).toBe("human");
+    expect(verdict.allowedScope).toBeNull();
+    expect(verdict.requestedScope).toBe("charges.read");
+  });
+
+  it("treats routine narrowing as narrowed, not escalated", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-narrow", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.write" }),
+      chain({
+        requestId: "req-narrow",
+        stage: "marshal",
+        ts: "2026-10-31T10:00:01.000Z",
+        scope: "charges.write",
+        detail: "marshal decision",
+        modelId: "llama3.2:3b",
+        risk: "low",
+        recommendedScope: "charges.read",
+        decisionSource: "marshal",
+        explanation: "read is enough",
+      }),
+      chain({ requestId: "req-narrow", stage: "executed", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", decisionSource: "marshal+policy" }),
+    ];
+    const verdict = wardenVerdict(firstGroup(events));
+    expect(verdict.escalated).toBe(false);
+    expect(verdict.narrowed).toBe(true);
+  });
+
+  it("derives an executed verdict with risk + model from the marshal event", () => {
+    const verdict = wardenVerdict(firstGroup(executedChain));
+    expect(verdict.outcome).toBe("executed");
+    expect(verdict.outcomeLabel).toBe("Executed");
+    expect(verdict.risk).toBe("low");
+    expect(verdict.modelId).toBe("llama3.2:3b");
+    expect(verdict.isPolicyOnly).toBe(false);
+    expect(verdict.wardenLabel).toBe("low · llama3.2:3b");
+    expect(verdict.recommendedScope).toBe("charges.read");
+    expect(verdict.latencyMs).toBe(42);
+    expect(verdict.explanation).toBe("low-risk read of charges");
+    expect(verdict.decisionSource).toBe("marshal+policy");
+    expect(verdict.escalated).toBe(false);
+  });
+
+  it("derives a policy-only verdict for a policy-denied chain with no marshal event", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-denied", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.write" }),
+      chain({ requestId: "req-denied", stage: "policy", ts: "2026-10-31T10:00:01.000Z", scope: "charges.write", detail: "scope-above-ceiling", decisionSource: "policy" }),
+      chain({ requestId: "req-denied", stage: "denied", ts: "2026-10-31T10:00:02.000Z", scope: "charges.write", detail: "scope-above-ceiling", decisionSource: "policy" }),
+    ];
+    const verdict = wardenVerdict(firstGroup(events));
+    expect(verdict.outcome).toBe("denied");
+    expect(verdict.allowedScope).toBeNull();
+    expect(verdict.isPolicyOnly).toBe(true);
+    expect(verdict.wardenLabel).toBe("policy-only");
+    expect(verdict.risk).toBeNull();
+    expect(verdict.decisionSource).toBe("policy");
+  });
+
+  it("flags a marshal-escalated chain where the recommended scope narrows the request", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-esc", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.write" }),
+      chain({
+        requestId: "req-esc",
+        stage: "marshal",
+        ts: "2026-10-31T10:00:01.000Z",
+        scope: "charges.write",
+        detail: "marshal decision",
+        modelId: "llama3.1:8b",
+        risk: "high",
+        recommendedScope: "charges.read",
+        decisionSource: "marshal",
+        latencyMs: 120,
+        explanation: "write is too broad; read is enough",
+      }),
+      chain({ requestId: "req-esc", stage: "policy", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", detail: "narrowed", decisionSource: "marshal+policy" }),
+      chain({ requestId: "req-esc", stage: "approved", ts: "2026-10-31T10:00:03.000Z", scope: "charges.read", detail: "approved by human", decisionSource: "human" }),
+    ];
+    const group = firstGroup(events);
+    expect(group.requestedScope).toBe("charges.write");
+    expect(group.allowedScope).toBe("charges.read");
+    const verdict = wardenVerdict(group);
+    expect(verdict.escalated).toBe(true);
+    expect(verdict.narrowed).toBe(true);
+    expect(verdict.wardenLabel).toBe("high · llama3.1:8b");
+    expect(verdict.outcome).toBe("pending");
+    expect(verdict.recommendedScope).toBe("charges.read");
+  });
+
+  it("reports expired and revoked outcomes from the terminal stage", () => {
+    const expired = firstGroup([
+      chain({ requestId: "r-exp", stage: "requested" }),
+      chain({ requestId: "r-exp", stage: "expired", ts: "2026-10-31T10:05:00.000Z" }),
+    ]);
+    expect(wardenVerdict(expired).outcome).toBe("expired");
+    expect(wardenVerdict(expired).allowedScope).toBeNull();
+    expect(expired.allowedScope).toBeNull();
+    const revoked = firstGroup([
+      chain({ requestId: "r-rev", stage: "requested" }),
+      chain({ requestId: "r-rev", stage: "revoked", ts: "2026-10-31T10:05:00.000Z" }),
+    ]);
+    expect(wardenVerdict(revoked).outcome).toBe("revoked");
+  });
+
+  it("filters groups by agent, alias and outcome text, case-insensitively", () => {
+    const groups = groupAuditByRequest([
+      ...executedChain,
+      chain({ requestId: "req-old", stage: "requested", ts: "2026-10-31T09:00:00.000Z", agentId: "codex", alias: "github", scope: "repos.read" }),
+      chain({ requestId: "req-old", stage: "denied", ts: "2026-10-31T09:00:01.000Z", agentId: "codex", alias: "github", scope: "repos.read", decisionSource: "policy" }),
+    ]);
+    expect(filterAuditGroups(groups, "").map((g) => g.requestId)).toEqual(["req-1", "req-old"]);
+    expect(filterAuditGroups(groups, "CURSOR").map((g) => g.requestId)).toEqual(["req-1"]);
+    expect(filterAuditGroups(groups, "github").map((g) => g.requestId)).toEqual(["req-old"]);
+    expect(filterAuditGroups(groups, "denied").map((g) => g.requestId)).toEqual(["req-old"]);
+    expect(filterAuditGroups(groups, "executed").map((g) => g.requestId)).toEqual(["req-1"]);
+    expect(filterAuditGroups(groups, "nope")).toEqual([]);
+  });
+
+  it("projects the Task 4 audit fields and drops invalid optional values", () => {
+    expect(projectAuditEvent(executedChain[1])).toEqual(executedChain[1]);
+    const projected = projectAuditEvent({
+      ...auditEvent(),
+      requestId: "req-9",
+      risk: "critical",
+      latencyMs: "fast",
+      decisionSource: "nobody",
+      explanation: 42,
+    });
+    expect(projected?.requestId).toBe("req-9");
+    expect(projected?.risk).toBeUndefined();
+    expect(projected?.latencyMs).toBeUndefined();
+    expect(projected?.decisionSource).toBeUndefined();
+    expect(projected?.explanation).toBeUndefined();
+  });
+});
+
+describe("warden settings form state (Task 6)", () => {
+  it("mirrors daemon defaults and the OLLAMA_MODELS catalogue with tier labels", () => {
+    expect(DEFAULT_WARDEN_SETTINGS).toEqual({
+      provider: "ollama",
+      model: "llama3.2:3b",
+      effort: "standard",
+      metaApiBaseUrl: "https://api.llama.com/v1",
+    });
+    expect(OLLAMA_MODEL_OPTIONS.map((m) => [m.id, m.tier])).toEqual([
+      ["llama3.2:3b", "Medium"],
+      ["llama3.1:8b", "High"],
+      ["llama3.3:70b", "Maximum-local"],
+    ]);
+    expect(EFFORT_OPTIONS.map((e) => e.id)).toEqual(["fast", "standard", "deep"]);
+    for (const e of EFFORT_OPTIONS) expect(e.description.length).toBeGreaterThan(10);
+  });
+
+  it("projects warden settings whitelisted fields only and validates enums", () => {
+    expect(projectWardenSettings({ provider: "meta-api", model: "llama-4", effort: "deep", metaApiBaseUrl: "https://api.llama.com/v1", extra: 1 })).toEqual({
+      provider: "meta-api", model: "llama-4", effort: "deep", metaApiBaseUrl: "https://api.llama.com/v1",
+    });
+    expect(projectWardenSettings({ provider: "evil", model: "x", effort: "standard", metaApiBaseUrl: "u" })).toBeNull();
+    expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "turbo", metaApiBaseUrl: "u" })).toBeNull();
+    expect(projectWardenSettings(null)).toBeNull();
+    expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "fast", metaApiBaseUrl: "u", apiKey: "canary" })).toBeNull();
+  });
+
+  it("projects key status without ever exposing a key and formats status text", () => {
+    expect(projectWardenKeyStatus({ configured: true, last4: "1234" })).toEqual({ configured: true, last4: "1234" });
+    expect(projectWardenKeyStatus({ configured: false, last4: null })).toEqual({ configured: false, last4: null });
+    expect(projectWardenKeyStatus({ configured: true, last4: "1234", key: "canary" })).toBeNull();
+    expect(projectWardenKeyStatus("nope")).toBeNull();
+    expect(wardenKeyStatusText({ configured: false, last4: null })).toBe("Not configured");
+    expect(wardenKeyStatusText({ configured: true, last4: "1234" })).toBe("Configured \u2022\u2022\u2022\u20221234");
+    expect(wardenKeyStatusText({ configured: true, last4: null })).toBe("Configured");
+  });
+
+  it("builds a trimmed patch and checks form completeness", () => {
+    const s: WardenSettingsLike = { provider: "meta-api", model: "  llama-4  ", effort: "fast", metaApiBaseUrl: " https://api.llama.com/v1 " };
+    expect(buildWardenPatch(s)).toEqual({ provider: "meta-api", model: "llama-4", effort: "fast", metaApiBaseUrl: "https://api.llama.com/v1" });
+    expect(isWardenFormComplete(s)).toBe(true);
+    expect(isWardenFormComplete({ ...s, model: "  " })).toBe(false);
+    expect(isWardenFormComplete({ ...s, metaApiBaseUrl: "" })).toBe(false);
+    expect(isWardenFormComplete({ provider: "none", model: "", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
+    expect(isWardenFormComplete({ provider: "ollama", model: "llama3.2:3b", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
+  });
+
+  it("projects real warden test results strictly and maps them to honest copy", () => {
+    const raw = { ok: true, provider: "meta-api", model: "llama-4", latencyMs: 42, detail: "ok" };
+    expect(projectWardenTestResult(raw)).toEqual(raw);
+    expect(projectWardenTestResult({ ...raw, ok: "yes" })).toBeNull();
+    expect(projectWardenTestResult({ ...raw, provider: "evil" })).toBeNull();
+    expect(projectWardenTestResult({ ...raw, latencyMs: -1 })).toBeNull();
+    expect(projectWardenTestResult({ ...raw, apiKey: "canary" })).toBeNull();
+    expect(projectWardenTestResult(null)).toBeNull();
+    const okMsg = wardenTestMessage({ ok: true, provider: "meta-api", model: "llama-4", latencyMs: 42, detail: "ok" });
+    expect(okMsg.ok).toBe(true);
+    expect(okMsg.message).toContain("meta-api");
+    expect(okMsg.message).toContain("llama-4");
+    expect(okMsg.message).toContain("42");
+    expect(okMsg.message).not.toContain("canary");
+    const failMsg = wardenTestMessage({ ok: false, provider: "ollama", model: "llama3.2:3b", latencyMs: 7, detail: "warden unavailable" });
+    expect(failMsg.ok).toBe(false);
+    expect(failMsg.message.toLowerCase()).toContain("fail");
+    expect(failMsg.message).not.toContain("reachable");
+    const noneMsg = wardenTestMessage({ ok: true, provider: "none", model: "llama3.2:3b", latencyMs: 0, detail: "policy-only" });
+    expect(noneMsg.ok).toBe(true);
+    expect(noneMsg.message.toLowerCase()).toContain("policy-only");
   });
 });

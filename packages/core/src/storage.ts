@@ -1,7 +1,8 @@
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
-import type { AuditEvent } from "./types.js";
+import { DEFAULT_WARDEN_SETTINGS, type WardenSettings } from "./settings.js";
+import type { AuditEvent, DecisionSource, Risk } from "./types.js";
 
 export interface CredentialRecord {
   readonly scopeCeiling: string;
@@ -36,6 +37,8 @@ export interface VaultStoreService {
   readonly listCredentialAliases: () => Effect.Effect<string[], StorageError>;
   readonly appendAudit: (e: AuditEvent) => Effect.Effect<void, StorageError>;
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
+  readonly getWardenSettings: () => Effect.Effect<WardenSettings, StorageError>;
+  readonly setWardenSettings: (settings: WardenSettings) => Effect.Effect<void, StorageError>;
 }
 
 export class VaultStore extends Context.Tag("VaultStore")<VaultStore, VaultStoreService>() {}
@@ -56,6 +59,13 @@ interface AliasRow {
   readonly alias: string;
 }
 
+interface WardenSettingsRow {
+  readonly provider: string;
+  readonly model: string;
+  readonly effort: string;
+  readonly meta_api_base_url: string;
+}
+
 interface AuditRow {
   readonly ts: string;
   readonly agent: string;
@@ -64,6 +74,12 @@ interface AuditRow {
   readonly stage: string;
   readonly detail: string;
   readonly model_id: string | null;
+  readonly request_id: string | null;
+  readonly risk: string | null;
+  readonly recommended_scope: string | null;
+  readonly decision_source: string | null;
+  readonly latency_ms: number | null;
+  readonly explanation: string | null;
 }
 
 function toStorageError(operation: string) {
@@ -85,6 +101,13 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
        ceiling TEXT NOT NULL,
        ciphertext TEXT NOT NULL
      );
+     CREATE TABLE IF NOT EXISTS warden_settings (
+       id INTEGER PRIMARY KEY CHECK (id = 1),
+       provider TEXT NOT NULL,
+       model TEXT NOT NULL,
+       effort TEXT NOT NULL,
+       meta_api_base_url TEXT NOT NULL
+     );
      CREATE TABLE IF NOT EXISTS audit (
        ts TEXT NOT NULL,
        agent TEXT NOT NULL,
@@ -98,6 +121,20 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   const cols = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "website")) {
     db.exec("ALTER TABLE credentials ADD COLUMN website TEXT NOT NULL DEFAULT ''");
+  }
+  const auditCols = db.prepare("PRAGMA table_info(audit)").all() as { name: string }[];
+  const auditColumnDefs: Record<string, string> = {
+    request_id: "TEXT",
+    risk: "TEXT",
+    recommended_scope: "TEXT",
+    decision_source: "TEXT",
+    latency_ms: "REAL",
+    explanation: "TEXT",
+  };
+  for (const [name, def] of Object.entries(auditColumnDefs)) {
+    if (!auditCols.some((c) => c.name === name)) {
+      db.exec(`ALTER TABLE audit ADD COLUMN ${name} ${def}`);
+    }
   }
   const insertCredential = db.prepare(
     "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext, website) VALUES (?, ?, ?, ?)",
@@ -116,10 +153,16 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     "SELECT alias FROM credentials ORDER BY alias ASC",
   );
   const insertAudit = db.prepare(
-    "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  const upsertSettings = db.prepare(
+    "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url",
+  );
+  const selectSettings = db.prepare(
+    "SELECT provider, model, effort, meta_api_base_url FROM warden_settings WHERE id = 1",
   );
   const selectAudit = db.prepare(
-    "SELECT ts, agent, alias, scope, stage, detail, model_id FROM audit ORDER BY rowid ASC",
+    "SELECT ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation FROM audit ORDER BY rowid ASC",
   );
 
   return {
@@ -173,7 +216,7 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     appendAudit: (e) =>
       Effect.try({
         try: () => {
-          insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null);
+          insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null, e.requestId ?? null, e.risk ?? null, e.recommendedScope ?? null, e.decisionSource ?? null, e.latencyMs ?? null, e.explanation ?? null);
         },
         catch: toStorageError("appendAudit"),
       }),
@@ -190,10 +233,41 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
               stage: row.stage as AuditEvent["stage"],
               detail: row.detail,
             };
-            return row.model_id === null ? base : { ...base, modelId: row.model_id };
+            let event: AuditEvent = base;
+            if (row.model_id !== null) event = { ...event, modelId: row.model_id };
+            if (row.request_id !== null) event = { ...event, requestId: row.request_id };
+            if (row.risk !== null) event = { ...event, risk: row.risk as Risk };
+            if (row.recommended_scope !== null) event = { ...event, recommendedScope: row.recommended_scope };
+            if (row.decision_source !== null) event = { ...event, decisionSource: row.decision_source as DecisionSource };
+            if (row.latency_ms !== null) event = { ...event, latencyMs: row.latency_ms };
+            if (row.explanation !== null) event = { ...event, explanation: row.explanation };
+            return event;
           });
         },
         catch: toStorageError("listAudit"),
+      }),
+    getWardenSettings: () =>
+      Effect.try({
+        try: () => {
+          const row = selectSettings.get() as WardenSettingsRow | undefined;
+          if (row === undefined) {
+            return { ...DEFAULT_WARDEN_SETTINGS };
+          }
+          return {
+            provider: row.provider as WardenSettings["provider"],
+            model: row.model,
+            effort: row.effort as WardenSettings["effort"],
+            metaApiBaseUrl: row.meta_api_base_url,
+          };
+        },
+        catch: toStorageError("getWardenSettings"),
+      }),
+    setWardenSettings: (settings) =>
+      Effect.try({
+        try: () => {
+          upsertSettings.run(settings.provider, settings.model, settings.effort, settings.metaApiBaseUrl);
+        },
+        catch: toStorageError("setWardenSettings"),
       }),
   };
 }

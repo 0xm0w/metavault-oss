@@ -325,6 +325,7 @@ function toAuditEvent(value: unknown): AuditEvent | null {
   const stage = record["stage"];
   const detail = record["detail"];
   const modelId = record["modelId"];
+  const explanation = record["explanation"];
   if (
     typeof ts !== "string" ||
     typeof agentId !== "string" ||
@@ -344,7 +345,10 @@ function toAuditEvent(value: unknown): AuditEvent | null {
     stage: stage as AuditEvent["stage"],
     detail,
   };
-  return typeof modelId === "string" ? { ...base, modelId } : base;
+  let event: AuditEvent = base;
+  if (typeof modelId === "string") event = { ...event, modelId };
+  if (typeof explanation === "string") event = { ...event, explanation };
+  return event;
 }
 
 function auditEventsOf(body: unknown): AuditEvent[] | null {
@@ -368,7 +372,8 @@ function auditEventsOf(body: unknown): AuditEvent[] | null {
 
 function formatAuditEvent(event: AuditEvent): string {
   const base = `${event.ts} ${event.agentId} ${event.alias} ${event.scope} ${event.stage} ${event.detail}`;
-  return event.modelId !== undefined ? `${base} model=${event.modelId}\n` : `${base}\n`;
+  const withModel = event.modelId !== undefined ? `${base} model=${event.modelId}` : base;
+  return event.explanation !== undefined ? `${withModel} ${event.explanation}\n` : `${withModel}\n`;
 }
 
 function stringifyBody(body: unknown): string {

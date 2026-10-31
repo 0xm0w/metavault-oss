@@ -91,6 +91,10 @@ table.levels td.model { color: var(--ink); font-weight: 500; }
 .doc code { font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; background: var(--canvas-soft); padding: 1px 6px; border-radius: 4px; color: var(--accent-soft); }
 .doc pre { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 8px; padding: 18px 20px; overflow-x: auto; margin-bottom: 16px; }
 .doc pre code { background: none; padding: 0; color: var(--body); }
+.doc figure.shot { margin: 0 0 20px; }
+.doc figure.shot img { width: 100%; height: auto; display: block; border: 1px solid var(--hairline); border-radius: 8px; background: var(--canvas-card); }
+.doc figure.shot figcaption { font-size: 13px; line-height: 20px; color: var(--mute); margin-top: 8px; }
+.doc ol { margin: 0 0 14px 20px; } .doc ol li { margin-bottom: 6px; }
 
 .deck section { min-height: 88vh; display: flex; flex-direction: column; justify-content: center; padding: 72px 0; border-bottom: 1px solid var(--hairline); }
 .deck .big { font-size: clamp(38px, 6.5vw, 72px); font-weight: 600; line-height: 1.02; letter-spacing: -1.8px; color: var(--ink); }

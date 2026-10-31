@@ -1,0 +1,6 @@
+# Default owner for everything. OpenVault is security-sensitive:
+# vault, daemon, and policy changes always need owner review.
+* @0xm0w
+
+/packages/core/ @0xm0w
+/packages/daemon/ @0xm0w

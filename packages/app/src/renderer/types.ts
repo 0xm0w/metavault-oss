@@ -4,6 +4,8 @@
 
 export type Risk = "low" | "medium" | "high";
 
+export type DecisionSource = "policy" | "marshal" | "marshal+policy" | "human";
+
 export type AuditStage =
   | "requested"
   | "marshal"
@@ -16,7 +18,8 @@ export type AuditStage =
   | "credential-added"
   | "credential-deleted"
   | "enrollment-created"
-  | "enrollment-completed";
+  | "enrollment-completed"
+  | "settings-changed";
 
 export interface PendingApproval {
   readonly grantId: string;
@@ -42,6 +45,12 @@ export interface AuditEventLike {
   readonly stage: AuditStage;
   readonly detail: string;
   readonly modelId?: string;
+  readonly requestId?: string;
+  readonly risk?: Risk;
+  readonly recommendedScope?: string;
+  readonly decisionSource?: DecisionSource;
+  readonly latencyMs?: number;
+  readonly explanation?: string;
 }
 
 export interface CapabilityRequestLike {
@@ -78,6 +87,36 @@ export interface DeeplinkAddParams {
   readonly enrollmentId: string;
 }
 
+export type WardenProvider = "none" | "ollama" | "meta-api";
+export type WardenEffort = "fast" | "standard" | "deep";
+
+export interface WardenSettingsLike {
+  readonly provider: WardenProvider;
+  readonly model: string;
+  readonly effort: WardenEffort;
+  readonly metaApiBaseUrl: string;
+}
+
+export interface WardenSettingsPatch {
+  readonly provider?: WardenProvider;
+  readonly model?: string;
+  readonly effort?: WardenEffort;
+  readonly metaApiBaseUrl?: string;
+}
+
+export interface WardenKeyStatusLike {
+  readonly configured: boolean;
+  readonly last4: string | null;
+}
+
+export interface WardenTestResultLike {
+  readonly ok: boolean;
+  readonly provider: WardenProvider;
+  readonly model: string;
+  readonly latencyMs: number;
+  readonly detail: string;
+}
+
 export interface CredentialPatch {
   readonly scope?: string;
   readonly website?: string;
@@ -99,6 +138,12 @@ export interface VaultApi {
   readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
   readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;
   readonly deleteCredential: (alias: string) => Promise<unknown>;
+  readonly getWardenSettings: () => Promise<unknown>;
+  readonly updateWardenSettings: (patch: WardenSettingsPatch) => Promise<unknown>;
+  readonly setWardenKey: (key: string) => Promise<unknown>;
+  readonly deleteWardenKey: () => Promise<unknown>;
+  readonly wardenKeyStatus: () => Promise<unknown>;
+  readonly testWarden: () => Promise<unknown>;
 }
 
 declare global {

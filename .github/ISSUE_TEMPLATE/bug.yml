@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a reproducible problem in OpenVault
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not paste real secrets, API keys, vault
+        contents, or daemon tokens.** Use fake/canary values and redact
+        anything secret-shaped from logs and screenshots.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong?
+      placeholder: Steps that trigger the problem…
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, commands, or MCP tool calls. Redact secrets.
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Desktop app (renderer / Settings / Audit / Approvals)
+        - Daemon (vaultd HTTP API)
+        - MCP server / IDE host integration
+        - Brain / warden (Ollama or Meta API)
+        - Core policy / storage
+        - Docs / website
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, OpenVault version or commit, install method.
+      placeholder: |
+        OS: Windows 11
+        Node: 22.x
+        OpenVault: v0.1.0-alpha.1 / commit …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste redacted logs or attach screenshots. Confirm no secret is visible.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: secret-check
+    attributes:
+      label: Secret hygiene
+      options:
+        - label: I have removed every real secret, token, and vault value from this report
+          required: true

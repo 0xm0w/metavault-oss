@@ -11,7 +11,7 @@ import {
   VaultService,
   type VaultServiceService,
 } from "../../daemon/src/service.js";
-import { createOpenVaultMcpServer, type DaemonFetch } from "../src/server.js";
+import { createOpenVaultMcpServer, MCP_VERSION, type DaemonFetch } from "../src/server.js";
 
 const SECRET = "sk-test-canary-mcp-0001";
 
@@ -93,6 +93,19 @@ afterAll(async () => {
 });
 
 describe("OpenVault MCP server (in-process client)", () => {
+  it("handshake reports MCP_VERSION and tools/list is exactly the five tools", async () => {
+    expect(MCP_VERSION).toBe("0.1.0-alpha.1");
+    expect(client.getServerVersion()?.version).toBe(MCP_VERSION);
+    const listed = await client.listTools();
+    expect(listed.tools.map((t) => t.name).sort()).toEqual([
+      "enrollment_status",
+      "list_aliases",
+      "request_capability",
+      "request_enrollment",
+      "revoke",
+    ]);
+  });
+
   it("lists the five tools with object input schemas", async () => {
     const listed = await client.listTools();
     const names = listed.tools.map((t) => t.name).sort();

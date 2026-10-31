@@ -26,9 +26,23 @@ export const EnrollmentRequestSchema = Schema.Struct({
   scope: Schema.String,
   website: Schema.optional(Schema.String),
   reason: Schema.optional(Schema.String),
+  agentId: Schema.optional(Schema.String),
 });
 
 export const EnrollmentIdSchema = Schema.Struct({ enrollmentId: Schema.String });
+
+export const WardenSettingsPatchSchema = Schema.Struct({
+  provider: Schema.optional(Schema.Literal("none", "ollama", "meta-api")),
+  model: Schema.optional(Schema.String),
+  effort: Schema.optional(Schema.Literal("fast", "standard", "deep")),
+  metaApiBaseUrl: Schema.optional(Schema.String),
+});
+
+export const WardenKeyPutSchema = Schema.Struct({
+  key: Schema.optional(Schema.String),
+  apiKey: Schema.optional(Schema.String),
+  secret: Schema.optional(Schema.String),
+});
 
 export const UpdateCredentialSchema = Schema.Struct({
   scope: Schema.optional(Schema.String),

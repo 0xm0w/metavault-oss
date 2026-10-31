@@ -1,5 +1,5 @@
 import {
-  buildAuditRows,
+  filterAuditGroups,
   buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
@@ -8,6 +8,7 @@ import {
   faviconUrl,
   formatExpiry,
   formatLastUsed,
+  groupAuditByRequest,
   isCredentialFormComplete,
   marshalStatusLine,
   normalizeWebsite,
@@ -20,14 +21,30 @@ import {
   shouldShowAgentComputerWarning,
   sortApprovals,
   stageLabel,
+  wardenVerdict,
+  APP_VERSION_DISPLAY,
+  DAEMON_URL_DISPLAY,
+  DEFAULT_WARDEN_SETTINGS,
+  EFFORT_OPTIONS,
+  OLLAMA_MODEL_OPTIONS,
+  VAULT_PATH_DISPLAY,
+  WARDEN_PROVIDERS,
+  buildWardenPatch,
+  isKnownOllamaModel,
+  isWardenFormComplete,
+  projectWardenKeyStatus,
+  projectWardenSettings,
+  wardenKeyStatusText,
+  projectWardenTestResult,
+  wardenTestMessage,
 } from "./model.js";
-import type { AuditEventLike, CredentialMeta, DeeplinkAddParams, PendingApproval, PoliciesData } from "./types.js";
+import type { AuditEventLike, CredentialMeta, DeeplinkAddParams, PendingApproval, PoliciesData, WardenKeyStatusLike, WardenSettingsLike } from "./types.js";
 
 // Renderer bootstrap: plain TypeScript over the preload bridge. Every
 // daemon payload is projected through model.ts whitelists before it is
 // rendered, and all daemon text reaches the page via textContent only.
 
-type ViewName = "approval" | "vault" | "audit" | "policies";
+type ViewName = "approval" | "vault" | "audit" | "policies" | "settings";
 
 const POLL_MS = 4_000;
 
@@ -38,8 +55,20 @@ let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let selectedGrantId: string | null = null;
+let auditFilter = "";
+let auditFilterWasFocused = false;
+let auditFilterSelectionStart: number | null = null;
+let auditFilterSelectionEnd: number | null = null;
+const expandedAuditIds = new Set<string>();
 let busy = false;
 let notice: string | null = null;
+let wardenDraft: WardenSettingsLike = { ...DEFAULT_WARDEN_SETTINGS };
+let wardenKeyStatusState: WardenKeyStatusLike = { configured: false, last4: null };
+let wardenLoaded = false;
+let wardenDirty = false;
+let settingsKeyDraft = "";
+let settingsBusy = false;
+let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
 
 function mustElement(selector: string): HTMLElement {
   const found = document.querySelector(selector);
@@ -78,6 +107,17 @@ function setDaemonStatus(ok: boolean): void {
 }
 
 function updateMarshalLine(): void {
+  if (wardenLoaded) {
+    const line = mustElement("#marshal-line");
+    if (wardenDraft.provider === "none") {
+      line.textContent = "Marshal \u00B7 Off \u00B7 Policy only";
+    } else if (wardenDraft.provider === "meta-api") {
+      line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Meta API (cloud)`;
+    } else {
+      line.textContent = marshalStatusLine(wardenDraft.model);
+    }
+    return;
+  }
   const fromPending = approvals.find((a) => a.modelId !== undefined)?.modelId;
   const fromAudit = auditEvents.find((e) => e.modelId !== undefined)?.modelId;
   mustElement("#marshal-line").textContent = marshalStatusLine(fromPending ?? fromAudit);
@@ -628,23 +668,436 @@ function renderVault(view: HTMLElement): void {
 
 function renderAudit(view: HTMLElement): void {
   view.append(el("h1", "", "Audit"));
-  view.append(el("p", "sub", "Every transition, in order: agent → scope → marshal → policy → human → expiry. Marshal rows name the model that advised."));
-  const rows = buildAuditRows(auditEvents);
-  if (rows.length === 0) {
-    view.append(el("div", "empty", "No audit events yet."));
-    return;
-  }
+  view.append(
+    el(
+      "p",
+      "sub",
+      "One row per request. Expand a row to see the warden verification timeline: marshal explanation, recommended scope, latency and who decided.",
+    ),
+  );
+  const filterWrap = el("div", "audit-filter-wrap");
+  const filterLabel = el("label", "audit-filter-label", "Filter");
+  filterLabel.setAttribute("for", "audit-filter");
+  const filterInput = document.createElement("input");
+  filterInput.id = "audit-filter";
+  filterInput.className = "audit-filter";
+  filterInput.type = "text";
+  filterInput.placeholder = "Filter by agent, alias or outcome";
+  filterInput.value = auditFilter;
+  filterInput.setAttribute("aria-label", "Filter audit by agent, alias or outcome");
+  filterWrap.append(filterLabel, filterInput);
+  view.append(filterWrap);
+
   const list = el("div", "rows");
-  for (const row of rows) {
-    const node = el("article", "row");
-    node.append(el("div", "chain", row.chain));
-    const detail = el("div", "detail", row.detail);
-    node.append(detail);
-    const when = el("div", "when", row.modelId !== undefined ? `${row.ts} · model ${row.modelId}` : row.ts);
-    node.append(when);
-    list.append(node);
-  }
   view.append(list);
+
+  const renderList = (): void => {
+    list.replaceChildren();
+    const groups = filterAuditGroups(groupAuditByRequest(auditEvents), auditFilter);
+    if (auditEvents.length === 0) {
+      list.append(el("div", "empty", "No audit events yet."));
+      return;
+    }
+    if (groups.length === 0) {
+      list.append(el("div", "empty", "No requests match this filter."));
+      return;
+    }
+    for (const group of groups) {
+      const verdict = wardenVerdict(group);
+      const expanded = expandedAuditIds.has(group.requestId);
+      const node = el("article", "row audit-row");
+      const summary = el("div", "audit-summary");
+      const allowedText = group.allowedScope ?? "—";
+      const scopeText =
+        group.requestedScope !== "" && group.requestedScope !== allowedText
+          ? `${group.requestedScope} → ${allowedText}`
+          : allowedText || group.requestedScope;
+      // The legacy bucket mixes unrelated pre-requestId admin events, so
+      // no single outcome/warden verdict describes it: label it honestly
+      // and suppress both chips for that row.
+      const chainText = group.isLegacy
+        ? `Earlier activity · ${String(group.events.length)} ${group.events.length === 1 ? "event" : "events"}`
+        : `${group.agentId} · ${group.alias} · ${scopeText}`;
+      summary.append(el("div", "chain", chainText));
+      if (!group.isLegacy) {
+        const chips = el("div", "audit-chips");
+        chips.append(el("span", `chip outcome-chip outcome-${verdict.outcome}`, verdict.outcomeLabel));
+        const wardenClass =
+          verdict.risk !== null ? `chip warden-chip risk-${verdict.risk}` : "chip warden-chip is-policy";
+        chips.append(el("span", wardenClass, verdict.wardenLabel));
+        if (verdict.escalated) {
+          chips.append(el("span", "chip warden-chip is-escalated", "escalated"));
+        }
+        if (verdict.narrowed) {
+          chips.append(el("span", "chip warden-chip is-narrowed", "narrowed"));
+        }
+        summary.append(chips);
+      }
+      node.append(summary);
+      node.append(el("div", "when", group.lastTs));
+      const toggle = el(
+        "button",
+        "action audit-toggle",
+        group.isLegacy
+          ? expanded
+            ? "Hide details"
+            : "Show details"
+          : expanded
+            ? "Hide verification"
+            : "Show verification",
+      ) as HTMLButtonElement;
+      toggle.type = "button";
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      toggle.addEventListener("click", () => {
+        if (expandedAuditIds.has(group.requestId)) {
+          expandedAuditIds.delete(group.requestId);
+        } else {
+          expandedAuditIds.add(group.requestId);
+        }
+        renderList();
+      });
+      node.append(toggle);
+      if (expanded) {
+        const timeline = el("div", "audit-timeline");
+        for (const event of group.events) {
+          const step = el("div", "audit-step");
+          const stepHead = el("div", "audit-step-head");
+          stepHead.append(el("span", "audit-stage", stageLabel(event.stage)));
+          stepHead.append(el("span", "when", event.ts));
+          step.append(stepHead);
+          step.append(el("div", "detail", event.detail));
+          if (event.explanation !== undefined && event.explanation !== "") {
+            step.append(el("div", "audit-explanation", event.explanation));
+          }
+          const meta: string[] = [];
+          if (event.recommendedScope !== undefined && event.recommendedScope !== "") {
+            meta.push(`recommended ${event.recommendedScope}`);
+          }
+          if (event.latencyMs !== undefined) {
+            meta.push(`${String(event.latencyMs)}ms`);
+          }
+          if (event.decisionSource !== undefined) {
+            meta.push(`source ${event.decisionSource}`);
+          }
+          if (event.modelId !== undefined && event.modelId !== "") {
+            meta.push(`model ${event.modelId}`);
+          }
+          if (event.risk !== undefined) {
+            meta.push(`risk ${event.risk}`);
+          }
+          if (meta.length > 0) {
+            step.append(el("div", "when", meta.join(" · ")));
+          }
+          timeline.append(step);
+        }
+        node.append(timeline);
+      }
+      list.append(node);
+    }
+  };
+
+  const rememberSelection = (): void => {
+    auditFilterSelectionStart = filterInput.selectionStart;
+    auditFilterSelectionEnd = filterInput.selectionEnd;
+  };
+  filterInput.addEventListener("input", () => {
+    auditFilter = filterInput.value;
+    rememberSelection();
+    renderList();
+  });
+  filterInput.addEventListener("select", rememberSelection);
+  filterInput.addEventListener("keyup", rememberSelection);
+  filterInput.addEventListener("click", rememberSelection);
+  filterInput.addEventListener("focus", () => {
+    auditFilterWasFocused = true;
+    rememberSelection();
+  });
+  filterInput.addEventListener("blur", () => {
+    auditFilterWasFocused = false;
+  });
+  renderList();
+  if (auditFilterWasFocused) {
+    filterInput.focus();
+    const start = Math.min(auditFilterSelectionStart ?? filterInput.value.length, filterInput.value.length);
+    const end = Math.min(auditFilterSelectionEnd ?? start, filterInput.value.length);
+    filterInput.setSelectionRange(start, end);
+  }
+}
+
+
+function settingsSection(title: string, copy: string): HTMLElement {
+  const section = el("section", "settings-section");
+  section.append(el("h2", "settings-title", title));
+  if (copy !== "") {
+    section.append(el("p", "settings-copy", copy));
+  }
+  return section;
+}
+
+async function runSettingsAction(action: () => Promise<void>): Promise<void> {
+  if (settingsBusy) return;
+  settingsBusy = true;
+  render();
+  try {
+    await action();
+  } catch (err) {
+    settingsMessage = { text: err instanceof Error ? err.message : "Settings action failed", ok: false };
+  } finally {
+    settingsBusy = false;
+    render();
+  }
+}
+
+function renderSettings(view: HTMLElement): void {
+  view.append(el("h1", "", "Settings"));
+  view.append(el("p", "sub", "Choose who judges capability requests. Deterministic policy stays the floor: the warden can narrow or escalate, never widen."));
+  if (!wardenLoaded) {
+    view.append(el("div", "empty", "Loading warden settings from vaultd\u2026"));
+  }
+
+  // 1. Provider
+  const providerSection = settingsSection("Warden provider", "");
+  const providerCopy: Record<WardenSettingsLike["provider"], string> = {
+    none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
+    ollama: "Ollama runs on this device. Request metadata stays on-device.",
+    "meta-api": "Meta API (cloud) sends request metadata \u2014 agent, alias, scope and reason, never secrets \u2014 off-device to Meta's API for judgement. Secrets never leave vaultd.",
+  };
+  for (const provider of WARDEN_PROVIDERS) {
+    const label = el("label", "settings-radio");
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "warden-provider";
+    radio.value = provider.id;
+    radio.checked = wardenDraft.provider === provider.id;
+    radio.addEventListener("change", () => {
+      wardenDraft = { ...wardenDraft, provider: provider.id };
+      wardenDirty = true;
+      settingsMessage = null;
+      render();
+    });
+    const text = el("span", "");
+    text.append(el("span", "settings-radio-label", provider.label));
+    text.append(el("span", "settings-radio-copy", providerCopy[provider.id]));
+    label.append(radio, text);
+    providerSection.append(label);
+  }
+  view.append(providerSection);
+
+  // 2. Model
+  const modelSection = settingsSection("Model", "");
+  if (wardenDraft.provider === "none") {
+    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose Ollama or Meta API to enable a warden model."));
+  } else {
+    if (wardenDraft.provider === "ollama") {
+      const selectLabel = el("label", "vault-field");
+      selectLabel.append(el("span", "vault-field-label", "Ollama model"));
+      const select = document.createElement("select");
+      select.className = "vault-input";
+      select.id = "warden-model-select";
+      for (const option of OLLAMA_MODEL_OPTIONS) {
+        const opt = document.createElement("option");
+        opt.value = option.id;
+        opt.textContent = option.label;
+        select.append(opt);
+      }
+      if (!isKnownOllamaModel(wardenDraft.model)) {
+        const custom = document.createElement("option");
+        custom.value = wardenDraft.model;
+        custom.textContent = `${wardenDraft.model} \u2014 Custom`;
+        select.append(custom);
+      }
+      select.value = wardenDraft.model;
+      select.addEventListener("change", () => {
+        wardenDraft = { ...wardenDraft, model: select.value };
+        wardenDirty = true;
+        render();
+      });
+      selectLabel.append(select);
+      modelSection.append(selectLabel);
+    }
+    const modelLabel = el("label", "vault-field");
+    modelLabel.append(el("span", "vault-field-label", wardenDraft.provider === "meta-api" ? "Meta API model id" : "Model id (free text)"));
+    const modelInput = document.createElement("input");
+    modelInput.className = "vault-input";
+    modelInput.id = "warden-model-input";
+    modelInput.type = "text";
+    modelInput.value = wardenDraft.model;
+    modelInput.placeholder = wardenDraft.provider === "meta-api" ? "Meta API model id" : "llama3.2:3b";
+    modelInput.autocomplete = "off";
+    modelInput.addEventListener("input", () => {
+      wardenDraft = { ...wardenDraft, model: modelInput.value };
+      wardenDirty = true;
+    });
+    modelLabel.append(modelInput);
+    modelSection.append(modelLabel);
+    modelSection.append(el("p", "settings-copy", "Free-text model ids are allowed; the catalogue above is a shortcut, not a limit."));
+    if (wardenDraft.provider === "meta-api") {
+      const baseLabel = el("label", "vault-field");
+      baseLabel.append(el("span", "vault-field-label", "Meta API base URL"));
+      const baseInput = document.createElement("input");
+      baseInput.className = "vault-input";
+      baseInput.id = "warden-base-url-input";
+      baseInput.type = "text";
+      baseInput.value = wardenDraft.metaApiBaseUrl;
+      baseInput.autocomplete = "off";
+      baseInput.addEventListener("input", () => {
+        wardenDraft = { ...wardenDraft, metaApiBaseUrl: baseInput.value };
+        wardenDirty = true;
+      });
+      baseLabel.append(baseInput);
+      modelSection.append(baseLabel);
+    }
+  }
+  view.append(modelSection);
+
+  // 3. Effort
+  const effortSection = settingsSection("Effort", "");
+  for (const option of EFFORT_OPTIONS) {
+    const label = el("label", "settings-radio");
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "warden-effort";
+    radio.value = option.id;
+    radio.checked = wardenDraft.effort === option.id;
+    radio.addEventListener("change", () => {
+      wardenDraft = { ...wardenDraft, effort: option.id };
+      wardenDirty = true;
+      settingsMessage = null;
+      render();
+    });
+    const text = el("span", "");
+    text.append(el("span", "settings-radio-label", option.label));
+    text.append(el("span", "settings-radio-copy", option.description));
+    label.append(radio, text);
+    effortSection.append(label);
+  }
+  const saveBtn = el("button", "action btn-approve", "Save settings") as HTMLButtonElement;
+  saveBtn.type = "button";
+  saveBtn.disabled = settingsBusy || !isWardenFormComplete(wardenDraft);
+  saveBtn.addEventListener("click", () => {
+    void runSettingsAction(async () => {
+      const raw = await window.openvault.updateWardenSettings(buildWardenPatch(wardenDraft));
+      const projected = projectWardenSettings(raw);
+      if (projected !== null) {
+        wardenDraft = projected;
+      }
+      wardenDirty = false;
+      wardenLoaded = true;
+      updateMarshalLine();
+      settingsMessage = { text: "Warden settings saved. They apply on the next request \u2014 no daemon restart needed.", ok: true };
+    });
+  });
+  effortSection.append(saveBtn);
+  view.append(effortSection);
+
+  // 4. Meta API key
+  const keySection = settingsSection("Meta API key", "The key is stored encrypted by vaultd and decrypted only inside the daemon at call time. It is never shown again after saving.");
+  const statusLine = el("p", "settings-status");
+  statusLine.id = "warden-key-status";
+  statusLine.textContent = `Meta API key: ${wardenKeyStatusText(wardenKeyStatusState)}`;
+  keySection.append(statusLine);
+  const keyLabel = el("label", "vault-field");
+  keyLabel.append(el("span", "vault-field-label", "Meta API key"));
+  const keyInput = document.createElement("input");
+  keyInput.className = "vault-input";
+  keyInput.id = "warden-key-input";
+  keyInput.type = "password";
+  keyInput.placeholder = "Paste Meta API key";
+  keyInput.autocomplete = "new-password";
+  keyInput.value = settingsKeyDraft;
+  keyInput.addEventListener("input", () => {
+    settingsKeyDraft = keyInput.value;
+    const btn = document.querySelector<HTMLButtonElement>("#warden-save-key");
+    if (btn !== null) btn.disabled = settingsBusy || keyInput.value.trim() === "";
+  });
+  keyLabel.append(keyInput);
+  keySection.append(keyLabel);
+  const keyBtns = el("div", "btns");
+  const saveKeyBtn = el("button", "action btn-approve", "Save key") as HTMLButtonElement;
+  saveKeyBtn.type = "button";
+  saveKeyBtn.id = "warden-save-key";
+  saveKeyBtn.disabled = settingsBusy || settingsKeyDraft.trim() === "";
+  saveKeyBtn.addEventListener("click", () => {
+    void runSettingsAction(async () => {
+      const key = settingsKeyDraft;
+      const raw = await window.openvault.setWardenKey(key);
+      const projected = projectWardenKeyStatus(raw);
+      if (projected !== null) wardenKeyStatusState = projected;
+      // Clear the field and never repopulate it from the daemon response.
+      settingsKeyDraft = "";
+      const live = document.querySelector<HTMLInputElement>("#warden-key-input");
+      if (live !== null) live.value = "";
+      settingsMessage = { text: "Meta API key saved. The field has been cleared; the key is never shown again.", ok: true };
+    });
+  });
+  const testBtn = el("button", "action btn-always", "Test connection") as HTMLButtonElement;
+  testBtn.type = "button";
+  testBtn.disabled = settingsBusy;
+  testBtn.addEventListener("click", () => {
+    void runSettingsAction(async () => {
+      const raw = await window.openvault.testWarden();
+      const projected = projectWardenTestResult(raw);
+      if (projected === null) {
+        settingsMessage = { text: "Warden test failed \u2014 vaultd returned an unexpected response.", ok: false };
+        return;
+      }
+      const result = wardenTestMessage(projected);
+      settingsMessage = { text: result.message, ok: result.ok };
+    });
+  });
+  const deleteKeyBtn = el("button", "action btn-deny", "Delete key") as HTMLButtonElement;
+  deleteKeyBtn.type = "button";
+  deleteKeyBtn.disabled = settingsBusy || !wardenKeyStatusState.configured;
+  deleteKeyBtn.addEventListener("click", () => {
+    void runSettingsAction(async () => {
+      const raw = await window.openvault.deleteWardenKey();
+      const projected = projectWardenKeyStatus(raw);
+      wardenKeyStatusState = projected ?? { configured: false, last4: null };
+      settingsKeyDraft = "";
+      settingsMessage = { text: "Meta API key deleted.", ok: true };
+    });
+  });
+  keyBtns.append(saveKeyBtn, testBtn, deleteKeyBtn);
+  keySection.append(keyBtns);
+  keySection.append(el("p", "settings-copy", "Test connection runs one metadata-only warden self-check through vaultd using the saved provider and model (save settings changes first to test them). It creates no grants and writes no audit entries."));
+  view.append(keySection);
+
+  if (settingsMessage !== null) {
+    const msg = el("p", settingsMessage.ok ? "settings-message is-ok" : "settings-message is-error", settingsMessage.text);
+    view.append(msg);
+  }
+
+  // 5. Daemon (read-only)
+  const daemonSection = settingsSection("Daemon", "");
+  const rows: readonly (readonly [string, string])[] = [
+    ["Daemon URL", DAEMON_URL_DISPLAY],
+    ["Vault path", VAULT_PATH_DISPLAY],
+    ["Version", `OpenVault ${APP_VERSION_DISPLAY}`],
+  ];
+  for (const [label, value] of rows) {
+    const row = el("div", "settings-row");
+    row.append(el("span", "settings-row-label", label));
+    row.append(el("span", "mono settings-row-value", value));
+    daemonSection.append(row);
+  }
+  daemonSection.append(el("p", "settings-copy", "Read-only. Warden settings apply on the next request, so no restart is needed after saving. If vaultd is unreachable, restart it from the terminal where it was launched, then reopen this page."));
+  view.append(daemonSection);
+
+  // 6. Security defaults (read-only summary)
+  const policySection = settingsSection("Security defaults", "");
+  const ceilingCount = Object.keys(policiesData.ceilings).length;
+  policySection.append(el("p", "settings-copy", `Deterministic policy is the floor and never moves: ${String(ceilingCount)} alias ceiling${ceilingCount === 1 ? "" : "s"} on record, ${String(policiesData.standingApprovals.length)} standing approval${policiesData.standingApprovals.length === 1 ? "" : "s"} in force. The warden may narrow or escalate a request, never widen it. Editing policy stays on the Policies view.`));
+  const policiesBtn = el("button", "action settings-link", "Open Policies") as HTMLButtonElement;
+  policiesBtn.type = "button";
+  policiesBtn.addEventListener("click", () => {
+    currentView = "policies";
+    document.querySelectorAll(".nav-btn").forEach((b) => {
+      b.classList.toggle("is-active", (b as HTMLElement).dataset["view"] === "policies");
+    });
+    render();
+  });
+  policySection.append(policiesBtn);
+  view.append(policySection);
 }
 
 function renderPolicies(view: HTMLElement): void {
@@ -722,6 +1175,18 @@ function renderPolicies(view: HTMLElement): void {
 
 function render(): void {
   const view = mustElement("#view");
+  // Capture the audit filter caret before the old input is discarded, so
+  // a poll re-render can restore focus and selection exactly.
+  const oldFilter = document.querySelector<HTMLInputElement>("#audit-filter");
+  if (oldFilter !== null && document.activeElement === oldFilter) {
+    auditFilterWasFocused = true;
+    auditFilterSelectionStart = oldFilter.selectionStart;
+    auditFilterSelectionEnd = oldFilter.selectionEnd;
+  }
+  if (currentView === "settings") {
+    const liveKey = document.querySelector<HTMLInputElement>("#warden-key-input");
+    if (liveKey !== null) settingsKeyDraft = liveKey.value;
+  }
   view.replaceChildren();
   showBanner(notice);
   if (currentView === "approval") {
@@ -730,6 +1195,8 @@ function render(): void {
     renderVault(view);
   } else if (currentView === "audit") {
     renderAudit(view);
+  } else if (currentView === "settings") {
+    renderSettings(view);
   } else {
     renderPolicies(view);
   }
@@ -737,17 +1204,30 @@ function render(): void {
 
 async function refresh(): Promise<void> {
   try {
-    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw] = await Promise.all([
+    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw] = await Promise.all([
       window.openvault.pending(),
       window.openvault.aliases(),
       window.openvault.audit(),
       window.openvault.policies(),
+      window.openvault.getWardenSettings().catch(() => null),
+      window.openvault.wardenKeyStatus().catch(() => null),
     ]);
     approvals = projectPendingResponse(pendingRaw);
     aliases = projectAliasesResponse(aliasesRaw);
     credentialMeta = projectCredentialsResponse(aliasesRaw);
     auditEvents = projectAuditResponse(auditRaw);
     policiesData = projectPoliciesResponse(policiesRaw);
+    const projectedWarden = projectWardenSettings(wardenRaw);
+    if (projectedWarden !== null) {
+      if (!wardenDirty) {
+        wardenDraft = projectedWarden;
+      }
+      wardenLoaded = true;
+    }
+    const projectedKey = projectWardenKeyStatus(wardenKeyRaw);
+    if (projectedKey !== null) {
+      wardenKeyStatusState = projectedKey;
+    }
     setDaemonStatus(true);
     updateMarshalLine();
   } catch (err) {
@@ -817,7 +1297,7 @@ function start(): void {
   document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((button) => {
     button.addEventListener("click", () => {
       const next = button.dataset["view"];
-      if (next === "approval" || next === "vault" || next === "audit" || next === "policies") {
+      if (next === "approval" || next === "vault" || next === "audit" || next === "policies" || next === "settings") {
         currentView = next;
         notice = null;
         document.querySelectorAll(".nav-btn").forEach((b) => {

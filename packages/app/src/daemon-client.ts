@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 
 export const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
 
-export type DaemonMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type DaemonMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 export interface DaemonCallRequest {
   readonly method: DaemonMethod;
@@ -30,6 +30,12 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "GET", path: "/pending" },
   { method: "GET", path: "/policies" },
   { method: "POST", path: "/credentials" },
+  { method: "GET", path: "/settings/warden" },
+  { method: "PATCH", path: "/settings/warden" },
+  { method: "GET", path: "/settings/warden/key" },
+  { method: "PUT", path: "/settings/warden/key" },
+  { method: "DELETE", path: "/settings/warden/key" },
+  { method: "POST", path: "/settings/warden/test" },
 ];
 
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(

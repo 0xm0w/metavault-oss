@@ -10,6 +10,8 @@ import {
 import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 
+export const MCP_VERSION: string = "0.1.0-alpha.1";
+
 export type DaemonFetch = typeof fetch;
 
 export interface OpenVaultMcpOptions {
@@ -176,7 +178,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
     if (input === null || input.alias.trim() === "" || input.scope.trim() === "") {
       return errorResult("invalid arguments for request_enrollment");
     }
-    const candidate: { alias: string; scope: string; website?: string; reason?: string } = { alias: input.alias.trim(), scope: input.scope.trim() };
+    const candidate: { alias: string; scope: string; website?: string; reason?: string; agentId: string } = { alias: input.alias.trim(), scope: input.scope.trim(), agentId };
     if (input.website !== undefined && input.website.trim() !== "") { candidate.website = input.website.trim(); }
     if (input.reason !== undefined && input.reason.trim() !== "") { candidate.reason = input.reason.trim().slice(0, 256); }
     const decoded = await decode(EnrollmentRequestSchema, candidate);
@@ -208,7 +210,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
 
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const server = new Server(
-    { name: "openvault", version: "0.1.0" },
+    { name: "openvault", version: MCP_VERSION },
     { capabilities: { tools: {} } },
   );
 
