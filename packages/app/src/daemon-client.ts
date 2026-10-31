@@ -29,6 +29,7 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "GET", path: "/audit" },
   { method: "GET", path: "/pending" },
   { method: "GET", path: "/policies" },
+  { method: "POST", path: "/credentials" },
 ];
 
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(
@@ -119,6 +120,20 @@ export async function callDaemon(input: unknown): Promise<unknown> {
     throw new Error(`OpenVault daemon returned a non-JSON response (${String(response.status)})`);
   }
   if (!response.ok) {
+    // Surface only a whitelisted safe error tag (e.g. "alias-exists") so
+    // callers can show it inline; daemon bodies never carry secrets here.
+    const rawError =
+      typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>)["error"] : undefined;
+    const rawTag =
+      typeof rawError === "string"
+        ? rawError
+        : typeof rawError === "object" && rawError !== null
+          ? (rawError as Record<string, unknown>)["_tag"]
+          : undefined;
+    const safeTag = typeof rawTag === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(rawTag) ? rawTag : null;
+    if (safeTag !== null) {
+      throw new Error(`OpenVault daemon error (${String(response.status)}): ${safeTag}`);
+    }
     // Daemon error bodies carry only a tagged error name and a safe message.
     throw new Error(`OpenVault daemon error (${String(response.status)})`);
   }

@@ -12,7 +12,8 @@ export type AuditStage =
   | "denied"
   | "executed"
   | "expired"
-  | "revoked";
+  | "revoked"
+  | "credential-added";
 
 export interface PendingApproval {
   readonly grantId: string;
@@ -73,6 +74,7 @@ export interface VaultApi {
   readonly audit: () => Promise<unknown>;
   readonly pending: () => Promise<unknown>;
   readonly policies: () => Promise<unknown>;
+  readonly addCredential: (alias: string, scope: string, secret: string) => Promise<unknown>;
 }
 
 declare global {

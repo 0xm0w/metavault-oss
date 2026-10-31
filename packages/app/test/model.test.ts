@@ -4,11 +4,13 @@ import {
   buildAuditRows,
   buildPolicyRows,
   canAlwaysAllow,
+  credentialInitial,
   derivePolicies,
   deriveVaultCards,
   findSecretLikeKeys,
   formatExpiry,
   formatLastUsed,
+  isCredentialFormComplete,
   isReadOnlyScope,
   marshalStatusLine,
   projectApproval,
@@ -261,5 +263,84 @@ describe("view derivations", () => {
     expect(rows[0]?.chain).toBe("cursor → charges.read → Approved");
     expect(rows[0]?.stageLabel).toBe("Approved");
     expect(rows[1]?.stageLabel).toBe("Requested");
+  });
+});
+
+describe("credential form helpers", () => {
+  it("derives avatar initials", () => {
+    expect(credentialInitial("stripe")).toBe("S");
+    expect(credentialInitial(" github ")).toBe("G");
+    expect(credentialInitial("")).toBe("?");
+    expect(credentialInitial("   ")).toBe("?");
+  });
+
+  it("requires all credential fields non-empty", () => {
+    expect(isCredentialFormComplete("Stripe", "charges.read", "sk-live")).toBe(true);
+    expect(isCredentialFormComplete("", "charges.read", "sk-live")).toBe(false);
+    expect(isCredentialFormComplete("Stripe", "  ", "sk-live")).toBe(false);
+    expect(isCredentialFormComplete("Stripe", "charges.read", "")).toBe(false);
+    expect(isCredentialFormComplete("  Stripe  ", " charges.read ", "x")).toBe(true);
+  });
+
+  it("rejects a whitespace-only secret in the form completeness mirror", () => {
+    expect(isCredentialFormComplete("Stripe", "charges.read", "   ")).toBe(false);
+    expect(isCredentialFormComplete("Stripe", "charges.read", " x ")).toBe(true);
+  });
+
+  it("does not count credential-added as last used (just-added reads Never used)", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const cards = deriveVaultCards(
+      ["stripe"],
+      [
+        auditEvent({
+          stage: "credential-added",
+          agentId: "human",
+          ts: "2026-10-31T11:59:30.000Z",
+          detail: "credential added: stripe (charges.read)",
+        }),
+      ],
+    );
+    expect(cards[0]?.lastUsedTs).toBeNull();
+    expect(formatLastUsed(cards[0]?.lastUsedTs ?? null, now)).toBe("Never used");
+    // Real usage still counts.
+    const used = deriveVaultCards(
+      ["stripe"],
+      [
+        auditEvent({
+          stage: "credential-added",
+          agentId: "human",
+          ts: "2026-10-31T11:59:30.000Z",
+          detail: "credential added: stripe (charges.read)",
+        }),
+        auditEvent({ stage: "executed", ts: "2026-10-31T11:00:00.000Z" }),
+      ],
+    );
+    expect(used[0]?.lastUsedTs).toBe("2026-10-31T11:00:00.000Z");
+  });
+
+  it("does not create a phantom human policy row from credential-added", () => {
+    const rows = derivePolicies([
+      auditEvent({
+        stage: "credential-added",
+        agentId: "human",
+        detail: "credential added: stripe (charges.read)",
+      }),
+    ]);
+    expect(rows).toEqual([]);
+    const mixed = derivePolicies([
+      auditEvent({
+        stage: "credential-added",
+        agentId: "human",
+        detail: "credential added: stripe (charges.read)",
+      }),
+      auditEvent(),
+    ]);
+    expect(mixed.map((r) => r.agentId)).toEqual(["cursor"]);
+  });
+
+  it("projects credential-added audit events", () => {
+    expect(projectAuditEvent(auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }))).toEqual(
+      auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }),
+    );
   });
 });

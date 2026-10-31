@@ -9,6 +9,6 @@ export interface MarshalDecision {
 }
 export interface AuditEvent {
   ts: string; agentId: string; alias: string; scope: string;
-  stage: "requested"|"marshal"|"policy"|"approved"|"denied"|"executed"|"expired"|"revoked";
+  stage: "requested"|"marshal"|"policy"|"approved"|"denied"|"executed"|"expired"|"revoked"|"credential-added";
   detail: string; modelId?: string;
 }

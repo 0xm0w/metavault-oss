@@ -76,6 +76,7 @@ export interface VaultServiceService {
     GrantExpired | GrantRevoked | PolicyDenied | ConnectorFailed | StorageError
   >;
   readonly revoke: (agentIdOrAlias: string) => Effect.Effect<void, StorageError>;
+  readonly hasCredential: (alias: string) => Effect.Effect<boolean, StorageError>;
   readonly listAliases: () => Effect.Effect<string[], StorageError>;
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
   readonly listPendingApprovals: () => Effect.Effect<PendingApproval[], StorageError>;
@@ -280,11 +281,22 @@ export function makeVaultServiceLive(
         seedCredential: (alias, ceiling, plaintextSecret) =>
           Effect.flatMap(Effect.sync(() => encryptSecret(masterKey, plaintextSecret)), (blob) =>
             Effect.flatMap(store.addCredential(alias, ceiling, blob), () =>
-              Ref.update(aliases, (set) => {
-                const next = new Set(set);
-                next.add(alias);
-                return next;
-              }),
+              Effect.flatMap(
+                Ref.update(aliases, (set) => {
+                  const next = new Set(set);
+                  next.add(alias);
+                  return next;
+                }),
+                () =>
+                  audit(
+                    "human",
+                    alias,
+                    ceiling,
+                    "credential-added",
+                    `credential added: ${alias} (${ceiling})`,
+                    false,
+                  ),
+              ),
             ),
           ),
 
@@ -490,6 +502,9 @@ export function makeVaultServiceLive(
               yield* audit(agentIdOrAlias, agentIdOrAlias, "", "revoked", `revoked: ${agentIdOrAlias}`, true);
             }
           }),
+
+        hasCredential: (alias) =>
+          Effect.map(store.getCredential(alias), (credential) => credential !== undefined),
 
         // Aliases live in the vault DB (the CLI enrolls credentials there
         // directly); the in-memory set only mirrors this process's activity.

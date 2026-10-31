@@ -25,6 +25,8 @@ const api: VaultApi = {
   audit: () => invoke("GET", "/audit"),
   pending: () => invoke("GET", "/pending"),
   policies: () => invoke("GET", "/policies"),
+  addCredential: (alias: string, scope: string, secret: string) =>
+    invoke("POST", "/credentials", { alias, scope, secret }),
 };
 
 contextBridge.exposeInMainWorld("openvault", api);

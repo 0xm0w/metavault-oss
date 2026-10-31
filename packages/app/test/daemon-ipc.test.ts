@@ -52,6 +52,7 @@ describe("main-process daemon whitelist", () => {
       { method: "GET", path: "/audit" },
       { method: "GET", path: "/pending" },
       { method: "GET", path: "/policies" },
+      { method: "POST", path: "/credentials" },
     ]);
     for (const call of ALLOWED_DAEMON_CALLS) {
       expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);

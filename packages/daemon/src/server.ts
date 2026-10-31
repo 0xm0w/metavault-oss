@@ -12,6 +12,7 @@ import { VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
   CapabilityRequestSchema,
+  CredentialSchema,
   GrantIdSchema,
   PoliciesResponseSchema,
   RevokeSchema,
@@ -20,6 +21,7 @@ import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./
 
 export {
   CapabilityRequestSchema,
+  CredentialSchema,
   GrantIdSchema,
   PoliciesResponseSchema,
   RevokeSchema,
@@ -143,7 +145,7 @@ const UNAUTHORIZED: { status: number; body: unknown } = {
 function isTokenProtected(method: string, path: string): boolean {
   return (
     (method === "POST" &&
-      (path === "/approve" || path === "/approve-always" || path === "/deny")) ||
+      (path === "/approve" || path === "/approve-always" || path === "/deny" || path === "/credentials")) ||
     (method === "GET" && path === "/pending")
   );
 }
@@ -190,6 +192,35 @@ export async function handleVaultRequest(
           Effect.flatMap((policies) => Schema.decodeUnknown(PoliciesResponseSchema)(policies)),
         ),
     );
+  }
+  if (method === "POST" && path === "/credentials") {
+    const decoded = await decode(CredentialSchema, body ?? {});
+    if (
+      decoded === null ||
+      decoded.alias.trim() === "" ||
+      decoded.scope.trim() === "" ||
+      decoded.secret.trim() === ""
+    ) {
+      return BAD_REQUEST;
+    }
+    // Duplicate aliases conflict instead of silently overwriting: the
+    // store INSERT OR REPLACE stays for CLI/test seeding, but this
+    // endpoint never replaces an existing credential.
+    const alias = decoded.alias.trim();
+    const scope = decoded.scope.trim();
+    const exists = await run(service.hasCredential(alias));
+    if (exists.status !== 200) {
+      return exists;
+    }
+    if (exists.body === true) {
+      return { status: 409, body: { error: "alias-exists" } };
+    }
+    const result = await run(
+      service
+        .seedCredential(alias, scope, decoded.secret)
+        .pipe(Effect.map(() => ({ alias, scope }))),
+    );
+    return result.status === 200 ? { status: 201, body: result.body } : result;
   }
   if (method === "POST" && path === "/request") {
     const decoded = await decode(CapabilityRequestSchema, body ?? {});

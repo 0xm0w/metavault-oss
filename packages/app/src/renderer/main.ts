@@ -2,9 +2,11 @@ import {
   buildAuditRows,
   buildPolicyRows,
   canAlwaysAllow,
+  credentialInitial,
   deriveVaultCards,
   formatExpiry,
   formatLastUsed,
+  isCredentialFormComplete,
   marshalStatusLine,
   projectAliasesResponse,
   projectAuditResponse,
@@ -200,29 +202,174 @@ function renderApproval(view: HTMLElement): void {
   }
 }
 
-function renderVault(view: HTMLElement): void {
-  view.append(el("h1", "", "Vault"));
-  view.append(el("p", "sub", "Credentials enrolled in vaultd. Cards show aliases and scopes only — values are never displayed, copied, or sent to this window."));
-  if (aliases.length === 0) {
-    view.append(el("div", "empty", "No credentials yet. Add one with the CLI: openvault add <alias> --scope <scope>"));
+let credentialModal: HTMLElement | null = null;
+let credentialModalKeyHandler: ((event: KeyboardEvent) => void) | null = null;
+
+function closeCredentialModal(restoreFocus = true): void {
+  if (credentialModalKeyHandler !== null) {
+    document.removeEventListener("keydown", credentialModalKeyHandler);
+    credentialModalKeyHandler = null;
+  }
+  if (credentialModal !== null) {
+    credentialModal.remove();
+    credentialModal = null;
+  }
+  const trigger = document.querySelector<HTMLElement>(".vault-add-btn");
+  if (restoreFocus) {
+    trigger?.focus();
+  }
+}
+
+function openCredentialModal(): void {
+  if (credentialModal !== null) {
     return;
   }
-  const cards = el("div", "cards");
+  const overlay = el("div", "vault-modal-overlay");
+  const dialog = el("div", "vault-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "vault-modal-title");
+
+  const header = el("div", "vault-modal-header");
+  const title = el("h2", "vault-modal-title", "Add credential");
+  title.id = "vault-modal-title";
+  const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Close");
+  header.append(title, closeBtn);
+  dialog.append(header);
+  dialog.append(el("p", "vault-modal-sub", "The secret is sent to vaultd over the local daemon channel and never displayed again."));
+
+  const errorBox = el("p", "vault-modal-error");
+  errorBox.hidden = true;
+  dialog.append(errorBox);
+
+  const makeField = (
+    labelText: string,
+    inputType: string,
+    placeholder: string,
+    autocomplete: "off" | "new-password",
+  ): HTMLInputElement => {
+    const wrap = el("label", "vault-field");
+    wrap.append(el("span", "vault-field-label", labelText));
+    const input = document.createElement("input");
+    input.className = "vault-input";
+    input.type = inputType;
+    input.placeholder = placeholder;
+    input.autocomplete = autocomplete;
+    wrap.append(input);
+    dialog.append(wrap);
+    return input;
+  };
+
+  const nameInput = makeField("Name", "text", "Stripe", "off");
+  const scopeInput = makeField("Scope", "text", "charges.read", "off");
+  const secretInput = makeField("Secret", "password", "Secret value", "new-password");
+
+  const actions = el("div", "vault-modal-actions");
+  const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
+  cancelBtn.type = "button";
+  const saveBtn = el("button", "vault-btn vault-btn-primary", "Save") as HTMLButtonElement;
+  saveBtn.type = "button";
+  saveBtn.disabled = true;
+  actions.append(cancelBtn, saveBtn);
+  dialog.append(actions);
+
+  const syncSave = (): void => {
+    saveBtn.disabled = !isCredentialFormComplete(nameInput.value, scopeInput.value, secretInput.value);
+  };
+  for (const input of [nameInput, scopeInput, secretInput]) {
+    input.addEventListener("input", syncSave);
+  }
+
+  const close = (): void => {
+    closeCredentialModal();
+  };
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      close();
+    }
+  });
+  credentialModalKeyHandler = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      close();
+    }
+  };
+  document.addEventListener("keydown", credentialModalKeyHandler);
+
+  saveBtn.addEventListener("click", () => {
+    void (async () => {
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      errorBox.hidden = true;
+      try {
+        await window.openvault.addCredential(nameInput.value.trim(), scopeInput.value.trim(), secretInput.value);
+        closeCredentialModal(false);
+        notice = null;
+        await refresh();
+        // Focus only after the refresh re-render: render() replaces the
+        // view children, so focusing before it would target a detached
+        // + button and be lost.
+        document.querySelector<HTMLElement>(".vault-add-btn")?.focus();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not add credential";
+        errorBox.textContent = message.includes("alias-exists")
+          ? "A credential with this name already exists. Choose a different name."
+          : message;
+        errorBox.hidden = false;
+        saveBtn.disabled = !isCredentialFormComplete(nameInput.value, scopeInput.value, secretInput.value);
+        cancelBtn.disabled = false;
+      }
+    })();
+  });
+
+  overlay.append(dialog);
+  document.body.append(overlay);
+  credentialModal = overlay;
+  nameInput.focus();
+}
+
+function renderVault(view: HTMLElement): void {
+  const panel = el("section", "vault-panel");
+  const headerRow = el("div", "vault-section-header");
+  headerRow.append(el("h1", "vault-title", "Agent credentials"));
+  const addBtn = el("button", "vault-add-btn", "+") as HTMLButtonElement;
+  addBtn.type = "button";
+  addBtn.setAttribute("aria-label", "Add credential");
+  addBtn.title = "Add credential";
+  addBtn.addEventListener("click", () => {
+    openCredentialModal();
+  });
+  headerRow.append(addBtn);
+  panel.append(headerRow);
+  panel.append(el("p", "vault-sub", "Aliases and scopes only \u2014 values are never displayed, copied, or sent to this window."));
+  if (aliases.length === 0) {
+    panel.append(el("p", "vault-empty", "No credentials saved"));
+    view.append(panel);
+    return;
+  }
+  const list = el("div", "vault-list");
   for (const card of deriveVaultCards(aliases, auditEvents)) {
-    const node = el("article", "card");
-    node.append(el("h2", "mono", card.alias));
-    const chips = el("div", "");
+    const row = el("article", "vault-row");
+    row.append(el("div", "vault-avatar", credentialInitial(card.alias)));
+    const main = el("div", "vault-row-main");
+    main.append(el("div", "vault-alias", card.alias));
+    const sub = el("div", "vault-row-sub");
     if (card.scopes.length === 0) {
-      chips.append(el("span", "chip", "no requests yet"));
+      sub.append(el("span", "vault-muted", "no requests yet"));
     }
     for (const scope of card.scopes) {
-      chips.append(el("span", "chip", scope));
+      sub.append(el("span", "chip vault-scope-chip", scope));
     }
-    node.append(chips);
-    node.append(el("p", "meta", `Last used · ${formatLastUsed(card.lastUsedTs, Date.now())}`));
-    cards.append(node);
+    sub.append(el("span", "vault-muted", `Last used \u00B7 ${formatLastUsed(card.lastUsedTs, Date.now())}`));
+    main.append(sub);
+    row.append(main);
+    list.append(row);
   }
-  view.append(cards);
+  panel.append(list);
+  view.append(panel);
 }
 
 function renderAudit(view: HTMLElement): void {
@@ -315,7 +462,7 @@ function renderPolicies(view: HTMLElement): void {
     list.append(node);
   }
   view.append(list);
-  const note = el("p", "fine", `Stages: ${(["requested", "marshal", "policy", "approved", "denied", "executed", "expired", "revoked"] as const).map(stageLabel).join(" · ")}`);
+  const note = el("p", "fine", `Stages: ${(["requested", "marshal", "policy", "approved", "denied", "executed", "expired", "revoked", "credential-added"] as const).map(stageLabel).join(" · ")}`);
   view.append(note);
 }
 

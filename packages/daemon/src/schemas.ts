@@ -13,6 +13,11 @@ export const CapabilityRequestSchema = Schema.Struct({
 
 export const GrantIdSchema = Schema.Struct({ grantId: Schema.String });
 export const RevokeSchema = Schema.Struct({ target: Schema.String });
+export const CredentialSchema = Schema.Struct({
+  alias: Schema.String,
+  scope: Schema.String,
+  secret: Schema.String,
+});
 
 // Response contract for GET /policies: enforced ceilings (alias -> scope
 // ceiling) plus current standing approvals. Metadata only by construction —

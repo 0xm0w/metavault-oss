@@ -68,6 +68,15 @@ export function formatExpiry(expiresAtMs: number, nowMs: number): string {
   return `Expires in ${String(minutes)}m ${String(seconds)}s`;
 }
 
+export function credentialInitial(alias: string): string {
+  const trimmed = alias.trim();
+  return trimmed === "" ? "?" : trimmed.charAt(0).toUpperCase();
+}
+
+export function isCredentialFormComplete(alias: string, scope: string, secret: string): boolean {
+  return alias.trim() !== "" && scope.trim() !== "" && secret.trim() !== "";
+}
+
 export function formatLastUsed(tsIso: string | null, nowMs: number): string {
   if (tsIso === null) {
     return "Never used";
@@ -216,6 +225,7 @@ const AUDIT_STAGES: readonly AuditStage[] = [
   "executed",
   "expired",
   "revoked",
+  "credential-added",
 ];
 
 export function projectAuditEvent(raw: unknown): AuditEventLike | null {
@@ -334,6 +344,11 @@ export function deriveVaultCards(
     const scopes = [...new Set(mine.map((e) => e.scope).filter((s) => s.length > 0))].sort();
     let lastUsedTs: string | null = null;
     for (const event of mine) {
+      // Adding a credential is not using it: a just-added credential
+      // has never been used.
+      if (event.stage === "credential-added") {
+        continue;
+      }
       if (lastUsedTs === null || event.ts > lastUsedTs) {
         lastUsedTs = event.ts;
       }
@@ -352,6 +367,11 @@ export interface PolicyRow {
 export function derivePolicies(events: readonly AuditEventLike[]): PolicyRow[] {
   const byAgent = new Map<string, { scopes: Set<string>; requestCount: number; lastSeenTs: string | null }>();
   for (const event of events) {
+    // Adding a credential is not agent activity: it must not create a
+    // phantom "human" agent row.
+    if (event.stage === "credential-added") {
+      continue;
+    }
     const entry = byAgent.get(event.agentId) ?? { scopes: new Set<string>(), requestCount: 0, lastSeenTs: null };
     if (event.scope.length > 0) {
       entry.scopes.add(event.scope);
@@ -442,6 +462,7 @@ const STAGE_LABELS: Record<AuditStage, string> = {
   executed: "Executed",
   expired: "Expired",
   revoked: "Revoked",
+  "credential-added": "Credential added",
 };
 
 export function stageLabel(stage: AuditStage): string {
