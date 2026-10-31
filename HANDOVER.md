@@ -5,7 +5,11 @@ Private remote: `https://github.com/0xm0w/openvault`
 
 ## Where things stand
 
-- Branch `main` ready for push.
+- Branch `main` pushed and merged via PR #1 (https://github.com/0xm0w/openvault/pull/1).
+- Working tree clean. `main` is up to date with `origin/main`.
+- CI/CD verified green on GitHub Actions:
+  - CI: https://github.com/0xm0w/openvault/actions/runs/41223410981 (Windows + Ubuntu exit 0)
+  - CodeQL: https://github.com/0xm0w/openvault/actions/runs/41223410962 (exit 0)
 - Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-openvault-hardening-release.md`
 - SDD ledger (task-by-task record, deferred minors, rulings):
   `.superpowers/sdd/2026-10-31-openvault-hardening-release/progress.md`
@@ -51,24 +55,18 @@ Private remote: `https://github.com/0xm0w/openvault`
 
 ## Remaining tasks (in order)
 
-### 4. Push and get CI green BEFORE tagging (final-review must-fix #2)
+### 4. Tag v0.1.0-alpha.1 and publish GitHub release
 
-- **Authority: the user/owner does the push, tag, and release — or explicitly
-  tells the agent to.** An agent resuming from this file should stop after
-  Task 3 (fix wave committed locally), report ready, and wait for that go-ahead.
-- Push `main` (22 local commits + the Task 3 fix-wave commit = 23). This is the first-ever CI/CodeQL run —
-  there is no run URL yet; nothing may claim CI passes until observed.
-- Watch `.github/workflows/ci.yml` (windows + ubuntu) and `codeql.yml`; fix any
-  first-run failures. Record the green run URL in `docs/VERIFICATION.md`.
-- Only after CI is green: `git tag v0.1.0-alpha.1` and push the tag.
+- CI and CodeQL are now verified green on `main`:
+  - CI: https://github.com/0xm0w/openvault/actions/runs/41223410981
+  - CodeQL: https://github.com/0xm0w/openvault/actions/runs/41223410962
+- When ready: `git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1`
   `release.yml` (SHA-pinned `softprops/action-gh-release@v2.6.2`, locked
   `electron-builder@26.18.0`, `prerelease: true`) will build the Windows NSIS
   installer + SHA256SUMS and attach them to a GitHub prerelease.
 - Verify the prerelease page shows the installer + checksums; link it from
   `README.md` and the site, then redeploy the site:
   `npx -y wrangler pages deploy site --project-name openvault --branch main --commit-dirty=true`
-- Note: push/tag/release are external side effects — they were deliberately left
-  for the user. Do not tag from a red CI.
 
 ### 5. Manual GitHub repo settings (owner only, ~5 minutes)
 

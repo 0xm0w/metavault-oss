@@ -169,6 +169,10 @@ renderer `APP_VERSION_DISPLAY` = `0.1.0-alpha.1`);
 `npm run test:coverage` — exit 0 (all package thresholds met);
 `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
+GitHub Actions CI / CodeQL verification on `main`:
+- **CI run** (Windows + Ubuntu): https://github.com/0xm0w/openvault/actions/runs/41223410981 — **PASS** (exit 0).
+- **CodeQL run**: https://github.com/0xm0w/openvault/actions/runs/41223410962 — **PASS** (exit 0).
+
 Smoke: the NSIS installer itself was **not** run (install requires
 interactive per-user install steps); instead the packaged app was
 launched from `packages/app/release/win-unpacked/OpenVault.exe` with an
