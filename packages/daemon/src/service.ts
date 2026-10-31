@@ -311,7 +311,7 @@ export function makeVaultServiceLive(
                           grant.allowedScope,
                           "expired",
                           "grant expired before approval",
-                          true,
+                          false,
                           undefined,
                           grantAuditExtras(ctxMap.get(grant.grantId)),
                         ),
@@ -376,7 +376,7 @@ export function makeVaultServiceLive(
                         grant.allowedScope,
                         "expired",
                         "grant expired or already consumed",
-                        true,
+                        false,
                         undefined,
                         grantAuditExtras(auditCtx),
                       ),
@@ -389,7 +389,7 @@ export function makeVaultServiceLive(
           yield* forgetGrantAudit(grantId);
           yield* interruptSleeper(grantId);
           const grantReq = consumed.request;
-          yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "approved", auditDetail, true, undefined, grantAuditExtras(auditCtx, "human"));
+          yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "approved", auditDetail, false, undefined, grantAuditExtras(auditCtx, "human"));
           const credential = yield* store.getCredential(grantReq.alias);
           if (credential === undefined) {
             return yield* Effect.fail(
@@ -398,11 +398,11 @@ export function makeVaultServiceLive(
           }
           const execExit = yield* Effect.exit(executeGrant(grantReq, consumed.allowedScope, credential.ciphertext));
           if (Exit.isFailure(execExit)) {
-            yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "denied", "connector-failed", true, undefined, grantAuditExtras(auditCtx, "human"));
+            yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "denied", "connector-failed", false, undefined, grantAuditExtras(auditCtx, "human"));
             return yield* Effect.failCause(execExit.cause);
           }
           const result = execExit.value;
-          yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", true, undefined, grantAuditExtras(auditCtx, "human"));
+          yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", false, undefined, grantAuditExtras(auditCtx, "human"));
           return { status: "executed", result } as const;
         });
 
@@ -561,7 +561,7 @@ export function makeVaultServiceLive(
             yield* audit(req.agentId, req.alias, req.requestedScope, "requested", "capability requested", false, undefined, { requestId });
 
             if (yield* registry.isRevoked(req.agentId, req.alias)) {
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", "revoked", true, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", "revoked", false, undefined, { requestId, decisionSource: "policy" });
               return { status: "denied", reason: "revoked" } as const;
             }
             const agentEvents = auditEvents.filter((e) => e.agentId === req.agentId);
@@ -586,8 +586,8 @@ export function makeVaultServiceLive(
             const preCheck = evaluatePolicy(req, null, cfg, historyCount);
             if (credential === undefined || preCheck.allowedScope === null) {
               const reason = credential === undefined ? "unknown-alias" : preCheck.reason;
-              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, true, undefined, { requestId, decisionSource: "policy" });
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, true, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy" });
               return { status: "denied", reason } as const;
             }
             yield* Ref.update(aliases, (set) => {
@@ -600,11 +600,12 @@ export function makeVaultServiceLive(
             // The ONLY place marshal errors are absorbed: recovered to a null
             // decision for evaluatePolicy, with an audit event saying so.
             const wardenSettings = yield* store.getWardenSettings();
+            const marshalRan = wardenSettings.provider !== "none";
             const marshalModelId =
               wardenSettings.model.trim() !== "" ? wardenSettings.model : modelId;
             let decision: MarshalDecision | null = null;
             let latencyMs: number | undefined;
-            if (wardenSettings.provider !== "none") {
+            if (marshalRan) {
               const assessStarted = yield* Clock.currentTimeMillis;
               const assessExit = yield* Effect.exit(
                 brain.assess(req, historySummary, policyDigest),
@@ -660,8 +661,8 @@ export function makeVaultServiceLive(
               result.allowedScope ?? req.requestedScope,
               "policy",
               result.reason,
-              true,
-              marshalModelId,
+              marshalRan,
+              marshalRan ? marshalModelId : undefined,
               decision === null
                 ? { requestId, decisionSource: finalDecisionSource }
                 : {
@@ -672,7 +673,7 @@ export function makeVaultServiceLive(
                   },
             );
             if (result.allowedScope === null) {
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
               return { status: "denied", reason: result.reason } as const;
             }
             const allowedScope = result.allowedScope;
@@ -695,13 +696,13 @@ export function makeVaultServiceLive(
               return { status: "awaiting-approval", grantId, reason: result.reason } as const;
             }
 
-            yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
+            yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
             const exit = yield* Effect.exit(executeGrant(req, allowedScope, credential.ciphertext));
             if (Exit.isFailure(exit)) {
-              yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
+              yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
               return { status: "denied", reason: "connector-failed" } as const;
             }
-            yield* audit(req.agentId, req.alias, allowedScope, "executed", "executed", true, marshalModelId, { requestId, decisionSource: finalDecisionSource });
+            yield* audit(req.agentId, req.alias, allowedScope, "executed", "executed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
             return { status: "executed", result: exit.value, reason: result.reason } as const;
           }),
 
@@ -759,7 +760,7 @@ export function makeVaultServiceLive(
               grant.allowedScope,
               "approved",
               "standing approval created (always allow)",
-              true,
+              false,
               undefined,
               grantAuditExtras(auditCtx, "human"),
             );
@@ -778,7 +779,7 @@ export function makeVaultServiceLive(
             yield* interruptSleeper(grantId);
             const grant = yield* registry.get(grantId);
             if (grant !== undefined) {
-              yield* audit(grant.request.agentId, grant.request.alias, grant.allowedScope, "denied", "denied by human", true, undefined, grantAuditExtras(auditCtx, "human"));
+              yield* audit(grant.request.agentId, grant.request.alias, grant.allowedScope, "denied", "denied by human", false, undefined, grantAuditExtras(auditCtx, "human"));
             }
           }),
 
@@ -790,10 +791,10 @@ export function makeVaultServiceLive(
               yield* forgetDecision(grant.grantId);
               yield* forgetGrantAudit(grant.grantId);
               yield* interruptSleeper(grant.grantId);
-              yield* audit(grant.request.agentId, grant.request.alias, grant.allowedScope, "revoked", `revoked: ${agentIdOrAlias}`, true, undefined, grantAuditExtras(auditCtx));
+              yield* audit(grant.request.agentId, grant.request.alias, grant.allowedScope, "revoked", `revoked: ${agentIdOrAlias}`, false, undefined, grantAuditExtras(auditCtx));
             }
             if (affected.length === 0) {
-              yield* audit(agentIdOrAlias, agentIdOrAlias, "", "revoked", `revoked: ${agentIdOrAlias}`, true);
+              yield* audit(agentIdOrAlias, agentIdOrAlias, "", "revoked", `revoked: ${agentIdOrAlias}`, false);
             }
           }),
 
@@ -816,8 +817,9 @@ export function makeVaultServiceLive(
             const now = yield* Clock.currentTimeMillis;
             const grants = yield* registry.listGrants();
             const wardenSettings = yield* store.getWardenSettings();
+            const hasMarshal = wardenSettings.provider !== "none";
             const pendingModelId =
-              wardenSettings.provider !== "none" && wardenSettings.model.trim() !== ""
+              hasMarshal && wardenSettings.model.trim() !== ""
                 ? wardenSettings.model
                 : modelId;
             const decisionMap = yield* Ref.get(decisions);
@@ -839,11 +841,13 @@ export function makeVaultServiceLive(
                 risk: decision?.risk ?? "medium",
                 marshalExplanation:
                   decision?.explanation ??
-                  "Marshal unavailable — deterministic policy requires your approval.",
+                  (hasMarshal
+                    ? "Marshal unavailable — deterministic policy requires your approval."
+                    : "Policy requires human approval."),
                 createdAtMs: grant.createdAtMs,
                 expiresAtMs: grant.expiresAtMs,
               };
-              pending.push({ ...base, modelId: pendingModelId });
+              pending.push(hasMarshal ? { ...base, modelId: pendingModelId } : base);
             }
             pending.sort((a, b) => a.createdAtMs - b.createdAtMs);
             return pending;

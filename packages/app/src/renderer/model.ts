@@ -507,9 +507,15 @@ export interface PolicyRow {
 export function derivePolicies(events: readonly AuditEventLike[]): PolicyRow[] {
   const byAgent = new Map<string, { scopes: Set<string>; requestCount: number; lastSeenTs: string | null }>();
   for (const event of events) {
-    // Adding a credential is not agent activity: it must not create a
-    // phantom "human" agent row.
-    if (event.stage === "credential-added" || event.stage === "credential-deleted") {
+    // Administrative and lifecycle events are not agent activity: they must
+    // not create phantom "human" or "agent" rows.
+    if (
+      event.stage === "credential-added" ||
+      event.stage === "credential-deleted" ||
+      event.stage === "settings-changed" ||
+      event.stage === "enrollment-created" ||
+      event.stage === "enrollment-completed"
+    ) {
       continue;
     }
     const entry = byAgent.get(event.agentId) ?? { scopes: new Set<string>(), requestCount: 0, lastSeenTs: null };

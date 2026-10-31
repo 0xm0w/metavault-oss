@@ -5,20 +5,17 @@ Private remote: `https://github.com/0xm0w/openvault`
 
 ## Where things stand
 
-- Branch `main` at `057d106` (`chore(release): v0.1.0-alpha.1 (local build)`).
-- Working tree clean. **`main` is 22 commits ahead of `origin/main` — NOT pushed.**
-  Last pushed commit: `77a9405`. Everything after that is local only. Push when ready.
-- Hardening plan (11 tasks) is implemented: Tasks 1–11 all built, each with a
-  task review + fix round. Plan: `docs/superpowers/plans/2026-10-31-openvault-hardening-release.md`
+- Branch `main` ready for push.
+- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-openvault-hardening-release.md`
 - SDD ledger (task-by-task record, deferred minors, rulings):
   `.superpowers/sdd/2026-10-31-openvault-hardening-release/progress.md`
   Per-task reports + review diffs are in the same folder (`task-N-report.md`, `task-N-review.md`).
-- Last verified gates (Task 11, commit `057d106`): **269 tests passed**,
+- Last verified gates: **271 tests passed**,
   `npm run test:coverage` at plan targets, `npm run typecheck` exit 0, `npm run lint` exit 0.
-  Coverage baseline: core 97.46%, daemon 88.96%, brain 96.34%, mcp 87.98%, renderer model 95.09%.
-- Windows installer built locally (not installed/run as installer; unpacked-launch smoke passed):
-  `packages/app/release/OpenVault-0.1.0-alpha.1-win-x64.exe` — 121,250,465 bytes,
-  SHA256 `df8bb027808d8cbd876122283dcc874a10e9828fc1f6d35c1aea5a0486155cb8`.
+  Coverage baseline: core 97.46%, daemon 89.94%, brain 96.34%, mcp 87.98%, renderer model 95.13%.
+- Windows installer built locally (unpacked-launch smoke passed):
+  `packages/app/release/OpenVault-0.1.0-alpha.1-win-x64.exe` — 121,250,505 bytes,
+  SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`.
 - Site already redeployed (Task 10): `https://openvault-4dn.pages.dev/` plus
   `/docs/`, `/architecture/`, `/hackathon/` all verified HTTP 200.
 
@@ -45,61 +42,14 @@ Private remote: `https://github.com/0xm0w/openvault`
   templates, Dependabot. `CONTRIBUTING.md` has an honestly-labelled *manual*
   repo-settings checklist (branch protection, secret scanning) — not yet toggled on GitHub.
 
+## Final review fix wave (Completed)
+
+- **Must-fix #1 (phantom `modelId`)**: Fixed in `packages/daemon/src/service.ts`. Stamped `modelId` only when marshal actually ran (`marshalRan`). Dropped `modelId` from policy-only chains (pre-check denials, revoked denials, provider-`none` chains) and policy-only pendings in `listPendingApprovals`. Regression tests added in `packages/daemon/test/audit-trail.test.ts`.
+- **Must-fix #3 (version test surface)**: Added fifth surface `packages/mcp/package.json` to `test/version.test.ts`.
+- **Low (phantom Policies rows)**: Updated `derivePolicies` in `packages/app/src/renderer/model.ts` to skip administrative/lifecycle events (`settings-changed`, `enrollment-created`, `enrollment-completed`). Regression test added in `packages/app/test/model.test.ts`.
+- **Full gates & rebuild**: 271 tests passing, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
+
 ## Remaining tasks (in order)
-
-### 1. Fix final-review must-fix #1 — phantom `modelId` (Medium, do first)
-
-Whole-branch final review verdict: **NOT READY TO TAG** until this is fixed.
-Root cause already traced (do not re-investigate from scratch):
-
-- In `packages/daemon/src/service.ts`, `requestCapability` stamps the static default
-  `modelId` (`llama3.2:3b`) on audit events where **no marshal ran**: the
-  revoked-denial path (~line 564) and the unknown-alias/rate-limit policy+denied pair
-  (~line 589) call `audit(..., withModel=true)` with no override. Post-marshal
-  policy/denied events (~line 657) stamp `marshalModelId` even on provider-`none`
-  chains, and `listPendingApprovals` (~line 818) attaches the static model to
-  policy-only pendings.
-- Symptom: Audit page timeline shows a model "deciding" requests that policy alone
-  denied. These rows persist in user vaults, so alpha users' history would be
-  permanently misattributed. The chip label hides it (`policy-only` when risk is
-  null); the expanded timeline in `packages/app/src/renderer/main.ts` (~line 782) does not.
-- Fix: stamp `modelId` only when a marshal decision/failure actually occurred;
-  drop `modelId` from policy-only pendings.
-- Regression test (TDD, failing first): provider-`none` / policy-denied audit chain
-  events carry **no** `modelId`. Existing test
-  `packages/daemon/test/audit-trail.test.ts` (~line 117) asserts stages/sources but
-  never `modelId` absence — extend it. This gap is how it slipped through 3 reviews.
-- Process note: `systematic-debugging` skill was loaded for this fix; root cause is
-  confirmed above, so go straight to Phase 4 (failing test → fix → verify).
-  Dispatch ONE fix subagent, then a scoped re-review of the fix diff (SDD pattern
-  used all session: implementer → review package via `git diff BASE..HEAD` →
-  reviewer → fix round if needed). For this fix round, BASE is `057d106`.
-  Tasks 1+2 below land as that single fix-wave commit (see Task 3).
-
-### 2. Fix final-review must-fix #3 + Low (same commit is fine)
-
-- Must-fix #3: `test/version.test.ts` (~line 20) pins root, app, `MCP_VERSION`,
-  `APP_VERSION_DISPLAY` — add the fifth surface `packages/mcp/package.json`
-  (currently correct at `0.1.0-alpha.1`, just unpinned by the test).
-- Low: phantom Policies rows. `derivePolicies` in
-  `packages/app/src/renderer/model.ts` (~line 507) skips only
-  `credential-added`/`credential-deleted`, so `settings-changed` creates a bogus
-  "human" agent row and `enrollment-completed` (audited as literal `"agent"` in
-  `service.ts` ~line 440) creates an "agent" row. One-line skip-list fix + test.
-
-### 3. Re-run full gates and rebuild installer
-
-```powershell
-npm run test            # expect >= 269 passed
-npm run test:coverage
-npm run typecheck
-npm run lint
-cd packages/app; npm run build; npx electron-builder --win
-```
-
-Record the new installer size + SHA256 in `docs/VERIFICATION.md`
-(replaces the `057d106` numbers above). Commit the fix wave as one commit.
-Update the SDD ledger (`progress.md`) with fix-round + completion lines.
 
 ### 4. Push and get CI green BEFORE tagging (final-review must-fix #2)
 

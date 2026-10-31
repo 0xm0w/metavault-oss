@@ -125,6 +125,7 @@ describe("structured audit trails (Task 4)", () => {
       expect(chain.some((e) => e.stage === "marshal")).toBe(false);
       expect(chain.find((e) => e.stage === "policy")?.decisionSource).toBe("policy");
       expect(chain.find((e) => e.stage === "denied")?.decisionSource).toBe("policy");
+      expect(chain.every((e) => e.modelId === undefined)).toBe(true);
       expect(new Set(chain.map((e) => e.requestId)).size).toBe(1);
       expect(JSON.stringify(chain)).not.toContain(CANARY);
     }));
@@ -135,14 +136,48 @@ describe("structured audit trails (Task 4)", () => {
       yield* svc.updateWardenSettings({ provider: "none" });
       const pending = yield* svc.requestCapability(req);
       expect(pending.status).toBe("awaiting-approval");
+      const listPending = yield* svc.listPendingApprovals();
+      expect(listPending).toHaveLength(1);
+      expect(listPending[0]?.modelId).toBeUndefined();
       yield* svc.deny(grantIdOf(pending));
       const chain = (yield* svc.listAudit()).filter((e) => e.requestId !== undefined);
       expect(chain.map((e) => e.stage)).toEqual(["requested", "policy", "denied"]);
       expect(new Set(chain.map((e) => e.requestId)).size).toBe(1);
+      expect(chain.every((e) => e.modelId === undefined)).toBe(true);
       const denied = chain.find((e) => e.stage === "denied");
       expect(denied?.decisionSource).toBe("human");
       expect(denied?.detail).toBe("denied by human");
       expect(JSON.stringify(chain)).not.toContain(CANARY);
+    }));
+
+  it.effect("policy-only denials (revoked, unknown alias) carry no phantom modelId", () =>
+    Effect.gen(function* () {
+      const svc = yield* seeded(BrainApproval);
+      // 1. Unknown alias denial before marshal runs
+      const unknownResult = yield* svc.requestCapability({
+        ...req,
+        alias: "unknown-service",
+      });
+      expect(unknownResult.status).toBe("denied");
+      const auditEvents = yield* svc.listAudit();
+      const unknownChain = auditEvents.filter((e) => e.alias === "unknown-service");
+      expect(unknownChain.map((e) => e.stage)).toEqual(["requested", "policy", "denied"]);
+      expect(unknownChain.every((e) => e.modelId === undefined)).toBe(true);
+      expect(unknownChain.find((e) => e.stage === "policy")?.decisionSource).toBe("policy");
+      expect(unknownChain.find((e) => e.stage === "denied")?.decisionSource).toBe("policy");
+
+      // 2. Revoked agent denial
+      yield* svc.revoke("cursor");
+      const revokedResult = yield* svc.requestCapability(req);
+      expect(revokedResult.status).toBe("denied");
+      const allAudit = yield* svc.listAudit();
+      // Find the denied event for this request
+      const revokedDenied = allAudit.filter(
+        (e) => e.agentId === "cursor" && e.stage === "denied" && e.detail === "revoked",
+      );
+      expect(revokedDenied).toHaveLength(1);
+      expect(revokedDenied[0]?.modelId).toBeUndefined();
+      expect(revokedDenied[0]?.decisionSource).toBe("policy");
     }));
 
   it("migrates a legacy audit table in place and round-trips new fields", () => {

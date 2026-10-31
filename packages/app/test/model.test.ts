@@ -362,6 +362,32 @@ describe("credential form helpers", () => {
     expect(mixed.map((r) => r.agentId)).toEqual(["cursor"]);
   });
 
+  it("does not create phantom policy rows from admin or enrollment lifecycle events", () => {
+    const rows = derivePolicies([
+      auditEvent({
+        stage: "settings-changed",
+        agentId: "human",
+        detail: "warden settings changed: provider=none model=llama3.2:3b",
+      }),
+      auditEvent({
+        stage: "enrollment-created",
+        agentId: "agent",
+        detail: "enrollment created: stripe",
+      }),
+      auditEvent({
+        stage: "enrollment-completed",
+        agentId: "agent",
+        detail: "enrollment completed: stripe",
+      }),
+      auditEvent({
+        stage: "credential-deleted",
+        agentId: "human",
+        detail: "credential deleted: stripe",
+      }),
+    ]);
+    expect(rows).toEqual([]);
+  });
+
   it("projects credential-added audit events", () => {
     expect(projectAuditEvent(auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }))).toEqual(
       auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }),

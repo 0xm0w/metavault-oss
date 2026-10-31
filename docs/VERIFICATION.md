@@ -158,13 +158,13 @@ release workflow remains unproven until its first `v*` run).
 | Item | Value |
 |---|---|
 | Installer | `OpenVault-0.1.0-alpha.1-win-x64.exe` (NSIS, x64, unsigned) |
-| Size | 121,250,465 bytes (115.6 MB) |
-| SHA256 | `df8bb027808d8cbd876122283dcc874a10e9828fc1f6d35c1aea5a0486155cb8` |
+| Size | 121,250,505 bytes (115.6 MB) |
+| SHA256 | `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a` |
 | Built with | `cd packages/app && npm run build && npx electron-builder --win --publish never` (locked root devDependency `electron-builder@26.18.0`, Electron 45.2.1) |
 
-Gates (in-session, after the version bump): `npm run test` — **269
-passed** (34 files, including the new `test/version.test.ts` asserting
-root `package.json` = `packages/app/package.json` = `MCP_VERSION` =
+Gates (in-session, after the version bump and final review fix wave): `npm run test` — **271
+passed** (34 files, including the extended `test/version.test.ts` asserting
+root `package.json` = `packages/app/package.json` = `packages/mcp/package.json` = `MCP_VERSION` =
 renderer `APP_VERSION_DISPLAY` = `0.1.0-alpha.1`);
 `npm run test:coverage` — exit 0 (all package thresholds met);
 `npm run typecheck` — exit 0; `npm run lint` — exit 0.
