@@ -332,7 +332,8 @@ export async function handleVaultRequest(
     const scope = decoded.scope.trim();
     const website = (decoded.website ?? "").trim();
     const reason = (decoded.reason ?? "").trim().slice(0, 256);
-    const created = await run(service.createEnrollment(alias, scope, website, reason === "" ? undefined : reason));
+    const agentId = decoded.agentId !== undefined ? decoded.agentId.trim().slice(0, 128) : "";
+    const created = await run(service.createEnrollment(alias, scope, website, reason === "" ? undefined : reason, agentId === "" ? undefined : agentId));
     if (created.status !== 200) { return created; }
     const record = created.body as { enrollmentId: string; alias: string; scope: string; website: string };
     return { status: 201, body: { enrollmentId: record.enrollmentId, deeplink: buildEnrollmentDeeplink(record) } };

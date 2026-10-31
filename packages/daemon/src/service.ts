@@ -90,6 +90,7 @@ export interface EnrollmentRecord {
   readonly website: string;
   readonly status: EnrollmentStatusValue;
   readonly expiresAtMs: number;
+  readonly agentId?: string;
 }
 
 export interface VaultServiceService {
@@ -105,6 +106,7 @@ export interface VaultServiceService {
     scope: string,
     website?: string,
     reason?: string,
+    agentId?: string,
   ) => Effect.Effect<EnrollmentRecord, StorageError>;
   readonly getEnrollment: (
     enrollmentId: string,
@@ -442,7 +444,7 @@ export function makeVaultServiceLive(
             ),
           ),
 
-        createEnrollment: (alias, scope, website, reason) =>
+        createEnrollment: (alias, scope, website, reason, agentId) =>
           Effect.gen(function* () {
             if (alias === WARDEN_KEY_ALIAS) {
               return yield* Effect.fail(
@@ -451,26 +453,42 @@ export function makeVaultServiceLive(
             }
             const now = yield* Clock.currentTimeMillis;
             yield* purgeExpiredEnrollments(now);
-            // Bound the pending registry: evict the oldest pending
-            // enrollments beyond the cap so agent floods cannot grow it
-            // without limit inside the TTL window.
+            const owner = agentId !== undefined && agentId.trim() !== "" ? agentId.trim().slice(0, 128) : undefined;
+            // Bound the pending registry (expired already purged above).
+            // Fairness: evict the incoming agent's own oldest pendings
+            // first, so one flooding agent cannot evict another agent's
+            // pending enrollment; only when the incoming agent has none
+            // pending fall back to the globally oldest pending.
             yield* Ref.update(enrollments, (map) => {
               const pending = [...map.values()].filter((r) => r.status === "pending");
               if (pending.length < MAX_PENDING_ENROLLMENTS) {
                 return map;
               }
               const next = new Map(map);
-              const evictCount = pending.length - MAX_PENDING_ENROLLMENTS + 1;
-              for (const record of pending.slice(0, evictCount)) {
-                next.delete(record.enrollmentId);
+              let remaining = pending.length - MAX_PENDING_ENROLLMENTS + 1;
+              if (owner !== undefined) {
+                for (const record of pending) {
+                  if (remaining <= 0) break;
+                  if (record.agentId === owner) {
+                    next.delete(record.enrollmentId);
+                    remaining -= 1;
+                  }
+                }
+              }
+              for (const record of pending) {
+                if (remaining <= 0) break;
+                if (next.has(record.enrollmentId)) {
+                  next.delete(record.enrollmentId);
+                  remaining -= 1;
+                }
               }
               return next;
             });
             const enrollmentId = yield* Effect.sync(() => randomUUID());
-            const record: EnrollmentRecord = { enrollmentId, alias, scope, website: website ?? "", status: "pending", expiresAtMs: now + enrollmentTtlMs };
+            const record: EnrollmentRecord = { enrollmentId, alias, scope, website: website ?? "", status: "pending", expiresAtMs: now + enrollmentTtlMs, ...(owner !== undefined ? { agentId: owner } : {}) };
             yield* Ref.update(enrollments, (map) => { const next = new Map(map); next.set(enrollmentId, record); return next; });
             const cappedReason = (reason ?? "").trim().slice(0, ENROLLMENT_REASON_MAX_LENGTH);
-            yield* audit("agent", alias, scope, "enrollment-created", cappedReason === "" ? `enrollment created: ${alias}` : `enrollment created: ${alias}: ${cappedReason}`, false);
+            yield* audit(owner ?? "agent", alias, scope, "enrollment-created", cappedReason === "" ? `enrollment created: ${alias}` : `enrollment created: ${alias}: ${cappedReason}`, false);
             return record;
           }),
 

@@ -178,7 +178,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
     if (input === null || input.alias.trim() === "" || input.scope.trim() === "") {
       return errorResult("invalid arguments for request_enrollment");
     }
-    const candidate: { alias: string; scope: string; website?: string; reason?: string } = { alias: input.alias.trim(), scope: input.scope.trim() };
+    const candidate: { alias: string; scope: string; website?: string; reason?: string; agentId: string } = { alias: input.alias.trim(), scope: input.scope.trim(), agentId };
     if (input.website !== undefined && input.website.trim() !== "") { candidate.website = input.website.trim(); }
     if (input.reason !== undefined && input.reason.trim() !== "") { candidate.reason = input.reason.trim().slice(0, 256); }
     const decoded = await decode(EnrollmentRequestSchema, candidate);
