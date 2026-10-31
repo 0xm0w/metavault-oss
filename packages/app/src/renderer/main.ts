@@ -1,21 +1,27 @@
 import {
   buildAuditRows,
+  buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
   credentialInitial,
   deriveVaultCards,
+  faviconUrl,
   formatExpiry,
   formatLastUsed,
   isCredentialFormComplete,
   marshalStatusLine,
+  normalizeWebsite,
   projectAliasesResponse,
   projectAuditResponse,
+  projectCredentialsResponse,
   projectPendingResponse,
   projectPoliciesResponse,
+  runDeeplinkAddFlow,
+  shouldShowAgentComputerWarning,
   sortApprovals,
   stageLabel,
 } from "./model.js";
-import type { AuditEventLike, PendingApproval, PoliciesData } from "./types.js";
+import type { AuditEventLike, CredentialMeta, DeeplinkAddParams, PendingApproval, PoliciesData } from "./types.js";
 
 // Renderer bootstrap: plain TypeScript over the preload bridge. Every
 // daemon payload is projected through model.ts whitelists before it is
@@ -28,6 +34,7 @@ const POLL_MS = 4_000;
 let currentView: ViewName = "approval";
 let approvals: PendingApproval[] = [];
 let aliases: string[] = [];
+let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let selectedGrantId: string | null = null;
@@ -220,7 +227,7 @@ function closeCredentialModal(restoreFocus = true): void {
   }
 }
 
-function openCredentialModal(): void {
+function openCredentialModal(prefill?: DeeplinkAddParams): void {
   if (credentialModal !== null) {
     return;
   }
@@ -265,6 +272,13 @@ function openCredentialModal(): void {
   const nameInput = makeField("Name", "text", "Stripe", "off");
   const scopeInput = makeField("Scope", "text", "charges.read", "off");
   const secretInput = makeField("Secret", "password", "Secret value", "new-password");
+  const websiteInput = makeField("Website", "text", "cloudflare.com", "off");
+  if (prefill !== undefined) {
+    nameInput.value = prefill.alias;
+    scopeInput.value = prefill.scope;
+    websiteInput.value = prefill.website;
+    secretInput.value = "";
+  }
 
   const actions = el("div", "vault-modal-actions");
   const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
@@ -305,7 +319,13 @@ function openCredentialModal(): void {
       cancelBtn.disabled = true;
       errorBox.hidden = true;
       try {
-        await window.openvault.addCredential(nameInput.value.trim(), scopeInput.value.trim(), secretInput.value);
+        await window.openvault.addCredential(
+          nameInput.value.trim(),
+          scopeInput.value.trim(),
+          secretInput.value,
+          websiteInput.value.trim(),
+          prefill?.enrollmentId,
+        );
         closeCredentialModal(false);
         notice = null;
         await refresh();
@@ -328,7 +348,232 @@ function openCredentialModal(): void {
   overlay.append(dialog);
   document.body.append(overlay);
   credentialModal = overlay;
-  nameInput.focus();
+  syncSave();
+  // From a deeplink the human only supplies the secret, so focus lands
+  // there; a manual open still starts at Name.
+  if (prefill !== undefined) {
+    secretInput.focus();
+  } else {
+    nameInput.focus();
+  }
+}
+
+function faviconNode(website: string, alias: string, large = false): HTMLElement {
+  const url = faviconUrl(website);
+  if (url === null) {
+    return el("div", "vault-avatar", credentialInitial(alias));
+  }
+  const wrap = el("div", "vault-avatar");
+  if (large) {
+    wrap.style.width = "44px";
+    wrap.style.height = "44px";
+    wrap.style.borderRadius = "12px";
+  }
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  img.className = large ? "vault-favicon-lg" : "vault-favicon";
+  img.addEventListener("error", () => {
+    wrap.replaceChildren(document.createTextNode(credentialInitial(alias)));
+  });
+  wrap.append(img);
+  return wrap;
+}
+
+let detailReturnFocus: HTMLElement | null = null;
+
+function openCredentialDetail(card: { alias: string; website: string; scopes: readonly string[] }): void {
+  if (credentialModal !== null) {
+    return;
+  }
+  detailReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const overlay = el("div", "vault-modal-overlay");
+  const dialog = el("div", "vault-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "vault-detail-title");
+
+  const iconWrap = el("div", "vault-detail-icon");
+  iconWrap.append(faviconNode(card.website, card.alias, true));
+  dialog.append(iconWrap);
+
+  const header = el("div", "vault-modal-header");
+  const title = el("h2", "vault-modal-title", card.alias);
+  title.id = "vault-detail-title";
+  const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Close");
+  header.append(title, closeBtn);
+  dialog.append(header);
+
+  const errorBox = el("p", "vault-modal-error");
+  errorBox.hidden = true;
+  dialog.append(errorBox);
+
+  const makeField = (
+    labelText: string,
+    inputType: string,
+    placeholder: string,
+    value: string,
+    readOnly = false,
+  ): HTMLInputElement => {
+    const wrap = el("label", "vault-field");
+    wrap.append(el("span", "vault-field-label", labelText));
+    const input = document.createElement("input");
+    input.className = "vault-input";
+    input.type = inputType;
+    input.placeholder = placeholder;
+    input.value = value;
+    input.autocomplete = "off";
+    if (readOnly) {
+      input.readOnly = true;
+    }
+    wrap.append(input);
+    dialog.append(wrap);
+    return input;
+  };
+
+  makeField("Name", "text", "", card.alias, true);
+  dialog.append(el("p", "vault-note", "Name cannot be changed. Delete and re-add to rename."));
+  const scopeInput = makeField("Scope", "text", "charges.read", card.scopes[0] ?? "");
+  // Scope ceiling is the policies ceiling when available; fall back to first observed scope.
+  const ceiling = policiesData.ceilings[card.alias];
+  if (ceiling !== undefined) {
+    scopeInput.value = ceiling;
+  }
+  const secretInput = makeField("Password", "password", "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "");
+  const websiteInput = makeField("Website", "text", "cloudflare.com", card.website);
+
+  const warning = el("p", "vault-warning", "Your agent can read it on its computer.");
+  const contextRow = el("div", "vault-context-row");
+  const renderContext = (): void => {
+    contextRow.replaceChildren();
+    const site = normalizeWebsite(websiteInput.value);
+    warning.hidden = !shouldShowAgentComputerWarning(websiteInput.value);
+    if (site !== "") {
+      const chip = el("span", "chip vault-site-chip");
+      const fav = faviconUrl(site);
+      if (fav !== null) {
+        const img = document.createElement("img");
+        img.src = fav;
+        img.alt = "";
+        img.className = "vault-favicon";
+        img.addEventListener("error", () => { img.remove(); });
+        chip.append(img);
+      }
+      chip.append(document.createTextNode(site));
+      contextRow.append(chip);
+      contextRow.append(el("span", "chip vault-agent-chip", "Agent's computer"));
+    }
+  };
+  renderContext();
+  websiteInput.addEventListener("input", renderContext);
+  dialog.append(contextRow);
+  dialog.append(warning);
+
+  const actions = el("div", "vault-modal-actions vault-modal-actions-split");
+  const deleteBtn = el("button", "vault-btn vault-btn-danger", "Delete") as HTMLButtonElement;
+  deleteBtn.type = "button";
+  const right = el("div", "vault-modal-actions-right");
+  const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
+  cancelBtn.type = "button";
+  const saveBtn = el("button", "vault-btn vault-btn-primary", "Save") as HTMLButtonElement;
+  saveBtn.type = "button";
+  right.append(cancelBtn, saveBtn);
+  actions.append(deleteBtn, right);
+  dialog.append(actions);
+
+  let confirmTimer: number | null = null;
+  const close = (): void => {
+    if (confirmTimer !== null) {
+      window.clearTimeout(confirmTimer);
+    }
+    closeCredentialModal(false);
+    const target =
+      detailReturnFocus !== null && document.contains(detailReturnFocus)
+        ? detailReturnFocus
+        : document.querySelector<HTMLElement>(".vault-add-btn");
+    target?.focus();
+    detailReturnFocus = null;
+  };
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      close();
+    }
+  });
+  credentialModalKeyHandler = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      close();
+    }
+  };
+  document.addEventListener("keydown", credentialModalKeyHandler);
+
+  deleteBtn.addEventListener("click", () => {
+    void (async () => {
+      if (deleteBtn.dataset["confirm"] !== "true") {
+        deleteBtn.dataset["confirm"] = "true";
+        deleteBtn.textContent = "Confirm delete";
+        deleteBtn.className = "vault-btn vault-btn-danger-confirm";
+        confirmTimer = window.setTimeout(() => {
+          deleteBtn.dataset["confirm"] = "";
+          deleteBtn.textContent = "Delete";
+          deleteBtn.className = "vault-btn vault-btn-danger";
+        }, 3000);
+        return;
+      }
+      if (confirmTimer !== null) {
+        window.clearTimeout(confirmTimer);
+      }
+      deleteBtn.disabled = true;
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      errorBox.hidden = true;
+      try {
+        await window.openvault.deleteCredential(card.alias);
+        closeCredentialModal(false);
+        await refresh();
+        document.querySelector<HTMLElement>(".vault-add-btn")?.focus();
+      } catch (err) {
+        errorBox.textContent = err instanceof Error ? err.message : "Could not delete credential";
+        errorBox.hidden = false;
+        deleteBtn.disabled = false;
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+    })();
+  });
+
+  saveBtn.addEventListener("click", () => {
+    void (async () => {
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      deleteBtn.disabled = true;
+      errorBox.hidden = true;
+      try {
+        await window.openvault.updateCredential(
+          card.alias,
+          buildEditPayload({ scope: scopeInput.value, website: websiteInput.value, secret: secretInput.value }),
+        );
+        closeCredentialModal(false);
+        await refresh();
+        const cardBtn = document.querySelector<HTMLElement>(`[data-alias="${CSS.escape(card.alias)}"]`);
+        (cardBtn ?? document.querySelector<HTMLElement>(".vault-add-btn"))?.focus();
+      } catch (err) {
+        errorBox.textContent = err instanceof Error ? err.message : "Could not save credential";
+        errorBox.hidden = false;
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+        deleteBtn.disabled = false;
+      }
+    })();
+  });
+
+  overlay.append(dialog);
+  document.body.append(overlay);
+  credentialModal = overlay;
+  scopeInput.focus();
 }
 
 function renderVault(view: HTMLElement): void {
@@ -351,9 +596,12 @@ function renderVault(view: HTMLElement): void {
     return;
   }
   const list = el("div", "vault-list");
-  for (const card of deriveVaultCards(aliases, auditEvents)) {
-    const row = el("article", "vault-row");
-    row.append(el("div", "vault-avatar", credentialInitial(card.alias)));
+  for (const card of deriveVaultCards(aliases, auditEvents, credentialMeta)) {
+    const row = el("button", "vault-row vault-row-btn") as HTMLButtonElement;
+    row.type = "button";
+    row.dataset["alias"] = card.alias;
+    row.setAttribute("aria-label", `Edit credential ${card.alias}`);
+    row.append(faviconNode(card.website, card.alias));
     const main = el("div", "vault-row-main");
     main.append(el("div", "vault-alias", card.alias));
     const sub = el("div", "vault-row-sub");
@@ -363,9 +611,15 @@ function renderVault(view: HTMLElement): void {
     for (const scope of card.scopes) {
       sub.append(el("span", "chip vault-scope-chip", scope));
     }
+    if (card.website !== "") {
+      sub.append(el("span", "vault-muted", card.website));
+    }
     sub.append(el("span", "vault-muted", `Last used \u00B7 ${formatLastUsed(card.lastUsedTs, Date.now())}`));
     main.append(sub);
     row.append(main);
+    row.addEventListener("click", () => {
+      openCredentialDetail(card);
+    });
     list.append(row);
   }
   panel.append(list);
@@ -462,7 +716,7 @@ function renderPolicies(view: HTMLElement): void {
     list.append(node);
   }
   view.append(list);
-  const note = el("p", "fine", `Stages: ${(["requested", "marshal", "policy", "approved", "denied", "executed", "expired", "revoked", "credential-added"] as const).map(stageLabel).join(" · ")}`);
+  const note = el("p", "fine", `Stages: ${(["requested", "marshal", "policy", "approved", "denied", "executed", "expired", "revoked", "credential-added", "credential-deleted"] as const).map(stageLabel).join(" · ")}`);
   view.append(note);
 }
 
@@ -491,6 +745,7 @@ async function refresh(): Promise<void> {
     ]);
     approvals = projectPendingResponse(pendingRaw);
     aliases = projectAliasesResponse(aliasesRaw);
+    credentialMeta = projectCredentialsResponse(aliasesRaw);
     auditEvents = projectAuditResponse(auditRaw);
     policiesData = projectPoliciesResponse(policiesRaw);
     setDaemonStatus(true);
@@ -500,6 +755,22 @@ async function refresh(): Promise<void> {
     showBanner(err instanceof Error ? err.message : "Could not reach vaultd");
   }
   render();
+}
+
+// The most recent refresh, so the deeplink flow can wait out a render that
+// is already in flight instead of racing it (see runDeeplinkAddFlow).
+let inFlightRefresh: Promise<void> | null = null;
+
+function refreshTracked(): Promise<void> {
+  const pending = refresh();
+  inFlightRefresh = pending;
+  const clear = (): void => {
+    if (inFlightRefresh === pending) {
+      inFlightRefresh = null;
+    }
+  };
+  void pending.then(clear, clear);
+  return pending;
 }
 
 function tickExpiryLabels(): void {
@@ -513,6 +784,36 @@ function tickExpiryLabels(): void {
 }
 
 function start(): void {
+  window.openvault.onDeeplinkAdd((params) => {
+    // Sequenced by runDeeplinkAddFlow: the prefilled Add modal opens only
+    // after the Vault render (and any refresh already in flight) has fully
+    // completed, replacing any modal that is open. A failure surfaces in
+    // the banner instead of silently leaving no modal.
+    void runDeeplinkAddFlow(params, {
+      switchToVault: () => {
+        currentView = "vault";
+        document.querySelectorAll<HTMLElement>(".nav-btn").forEach((b) => {
+          b.classList.toggle("is-active", b.dataset["view"] === "vault");
+        });
+      },
+      renderVault: async () => {
+        if (inFlightRefresh !== null) {
+          await inFlightRefresh;
+        }
+        render();
+      },
+      closeModalIfOpen: () => {
+        if (credentialModal !== null) {
+          closeCredentialModal(false);
+        }
+      },
+      openAddModal: (prefill) => {
+        openCredentialModal(prefill);
+      },
+    }).catch((err: unknown) => {
+      showBanner(err instanceof Error ? err.message : "Could not open the add-credential dialog");
+    });
+  });
   document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((button) => {
     button.addEventListener("click", () => {
       const next = button.dataset["view"];
@@ -526,9 +827,9 @@ function start(): void {
       }
     });
   });
-  void refresh();
+  void refreshTracked();
   window.setInterval(() => {
-    void refresh();
+    void refreshTracked();
   }, POLL_MS);
   window.setInterval(tickExpiryLabels, 1_000);
 }

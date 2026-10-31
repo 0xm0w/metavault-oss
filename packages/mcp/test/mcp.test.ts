@@ -93,10 +93,10 @@ afterAll(async () => {
 });
 
 describe("OpenVault MCP server (in-process client)", () => {
-  it("lists the three tools with object input schemas", async () => {
+  it("lists the five tools with object input schemas", async () => {
     const listed = await client.listTools();
     const names = listed.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["list_aliases", "request_capability", "revoke"]);
+    expect(names).toEqual(["enrollment_status", "list_aliases", "request_capability", "request_enrollment", "revoke"]);
     for (const tool of listed.tools) {
       expect(tool.inputSchema.type).toBe("object");
     }

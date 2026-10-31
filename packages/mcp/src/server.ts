@@ -8,7 +8,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Effect, Exit, JSONSchema, Schema } from "effect";
-import { CapabilityRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
+import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 
 export type DaemonFetch = typeof fetch;
 
@@ -32,6 +32,13 @@ const RequestCapabilityToolSchema = Schema.Struct({
 });
 
 const NoArgsSchema = Schema.Struct({});
+
+const RequestEnrollmentToolSchema = Schema.Struct({
+  alias: Schema.String,
+  scope: Schema.String,
+  reason: Schema.optional(Schema.String),
+  website: Schema.optional(Schema.String),
+});
 
 type RequestCapabilityToolInput = Schema.Schema.Type<typeof RequestCapabilityToolSchema>;
 
@@ -57,6 +64,17 @@ const TOOLS: readonly Tool[] = [
     name: "list_aliases",
     description: "List known credential aliases (aliases only, never secret values).",
     inputSchema: toolInputSchema(NoArgsSchema),
+  },
+  {
+    name: "request_enrollment",
+    description:
+      "Ask the human to add a credential you do not have. Creates a pending enrollment and returns a deeplink (openvault://add?...) that opens the OpenVault app with alias/scope/website prefilled — only the human types the secret. Show the deeplink to the user, then poll enrollment_status. Never returns secret values.",
+    inputSchema: toolInputSchema(RequestEnrollmentToolSchema),
+  },
+  {
+    name: "enrollment_status",
+    description: "Check an enrollment created by request_enrollment: pending, completed, or expired.",
+    inputSchema: toolInputSchema(EnrollmentIdSchema),
   },
   {
     name: "revoke",
@@ -125,6 +143,8 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
     return verbatimResult(parsed, response.ok);
   };
 
+  const textOfResult = (result: CallToolResult): string => result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n");
+
   const handleRequestCapability = async (args: unknown): Promise<CallToolResult> => {
     const input: RequestCapabilityToolInput | null = await decode(
       RequestCapabilityToolSchema,
@@ -149,6 +169,33 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
       ...decoded,
       ...(input.payload !== undefined ? { payload: input.payload } : {}),
     });
+  };
+
+  const handleRequestEnrollment = async (args: unknown): Promise<CallToolResult> => {
+    const input = await decode(RequestEnrollmentToolSchema, args ?? {});
+    if (input === null || input.alias.trim() === "" || input.scope.trim() === "") {
+      return errorResult("invalid arguments for request_enrollment");
+    }
+    const candidate: { alias: string; scope: string; website?: string; reason?: string } = { alias: input.alias.trim(), scope: input.scope.trim() };
+    if (input.website !== undefined && input.website.trim() !== "") { candidate.website = input.website.trim(); }
+    if (input.reason !== undefined && input.reason.trim() !== "") { candidate.reason = input.reason.trim().slice(0, 256); }
+    const decoded = await decode(EnrollmentRequestSchema, candidate);
+    if (decoded === null) { return errorResult("invalid arguments for request_enrollment"); }
+    const result = await callDaemon("POST", "/enrollments", decoded);
+    if (result.isError === true) { return result; }
+    const parsed: unknown = JSON.parse(textOfResult(result)) as unknown;
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const enriched = { ...record, instruction: "Show this deeplink to the user and ask them to open it, paste the secret in OpenVault, and save. Then poll enrollment_status until completed, then test the credential with request_capability and report the outcome." };
+      return verbatimResult(enriched, true);
+    }
+    return result;
+  };
+
+  const handleEnrollmentStatus = async (args: unknown): Promise<CallToolResult> => {
+    const decoded = await decode(EnrollmentIdSchema, args ?? {});
+    if (decoded === null || decoded.enrollmentId.trim() === "") { return errorResult("invalid arguments for enrollment_status"); }
+    return callDaemon("GET", `/enrollments/${encodeURIComponent(decoded.enrollmentId.trim())}`);
   };
 
   const handleRevoke = async (args: unknown): Promise<CallToolResult> => {
@@ -179,6 +226,10 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
       }
       case "request_capability":
         return handleRequestCapability(args);
+      case "request_enrollment":
+        return handleRequestEnrollment(args);
+      case "enrollment_status":
+        return handleEnrollmentStatus(args);
       case "revoke":
         return handleRevoke(args);
       default:

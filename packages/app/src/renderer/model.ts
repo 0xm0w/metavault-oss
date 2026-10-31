@@ -1,24 +1,32 @@
 import type {
   AuditEventLike,
   AuditStage,
+  CredentialMeta,
+  CredentialPatch,
+  DeeplinkAddParams,
   PendingApproval,
   PoliciesData,
   Risk,
   StandingApproval,
 } from "./types.js";
 
-// Direction B — Marshal Light (design spec Section 7.1). These exact hex
+// Unified warm theme (promoted from the Vault page). These exact hex
 // values are the theme contract; styles.css mirrors them as CSS variables.
 export const TOKENS = {
   surface: "#FFFFFF",
-  surfaceAlt: "#F8FAFC",
-  navy: "#1E3A5F",
-  approve: "#16A34A",
-  deny: "#DC2626",
+  background: "#FAF9F6",
+  ink: "#201A17",
+  muted: "#8A8174",
+  border: "#E6DDD0",
+  field: "#F5F1EC",
+  primary: "#201A17",
+  danger: "#DC2626",
+  teal: "#0F766E",
   warn: "#D97706",
-  ink: "#17233B",
-  border: "#DBE3EE",
 } as const;
+
+export const DISPLAY_FONT = "Georgia, 'Times New Roman', serif";
+export const BODY_FONT = "'Segoe UI', -apple-system, 'San Francisco', system-ui, sans-serif";
 
 export const MARSHAL_DEFAULT_LINE = "Marshal · Llama 3.2 3B · On-device";
 
@@ -75,6 +83,56 @@ export function credentialInitial(alias: string): string {
 
 export function isCredentialFormComplete(alias: string, scope: string, secret: string): boolean {
   return alias.trim() !== "" && scope.trim() !== "" && secret.trim() !== "";
+}
+
+export function shouldShowAgentComputerWarning(website: string): boolean {
+  return normalizeWebsite(website) !== "";
+}
+
+export function normalizeWebsite(website: string): string {
+  let value = website.trim().toLowerCase();
+  value = value.replace(/^https?:\/\//, "");
+  value = value.split("/")[0] ?? "";
+  value = value.split("?")[0] ?? "";
+  value = value.split("#")[0] ?? "";
+  return value.trim();
+}
+
+export function faviconUrl(website: string): string | null {
+  const domain = normalizeWebsite(website);
+  if (domain === "" || !domain.includes(".")) {
+    return null;
+  }
+  return `https://${domain}/favicon.ico`;
+}
+
+export function buildEditPayload(input: {
+  readonly scope: string;
+  readonly website: string;
+  readonly secret: string;
+}): CredentialPatch {
+  const payload: { scope?: string; website?: string; secret?: string } = {
+    scope: input.scope.trim(),
+    website: normalizeWebsite(input.website),
+  };
+  if (input.secret !== "") {
+    payload.secret = input.secret;
+  }
+  return payload;
+}
+
+export function buildAddPayload(input: {
+  readonly alias: string;
+  readonly scope: string;
+  readonly secret: string;
+  readonly website: string;
+}): { alias: string; scope: string; secret: string; website: string } {
+  return {
+    alias: input.alias.trim(),
+    scope: input.scope.trim(),
+    secret: input.secret,
+    website: normalizeWebsite(input.website),
+  };
 }
 
 export function formatLastUsed(tsIso: string | null, nowMs: number): string {
@@ -226,6 +284,9 @@ const AUDIT_STAGES: readonly AuditStage[] = [
   "expired",
   "revoked",
   "credential-added",
+  "credential-deleted",
+  "enrollment-created",
+  "enrollment-completed",
 ];
 
 export function projectAuditEvent(raw: unknown): AuditEventLike | null {
@@ -310,6 +371,28 @@ export function projectPoliciesResponse(raw: unknown): PoliciesData {
   return { ceilings, standingApprovals };
 }
 
+export function projectCredentialsResponse(raw: unknown): CredentialMeta[] {
+  if (!isRecord(raw)) {
+    return [];
+  }
+  const credentials = raw["credentials"];
+  if (Array.isArray(credentials)) {
+    const out: CredentialMeta[] = [];
+    for (const item of credentials as unknown[]) {
+      if (!isRecord(item) || findSecretLikeKeys(item).length > 0) {
+        continue;
+      }
+      const alias = item["alias"];
+      const website = item["website"];
+      if (typeof alias === "string" && alias.length > 0) {
+        out.push({ alias, website: typeof website === "string" ? website : "" });
+      }
+    }
+    return out;
+  }
+  return projectAliasesResponse(raw).map((alias) => ({ alias, website: "" }));
+}
+
 export function projectAliasesResponse(raw: unknown): string[] {
   if (!isRecord(raw)) {
     return [];
@@ -333,12 +416,15 @@ export interface VaultCard {
   readonly alias: string;
   readonly scopes: readonly string[];
   readonly lastUsedTs: string | null;
+  readonly website: string;
 }
 
 export function deriveVaultCards(
   aliases: readonly string[],
   events: readonly AuditEventLike[],
+  meta: readonly CredentialMeta[] = [],
 ): VaultCard[] {
+  const websiteByAlias = new Map(meta.map((entry) => [entry.alias, entry.website]));
   return aliases.map((alias) => {
     const mine = events.filter((e) => e.alias === alias);
     const scopes = [...new Set(mine.map((e) => e.scope).filter((s) => s.length > 0))].sort();
@@ -346,14 +432,14 @@ export function deriveVaultCards(
     for (const event of mine) {
       // Adding a credential is not using it: a just-added credential
       // has never been used.
-      if (event.stage === "credential-added") {
+      if (event.stage === "credential-added" || event.stage === "credential-deleted") {
         continue;
       }
       if (lastUsedTs === null || event.ts > lastUsedTs) {
         lastUsedTs = event.ts;
       }
     }
-    return { alias, scopes, lastUsedTs };
+    return { alias, scopes, lastUsedTs, website: websiteByAlias.get(alias) ?? "" };
   });
 }
 
@@ -369,7 +455,7 @@ export function derivePolicies(events: readonly AuditEventLike[]): PolicyRow[] {
   for (const event of events) {
     // Adding a credential is not agent activity: it must not create a
     // phantom "human" agent row.
-    if (event.stage === "credential-added") {
+    if (event.stage === "credential-added" || event.stage === "credential-deleted") {
       continue;
     }
     const entry = byAgent.get(event.agentId) ?? { scopes: new Set<string>(), requestCount: 0, lastSeenTs: null };
@@ -463,6 +549,9 @@ const STAGE_LABELS: Record<AuditStage, string> = {
   expired: "Expired",
   revoked: "Revoked",
   "credential-added": "Credential added",
+  "credential-deleted": "Credential deleted",
+  "enrollment-created": "Enrollment created",
+  "enrollment-completed": "Enrollment completed",
 };
 
 export function stageLabel(stage: AuditStage): string {
@@ -479,4 +568,33 @@ export function buildAuditRows(events: readonly AuditEventLike[]): AuditRow[] {
     const label = STAGE_LABELS[event.stage];
     return { ...event, stageLabel: label, chain: `${event.agentId} → ${event.scope} → ${label}` };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Deeplink add flow. The DOM layer supplies the effects; this helper owns
+// the ordering, which is the whole contract: switch to Vault, let any
+// in-flight render/refresh fully complete, close whatever modal is open,
+// and only then open the prefilled Add modal. Opening the modal before the
+// render settles is the race that left deeplinks with no modal on screen:
+// the completing render rebuilt the view around (or the still-open modal
+// short-circuited) the open. The modal open is therefore always the last
+// step, and the params reach it untouched (secret is never a deeplink
+// field; the human types it into the focused Secret input).
+// ---------------------------------------------------------------------------
+
+export interface DeeplinkAddFlowDeps {
+  readonly switchToVault: () => void;
+  readonly renderVault: () => void | Promise<void>;
+  readonly closeModalIfOpen: () => void;
+  readonly openAddModal: (params: DeeplinkAddParams) => void;
+}
+
+export async function runDeeplinkAddFlow(
+  params: DeeplinkAddParams,
+  deps: DeeplinkAddFlowDeps,
+): Promise<void> {
+  deps.switchToVault();
+  await deps.renderVault();
+  deps.closeModalIfOpen();
+  deps.openAddModal(params);
 }

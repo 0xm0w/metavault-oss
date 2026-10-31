@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
 import { DAEMON_CALL_CHANNEL, callDaemon } from "./daemon-client.js";
+import { DEEPLINK_CHANNEL, findOpenVaultUrl, parseOpenVaultUrl, type DeeplinkAddParams } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 
 // OpenVault desktop shell: a window over vaultd, in the wallet pattern.
@@ -16,7 +17,38 @@ const here = dirname(fileURLToPath(import.meta.url));
 const preloadPath = join(here, PRELOAD_FILE_NAME);
 const rendererPath = join(here, "renderer", "index.html");
 
+// Register as the openvault:// handler. In dev (running via the Electron
+// binary) the execPath/argv form is required so Windows launches this app.
+if (process.defaultApp) {
+  const script = process.argv[1];
+  if (script !== undefined) {
+    app.setAsDefaultProtocolClient("openvault", process.execPath, [script]);
+  } else {
+    app.setAsDefaultProtocolClient("openvault");
+  }
+} else {
+  app.setAsDefaultProtocolClient("openvault");
+}
+
 let mainWindow: BrowserWindow | null = null;
+let pendingDeeplink: DeeplinkAddParams | null = null;
+let rendererReady = false;
+
+function routeDeeplink(params: DeeplinkAddParams): void {
+  showWindow();
+  if (mainWindow !== null && rendererReady) {
+    mainWindow.webContents.send(DEEPLINK_CHANNEL, params);
+  } else {
+    pendingDeeplink = params;
+  }
+}
+
+function handleDeeplinkUrl(raw: unknown): void {
+  const parsed = parseOpenVaultUrl(raw);
+  if (parsed !== null) {
+    routeDeeplink(parsed);
+  }
+}
 let tray: Tray | null = null;
 let isQuitting = false;
 
@@ -33,6 +65,7 @@ function showWindow(): void {
 }
 
 function createWindow(): void {
+  rendererReady = false;
   const window = new BrowserWindow(buildWindowOptions(preloadPath));
   mainWindow = window;
   window.once("ready-to-show", () => {
@@ -47,6 +80,14 @@ function createWindow(): void {
   window.on("closed", () => {
     if (mainWindow === window) {
       mainWindow = null;
+    }
+  });
+  window.webContents.on("did-finish-load", () => {
+    rendererReady = true;
+    if (pendingDeeplink !== null) {
+      const queued = pendingDeeplink;
+      pendingDeeplink = null;
+      window.webContents.send(DEEPLINK_CHANNEL, queued);
     }
   });
   void window.loadFile(rendererPath);
@@ -77,12 +118,27 @@ function createTray(): void {
   });
 }
 
+const coldStartDeeplink = findOpenVaultUrl(process.argv.slice(1));
+if (coldStartDeeplink !== null) {
+  pendingDeeplink = coldStartDeeplink;
+}
+
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    showWindow();
+  app.on("second-instance", (_event, argv) => {
+    const linked = findOpenVaultUrl(argv);
+    if (linked !== null) {
+      routeDeeplink(linked);
+    } else {
+      showWindow();
+    }
+  });
+  // macOS delivers protocol URLs via open-url, not argv.
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    handleDeeplinkUrl(url);
   });
   void app.whenReady().then(() => {
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));

@@ -53,12 +53,42 @@ export interface PoliciesState {
   }[];
 }
 
+export type EnrollmentStatusValue = "pending" | "completed" | "expired";
+export interface EnrollmentRecord {
+  readonly enrollmentId: string;
+  readonly alias: string;
+  readonly scope: string;
+  readonly website: string;
+  readonly status: EnrollmentStatusValue;
+  readonly expiresAtMs: number;
+}
+
 export interface VaultServiceService {
   readonly seedCredential: (
     alias: string,
     ceiling: string,
     plaintextSecret: string,
+    website?: string,
+    enrollmentId?: string,
   ) => Effect.Effect<void, StorageError>;
+  readonly createEnrollment: (
+    alias: string,
+    scope: string,
+    website?: string,
+    reason?: string,
+  ) => Effect.Effect<EnrollmentRecord, StorageError>;
+  readonly getEnrollment: (
+    enrollmentId: string,
+  ) => Effect.Effect<EnrollmentRecord | null, StorageError>;
+  readonly updateCredential: (
+    alias: string,
+    patch: { readonly scope?: string; readonly website?: string; readonly secret?: string },
+  ) => Effect.Effect<{ readonly scopeCeiling: string; readonly website: string } | null, StorageError>;
+  readonly deleteCredential: (alias: string) => Effect.Effect<boolean, StorageError>;
+  readonly listCredentialMeta: () => Effect.Effect<
+    readonly { readonly alias: string; readonly scopeCeiling: string; readonly website: string }[],
+    StorageError
+  >;
   readonly requestCapability: (
     req: CapabilityRequest,
   ) => Effect.Effect<CapabilityResult, StorageError>;
@@ -91,7 +121,11 @@ export interface VaultServiceOptions {
   readonly rateLimitPerHour?: number;
   readonly standingApprovals?: PolicyConfig["standingApprovals"];
   readonly modelId?: string;
+  readonly enrollmentTtlMs?: number;
 }
+
+export const DEFAULT_ENROLLMENT_TTL_MS = 600_000;
+export const ENROLLMENT_REASON_MAX_LENGTH = 256;
 
 const DEFAULT_GRANT_TTL_MS = 60_000;
 const DEFAULT_RATE_LIMIT_PER_HOUR = 20;
@@ -123,6 +157,7 @@ export function makeVaultServiceLive(
   const rateLimitPerHour = options.rateLimitPerHour ?? DEFAULT_RATE_LIMIT_PER_HOUR;
   const initialStandingApprovals = options.standingApprovals ?? [];
   const modelId = options.modelId ?? DEFAULT_MARSHAL_MODEL;
+  const enrollmentTtlMs = options.enrollmentTtlMs ?? DEFAULT_ENROLLMENT_TTL_MS;
 
   return Layer.effect(
     VaultService,
@@ -142,6 +177,18 @@ export function makeVaultServiceLive(
       // Marshal decision per pending grant, kept so the app can show the
       // assessment (and so approve-always can re-check it server-side).
       const decisions = yield* Ref.make(new Map<string, MarshalDecision | null>());
+      const enrollments = yield* Ref.make(new Map<string, EnrollmentRecord>());
+
+      const purgeExpiredEnrollments = (now: number, keepId?: string): Effect.Effect<void> =>
+        Ref.update(enrollments, (map) => {
+          const next = new Map(map);
+          for (const [id, record] of next) {
+            if (id !== keepId && record.status === "pending" && record.expiresAtMs <= now) {
+              next.delete(id);
+            }
+          }
+          return next;
+        });
 
       const forgetDecision = (grantId: string): Effect.Effect<void> =>
         Ref.update(decisions, (map) => {
@@ -278,9 +325,9 @@ export function makeVaultServiceLive(
         });
 
       const service: VaultServiceService = {
-        seedCredential: (alias, ceiling, plaintextSecret) =>
+        seedCredential: (alias, ceiling, plaintextSecret, website, enrollmentId) =>
           Effect.flatMap(Effect.sync(() => encryptSecret(masterKey, plaintextSecret)), (blob) =>
-            Effect.flatMap(store.addCredential(alias, ceiling, blob), () =>
+            Effect.flatMap(store.addCredential(alias, ceiling, blob, website ?? ""), () =>
               Effect.flatMap(
                 Ref.update(aliases, (set) => {
                   const next = new Set(set);
@@ -288,17 +335,96 @@ export function makeVaultServiceLive(
                   return next;
                 }),
                 () =>
-                  audit(
-                    "human",
-                    alias,
-                    ceiling,
-                    "credential-added",
-                    `credential added: ${alias} (${ceiling})`,
-                    false,
+                  Effect.flatMap(
+                    audit("human", alias, ceiling, "credential-added", `credential added: ${alias} (${ceiling})`, false),
+                    () =>
+                      enrollmentId === undefined
+                        ? Effect.void
+                        : Effect.gen(function* () {
+                            const now = yield* Clock.currentTimeMillis;
+                            const existing = (yield* Ref.get(enrollments)).get(enrollmentId);
+                            if (existing === undefined || existing.status !== "pending" || existing.alias !== alias || existing.scope !== ceiling || existing.expiresAtMs <= now) {
+                              return;
+                            }
+                            yield* Ref.update(enrollments, (map) => {
+                              const next = new Map(map);
+                              next.set(enrollmentId, { ...existing, status: "completed" });
+                              return next;
+                            });
+                            yield* audit("agent", alias, existing.scope, "enrollment-completed", `enrollment completed: ${alias}`, false);
+                          }),
                   ),
               ),
             ),
           ),
+
+        createEnrollment: (alias, scope, website, reason) =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            yield* purgeExpiredEnrollments(now);
+            const enrollmentId = yield* Effect.sync(() => randomUUID());
+            const record: EnrollmentRecord = { enrollmentId, alias, scope, website: website ?? "", status: "pending", expiresAtMs: now + enrollmentTtlMs };
+            yield* Ref.update(enrollments, (map) => { const next = new Map(map); next.set(enrollmentId, record); return next; });
+            const cappedReason = (reason ?? "").trim().slice(0, ENROLLMENT_REASON_MAX_LENGTH);
+            yield* audit("agent", alias, scope, "enrollment-created", cappedReason === "" ? `enrollment created: ${alias}` : `enrollment created: ${alias}: ${cappedReason}`, false);
+            return record;
+          }),
+
+        getEnrollment: (enrollmentId) =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            yield* purgeExpiredEnrollments(now, enrollmentId);
+            const record = (yield* Ref.get(enrollments)).get(enrollmentId);
+            if (record === undefined) { return null; }
+            if (record.status === "pending" && record.expiresAtMs <= now) { return { ...record, status: "expired" as const }; }
+            return record;
+          }),
+
+        updateCredential: (alias, patch) =>
+          Effect.gen(function* () {
+            const existing = yield* store.getCredential(alias);
+            if (existing === undefined) {
+              return null;
+            }
+            const affected = yield* registry.revokePendingForAlias(alias);
+            for (const grant of affected) {
+              yield* forgetDecision(grant.grantId);
+              yield* interruptSleeper(grant.grantId);
+            }
+            const scopeCeiling =
+              patch.scope !== undefined && patch.scope.trim() !== "" ? patch.scope.trim() : existing.scopeCeiling;
+            const website = patch.website !== undefined ? patch.website.trim() : existing.website;
+            const ciphertext =
+              patch.secret !== undefined && patch.secret.trim() !== ""
+                ? yield* Effect.sync(() => encryptSecret(masterKey, patch.secret as string))
+                : existing.ciphertext;
+            yield* store.updateCredential(alias, scopeCeiling, ciphertext, website);
+            return { scopeCeiling, website };
+          }),
+
+        deleteCredential: (alias) =>
+          Effect.gen(function* () {
+            const existing = yield* store.getCredential(alias);
+            if (existing === undefined) {
+              return false;
+            }
+            const affected = yield* registry.revokePendingForAlias(alias);
+            for (const grant of affected) {
+              yield* forgetDecision(grant.grantId);
+              yield* interruptSleeper(grant.grantId);
+            }
+            yield* Ref.update(standing, (list) => list.filter((entry) => entry.alias !== alias));
+            yield* store.deleteCredential(alias);
+            yield* Ref.update(aliases, (set) => {
+              const next = new Set(set);
+              next.delete(alias);
+              return next;
+            });
+            yield* audit("human", alias, "", "credential-deleted", `credential deleted: ${alias}`, false);
+            return true;
+          }),
+
+        listCredentialMeta: () => store.listCredentials(),
 
         requestCapability: (req) =>
           Effect.gen(function* () {

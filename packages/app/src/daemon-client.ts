@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 
 export const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
 
-export type DaemonMethod = "GET" | "POST";
+export type DaemonMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
 export interface DaemonCallRequest {
   readonly method: DaemonMethod;
@@ -36,12 +36,16 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set(
   ALLOWED_DAEMON_CALLS.map((call) => `${call.method} ${call.path}`),
 );
 
+const CREDENTIAL_ITEM_PATTERN = /^\/credentials\/[^/]+$/;
+
 export function isAllowedDaemonCall(method: unknown, path: unknown): boolean {
-  return (
-    typeof method === "string" &&
-    typeof path === "string" &&
-    ALLOWED_KEYS.has(`${method} ${path}`)
-  );
+  if (typeof method !== "string" || typeof path !== "string") {
+    return false;
+  }
+  if (ALLOWED_KEYS.has(`${method} ${path}`)) {
+    return true;
+  }
+  return (method === "PATCH" || method === "DELETE") && CREDENTIAL_ITEM_PATTERN.test(path);
 }
 
 export function validateDaemonCall(input: unknown): DaemonCallRequest {

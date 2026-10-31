@@ -6,6 +6,13 @@ import type { AuditEvent } from "./types.js";
 export interface CredentialRecord {
   readonly scopeCeiling: string;
   readonly ciphertext: string;
+  readonly website: string;
+}
+
+export interface CredentialMeta {
+  readonly alias: string;
+  readonly scopeCeiling: string;
+  readonly website: string;
 }
 
 export interface VaultStoreService {
@@ -13,7 +20,16 @@ export interface VaultStoreService {
     alias: string,
     scopeCeiling: string,
     ciphertext: string,
+    website?: string,
   ) => Effect.Effect<void, StorageError>;
+  readonly updateCredential: (
+    alias: string,
+    scopeCeiling: string,
+    ciphertext: string,
+    website: string,
+  ) => Effect.Effect<void, StorageError>;
+  readonly deleteCredential: (alias: string) => Effect.Effect<void, StorageError>;
+  readonly listCredentials: () => Effect.Effect<CredentialMeta[], StorageError>;
   readonly getCredential: (
     alias: string,
   ) => Effect.Effect<CredentialRecord | undefined, StorageError>;
@@ -27,6 +43,13 @@ export class VaultStore extends Context.Tag("VaultStore")<VaultStore, VaultStore
 interface CredentialRow {
   readonly ceiling: string;
   readonly ciphertext: string;
+  readonly website: string | null;
+}
+
+interface CredentialMetaRow {
+  readonly alias: string;
+  readonly ceiling: string;
+  readonly website: string | null;
 }
 
 interface AliasRow {
@@ -72,11 +95,22 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
        model_id TEXT
      );`,
   );
+  const cols = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "website")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN website TEXT NOT NULL DEFAULT ''");
+  }
   const insertCredential = db.prepare(
-    "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext) VALUES (?, ?, ?)",
+    "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext, website) VALUES (?, ?, ?, ?)",
   );
   const selectCredential = db.prepare(
-    "SELECT ceiling, ciphertext FROM credentials WHERE alias = ?",
+    "SELECT ceiling, ciphertext, website FROM credentials WHERE alias = ?",
+  );
+  const updateCredentialStmt = db.prepare(
+    "UPDATE credentials SET ceiling = ?, ciphertext = ?, website = ? WHERE alias = ?",
+  );
+  const deleteCredentialStmt = db.prepare("DELETE FROM credentials WHERE alias = ?");
+  const selectCredentials = db.prepare(
+    "SELECT alias, ceiling, website FROM credentials ORDER BY alias ASC",
   );
   const selectAliases = db.prepare(
     "SELECT alias FROM credentials ORDER BY alias ASC",
@@ -89,12 +123,26 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   );
 
   return {
-    addCredential: (alias, scopeCeiling, ciphertext) =>
+    addCredential: (alias, scopeCeiling, ciphertext, website) =>
       Effect.try({
         try: () => {
-          insertCredential.run(alias, scopeCeiling, ciphertext);
+          insertCredential.run(alias, scopeCeiling, ciphertext, website ?? "");
         },
         catch: toStorageError("addCredential"),
+      }),
+    updateCredential: (alias, scopeCeiling, ciphertext, website) =>
+      Effect.try({
+        try: () => {
+          updateCredentialStmt.run(scopeCeiling, ciphertext, website, alias);
+        },
+        catch: toStorageError("updateCredential"),
+      }),
+    deleteCredential: (alias) =>
+      Effect.try({
+        try: () => {
+          deleteCredentialStmt.run(alias);
+        },
+        catch: toStorageError("deleteCredential"),
       }),
     getCredential: (alias) =>
       Effect.try({
@@ -102,9 +150,17 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
           const row = selectCredential.get(alias) as CredentialRow | undefined;
           return row === undefined
             ? undefined
-            : { scopeCeiling: row.ceiling, ciphertext: row.ciphertext };
+            : { scopeCeiling: row.ceiling, ciphertext: row.ciphertext, website: row.website ?? "" };
         },
         catch: toStorageError("getCredential"),
+      }),
+    listCredentials: () =>
+      Effect.try({
+        try: () => {
+          const rows = selectCredentials.all() as CredentialMetaRow[];
+          return rows.map((row) => ({ alias: row.alias, scopeCeiling: row.ceiling, website: row.website ?? "" }));
+        },
+        catch: toStorageError("listCredentials"),
       }),
     listCredentialAliases: () =>
       Effect.try({

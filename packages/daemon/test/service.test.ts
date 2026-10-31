@@ -125,6 +125,27 @@ describe("VaultService", () => {
       expect(now).toBeGreaterThan(0);
     }));
 
+  it.effect("deleteCredential purges standing approvals for the alias", () =>
+    Effect.gen(function* () {
+      const svc = yield* seeded(BrainLowRisk);
+      const pending = yield* svc.requestCapability(req);
+      yield* svc.approveAlways(grantIdOf(pending));
+      expect((yield* svc.requestCapability(req)).status).toBe("executed");
+      expect(yield* svc.deleteCredential("stripe")).toBe(true);
+      yield* svc.seedCredential("stripe", "charges.read", "[REDACTED]");
+      expect((yield* svc.requestCapability(req)).status).toBe("awaiting-approval");
+    }));
+
+  it.effect("updateCredential revokes pending grants for the alias", () =>
+    Effect.gen(function* () {
+      const svc = yield* seeded(BrainLowRisk);
+      const pending = yield* svc.requestCapability(req);
+      expect(pending.status).toBe("awaiting-approval");
+      yield* svc.updateCredential("stripe", { secret: "rotated-secret-value" });
+      const err = yield* svc.approve(grantIdOf(pending)).pipe(Effect.flip);
+      expect(["GrantRevoked", "GrantExpired"]).toContain(err._tag);
+    }));
+
   it.effect("revoke by alias denies future requests for that alias", () =>
     Effect.gen(function* () {
       const svc = yield* seeded(BrainLowRisk);

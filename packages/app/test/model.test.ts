@@ -2,24 +2,30 @@ import { describe, expect, it } from "vitest";
 import {
   TOKENS,
   buildAuditRows,
+  buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
   credentialInitial,
   derivePolicies,
   deriveVaultCards,
+  faviconUrl,
   findSecretLikeKeys,
   formatExpiry,
   formatLastUsed,
   isCredentialFormComplete,
   isReadOnlyScope,
   marshalStatusLine,
+  normalizeWebsite,
   projectApproval,
   projectAuditEvent,
+  projectCredentialsResponse,
   projectPendingResponse,
   projectPoliciesResponse,
+  runDeeplinkAddFlow,
+  shouldShowAgentComputerWarning,
   sortApprovals,
 } from "../src/renderer/model.js";
-import type { AuditEventLike, PendingApproval } from "../src/renderer/types.js";
+import type { AuditEventLike, DeeplinkAddParams, PendingApproval } from "../src/renderer/types.js";
 
 const approval = (over: Partial<PendingApproval> = {}): PendingApproval => ({
   grantId: "g1",
@@ -47,13 +53,17 @@ const auditEvent = (over: Partial<AuditEventLike> = {}): AuditEventLike => ({
   ...over,
 });
 
-describe("Direction B tokens", () => {
-  it("pins the Direction B palette exactly", () => {
+describe("unified warm tokens", () => {
+  it("pins the warm palette exactly", () => {
     expect(TOKENS.surface).toBe("#FFFFFF");
-    expect(TOKENS.surfaceAlt).toBe("#F8FAFC");
-    expect(TOKENS.navy).toBe("#1E3A5F");
-    expect(TOKENS.approve).toBe("#16A34A");
-    expect(TOKENS.deny).toBe("#DC2626");
+    expect(TOKENS.background).toBe("#FAF9F6");
+    expect(TOKENS.ink).toBe("#201A17");
+    expect(TOKENS.muted).toBe("#8A8174");
+    expect(TOKENS.border).toBe("#E6DDD0");
+    expect(TOKENS.field).toBe("#F5F1EC");
+    expect(TOKENS.primary).toBe("#201A17");
+    expect(TOKENS.danger).toBe("#DC2626");
+    expect(TOKENS.teal).toBe("#0F766E");
     expect(TOKENS.warn).toBe("#D97706");
   });
 });
@@ -170,8 +180,9 @@ describe("view derivations", () => {
       alias: "stripe",
       scopes: ["charges.read", "refunds.read"],
       lastUsedTs: "2026-10-31T11:00:00.000Z",
+      website: "",
     });
-    expect(cards[1]).toEqual({ alias: "github", scopes: [], lastUsedTs: null });
+    expect(cards[1]).toEqual({ alias: "github", scopes: [], lastUsedTs: null, website: "" });
   });
 
   it("derives per-agent policy rows for the Policies view", () => {
@@ -342,5 +353,169 @@ describe("credential form helpers", () => {
     expect(projectAuditEvent(auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }))).toEqual(
       auditEvent({ stage: "credential-added", detail: "credential added: stripe (charges.read)" }),
     );
+  });
+});
+
+describe("agent-computer warning visibility", () => {
+  it("shows only when website is non-empty", () => {
+    expect(shouldShowAgentComputerWarning("")).toBe(false);
+    expect(shouldShowAgentComputerWarning("   ")).toBe(false);
+    expect(shouldShowAgentComputerWarning("github.com")).toBe(true);
+    expect(shouldShowAgentComputerWarning("https://github.com/x")).toBe(true);
+  });
+});
+
+describe("website, favicon and edit payload", () => {
+  it("builds favicon URLs from bare and full websites", () => {
+    expect(faviconUrl("cloudflare.com")).toBe("https://cloudflare.com/favicon.ico");
+    expect(faviconUrl("https://cloudflare.com/dns")).toBe("https://cloudflare.com/favicon.ico");
+    expect(faviconUrl("  Example.COM ")).toBe("https://example.com/favicon.ico");
+    expect(faviconUrl("")).toBeNull();
+    expect(faviconUrl("localhost")).toBeNull();
+    expect(normalizeWebsite("https://Example.com/path?q=1")).toBe("example.com");
+  });
+
+  it("omits empty secret from the edit payload so the daemon keeps the current secret", () => {
+    expect(buildEditPayload({ scope: " dns.read ", website: "https://cloudflare.com/x", secret: "" })).toEqual({
+      scope: "dns.read",
+      website: "cloudflare.com",
+    });
+    expect(buildEditPayload({ scope: "dns.read", website: "", secret: "new-secret" })).toEqual({
+      scope: "dns.read",
+      website: "",
+      secret: "new-secret",
+    });
+  });
+
+  it("projects credential metadata with websites and carries it into vault cards", () => {
+    const raw = {
+      aliases: ["stripe", "cf"],
+      credentials: [
+        { alias: "stripe", website: "" },
+        { alias: "cf", website: "cloudflare.com" },
+      ],
+    };
+    expect(projectCredentialsResponse(raw)).toEqual([
+      { alias: "stripe", website: "" },
+      { alias: "cf", website: "cloudflare.com" },
+    ]);
+    const cards = deriveVaultCards(["cf"], [], projectCredentialsResponse(raw));
+    expect(cards[0]?.website).toBe("cloudflare.com");
+    expect(projectCredentialsResponse({ aliases: ["stripe"] })).toEqual([{ alias: "stripe", website: "" }]);
+    expect(projectCredentialsResponse({ aliases: [], credentials: [{ alias: "x", website: "a.com", secret: "no" }] })).toEqual([]);
+  });
+});
+
+describe("deeplink add flow sequencing", () => {
+  const params: DeeplinkAddParams = {
+    alias: "github",
+    scope: "repo.read",
+    website: "github.com",
+    enrollmentId: "5e392c08-2d7d-4395-bd84-36f1bb2a279e",
+  };
+
+  function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve: () => void = () => undefined;
+    const promise = new Promise<void>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  it("opens the prefilled modal only after an async render completes", async () => {
+    const order: string[] = [];
+    const gate = deferred();
+    let openedWith: DeeplinkAddParams | null = null;
+    const flow = runDeeplinkAddFlow(params, {
+      switchToVault: () => {
+        order.push("switch");
+      },
+      renderVault: () => {
+        order.push("render-start");
+        return gate.promise.then(() => {
+          order.push("render-done");
+        });
+      },
+      closeModalIfOpen: () => {
+        order.push("close");
+      },
+      openAddModal: (prefill) => {
+        order.push("open");
+        openedWith = prefill;
+      },
+    });
+    // The modal must not open while the render is still in flight: this
+    // is the race that left deeplinks with no modal on screen.
+    await Promise.resolve();
+    expect(order).toEqual(["switch", "render-start"]);
+    expect(openedWith).toBeNull();
+    gate.resolve();
+    await flow;
+    expect(order).toEqual(["switch", "render-start", "render-done", "close", "open"]);
+    expect(openedWith).toEqual(params);
+  });
+
+  it("replaces an already-open modal: close runs before the prefilled open", async () => {
+    const order: string[] = [];
+    let modalOpen = true;
+    await runDeeplinkAddFlow(params, {
+      switchToVault: () => {
+        order.push("switch");
+      },
+      renderVault: () => {
+        order.push("render");
+      },
+      closeModalIfOpen: () => {
+        if (modalOpen) {
+          order.push("close");
+          modalOpen = false;
+        }
+      },
+      openAddModal: () => {
+        order.push("open");
+        modalOpen = true;
+      },
+    });
+    expect(order).toEqual(["switch", "render", "close", "open"]);
+    expect(modalOpen).toBe(true);
+  });
+
+  it("still opens after a synchronous render from a non-Vault view", async () => {
+    const order: string[] = [];
+    await runDeeplinkAddFlow(params, {
+      switchToVault: () => {
+        order.push("switch");
+      },
+      renderVault: () => {
+        order.push("render");
+      },
+      closeModalIfOpen: () => {
+        order.push("close");
+      },
+      openAddModal: (prefill) => {
+        order.push("open:" + prefill.alias + ":" + prefill.scope + ":" + prefill.website + ":" + prefill.enrollmentId);
+      },
+    });
+    expect(order).toEqual([
+      "switch",
+      "render",
+      "close",
+      "open:github:repo.read:github.com:5e392c08-2d7d-4395-bd84-36f1bb2a279e",
+    ]);
+  });
+
+  it("propagates a render failure and never opens the modal", async () => {
+    let opened = false;
+    await expect(
+      runDeeplinkAddFlow(params, {
+        switchToVault: () => undefined,
+        renderVault: () => Promise.reject(new Error("view missing")),
+        closeModalIfOpen: () => undefined,
+        openAddModal: () => {
+          opened = true;
+        },
+      }),
+    ).rejects.toThrow("view missing");
+    expect(opened).toBe(false);
   });
 });

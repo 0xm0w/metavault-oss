@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CapabilityRequestLike, VaultApi } from "./renderer/types.js";
+import type { CapabilityRequestLike, DeeplinkAddParams, VaultApi } from "./renderer/types.js";
 
 // Thin IPC bridge: the sandboxed preload has no filesystem, network, or
 // token access. It only forwards the fixed VaultApi operations to the main
@@ -7,8 +7,9 @@ import type { CapabilityRequestLike, VaultApi } from "./renderer/types.js";
 // daemon HTTP client and the daemon token, which never crosses into the
 // renderer. No generic IPC channel is exposed.
 const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
+const DEEPLINK_CHANNEL = "openvault:deeplink-add";
 
-function invoke(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+function invoke(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<unknown> {
   return ipcRenderer.invoke(
     DAEMON_CALL_CHANNEL,
     body !== undefined ? { method, path, body } : { method, path },
@@ -25,8 +26,35 @@ const api: VaultApi = {
   audit: () => invoke("GET", "/audit"),
   pending: () => invoke("GET", "/pending"),
   policies: () => invoke("GET", "/policies"),
-  addCredential: (alias: string, scope: string, secret: string) =>
-    invoke("POST", "/credentials", { alias, scope, secret }),
+  addCredential: (alias: string, scope: string, secret: string, website?: string, enrollmentId?: string) =>
+    invoke("POST", "/credentials", {
+      alias,
+      scope,
+      secret,
+      ...(website !== undefined ? { website } : {}),
+      ...(enrollmentId !== undefined && enrollmentId !== "" ? { enrollmentId } : {}),
+    }),
+  onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => {
+    // Fixed channel, validated shape only: no new privilege, just a
+    // prefill notification from main. Extra keys are dropped here too.
+    const listener = (_event: unknown, value: unknown): void => {
+      if (typeof value !== "object" || value === null) { return; }
+      const record = value as Record<string, unknown>;
+      const alias = record["alias"]; const scope = record["scope"];
+      const website = record["website"]; const enrollmentId = record["enrollmentId"];
+      if (typeof alias !== "string" || alias === "" || alias.length > 128) { return; }
+      if (typeof scope !== "string" || scope === "" || scope.length > 256) { return; }
+      if (typeof website !== "string" || website.length > 253) { return; }
+      if (typeof enrollmentId !== "string" || enrollmentId.length > 128) { return; }
+      handler({ alias, scope, website, enrollmentId });
+    };
+    ipcRenderer.on(DEEPLINK_CHANNEL, listener);
+    return () => { ipcRenderer.removeListener(DEEPLINK_CHANNEL, listener); };
+  },
+  updateCredential: (alias: string, patch: { scope?: string; website?: string; secret?: string }) =>
+    invoke("PATCH", `/credentials/${encodeURIComponent(alias)}`, patch),
+  deleteCredential: (alias: string) =>
+    invoke("DELETE", `/credentials/${encodeURIComponent(alias)}`),
 };
 
 contextBridge.exposeInMainWorld("openvault", api);

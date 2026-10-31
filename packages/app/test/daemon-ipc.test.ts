@@ -63,6 +63,20 @@ describe("main-process daemon whitelist", () => {
     }
   });
 
+  it("allows PATCH/DELETE only for a single credential item path", () => {
+    expect(isAllowedDaemonCall("PATCH", "/credentials/stripe")).toBe(true);
+    expect(isAllowedDaemonCall("DELETE", "/credentials/stripe")).toBe(true);
+    expect(isAllowedDaemonCall("PATCH", "/credentials")).toBe(false);
+    expect(isAllowedDaemonCall("DELETE", "/credentials/a/b")).toBe(false);
+    expect(isAllowedDaemonCall("PATCH", "/aliases")).toBe(false);
+    expect(validateDaemonCall({ method: "PATCH", path: "/credentials/stripe", body: { scope: "x.read" } })).toEqual({
+      method: "PATCH",
+      path: "/credentials/stripe",
+      body: { scope: "x.read" },
+    });
+    expect(() => validateDaemonCall({ method: "DELETE", path: "/pending" })).toThrow(/not allowed/);
+  });
+
   it("rejects non-whitelisted paths and method/path mismatches", () => {
     expect(isAllowedDaemonCall("GET", "/secrets")).toBe(false);
     expect(isAllowedDaemonCall("POST", "/aliases")).toBe(false);

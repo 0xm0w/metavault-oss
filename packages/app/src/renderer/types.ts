@@ -13,7 +13,10 @@ export type AuditStage =
   | "executed"
   | "expired"
   | "revoked"
-  | "credential-added";
+  | "credential-added"
+  | "credential-deleted"
+  | "enrollment-created"
+  | "enrollment-completed";
 
 export interface PendingApproval {
   readonly grantId: string;
@@ -63,6 +66,24 @@ export interface PoliciesData {
   readonly standingApprovals: readonly StandingApproval[];
 }
 
+export interface CredentialMeta {
+  readonly alias: string;
+  readonly website: string;
+}
+
+export interface DeeplinkAddParams {
+  readonly alias: string;
+  readonly scope: string;
+  readonly website: string;
+  readonly enrollmentId: string;
+}
+
+export interface CredentialPatch {
+  readonly scope?: string;
+  readonly website?: string;
+  readonly secret?: string;
+}
+
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
@@ -74,7 +95,10 @@ export interface VaultApi {
   readonly audit: () => Promise<unknown>;
   readonly pending: () => Promise<unknown>;
   readonly policies: () => Promise<unknown>;
-  readonly addCredential: (alias: string, scope: string, secret: string) => Promise<unknown>;
+  readonly addCredential: (alias: string, scope: string, secret: string, website?: string, enrollmentId?: string) => Promise<unknown>;
+  readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
+  readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;
+  readonly deleteCredential: (alias: string) => Promise<unknown>;
 }
 
 declare global {

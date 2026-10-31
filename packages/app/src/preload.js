@@ -1,0 +1,61 @@
+import { contextBridge, ipcRenderer } from "electron";
+// Thin IPC bridge: the sandboxed preload has no filesystem, network, or
+// token access. It only forwards the fixed VaultApi operations to the main
+// process over the single "openvault:daemon-call" channel; main owns the
+// daemon HTTP client and the daemon token, which never crosses into the
+// renderer. No generic IPC channel is exposed.
+const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
+const DEEPLINK_CHANNEL = "openvault:deeplink-add";
+function invoke(method, path, body) {
+    return ipcRenderer.invoke(DAEMON_CALL_CHANNEL, body !== undefined ? { method, path, body } : { method, path });
+}
+const api = {
+    request: (body) => invoke("POST", "/request", body),
+    approve: (grantId) => invoke("POST", "/approve", { grantId }),
+    deny: (grantId) => invoke("POST", "/deny", { grantId }),
+    approveAlways: (grantId) => invoke("POST", "/approve-always", { grantId }),
+    revoke: (target) => invoke("POST", "/revoke", { target }),
+    aliases: () => invoke("GET", "/aliases"),
+    audit: () => invoke("GET", "/audit"),
+    pending: () => invoke("GET", "/pending"),
+    policies: () => invoke("GET", "/policies"),
+    addCredential: (alias, scope, secret, website, enrollmentId) => invoke("POST", "/credentials", {
+        alias,
+        scope,
+        secret,
+        ...(website !== undefined ? { website } : {}),
+        ...(enrollmentId !== undefined && enrollmentId !== "" ? { enrollmentId } : {}),
+    }),
+    onDeeplinkAdd: (handler) => {
+        // Fixed channel, validated shape only: no new privilege, just a
+        // prefill notification from main. Extra keys are dropped here too.
+        const listener = (_event, value) => {
+            if (typeof value !== "object" || value === null) {
+                return;
+            }
+            const record = value;
+            const alias = record["alias"];
+            const scope = record["scope"];
+            const website = record["website"];
+            const enrollmentId = record["enrollmentId"];
+            if (typeof alias !== "string" || alias === "" || alias.length > 128) {
+                return;
+            }
+            if (typeof scope !== "string" || scope === "" || scope.length > 256) {
+                return;
+            }
+            if (typeof website !== "string" || website.length > 253) {
+                return;
+            }
+            if (typeof enrollmentId !== "string" || enrollmentId.length > 128) {
+                return;
+            }
+            handler({ alias, scope, website, enrollmentId });
+        };
+        ipcRenderer.on(DEEPLINK_CHANNEL, listener);
+        return () => { ipcRenderer.removeListener(DEEPLINK_CHANNEL, listener); };
+    },
+    updateCredential: (alias, patch) => invoke("PATCH", `/credentials/${encodeURIComponent(alias)}`, patch),
+    deleteCredential: (alias) => invoke("DELETE", `/credentials/${encodeURIComponent(alias)}`),
+};
+contextBridge.exposeInMainWorld("openvault", api);

@@ -17,6 +17,23 @@ export const CredentialSchema = Schema.Struct({
   alias: Schema.String,
   scope: Schema.String,
   secret: Schema.String,
+  website: Schema.optional(Schema.String),
+  enrollmentId: Schema.optional(Schema.String),
+});
+
+export const EnrollmentRequestSchema = Schema.Struct({
+  alias: Schema.String,
+  scope: Schema.String,
+  website: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+});
+
+export const EnrollmentIdSchema = Schema.Struct({ enrollmentId: Schema.String });
+
+export const UpdateCredentialSchema = Schema.Struct({
+  scope: Schema.optional(Schema.String),
+  website: Schema.optional(Schema.String),
+  secret: Schema.optional(Schema.String),
 });
 
 // Response contract for GET /policies: enforced ceilings (alias -> scope

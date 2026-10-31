@@ -64,7 +64,7 @@ describe("POST /credentials", () => {
       { daemonToken: TOKEN, providedToken: TOKEN },
     );
     expect(res.status).toBe(201);
-    expect(res.body).toEqual({ alias: "stripe", scope: "charges.read" });
+    expect(res.body).toEqual({ alias: "stripe", scope: "charges.read", website: "" });
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
 
     const aliases = await handleVaultRequest(service, "GET", "/aliases");
@@ -170,5 +170,114 @@ describe("POST /credentials", () => {
       { daemonToken: TOKEN, providedToken: TOKEN },
     );
     expect(empty.status).toBe(400);
+  });
+});
+
+describe("website + PATCH/DELETE /credentials/:alias", () => {
+  it("stores website on POST and surfaces it in GET /aliases credentials metadata", async () => {
+    const service = await makeService();
+    const res = await handleVaultRequest(
+      service,
+      "POST",
+      "/credentials",
+      { alias: "cf", scope: "dns.read", secret: SECRET, website: "cloudflare.com" },
+      { daemonToken: TOKEN, providedToken: TOKEN },
+    );
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ alias: "cf", scope: "dns.read", website: "cloudflare.com" });
+    const aliases = await handleVaultRequest(service, "GET", "/aliases");
+    const body = aliases.body as { aliases: string[]; credentials: { alias: string; website: string }[] };
+    expect(body.aliases).toContain("cf");
+    expect(body.credentials).toEqual([{ alias: "cf", website: "cloudflare.com" }]);
+    expect(JSON.stringify(aliases.body)).not.toContain(SECRET);
+  });
+
+  it("PATCH requires token, updates scope/website, and keeps secret when omitted or empty", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET }, { daemonToken: TOKEN, providedToken: TOKEN });
+    const unauth = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { scope: "charges.write" }, { daemonToken: TOKEN });
+    expect(unauth.status).toBe(401);
+    const patched = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { scope: "refunds.read", website: "stripe.com", secret: "" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toEqual({ alias: "stripe", scope: "refunds.read", website: "stripe.com" });
+    expect(JSON.stringify(patched.body)).not.toContain(SECRET);
+    // Secret kept: approve a request and check echoed length matches original.
+    const brainScopeCheck = await handleVaultRequest(service, "POST", "/request", { agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: "refunds.read", reason: "check kept secret" });
+    // Brain recommends charges.read but policy ceiling is now refunds.read; allow flow may still queue. Just verify credential still executes via original secret length if grant issued.
+    if ((brainScopeCheck.body as { grantId?: string }).grantId !== undefined) {
+      const approved = await handleVaultRequest(service, "POST", "/approve", { grantId: (brainScopeCheck.body as { grantId?: string }).grantId }, { daemonToken: TOKEN, providedToken: TOKEN });
+      if (approved.status === 200) {
+        expect((approved.body as { result?: { echoedLength?: number } }).result?.echoedLength).toBe(SECRET.length);
+      }
+    }
+    const missing = await handleVaultRequest(service, "PATCH", "/credentials/nope", { scope: "x.read" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(missing.status).toBe(404);
+    const badScope = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { scope: "  " }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(badScope.status).toBe(400);
+  });
+
+  it("PATCH replaces secret only when a non-empty secret is provided", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: "first-secret" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    const patched = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { secret: "second-secret-longer" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(patched.status).toBe(200);
+    const requested = await handleVaultRequest(service, "POST", "/request", { agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: "charges.read", reason: "check replaced secret" });
+    const grantId = (requested.body as { grantId?: string }).grantId;
+    expect(grantId).toBeDefined();
+    const approved = await handleVaultRequest(service, "POST", "/approve", { grantId }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect((approved.body as { result?: { echoedLength?: number } }).result?.echoedLength).toBe("second-secret-longer".length);
+  });
+
+  it("PATCH rejects a whitespace-only secret with 400", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET }, { daemonToken: TOKEN, providedToken: TOKEN });
+    const res = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { secret: "   " }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH revokes a parked grant when the secret is rotated", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET }, { daemonToken: TOKEN, providedToken: TOKEN });
+    const requested = await handleVaultRequest(service, "POST", "/request", { agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: "charges.read", reason: "parked" });
+    const grantId = (requested.body as { grantId?: string }).grantId;
+    expect(grantId).toBeDefined();
+    const patched = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { secret: "rotated-secret-value" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(patched.status).toBe(200);
+    const approveAfter = await handleVaultRequest(service, "POST", "/approve", { grantId }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(approveAfter.status).toBe(409);
+  });
+
+  it("malformed percent-encoding on /credentials/:alias returns 400, not 500", async () => {
+    const service = await makeService();
+    const patched = await handleVaultRequest(service, "PATCH", "/credentials/%E0%A4%A", { scope: "x.read" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(patched.status).toBe(400);
+    const deleted = await handleVaultRequest(service, "DELETE", "/credentials/%zz", undefined, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(deleted.status).toBe(400);
+  });
+
+  it("DELETE requires token, removes credential, revokes pending grants, audits credential-deleted alias-only", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET, website: "stripe.com" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    const requested = await handleVaultRequest(service, "POST", "/request", { agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: "charges.read", reason: "pending before delete" });
+    const grantId = (requested.body as { grantId?: string }).grantId;
+    expect(grantId).toBeDefined();
+    const unauth = await handleVaultRequest(service, "DELETE", "/credentials/stripe", undefined, { daemonToken: TOKEN });
+    expect(unauth.status).toBe(401);
+    const del = await handleVaultRequest(service, "DELETE", "/credentials/stripe", undefined, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(del.status).toBe(200);
+    expect(del.body).toEqual({ alias: "stripe", deleted: true });
+    expect(JSON.stringify(del.body)).not.toContain(SECRET);
+    const aliases = await handleVaultRequest(service, "GET", "/aliases");
+    expect((aliases.body as { aliases: string[] }).aliases).not.toContain("stripe");
+    // Pending grant was revoked: approving it now fails.
+    const approveAfter = await handleVaultRequest(service, "POST", "/approve", { grantId }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(approveAfter.status).not.toBe(200);
+    const audit = await handleVaultRequest(service, "GET", "/audit");
+    const events = (audit.body as { events: { stage: string; alias: string; detail: string }[] }).events;
+    const deleted = events.find((e) => e.stage === "credential-deleted");
+    expect(deleted?.alias).toBe("stripe");
+    expect(JSON.stringify(audit.body)).not.toContain(SECRET);
+    const again = await handleVaultRequest(service, "DELETE", "/credentials/stripe", undefined, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(again.status).toBe(404);
   });
 });

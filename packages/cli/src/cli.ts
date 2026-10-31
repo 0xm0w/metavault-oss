@@ -11,7 +11,7 @@ import { encryptSecret } from "../../core/src/crypto.js";
 import { MarshalUnavailable, StorageError } from "../../core/src/errors.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { AuditEvent } from "../../core/src/types.js";
-import { GrantIdSchema, RevokeSchema } from "../../daemon/src/schemas.js";
+import { EnrollmentIdSchema, EnrollmentRequestSchema, GrantIdSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 
 // The CLI is a system edge, like the daemon HTTP handler and the MCP
 // adapter: it composes core Effects and daemon HTTP calls, then converts
@@ -81,7 +81,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: openvault <init|add <alias> --scope <s>|approve <grantId>|audit|revoke <target>|model pull>\n";
+  "usage: openvault <init|add <alias> --scope <s>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|model pull>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -307,6 +307,10 @@ const AUDIT_STAGES: readonly string[] = [
   "executed",
   "expired",
   "revoked",
+  "credential-added",
+  "credential-deleted",
+  "enrollment-created",
+  "enrollment-completed",
 ];
 
 function toAuditEvent(value: unknown): AuditEvent | null {
@@ -471,6 +475,43 @@ function revokeProgram(io: ResolvedIo, target: string): Effect.Effect<string, Cl
   });
 }
 
+function parseEnrollArgs(rest: readonly string[]): { alias: string; scope: string; website?: string } | null {
+  let alias: string | undefined; let scope: string | undefined; let website: string | undefined;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    const next = rest[i + 1];
+    if (arg === "--alias") { alias = next; i += 1; }
+    else if (arg !== undefined && arg.startsWith("--alias=")) { alias = arg.slice("--alias=".length); }
+    else if (arg === "--scope") { scope = next; i += 1; }
+    else if (arg !== undefined && arg.startsWith("--scope=")) { scope = arg.slice("--scope=".length); }
+    else if (arg === "--website") { website = next; i += 1; }
+    else if (arg !== undefined && arg.startsWith("--website=")) { website = arg.slice("--website=".length); }
+    else { return null; }
+  }
+  if (alias === undefined || alias === "" || scope === undefined || scope === "") { return null; }
+  return website !== undefined && website !== "" ? { alias, scope, website } : { alias, scope };
+}
+
+function enrollProgram(io: ResolvedIo, input: { alias: string; scope: string; website?: string }): Effect.Effect<string, CliFailure> {
+  return Effect.gen(function* () {
+    const decoded = yield* Schema.decodeUnknown(EnrollmentRequestSchema)(input).pipe(Effect.mapError(() => new UsageError({ message: "invalid enroll arguments" })));
+    const reply = yield* daemonCall(io, "POST", "/enrollments", decoded);
+    const body = reply.body as { enrollmentId?: unknown; deeplink?: unknown };
+    if (typeof body.enrollmentId !== "string" || typeof body.deeplink !== "string") {
+      return yield* Effect.fail(new DaemonError({ message: "daemon returned malformed enrollment" }));
+    }
+    return `enrollmentId: ${body.enrollmentId}\ndeeplink: ${body.deeplink}\n`;
+  });
+}
+
+function enrollStatusProgram(io: ResolvedIo, enrollmentId: string): Effect.Effect<string, CliFailure> {
+  return Effect.gen(function* () {
+    const decoded = yield* Schema.decodeUnknown(EnrollmentIdSchema)({ enrollmentId }).pipe(Effect.mapError(() => new UsageError({ message: "invalid enrollment id" })));
+    const reply = yield* daemonCall(io, "GET", `/enrollments/${encodeURIComponent(decoded.enrollmentId)}`);
+    return stringifyBody(reply.body);
+  });
+}
+
 function auditProgram(io: ResolvedIo): Effect.Effect<string, CliFailure> {
   return Effect.gen(function* () {
     const reply = yield* daemonCall(io, "GET", "/audit");
@@ -531,6 +572,16 @@ function programFor(
         return Effect.fail(new UsageError({ message: "revoke requires <target>" }));
       }
       return revokeProgram(io, target);
+    }
+    case "enroll": {
+      const parsed = parseEnrollArgs(argv.slice(1));
+      if (parsed === null) { return Effect.fail(new UsageError({ message: "enroll requires --alias <a> --scope <s> [--website <w>]" })); }
+      return enrollProgram(io, parsed);
+    }
+    case "enroll-status": {
+      const enrollmentId = argv[1];
+      if (enrollmentId === undefined || enrollmentId === "") { return Effect.fail(new UsageError({ message: "enroll-status requires <enrollmentId>" })); }
+      return enrollStatusProgram(io, enrollmentId);
     }
     case "model": {
       if (argv[1] !== "pull") {

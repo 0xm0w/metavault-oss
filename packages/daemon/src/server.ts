@@ -13,19 +13,30 @@ import type { CapabilityRequest } from "../../core/src/types.js";
 import {
   CapabilityRequestSchema,
   CredentialSchema,
+  EnrollmentRequestSchema,
   GrantIdSchema,
   PoliciesResponseSchema,
   RevokeSchema,
+  UpdateCredentialSchema,
 } from "./schemas.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./service.js";
 
 export {
   CapabilityRequestSchema,
   CredentialSchema,
+  EnrollmentIdSchema,
+  EnrollmentRequestSchema,
   GrantIdSchema,
   PoliciesResponseSchema,
   RevokeSchema,
+  UpdateCredentialSchema,
 } from "./schemas.js";
+
+export function buildEnrollmentDeeplink(record: { enrollmentId: string; alias: string; scope: string; website: string }): string {
+  const params = new URLSearchParams({ alias: record.alias, scope: record.scope, enrollment: record.enrollmentId });
+  if (record.website !== "") { params.set("website", record.website); }
+  return `openvault://add?${params.toString()}`;
+}
 
 export function statusForErrorTag(tag: string): number {
   switch (tag) {
@@ -98,6 +109,14 @@ async function decode<A, I>(schema: Schema.Schema<A, I>, body: unknown): Promise
   return Exit.isSuccess(exit) ? exit.value : null;
 }
 
+function safeDecodeSegment(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
 const BAD_REQUEST: { status: number; body: unknown } = {
   status: 400,
   body: { error: { _tag: "BadRequest", message: "invalid request body" } },
@@ -143,11 +162,19 @@ const UNAUTHORIZED: { status: number; body: unknown } = {
 };
 
 function isTokenProtected(method: string, path: string): boolean {
-  return (
-    (method === "POST" &&
-      (path === "/approve" || path === "/approve-always" || path === "/deny" || path === "/credentials")) ||
-    (method === "GET" && path === "/pending")
-  );
+  if (method === "GET" && path === "/pending") {
+    return true;
+  }
+  if (
+    method === "POST" &&
+    (path === "/approve" || path === "/approve-always" || path === "/deny" || path === "/credentials")
+  ) {
+    return true;
+  }
+  if ((method === "PATCH" || method === "DELETE") && path.startsWith("/credentials/")) {
+    return true;
+  }
+  return false;
 }
 
 function tokenMatches(expected: string, provided: string | undefined): boolean {
@@ -174,7 +201,14 @@ export async function handleVaultRequest(
     return UNAUTHORIZED;
   }
   if (method === "GET" && path === "/aliases") {
-    return run(service.listAliases().pipe(Effect.map((aliases) => ({ aliases }))));
+    return run(
+      Effect.all([service.listAliases(), service.listCredentialMeta()]).pipe(
+        Effect.map(([aliases, meta]) => ({
+          aliases,
+          credentials: meta.map((m) => ({ alias: m.alias, website: m.website })),
+        })),
+      ),
+    );
   }
   if (method === "GET" && path === "/audit") {
     return run(service.listAudit().pipe(Effect.map((events) => ({ events }))));
@@ -192,6 +226,31 @@ export async function handleVaultRequest(
           Effect.flatMap((policies) => Schema.decodeUnknown(PoliciesResponseSchema)(policies)),
         ),
     );
+  }
+  if (method === "POST" && path === "/enrollments") {
+    const decoded = await decode(EnrollmentRequestSchema, body ?? {});
+    if (decoded === null || decoded.alias.trim() === "" || decoded.scope.trim() === "" || decoded.alias.length > 128 || decoded.scope.length > 256 || (decoded.website !== undefined && decoded.website.length > 253)) {
+      return BAD_REQUEST;
+    }
+    const alias = decoded.alias.trim();
+    const scope = decoded.scope.trim();
+    const website = (decoded.website ?? "").trim();
+    const reason = (decoded.reason ?? "").trim().slice(0, 256);
+    const created = await run(service.createEnrollment(alias, scope, website, reason === "" ? undefined : reason));
+    if (created.status !== 200) { return created; }
+    const record = created.body as { enrollmentId: string; alias: string; scope: string; website: string };
+    return { status: 201, body: { enrollmentId: record.enrollmentId, deeplink: buildEnrollmentDeeplink(record) } };
+  }
+  if (method === "GET" && path.startsWith("/enrollments/")) {
+    const decodedId = safeDecodeSegment(path.slice("/enrollments/".length));
+    if (decodedId === null) { return BAD_REQUEST; }
+    const id = decodedId.trim();
+    if (id === "" || id.includes("/")) { return BAD_REQUEST; }
+    const found = await run(service.getEnrollment(id));
+    if (found.status !== 200) { return found; }
+    if (found.body === null) { return { status: 404, body: { error: { _tag: "NotFound", message: "enrollment not found" } } }; }
+    const record = found.body as { enrollmentId: string; status: string; alias: string; scope: string };
+    return { status: 200, body: { status: record.status, alias: record.alias, scope: record.scope } };
   }
   if (method === "POST" && path === "/credentials") {
     const decoded = await decode(CredentialSchema, body ?? {});
@@ -215,12 +274,57 @@ export async function handleVaultRequest(
     if (exists.body === true) {
       return { status: 409, body: { error: "alias-exists" } };
     }
+    const website = (decoded.website ?? "").trim();
+    const enrollmentId = decoded.enrollmentId?.trim();
     const result = await run(
       service
-        .seedCredential(alias, scope, decoded.secret)
-        .pipe(Effect.map(() => ({ alias, scope }))),
+        .seedCredential(alias, scope, decoded.secret, website, enrollmentId !== undefined && enrollmentId !== "" ? enrollmentId : undefined)
+        .pipe(Effect.map(() => ({ alias, scope, website }))),
     );
     return result.status === 200 ? { status: 201, body: result.body } : result;
+  }
+  if ((method === "PATCH" || method === "DELETE") && path.startsWith("/credentials/")) {
+    const decodedAlias = safeDecodeSegment(path.slice("/credentials/".length));
+    if (decodedAlias === null) {
+      return BAD_REQUEST;
+    }
+    const alias = decodedAlias.trim();
+    if (alias === "" || alias.includes("/")) {
+      return BAD_REQUEST;
+    }
+    if (method === "DELETE") {
+      const deleted = await run(service.deleteCredential(alias));
+      if (deleted.status !== 200) {
+        return deleted;
+      }
+      if (deleted.body === false) {
+        return { status: 404, body: { error: { _tag: "NotFound", message: "credential not found" } } };
+      }
+      return { status: 200, body: { alias, deleted: true } };
+    }
+    const decoded = await decode(UpdateCredentialSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    if (decoded.scope !== undefined && decoded.scope.trim() === "") {
+      return BAD_REQUEST;
+    }
+    if (decoded.secret !== undefined && decoded.secret !== "" && decoded.secret.trim() === "") {
+      return BAD_REQUEST;
+    }
+    const patch: { scope?: string; website?: string; secret?: string } = {};
+    if (decoded.scope !== undefined) patch.scope = decoded.scope;
+    if (decoded.website !== undefined) patch.website = decoded.website;
+    if (decoded.secret !== undefined) patch.secret = decoded.secret;
+    const updated = await run(service.updateCredential(alias, patch));
+    if (updated.status !== 200) {
+      return updated;
+    }
+    if (updated.body === null) {
+      return { status: 404, body: { error: { _tag: "NotFound", message: "credential not found" } } };
+    }
+    const meta = updated.body as { scopeCeiling: string; website: string };
+    return { status: 200, body: { alias, scope: meta.scopeCeiling, website: meta.website } };
   }
   if (method === "POST" && path === "/request") {
     const decoded = await decode(CapabilityRequestSchema, body ?? {});
@@ -273,8 +377,9 @@ export function createVaultHttpServer(
     void (async () => {
       try {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
-        const isPost = (req.method ?? "GET") === "POST";
-        const body: unknown = isPost ? await readBody(req) : undefined;
+        const reqMethod = req.method ?? "GET";
+        const body: unknown =
+          reqMethod === "POST" || reqMethod === "PATCH" ? await readBody(req) : undefined;
         const header = req.headers[DAEMON_TOKEN_HEADER];
         const providedToken = Array.isArray(header) ? header[0] : header;
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
