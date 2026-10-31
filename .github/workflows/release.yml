@@ -82,6 +82,7 @@ jobs:
           Get-ChildItem -Path "packages/app/release" -File | Select-Object Name, Length
 
       - name: Upload installer as workflow artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: openvault-windows-${{ github.ref_name }}
