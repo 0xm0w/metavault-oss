@@ -4,6 +4,8 @@
 
 export type Risk = "low" | "medium" | "high";
 
+export type DecisionSource = "policy" | "marshal" | "marshal+policy" | "human";
+
 export type AuditStage =
   | "requested"
   | "marshal"
@@ -16,7 +18,8 @@ export type AuditStage =
   | "credential-added"
   | "credential-deleted"
   | "enrollment-created"
-  | "enrollment-completed";
+  | "enrollment-completed"
+  | "settings-changed";
 
 export interface PendingApproval {
   readonly grantId: string;
@@ -42,6 +45,12 @@ export interface AuditEventLike {
   readonly stage: AuditStage;
   readonly detail: string;
   readonly modelId?: string;
+  readonly requestId?: string;
+  readonly risk?: Risk;
+  readonly recommendedScope?: string;
+  readonly decisionSource?: DecisionSource;
+  readonly latencyMs?: number;
+  readonly explanation?: string;
 }
 
 export interface CapabilityRequestLike {

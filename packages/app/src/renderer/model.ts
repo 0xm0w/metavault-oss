@@ -3,6 +3,7 @@ import type {
   AuditStage,
   CredentialMeta,
   CredentialPatch,
+  DecisionSource,
   DeeplinkAddParams,
   PendingApproval,
   PoliciesData,
@@ -202,6 +203,8 @@ function numberField(record: Record<string, unknown>, key: string): number | nul
 
 const RISKS: readonly Risk[] = ["low", "medium", "high"];
 
+const DECISION_SOURCES: readonly DecisionSource[] = ["policy", "marshal", "marshal+policy", "human"];
+
 export function projectApproval(raw: unknown): PendingApproval | null {
   if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) {
     return null;
@@ -287,6 +290,7 @@ const AUDIT_STAGES: readonly AuditStage[] = [
   "credential-deleted",
   "enrollment-created",
   "enrollment-completed",
+  "settings-changed",
 ];
 
 export function projectAuditEvent(raw: unknown): AuditEventLike | null {
@@ -306,9 +310,53 @@ export function projectAuditEvent(raw: unknown): AuditEventLike | null {
   if (ts === null || agentId === null || alias === null || typeof scope !== "string" || detail === null || stage === null) {
     return null;
   }
-  const base: AuditEventLike = { ts, agentId, alias, scope, stage, detail };
+  const projected: {
+    ts: string;
+    agentId: string;
+    alias: string;
+    scope: string;
+    stage: AuditStage;
+    detail: string;
+    modelId?: string;
+    requestId?: string;
+    risk?: Risk;
+    recommendedScope?: string;
+    decisionSource?: DecisionSource;
+    latencyMs?: number;
+    explanation?: string;
+  } = { ts, agentId, alias, scope, stage, detail };
   const modelId = raw["modelId"];
-  return typeof modelId === "string" && modelId.length > 0 ? { ...base, modelId } : base;
+  if (typeof modelId === "string" && modelId.length > 0) {
+    projected.modelId = modelId;
+  }
+  const requestId = raw["requestId"];
+  if (typeof requestId === "string" && requestId.length > 0) {
+    projected.requestId = requestId;
+  }
+  const riskRaw = raw["risk"];
+  if (typeof riskRaw === "string" && (RISKS as readonly string[]).includes(riskRaw)) {
+    projected.risk = riskRaw as Risk;
+  }
+  const recommendedScope = raw["recommendedScope"];
+  if (typeof recommendedScope === "string" && recommendedScope.length > 0) {
+    projected.recommendedScope = recommendedScope;
+  }
+  const decisionSourceRaw = raw["decisionSource"];
+  if (
+    typeof decisionSourceRaw === "string" &&
+    (DECISION_SOURCES as readonly string[]).includes(decisionSourceRaw)
+  ) {
+    projected.decisionSource = decisionSourceRaw as DecisionSource;
+  }
+  const latencyMs = raw["latencyMs"];
+  if (typeof latencyMs === "number" && Number.isFinite(latencyMs) && latencyMs >= 0) {
+    projected.latencyMs = latencyMs;
+  }
+  const explanation = raw["explanation"];
+  if (typeof explanation === "string" && explanation.length > 0) {
+    projected.explanation = explanation;
+  }
+  return projected;
 }
 
 export function projectAuditResponse(raw: unknown): AuditEventLike[] {
@@ -552,6 +600,7 @@ const STAGE_LABELS: Record<AuditStage, string> = {
   "credential-deleted": "Credential deleted",
   "enrollment-created": "Enrollment created",
   "enrollment-completed": "Enrollment completed",
+  "settings-changed": "Settings changed",
 };
 
 export function stageLabel(stage: AuditStage): string {
@@ -561,6 +610,193 @@ export function stageLabel(stage: AuditStage): string {
 export interface AuditRow extends AuditEventLike {
   readonly stageLabel: string;
   readonly chain: string;
+}
+
+export type AuditOutcome = "executed" | "denied" | "expired" | "revoked" | "pending";
+
+const AUDIT_OUTCOMES: readonly AuditOutcome[] = ["executed", "denied", "expired", "revoked"];
+
+const OUTCOME_LABELS: Record<AuditOutcome, string> = {
+  executed: "Executed",
+  denied: "Denied",
+  expired: "Expired",
+  revoked: "Revoked",
+  pending: "Pending",
+};
+
+export interface AuditRequestGroup {
+  readonly requestId: string;
+  readonly events: readonly AuditEventLike[];
+  readonly firstTs: string;
+  readonly lastTs: string;
+  readonly agentId: string;
+  readonly alias: string;
+  readonly requestedScope: string;
+  readonly allowedScope: string;
+  readonly outcome: AuditOutcome;
+  readonly outcomeLabel: string;
+}
+
+export interface WardenVerdict {
+  readonly outcome: AuditOutcome;
+  readonly outcomeLabel: string;
+  readonly wardenLabel: string;
+  readonly risk: Risk | null;
+  readonly modelId: string | null;
+  readonly isPolicyOnly: boolean;
+  readonly decisionSource: DecisionSource | null;
+  readonly recommendedScope: string | null;
+  readonly latencyMs: number | null;
+  readonly explanation: string | null;
+  readonly requestedScope: string;
+  readonly allowedScope: string;
+  readonly escalated: boolean;
+}
+
+function lastEventWith<T>(
+  events: readonly AuditEventLike[],
+  pick: (event: AuditEventLike) => T | undefined,
+): T | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event === undefined) {
+      continue;
+    }
+    const value = pick(event);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function deriveOutcome(events: readonly AuditEventLike[]): AuditOutcome {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const stage = events[i]?.stage;
+    if (stage !== undefined && (AUDIT_OUTCOMES as readonly string[]).includes(stage)) {
+      return stage as AuditOutcome;
+    }
+  }
+  return "pending";
+}
+
+export function groupAuditByRequest(events: readonly AuditEventLike[]): AuditRequestGroup[] {
+  const byId = new Map<string, AuditEventLike[]>();
+  for (const event of events) {
+    const key =
+      event.requestId !== undefined && event.requestId.length > 0 ? event.requestId : "legacy";
+    const bucket = byId.get(key) ?? [];
+    bucket.push(event);
+    byId.set(key, bucket);
+  }
+  const groups: AuditRequestGroup[] = [];
+  for (const [requestId, bucket] of byId.entries()) {
+    const requested = bucket.find((e) => e.stage === "requested") ?? bucket[0];
+    const firstNonEmptyScope = bucket.find((e) => e.scope.length > 0);
+    const requestedScope = requested?.scope ?? firstNonEmptyScope?.scope ?? "";
+    const allowedCandidate = lastEventWith(bucket, (e) =>
+      (e.stage === "executed" || e.stage === "approved" || e.stage === "policy") &&
+      e.scope.length > 0
+        ? e.scope
+        : undefined,
+    );
+    const lastScope = lastEventWith(bucket, (e) => (e.scope.length > 0 ? e.scope : undefined));
+    const outcome = deriveOutcome(bucket);
+    groups.push({
+      requestId,
+      events: [...bucket],
+      firstTs: bucket[0]?.ts ?? "",
+      lastTs: bucket[bucket.length - 1]?.ts ?? "",
+      agentId: requested?.agentId ?? bucket[0]?.agentId ?? "",
+      alias: requested?.alias ?? bucket[0]?.alias ?? "",
+      requestedScope,
+      allowedScope: allowedCandidate ?? lastScope ?? requestedScope,
+      outcome,
+      outcomeLabel: OUTCOME_LABELS[outcome],
+    });
+  }
+  return groups.sort((a, b) => {
+    if (a.lastTs === b.lastTs) {
+      return b.firstTs.localeCompare(a.firstTs);
+    }
+    return b.lastTs.localeCompare(a.lastTs);
+  });
+}
+
+export function wardenVerdict(group: AuditRequestGroup): WardenVerdict {
+  const events = group.events;
+  const marshalEvent =
+    [...events].reverse().find((e) => e.stage === "marshal" && e.risk !== undefined) ??
+    [...events].reverse().find((e) => e.stage === "marshal") ??
+    null;
+  const risk =
+    marshalEvent?.risk ??
+    lastEventWith(events, (e) => e.risk) ??
+    null;
+  const modelId =
+    marshalEvent?.modelId ??
+    lastEventWith(events, (e) => (e.modelId !== undefined && e.modelId !== "" ? e.modelId : undefined)) ??
+    null;
+  const decisionSource =
+    lastEventWith(events, (e) => e.decisionSource) ?? null;
+  const recommendedScope =
+    marshalEvent?.recommendedScope ??
+    lastEventWith(events, (e) => e.recommendedScope) ??
+    null;
+  const latencyMs = marshalEvent?.latencyMs ?? lastEventWith(events, (e) => e.latencyMs) ?? null;
+  const explanation =
+    marshalEvent?.explanation ?? lastEventWith(events, (e) => e.explanation) ?? null;
+  const isPolicyOnly = risk === null;
+  const wardenLabel = isPolicyOnly
+    ? "policy-only"
+    : modelId !== null
+      ? `${risk} · ${modelId}`
+      : risk;
+  const escalated =
+    risk === "high" ||
+    (recommendedScope !== null &&
+      group.requestedScope.length > 0 &&
+      recommendedScope !== group.requestedScope);
+  return {
+    outcome: group.outcome,
+    outcomeLabel: group.outcomeLabel,
+    wardenLabel,
+    risk,
+    modelId,
+    isPolicyOnly,
+    decisionSource,
+    recommendedScope,
+    latencyMs,
+    explanation,
+    requestedScope: group.requestedScope,
+    allowedScope: group.allowedScope,
+    escalated,
+  };
+}
+
+export function filterAuditGroups(
+  groups: readonly AuditRequestGroup[],
+  query: string,
+): AuditRequestGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return [...groups];
+  }
+  return groups.filter((group) => {
+    const verdict = wardenVerdict(group);
+    const haystack = [
+      group.agentId,
+      group.alias,
+      group.outcome,
+      group.outcomeLabel,
+      verdict.wardenLabel,
+      group.requestedScope,
+      group.allowedScope,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(needle);
+  });
 }
 
 export function buildAuditRows(events: readonly AuditEventLike[]): AuditRow[] {

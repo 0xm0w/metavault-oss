@@ -1,5 +1,5 @@
 import {
-  buildAuditRows,
+  filterAuditGroups,
   buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
@@ -8,6 +8,7 @@ import {
   faviconUrl,
   formatExpiry,
   formatLastUsed,
+  groupAuditByRequest,
   isCredentialFormComplete,
   marshalStatusLine,
   normalizeWebsite,
@@ -20,6 +21,7 @@ import {
   shouldShowAgentComputerWarning,
   sortApprovals,
   stageLabel,
+  wardenVerdict,
 } from "./model.js";
 import type { AuditEventLike, CredentialMeta, DeeplinkAddParams, PendingApproval, PoliciesData } from "./types.js";
 
@@ -38,6 +40,9 @@ let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let selectedGrantId: string | null = null;
+let auditFilter = "";
+let auditFilterWasFocused = false;
+const expandedAuditIds = new Set<string>();
 let busy = false;
 let notice: string | null = null;
 
@@ -628,23 +633,135 @@ function renderVault(view: HTMLElement): void {
 
 function renderAudit(view: HTMLElement): void {
   view.append(el("h1", "", "Audit"));
-  view.append(el("p", "sub", "Every transition, in order: agent → scope → marshal → policy → human → expiry. Marshal rows name the model that advised."));
-  const rows = buildAuditRows(auditEvents);
-  if (rows.length === 0) {
-    view.append(el("div", "empty", "No audit events yet."));
-    return;
-  }
+  view.append(
+    el(
+      "p",
+      "sub",
+      "One row per request. Expand a row to see the warden verification timeline: marshal explanation, recommended scope, latency and who decided.",
+    ),
+  );
+  const filterWrap = el("div", "audit-filter-wrap");
+  const filterLabel = el("label", "audit-filter-label", "Filter");
+  filterLabel.setAttribute("for", "audit-filter");
+  const filterInput = document.createElement("input");
+  filterInput.id = "audit-filter";
+  filterInput.className = "audit-filter";
+  filterInput.type = "text";
+  filterInput.placeholder = "Filter by agent, alias or outcome";
+  filterInput.value = auditFilter;
+  filterInput.setAttribute("aria-label", "Filter audit by agent, alias or outcome");
+  filterWrap.append(filterLabel, filterInput);
+  view.append(filterWrap);
+
   const list = el("div", "rows");
-  for (const row of rows) {
-    const node = el("article", "row");
-    node.append(el("div", "chain", row.chain));
-    const detail = el("div", "detail", row.detail);
-    node.append(detail);
-    const when = el("div", "when", row.modelId !== undefined ? `${row.ts} · model ${row.modelId}` : row.ts);
-    node.append(when);
-    list.append(node);
-  }
   view.append(list);
+
+  const renderList = (): void => {
+    list.replaceChildren();
+    const groups = filterAuditGroups(groupAuditByRequest(auditEvents), auditFilter);
+    if (auditEvents.length === 0) {
+      list.append(el("div", "empty", "No audit events yet."));
+      return;
+    }
+    if (groups.length === 0) {
+      list.append(el("div", "empty", "No requests match this filter."));
+      return;
+    }
+    for (const group of groups) {
+      const verdict = wardenVerdict(group);
+      const expanded = expandedAuditIds.has(group.requestId);
+      const node = el("article", "row audit-row");
+      const summary = el("div", "audit-summary");
+      const scopeText =
+        group.requestedScope !== "" && group.requestedScope !== group.allowedScope
+          ? `${group.requestedScope} → ${group.allowedScope}`
+          : group.allowedScope || group.requestedScope;
+      const chainText =
+        group.requestId === "legacy"
+          ? `legacy · ${group.alias} · ${scopeText}`
+          : `${group.agentId} · ${group.alias} · ${scopeText}`;
+      summary.append(el("div", "chain", chainText));
+      const chips = el("div", "audit-chips");
+      chips.append(el("span", `chip outcome-chip outcome-${verdict.outcome}`, verdict.outcomeLabel));
+      const wardenClass =
+        verdict.risk !== null ? `chip warden-chip risk-${verdict.risk}` : "chip warden-chip is-policy";
+      chips.append(el("span", wardenClass, verdict.wardenLabel));
+      if (verdict.escalated) {
+        chips.append(el("span", "chip warden-chip is-escalated", "escalated"));
+      }
+      summary.append(chips);
+      node.append(summary);
+      node.append(el("div", "when", group.lastTs));
+      const toggle = el(
+        "button",
+        "action audit-toggle",
+        expanded ? "Hide verification" : "Show verification",
+      ) as HTMLButtonElement;
+      toggle.type = "button";
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      toggle.addEventListener("click", () => {
+        if (expandedAuditIds.has(group.requestId)) {
+          expandedAuditIds.delete(group.requestId);
+        } else {
+          expandedAuditIds.add(group.requestId);
+        }
+        renderList();
+      });
+      node.append(toggle);
+      if (expanded) {
+        const timeline = el("div", "audit-timeline");
+        for (const event of group.events) {
+          const step = el("div", "audit-step");
+          const stepHead = el("div", "audit-step-head");
+          stepHead.append(el("span", "audit-stage", stageLabel(event.stage)));
+          stepHead.append(el("span", "when", event.ts));
+          step.append(stepHead);
+          step.append(el("div", "detail", event.detail));
+          if (event.explanation !== undefined && event.explanation !== "") {
+            step.append(el("div", "audit-explanation", event.explanation));
+          }
+          const meta: string[] = [];
+          if (event.recommendedScope !== undefined && event.recommendedScope !== "") {
+            meta.push(`recommended ${event.recommendedScope}`);
+          }
+          if (event.latencyMs !== undefined) {
+            meta.push(`${String(event.latencyMs)}ms`);
+          }
+          if (event.decisionSource !== undefined) {
+            meta.push(`source ${event.decisionSource}`);
+          }
+          if (event.modelId !== undefined && event.modelId !== "") {
+            meta.push(`model ${event.modelId}`);
+          }
+          if (event.risk !== undefined) {
+            meta.push(`risk ${event.risk}`);
+          }
+          if (meta.length > 0) {
+            step.append(el("div", "when", meta.join(" · ")));
+          }
+          timeline.append(step);
+        }
+        node.append(timeline);
+      }
+      list.append(node);
+    }
+  };
+
+  filterInput.addEventListener("input", () => {
+    auditFilter = filterInput.value;
+    renderList();
+  });
+  filterInput.addEventListener("focus", () => {
+    auditFilterWasFocused = true;
+  });
+  filterInput.addEventListener("blur", () => {
+    auditFilterWasFocused = false;
+  });
+  renderList();
+  if (auditFilterWasFocused) {
+    filterInput.focus();
+    filterInput.setSelectionRange(filterInput.value.length, filterInput.value.length);
+  }
 }
 
 function renderPolicies(view: HTMLElement): void {

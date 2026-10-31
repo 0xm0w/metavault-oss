@@ -9,6 +9,8 @@ import {
   derivePolicies,
   deriveVaultCards,
   faviconUrl,
+  filterAuditGroups,
+  groupAuditByRequest,
   findSecretLikeKeys,
   formatExpiry,
   formatLastUsed,
@@ -24,6 +26,7 @@ import {
   runDeeplinkAddFlow,
   shouldShowAgentComputerWarning,
   sortApprovals,
+  wardenVerdict,
 } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval } from "../src/renderer/types.js";
 
@@ -517,5 +520,160 @@ describe("deeplink add flow sequencing", () => {
       }),
     ).rejects.toThrow("view missing");
     expect(opened).toBe(false);
+  });
+});
+
+describe("audit request grouping and warden verdicts (Task 5)", () => {
+  const chain = (over: Partial<AuditEventLike> = {}): AuditEventLike =>
+    auditEvent({ requestId: "req-1", ...over });
+
+  const firstGroup = (events: readonly AuditEventLike[]) => {
+    const group = groupAuditByRequest(events)[0];
+    if (group === undefined) {
+      throw new Error("expected an audit group");
+    }
+    return group;
+  };
+
+  const executedChain: AuditEventLike[] = [
+    chain({ stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.read" }),
+    chain({
+      stage: "marshal",
+      ts: "2026-10-31T10:00:01.000Z",
+      scope: "charges.read",
+      detail: "marshal decision",
+      modelId: "llama3.2:3b",
+      risk: "low",
+      recommendedScope: "charges.read",
+      decisionSource: "marshal",
+      latencyMs: 42,
+      explanation: "low-risk read of charges",
+    }),
+    chain({ stage: "policy", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", detail: "within ceiling", decisionSource: "marshal+policy" }),
+    chain({ stage: "approved", ts: "2026-10-31T10:00:03.000Z", scope: "charges.read", detail: "auto-approved by policy", decisionSource: "marshal+policy" }),
+    chain({ stage: "executed", ts: "2026-10-31T10:00:04.000Z", scope: "charges.read", detail: "executed", decisionSource: "marshal+policy" }),
+  ];
+
+  it("groups one row per requestId, legacy under legacy, newest first, events chronological", () => {
+    const older: AuditEventLike[] = [
+      chain({ requestId: "req-old", stage: "requested", ts: "2026-10-31T09:00:00.000Z", alias: "github", scope: "repos.read" }),
+      chain({ requestId: "req-old", stage: "denied", ts: "2026-10-31T09:00:01.000Z", alias: "github", scope: "repos.read", decisionSource: "policy" }),
+    ];
+    const legacy: AuditEventLike[] = [
+      auditEvent({ stage: "credential-added", agentId: "human", ts: "2026-10-31T08:00:00.000Z", detail: "credential added: stripe (charges.read)" }),
+    ];
+    const groups = groupAuditByRequest([...legacy, ...older, ...executedChain]);
+    expect(groups.map((g) => g.requestId)).toEqual(["req-1", "req-old", "legacy"]);
+    const first = groups[0];
+    expect(first?.events.map((e) => e.stage)).toEqual(["requested", "marshal", "policy", "approved", "executed"]);
+    expect(first?.agentId).toBe("cursor");
+    expect(first?.alias).toBe("stripe");
+    expect(first?.requestedScope).toBe("charges.read");
+    expect(first?.allowedScope).toBe("charges.read");
+    expect(first?.outcome).toBe("executed");
+    expect(groups[2]?.events).toHaveLength(1);
+    expect(groups[2]?.requestId).toBe("legacy");
+  });
+
+  it("derives an executed verdict with risk + model from the marshal event", () => {
+    const verdict = wardenVerdict(firstGroup(executedChain));
+    expect(verdict.outcome).toBe("executed");
+    expect(verdict.outcomeLabel).toBe("Executed");
+    expect(verdict.risk).toBe("low");
+    expect(verdict.modelId).toBe("llama3.2:3b");
+    expect(verdict.isPolicyOnly).toBe(false);
+    expect(verdict.wardenLabel).toBe("low · llama3.2:3b");
+    expect(verdict.recommendedScope).toBe("charges.read");
+    expect(verdict.latencyMs).toBe(42);
+    expect(verdict.explanation).toBe("low-risk read of charges");
+    expect(verdict.decisionSource).toBe("marshal+policy");
+    expect(verdict.escalated).toBe(false);
+  });
+
+  it("derives a policy-only verdict for a policy-denied chain with no marshal event", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-denied", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.write" }),
+      chain({ requestId: "req-denied", stage: "policy", ts: "2026-10-31T10:00:01.000Z", scope: "charges.write", detail: "scope-above-ceiling", decisionSource: "policy" }),
+      chain({ requestId: "req-denied", stage: "denied", ts: "2026-10-31T10:00:02.000Z", scope: "charges.write", detail: "scope-above-ceiling", decisionSource: "policy" }),
+    ];
+    const verdict = wardenVerdict(firstGroup(events));
+    expect(verdict.outcome).toBe("denied");
+    expect(verdict.isPolicyOnly).toBe(true);
+    expect(verdict.wardenLabel).toBe("policy-only");
+    expect(verdict.risk).toBeNull();
+    expect(verdict.decisionSource).toBe("policy");
+  });
+
+  it("flags a marshal-escalated chain where the recommended scope narrows the request", () => {
+    const events: AuditEventLike[] = [
+      chain({ requestId: "req-esc", stage: "requested", ts: "2026-10-31T10:00:00.000Z", scope: "charges.write" }),
+      chain({
+        requestId: "req-esc",
+        stage: "marshal",
+        ts: "2026-10-31T10:00:01.000Z",
+        scope: "charges.write",
+        detail: "marshal decision",
+        modelId: "llama3.1:8b",
+        risk: "high",
+        recommendedScope: "charges.read",
+        decisionSource: "marshal",
+        latencyMs: 120,
+        explanation: "write is too broad; read is enough",
+      }),
+      chain({ requestId: "req-esc", stage: "policy", ts: "2026-10-31T10:00:02.000Z", scope: "charges.read", detail: "narrowed", decisionSource: "marshal+policy" }),
+      chain({ requestId: "req-esc", stage: "approved", ts: "2026-10-31T10:00:03.000Z", scope: "charges.read", detail: "approved by human", decisionSource: "human" }),
+    ];
+    const group = firstGroup(events);
+    expect(group.requestedScope).toBe("charges.write");
+    expect(group.allowedScope).toBe("charges.read");
+    const verdict = wardenVerdict(group);
+    expect(verdict.escalated).toBe(true);
+    expect(verdict.wardenLabel).toBe("high · llama3.1:8b");
+    expect(verdict.outcome).toBe("pending");
+    expect(verdict.recommendedScope).toBe("charges.read");
+  });
+
+  it("reports expired and revoked outcomes from the terminal stage", () => {
+    const expired = firstGroup([
+      chain({ requestId: "r-exp", stage: "requested" }),
+      chain({ requestId: "r-exp", stage: "expired", ts: "2026-10-31T10:05:00.000Z" }),
+    ]);
+    expect(wardenVerdict(expired).outcome).toBe("expired");
+    const revoked = firstGroup([
+      chain({ requestId: "r-rev", stage: "requested" }),
+      chain({ requestId: "r-rev", stage: "revoked", ts: "2026-10-31T10:05:00.000Z" }),
+    ]);
+    expect(wardenVerdict(revoked).outcome).toBe("revoked");
+  });
+
+  it("filters groups by agent, alias and outcome text, case-insensitively", () => {
+    const groups = groupAuditByRequest([
+      ...executedChain,
+      chain({ requestId: "req-old", stage: "requested", ts: "2026-10-31T09:00:00.000Z", agentId: "codex", alias: "github", scope: "repos.read" }),
+      chain({ requestId: "req-old", stage: "denied", ts: "2026-10-31T09:00:01.000Z", agentId: "codex", alias: "github", scope: "repos.read", decisionSource: "policy" }),
+    ]);
+    expect(filterAuditGroups(groups, "").map((g) => g.requestId)).toEqual(["req-1", "req-old"]);
+    expect(filterAuditGroups(groups, "CURSOR").map((g) => g.requestId)).toEqual(["req-1"]);
+    expect(filterAuditGroups(groups, "github").map((g) => g.requestId)).toEqual(["req-old"]);
+    expect(filterAuditGroups(groups, "denied").map((g) => g.requestId)).toEqual(["req-old"]);
+    expect(filterAuditGroups(groups, "executed").map((g) => g.requestId)).toEqual(["req-1"]);
+    expect(filterAuditGroups(groups, "nope")).toEqual([]);
+  });
+
+  it("projects the Task 4 audit fields and drops invalid optional values", () => {
+    expect(projectAuditEvent(executedChain[1])).toEqual(executedChain[1]);
+    const projected = projectAuditEvent({
+      ...auditEvent(),
+      requestId: "req-9",
+      risk: "critical",
+      latencyMs: "fast",
+      decisionSource: "nobody",
+      explanation: 42,
+    });
+    expect(projected?.requestId).toBe("req-9");
+    expect(projected?.risk).toBeUndefined();
+    expect(projected?.latencyMs).toBeUndefined();
+    expect(projected?.decisionSource).toBeUndefined();
+    expect(projected?.explanation).toBeUndefined();
   });
 });
