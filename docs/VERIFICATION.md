@@ -150,6 +150,36 @@ checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) are
 recorded in the Task 10 report
 (`.superpowers/sdd/2026-10-31-openvault-hardening-release/task-10-report.md`).
 
+## Task 11 — v0.1.0-alpha.1 local release build (2026-10-31)
+
+Local build only: no tag, no push, no GitHub release (the tag-triggered
+release workflow remains unproven until its first `v*` run).
+
+| Item | Value |
+|---|---|
+| Installer | `OpenVault-0.1.0-alpha.1-win-x64.exe` (NSIS, x64, unsigned) |
+| Size | 121,250,465 bytes (115.6 MB) |
+| SHA256 | `df8bb027808d8cbd876122283dcc874a10e9828fc1f6d35c1aea5a0486155cb8` |
+| Built with | `cd packages/app && npm run build && npx electron-builder --win --publish never` (locked root devDependency `electron-builder@26.18.0`, Electron 45.2.1) |
+
+Gates (in-session, after the version bump): `npm run test` — **269
+passed** (34 files, including the new `test/version.test.ts` asserting
+root `package.json` = `packages/app/package.json` = `MCP_VERSION` =
+renderer `APP_VERSION_DISPLAY` = `0.1.0-alpha.1`);
+`npm run test:coverage` — exit 0 (all package thresholds met);
+`npm run typecheck` — exit 0; `npm run lint` — exit 0.
+
+Smoke: the NSIS installer itself was **not** run (install requires
+interactive per-user install steps); instead the packaged app was
+launched from `packages/app/release/win-unpacked/OpenVault.exe` with an
+isolated `--user-data-dir`. It stayed alive with a window titled
+“OpenVault” (main + 3 child processes) and was then stopped. Renderer
+daemon calls returned 401/404 during the smoke because the isolated
+profile holds no daemon token — expected without a configured daemon,
+and recorded here rather than hidden. A first launch against the
+default profile exited immediately via the single-instance lock, which
+is the designed behaviour when another instance/profile is present.
+
 ## Codebase
 
 43 TypeScript files, 6,649 lines (packages + root canary test), 268

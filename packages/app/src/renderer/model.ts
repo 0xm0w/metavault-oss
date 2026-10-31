@@ -902,7 +902,7 @@ export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] 
 
 export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
 export const VAULT_PATH_DISPLAY = "openvault.db (in vaultd's working directory; OPENVAULT_DB_PATH can override it)";
-export const APP_VERSION_DISPLAY = "0.1.0";
+export const APP_VERSION_DISPLAY = "0.1.0-alpha.1";
 
 const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api"];
 const WARDEN_EFFORTS_LIST: readonly WardenEffort[] = ["fast", "standard", "deep"];
