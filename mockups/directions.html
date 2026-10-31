@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenVault — Design Directions A / B / C</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#07080c; color:#e6e9f0; font-family: Inter, "Segoe UI", system-ui, sans-serif; padding:32px 20px 64px; }
+  h1 { font-size:26px; font-weight:700; letter-spacing:-.02em; text-align:center; }
+  .sub { text-align:center; color:#9aa3b5; margin:8px auto 28px; max-width:640px; font-size:14px; line-height:1.5; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:28px; max-width:1280px; margin:0 auto; align-items:start; }
+  .col h2 { font-size:15px; margin-bottom:4px; }
+  .col .desc { font-size:12.5px; color:#9aa3b5; line-height:1.5; margin-bottom:14px; min-height:54px; }
+  .swatches { display:flex; gap:6px; margin-top:14px; flex-wrap:wrap; }
+  .sw { font-size:10px; font-family:"JetBrains Mono", Consolas, monospace; padding:5px 8px; border-radius:6px; border:1px solid rgba(255,255,255,.14); }
+  .win { border-radius:14px; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.55); }
+  .bar { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; font-size:12px; }
+  .brand { font-weight:700; letter-spacing:.08em; font-size:12px; }
+  .marshal { font-family:"JetBrains Mono", Consolas, monospace; font-size:11px; display:flex; align-items:center; gap:6px; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .body { padding:18px; }
+  .label { font-size:10.5px; letter-spacing:.14em; font-weight:700; opacity:.65; margin-bottom:10px; }
+  .want { font-size:16px; line-height:1.45; margin-bottom:6px; }
+  .mono { font-family:"JetBrains Mono", Consolas, monospace; font-size:13px; }
+  .reason { font-size:13px; font-style:italic; opacity:.75; margin-bottom:16px; }
+  .assess { border-radius:10px; padding:13px 14px; font-size:13px; line-height:1.55; margin-bottom:16px; }
+  .assess b { display:block; font-size:12px; letter-spacing:.06em; margin-bottom:5px; }
+  .fine { font-size:11.5px; opacity:.65; line-height:1.5; margin-bottom:18px; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; font-weight:600; padding:10px 14px; border-radius:9px; border:1px solid transparent; cursor:pointer; }
+  .mini { margin-top:16px; border-radius:10px; padding:13px 14px; font-size:12px; line-height:1.6; }
+  .mini h3 { font-size:11px; letter-spacing:.12em; margin-bottom:8px; opacity:.7; }
+  .chip { display:inline-block; font-family:"JetBrains Mono", Consolas, monospace; font-size:10.5px; padding:2px 7px; border-radius:20px; margin:2px 2px 2px 0; }
+  .audit-row { display:flex; justify-content:space-between; gap:8px; font-family:"JetBrains Mono", Consolas, monospace; font-size:10.5px; padding:4px 0; border-bottom:1px dashed rgba(127,140,160,.25); }
+  .audit-row:last-child { border-bottom:none; }
+
+  /* ---------- Direction A : Vault Noir ---------- */
+  .a .win { background:#0b0e14; border:1px solid #1e293b; }
+  .a .bar { background:#0e1219; border-bottom:1px solid #1e293b; }
+  .a .dot { background:#2dd4bf; box-shadow:0 0 8px #2dd4bf; }
+  .a .assess { background:rgba(45,212,191,.08); border:1px solid rgba(45,212,191,.35); color:#c9f5ee; }
+  .a .approve { background:#2dd4bf; color:#04211c; }
+  .a .deny { background:transparent; color:#f87171; border-color:rgba(239,68,68,.5); }
+  .a .ghost { background:transparent; color:#cbd5e1; border-color:#334155; }
+  .a .mini { background:#0e1219; border:1px solid #1e293b; color:#aeb8c8; }
+  .a .chip { background:#16202e; color:#7dd3c8; border:1px solid #1f3a3a; }
+
+  /* ---------- Direction B : Marshal Light ---------- */
+  .b .win { background:#ffffff; border:1px solid #dbe3ee; color:#17233b; font-family:"Segoe UI", Inter, system-ui, sans-serif; }
+  .b .bar { background:#f1f5fa; border-bottom:1px solid #dbe3ee; color:#1e3a5f; }
+  .b .dot { background:#16a34a; }
+  .b .assess { background:#eef7f0; border:1px solid #bfe3cc; color:#1c4630; }
+  .b .approve { background:#16a34a; color:#fff; }
+  .b .deny { background:#fff; color:#b91c1c; border-color:#f0b4b4; }
+  .b .ghost { background:#fff; color:#1e3a5f; border-color:#b9c8dd; }
+  .b .mini { background:#f8fafc; border:1px solid #dbe3ee; color:#40506b; }
+  .b .chip { background:#e8eff8; color:#1e3a5f; border:1px solid #c3d2e6; }
+
+  /* ---------- Direction C : Terminal ---------- */
+  .c .win { background:#000; border:1px solid #14532d; color:#4ade80; font-family:"JetBrains Mono", Consolas, monospace; border-radius:4px; }
+  .c .bar { background:#021207; border-bottom:1px solid #14532d; }
+  .c .dot { background:#4ade80; box-shadow:0 0 8px #4ade80; }
+  .c .win .body, .c .win button { font-family:"JetBrains Mono", Consolas, monospace; }
+  .c .assess { background:#021207; border:1px solid #166534; color:#86efac; border-radius:4px; }
+  .c .approve { background:#16a34a; color:#001b08; border-radius:3px; }
+  .c .deny { background:transparent; color:#f87171; border-color:#7f1d1d; border-radius:3px; }
+  .c .ghost { background:transparent; color:#4ade80; border-color:#166534; border-radius:3px; }
+  .c .mini { background:#021207; border:1px solid #14532d; color:#4ade80; border-radius:4px; }
+  .c .chip { background:#052e12; color:#4ade80; border:1px solid #166534; }
+</style>
+</head>
+<body>
+<h1>OpenVault — UI Directions</h1>
+<p class="sub">Same approval moment, three stylings. The approval prompt is the hero screen: an agent asks, the marshal (Llama 3.2 3B, local) assesses, you decide. No design sends a secret anywhere — note the fine print on each card.</p>
+<div class="grid">
+
+  <!-- ================= Direction A ================= -->
+  <section class="col a">
+    <h2>Direction A — Vault Noir (recommended)</h2>
+    <p class="desc">Dark crypto-wallet styling. Near-black vault, teal marshal accent, mono for scopes. Feels like Exodus / Ledger Live: serious, secure, premium on a demo stage.</p>
+    <div class="win">
+      <div class="bar"><span class="brand">&#11041; OPENVAULT</span><span class="marshal"><span class="dot"></span>MARSHAL · LLAMA 3.2 3B · LOCAL</span></div>
+      <div class="body">
+        <div class="label">ACCESS REQUEST</div>
+        <p class="want"><strong>Cursor</strong> wants <span class="mono">stripe : charges.read</span></p>
+        <p class="reason">&ldquo;List the last 5 failed charges&rdquo;</p>
+        <div class="assess"><b>MARSHAL ASSESSMENT — LOW RISK</b>Read-only scope. Clean history: 3 requests in 24h, 0 denials. Within your Stripe ceiling of <span class="mono">charges.read</span>.</div>
+        <p class="fine">Grant expires after this call. The secret is injected inside the vault — it is never shown to the agent, the chat, or the model.</p>
+        <div class="btns"><button class="approve">Approve once</button><button class="deny">Deny</button><button class="ghost">Always allow reads</button></div>
+        <div class="mini"><h3>IN THE VAULT</h3>
+          <span class="chip">stripe · charges.read</span><span class="chip">github · repo.read</span><span class="chip">openai · models.list</span>
+          <div class="audit-row"><span>14:02 cursor · charges.read</span><span>APPROVED · EXPIRED</span></div>
+          <div class="audit-row"><span>13:47 codex · repo.write</span><span>DENIED BY YOU</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="swatches"><span class="sw" style="background:#0b0e14">#0B0E14 vault</span><span class="sw" style="background:#2dd4bf;color:#04211c">#2DD4BF marshal</span><span class="sw" style="background:#f59e0b;color:#221300">#F59E0B warn</span><span class="sw" style="background:#ef4444">#EF4444 deny</span><span class="sw">Inter + JetBrains Mono</span></div>
+  </section>
+
+  <!-- ================= Direction B ================= -->
+  <section class="col b">
+    <h2>Direction B — Marshal Light</h2>
+    <p class="desc">Clean bank-app styling. White and navy, green approve, soft shadows. Maximum trust for non-crypto users and enterprise eyes; less dramatic under stage lighting.</p>
+    <div class="win">
+      <div class="bar"><span class="brand">&#11041; OPENVAULT</span><span class="marshal"><span class="dot"></span>Marshal · Llama 3.2 3B · On-device</span></div>
+      <div class="body">
+        <div class="label">ACCESS REQUEST</div>
+        <p class="want"><strong>Cursor</strong> wants <span class="mono">stripe : charges.read</span></p>
+        <p class="reason">&ldquo;List the last 5 failed charges&rdquo;</p>
+        <div class="assess"><b>MARSHAL ASSESSMENT — LOW RISK</b>Read-only scope. Clean history: 3 requests in 24h, 0 denials. Within your Stripe ceiling of <span class="mono">charges.read</span>.</div>
+        <p class="fine">Grant expires after this call. The secret is injected inside the vault — it is never shown to the agent, the chat, or the model.</p>
+        <div class="btns"><button class="approve">Approve once</button><button class="deny">Deny</button><button class="ghost">Always allow reads</button></div>
+        <div class="mini"><h3>IN THE VAULT</h3>
+          <span class="chip">stripe · charges.read</span><span class="chip">github · repo.read</span><span class="chip">openai · models.list</span>
+          <div class="audit-row"><span>14:02 Cursor · charges.read</span><span>Approved · Expired</span></div>
+          <div class="audit-row"><span>13:47 Codex · repo.write</span><span>Denied by you</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="swatches"><span class="sw" style="background:#fff;color:#17233b">#FFFFFF surface</span><span class="sw" style="background:#1e3a5f">#1E3A5F navy</span><span class="sw" style="background:#16a34a">#16A34A approve</span><span class="sw" style="background:#d97706">#D97706 warn</span><span class="sw">Segoe UI + JetBrains Mono</span></div>
+  </section>
+
+  <!-- ================= Direction C ================= -->
+  <section class="col c">
+    <h2>Direction C — Terminal</h2>
+    <p class="desc">All-mono hacker styling, black and green, square corners. Developers screenshot this kind of thing; security buyers trust it least. Strong as an optional theme, risky as the default.</p>
+    <div class="win">
+      <div class="bar"><span class="brand">OPENVAULT v0.1</span><span class="marshal"><span class="dot"></span>MARSHAL: llama3.2:3b-q4 [local]</span></div>
+      <div class="body">
+        <div class="label">== ACCESS REQUEST ==</div>
+        <p class="want">cursor &gt; stripe:charges.read</p>
+        <p class="reason">reason: "List the last 5 failed charges"</p>
+        <div class="assess"><b>[marshal] risk=LOW</b>Read-only scope. Clean history: 3 req/24h, 0 denials. Within ceiling stripe=charges.read.</div>
+        <p class="fine">grant: single-use, expires after call. secret injected in-vault. never exposed to agent / chat / model.</p>
+        <div class="btns"><button class="approve">[y] approve once</button><button class="deny">[n] deny</button><button class="ghost">[a] always-read</button></div>
+        <div class="mini"><h3>VAULT CONTENTS</h3>
+          <span class="chip">stripe:charges.read</span><span class="chip">github:repo.read</span><span class="chip">openai:models.list</span>
+          <div class="audit-row"><span>14:02 cursor charges.read</span><span>OK EXPIRED</span></div>
+          <div class="audit-row"><span>13:47 codex repo.write</span><span>DENIED</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="swatches"><span class="sw" style="background:#000">#000000</span><span class="sw" style="background:#4ade80;color:#001b08">#4ADE80 term-green</span><span class="sw" style="background:#f87171;color:#1c0505">#F87171 deny</span><span class="sw">JetBrains Mono only</span></div>
+  </section>
+
+</div>
+<p class="sub" style="margin-top:36px">Recommendation: Direction A as the default, Direction B as a light-mode toggle, Direction C as a later dev theme. The marshal status line stays in the header in every direction — it is what makes the Meta model visible to judges.</p>
+</body>
+</html>
