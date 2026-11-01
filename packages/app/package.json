@@ -19,9 +19,12 @@
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "bin/**/*",
+      "package.json",
+      "icon.ico"
     ],
     "win": {
+      "icon": "icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -34,9 +37,18 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "MetaVault OSS",
+      "include": "scripts/installer.nsh",
+      "runAfterFinish": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "0xm0w",
+      "repo": "openvault"
     },
     "mac": {
       "target": [

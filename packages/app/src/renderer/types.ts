@@ -174,6 +174,20 @@ export interface LocalAuthPatchLike {
   readonly autoLockMinutes?: number;
 }
 
+export interface UpdaterStatusLike {
+  readonly status:
+    | "idle"
+    | "checking"
+    | "available"
+    | "not-available"
+    | "downloading"
+    | "downloaded"
+    | "error";
+  readonly version?: string;
+  readonly percent?: number;
+  readonly message?: string;
+}
+
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
@@ -201,6 +215,9 @@ export interface VaultApi {
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
   readonly verifyLocalPin: (pin: string) => Promise<unknown>;
   readonly bringToFront: () => void;
+  readonly checkForUpdates: () => Promise<unknown>;
+  readonly quitAndInstallUpdate: () => Promise<unknown>;
+  readonly onUpdaterStatus: (handler: (status: UpdaterStatusLike) => void) => () => void;
 }
 
 declare global {

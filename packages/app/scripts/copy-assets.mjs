@@ -19,6 +19,16 @@ for (const name of ["index.html", "styles.css", "favicon.svg", "icon.ico", "tray
   }
 }
 
+const srcBin = join(appRoot, "bin");
+const distBin = join(appRoot, "dist", "bin");
+mkdirSync(distBin, { recursive: true });
+for (const name of ["openvault.cmd", "vaultd.cmd", "openvault.ps1"]) {
+  const srcFile = join(srcBin, name);
+  if (existsSync(srcFile)) {
+    copyFileSync(srcFile, join(distBin, name));
+  }
+}
+
 const emittedPreload = join(appRoot, "dist", "preload.js");
 const cjsPreload = join(appRoot, "dist", "preload.cjs");
 if (existsSync(emittedPreload)) {

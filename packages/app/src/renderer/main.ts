@@ -53,6 +53,7 @@ import type {
   PoliciesData,
   SecurityPostureReportLike,
   LocalAuthStatusLike,
+  UpdaterStatusLike,
   WardenKeyStatusLike,
   WardenSettingsLike,
 } from "./types.js";
@@ -105,6 +106,7 @@ let wardenDirty = false;
 let settingsKeyDraft = "";
 let settingsBusy = false;
 let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
+let updaterStatus: UpdaterStatusLike = { status: "idle" };
 
 function mustElement(selector: string): HTMLElement {
   const found = document.querySelector(selector);
@@ -2079,6 +2081,60 @@ function renderSettings(view: HTMLElement): void {
   });
   policySection.append(policiesBtn);
   view.append(policySection);
+
+  // 7. Auto-updater & releases (#16)
+  const updateSection = settingsSection("Auto-updater & releases", "Keep MetaVault OSS secure with signed background updates directly from GitHub Releases.");
+  const updateStatusRow = el("div", "settings-row");
+  let statusText = `Current version: v${APP_VERSION_DISPLAY}`;
+  let statusBadgeClass = "tag-ok";
+
+  if (updaterStatus.status === "checking") {
+    statusText = "Checking for updates...";
+    statusBadgeClass = "tag-policy";
+  } else if (updaterStatus.status === "available") {
+    statusText = `Update available: v${updaterStatus.version ?? ""}`;
+    statusBadgeClass = "tag-warn";
+  } else if (updaterStatus.status === "downloading") {
+    statusText = `Downloading update: ${String(updaterStatus.percent ?? 0)}%`;
+    statusBadgeClass = "tag-policy";
+  } else if (updaterStatus.status === "downloaded") {
+    statusText = `Update v${updaterStatus.version ?? ""} ready to install!`;
+    statusBadgeClass = "tag-ok";
+  } else if (updaterStatus.status === "error") {
+    statusText = updaterStatus.message ?? "Update check failed";
+    statusBadgeClass = "tag-danger";
+  }
+
+  updateStatusRow.append(el("span", "settings-row-label", "Version & release status"));
+  updateStatusRow.append(el("span", `tag ${statusBadgeClass}`, statusText));
+  updateSection.append(updateStatusRow);
+
+  const updateBtns = el("div", "settings-btns");
+  const checkUpdateBtn = el("button", "action", "Check for updates") as HTMLButtonElement;
+  checkUpdateBtn.type = "button";
+  checkUpdateBtn.disabled = updaterStatus.status === "checking" || updaterStatus.status === "downloading";
+  checkUpdateBtn.addEventListener("click", () => {
+    updaterStatus = { status: "checking" };
+    render();
+    if (typeof window.openvault.checkForUpdates === "function") {
+      void window.openvault.checkForUpdates();
+    }
+  });
+  updateBtns.append(checkUpdateBtn);
+
+  if (updaterStatus.status === "downloaded") {
+    const installBtn = el("button", "action btn-always", "Restart & install update") as HTMLButtonElement;
+    installBtn.type = "button";
+    installBtn.addEventListener("click", () => {
+      if (typeof window.openvault.quitAndInstallUpdate === "function") {
+        void window.openvault.quitAndInstallUpdate();
+      }
+    });
+    updateBtns.append(installBtn);
+  }
+
+  updateSection.append(updateBtns);
+  view.append(updateSection);
 }
 
 function renderPolicies(view: HTMLElement): void {
@@ -2466,6 +2522,12 @@ function start(): void {
     });
   });
   void refreshTracked();
+  if (typeof window.openvault.onUpdaterStatus === "function") {
+    window.openvault.onUpdaterStatus((status) => {
+      updaterStatus = status;
+      render();
+    });
+  }
   window.setInterval(() => {
     void refreshTracked();
   }, POLL_MS);

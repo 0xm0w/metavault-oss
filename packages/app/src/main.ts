@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
 import { DAEMON_CALL_CHANNEL, callDaemon } from "./daemon-client.js";
 import { DEEPLINK_CHANNEL, findOpenVaultUrl, parseOpenVaultUrl, type DeeplinkAddParams } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
+import { initAutoUpdater } from "./updater.js";
 
 // MetaVault OSS desktop shell: a window over vaultd, in the wallet pattern.
 // This main process owns the daemon HTTP client and the daemon token (see
@@ -75,10 +76,13 @@ function bringWindowToFront(): void {
 
 function createWindow(): void {
   rendererReady = false;
+  const isMinimizedStart = process.argv.includes("--minimized") || process.argv.includes("--hidden");
   const window = new BrowserWindow(buildWindowOptions(preloadPath));
   mainWindow = window;
   window.once("ready-to-show", () => {
-    window.show();
+    if (!isMinimizedStart) {
+      window.show();
+    }
   });
   window.on("close", (event) => {
     if (shouldHideOnClose(isQuitting)) {
@@ -156,6 +160,7 @@ if (!hasLock) {
     });
     createWindow();
     createTray();
+    initAutoUpdater(() => mainWindow);
     app.on("activate", () => {
       showWindow();
     });

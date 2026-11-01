@@ -3,6 +3,7 @@ import type {
   CapabilityRequestLike,
   DeeplinkAddParams,
   LocalAuthPatchLike,
+  UpdaterStatusLike,
   VaultApi,
   WardenSettingsPatch,
 } from "./renderer/types.js";
@@ -75,6 +76,17 @@ const api: VaultApi = {
   verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),
   bringToFront: () => {
     ipcRenderer.send("openvault:bring-to-front");
+  },
+  checkForUpdates: () => ipcRenderer.invoke("openvault:check-for-updates"),
+  quitAndInstallUpdate: () => ipcRenderer.invoke("openvault:quit-and-install"),
+  onUpdaterStatus: (handler: (status: UpdaterStatusLike) => void) => {
+    const listener = (_event: unknown, data: unknown): void => {
+      handler(data as UpdaterStatusLike);
+    };
+    ipcRenderer.on("openvault:updater-status", listener);
+    return () => {
+      ipcRenderer.removeListener("openvault:updater-status", listener);
+    };
   },
 };
 

@@ -15,7 +15,8 @@
     "@effect/platform-node": "^0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "better-sqlite3": "^13",
-    "effect": "^3"
+    "effect": "^3",
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "@effect/vitest": "^0.30.1",
