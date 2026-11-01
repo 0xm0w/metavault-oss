@@ -42,6 +42,8 @@ import {
   parseDotEnv,
   inferAliasAndScope,
   parseDotEnvWithInference,
+  projectLocalAuthStatus,
+  DEFAULT_LOCAL_AUTH_STATUS,
 } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
@@ -1011,5 +1013,34 @@ describe("dotenv parser and inference (#17)", () => {
       value: "sk_test_123",
       included: true,
     });
+  });
+});
+
+describe("projectLocalAuthStatus (#19)", () => {
+  it("projects valid local auth status", () => {
+    const raw = {
+      enabled: true,
+      configured: true,
+      requireOnApproval: true,
+      requireOnLaunch: false,
+      autoLockMinutes: 15,
+    };
+    const projected = projectLocalAuthStatus(raw);
+    expect(projected).toEqual(raw);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.enabled).toBe(false);
+  });
+
+  it("fails closed on secret-like leakage or invalid shapes", () => {
+    const leaky = {
+      enabled: true,
+      configured: true,
+      requireOnApproval: true,
+      requireOnLaunch: false,
+      autoLockMinutes: 15,
+      pinHash: "secret-hash-leaked",
+    };
+    expect(projectLocalAuthStatus(leaky)).toBeNull();
+    expect(projectLocalAuthStatus(null)).toBeNull();
+    expect(projectLocalAuthStatus({ enabled: "true" })).toBeNull();
   });
 });

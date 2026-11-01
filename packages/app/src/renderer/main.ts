@@ -39,6 +39,9 @@ import {
   projectWardenTestResult,
   wardenTestMessage,
   projectSecurityPosture,
+  DEFAULT_LOCAL_AUTH_STATUS,
+  projectLocalAuthStatus,
+  isReadOnlyScope,
   parseDotEnvWithInference,
   type DotEnvImportItem,
 } from "./model.js";
@@ -49,6 +52,7 @@ import type {
   PendingApproval,
   PoliciesData,
   SecurityPostureReportLike,
+  LocalAuthStatusLike,
   WardenKeyStatusLike,
   WardenSettingsLike,
 } from "./types.js";
@@ -83,6 +87,15 @@ let auditDateRangeFilter = "all";
 let auditPage = 1;
 let auditPageSize = 10;
 let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "skill" = "claude";
+let localAuthStatus: LocalAuthStatusLike = { ...DEFAULT_LOCAL_AUTH_STATUS };
+let vaultLocked = false;
+let lastUserActivityTs = Date.now();
+
+function recordActivity(): void {
+  lastUserActivityTs = Date.now();
+}
+window.addEventListener("pointerdown", recordActivity);
+window.addEventListener("keydown", recordActivity);
 let busy = false;
 let notice: string | null = null;
 let wardenDraft: WardenSettingsLike = { ...DEFAULT_WARDEN_SETTINGS };
@@ -225,7 +238,15 @@ function renderApproval(view: HTMLElement): void {
   approveBtn.type = "button";
   approveBtn.disabled = busy;
   approveBtn.addEventListener("click", () => {
-    void runAction(() => window.openvault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
+    const executeApproval = () => {
+      void runAction(() => window.openvault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
+    };
+    const isSensitive = hero.risk === "high" || !isReadOnlyScope(hero.allowedScope);
+    if (localAuthStatus.enabled && localAuthStatus.requireOnApproval && isSensitive) {
+      promptVerifyPin("Authenticate to approve capability", executeApproval);
+    } else {
+      executeApproval();
+    }
   });
   const denyBtn = el("button", "action btn-deny", "Deny") as HTMLButtonElement;
   denyBtn.type = "button";
@@ -649,6 +670,177 @@ function openCredentialDetail(card: { alias: string; website: string; scopes: re
   scopeInput.focus();
 }
 
+
+function promptVerifyPin(title: string, onVerified: () => void): void {
+  if (credentialModal !== null) return;
+  const overlay = el("div", "vault-modal-overlay");
+  const dialog = el("div", "vault-modal");
+  dialog.style.maxWidth = "400px";
+
+  const header = el("div", "vault-modal-header");
+  header.append(el("h2", "vault-modal-title", title));
+  const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
+  header.append(closeBtn);
+  dialog.append(header);
+
+  const sub = el("p", "vault-modal-sub", "Local authentication required. Enter your vault PIN to proceed.");
+  dialog.append(sub);
+
+  const errorBox = el("p", "vault-modal-error");
+  errorBox.hidden = true;
+  dialog.append(errorBox);
+
+  const wrap = el("label", "vault-field");
+  wrap.append(el("span", "vault-field-label", "PIN"));
+  const input = document.createElement("input");
+  input.className = "vault-input";
+  input.type = "password";
+  input.placeholder = "Enter PIN";
+  input.autocomplete = "current-password";
+  wrap.append(input);
+  dialog.append(wrap);
+
+  const actions = el("div", "vault-modal-actions");
+  const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
+  const confirmBtn = el("button", "vault-btn vault-btn-primary", "Confirm") as HTMLButtonElement;
+  actions.append(cancelBtn, confirmBtn);
+  dialog.append(actions);
+
+  const close = () => { closeCredentialModal(); };
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+
+  const submit = async () => {
+    const pin = input.value.trim();
+    if (!pin) return;
+    confirmBtn.disabled = true;
+    try {
+      const res = (await window.openvault.verifyLocalPin(pin)) as { ok?: boolean } | null;
+      if (res?.ok) {
+        close();
+        onVerified();
+      } else {
+        errorBox.textContent = "Incorrect PIN. Verification failed.";
+        errorBox.hidden = false;
+        confirmBtn.disabled = false;
+        input.value = "";
+        input.focus();
+      }
+    } catch {
+      errorBox.textContent = "Could not verify PIN.";
+      errorBox.hidden = false;
+      confirmBtn.disabled = false;
+    }
+  };
+
+  confirmBtn.addEventListener("click", () => { void submit(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void submit();
+  });
+
+  overlay.append(dialog);
+  document.body.append(overlay);
+  credentialModal = overlay;
+  input.focus();
+}
+
+function openPinModal(onSuccess?: () => void): void {
+  if (credentialModal !== null) return;
+  const overlay = el("div", "vault-modal-overlay");
+  const dialog = el("div", "vault-modal");
+  dialog.style.maxWidth = "420px";
+
+  const header = el("div", "vault-modal-header");
+  header.append(el("h2", "vault-modal-title", localAuthStatus.configured ? "Change local PIN" : "Set local PIN"));
+  const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
+  header.append(closeBtn);
+  dialog.append(header);
+
+  const sub = el("p", "vault-modal-sub", "Configure a 4-8 digit numeric or alphanumeric PIN for protecting your local vault sessions.");
+  dialog.append(sub);
+
+  const errorBox = el("p", "vault-modal-error");
+  errorBox.hidden = true;
+  dialog.append(errorBox);
+
+  let curInput: HTMLInputElement | null = null;
+  if (localAuthStatus.configured) {
+    const curWrap = el("label", "vault-field");
+    curWrap.append(el("span", "vault-field-label", "Current PIN"));
+    curInput = document.createElement("input");
+    curInput.className = "vault-input";
+    curInput.type = "password";
+    curInput.placeholder = "Enter current PIN";
+    curWrap.append(curInput);
+    dialog.append(curWrap);
+  }
+
+  const newWrap = el("label", "vault-field");
+  newWrap.append(el("span", "vault-field-label", "New PIN"));
+  const newInput = document.createElement("input");
+  newInput.className = "vault-input";
+  newInput.type = "password";
+  newInput.placeholder = "Enter new PIN (min 4 chars)";
+  newWrap.append(newInput);
+  dialog.append(newWrap);
+
+  const confirmWrap = el("label", "vault-field");
+  confirmWrap.append(el("span", "vault-field-label", "Confirm New PIN"));
+  const confirmInput = document.createElement("input");
+  confirmInput.className = "vault-input";
+  confirmInput.type = "password";
+  confirmInput.placeholder = "Re-enter new PIN";
+  confirmWrap.append(confirmInput);
+  dialog.append(confirmWrap);
+
+  const actions = el("div", "vault-modal-actions");
+  const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
+  const saveBtn = el("button", "vault-btn vault-btn-primary", "Save PIN") as HTMLButtonElement;
+  actions.append(cancelBtn, saveBtn);
+  dialog.append(actions);
+
+  const close = () => { closeCredentialModal(); };
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+
+  const submit = async () => {
+    const newPin = newInput.value.trim();
+    const conf = confirmInput.value.trim();
+    if (newPin.length < 4) {
+      errorBox.textContent = "New PIN must be at least 4 characters.";
+      errorBox.hidden = false;
+      return;
+    }
+    if (newPin !== conf) {
+      errorBox.textContent = "New PINs do not match.";
+      errorBox.hidden = false;
+      return;
+    }
+    saveBtn.disabled = true;
+    try {
+      const res = (await window.openvault.setLocalPin(newPin, curInput?.value.trim())) as { ok?: boolean } | null;
+      if (res?.ok) {
+        close();
+        onSuccess?.();
+        showBanner("Local PIN updated successfully.");
+      } else {
+        errorBox.textContent = "Could not update PIN. Verify your current PIN.";
+        errorBox.hidden = false;
+        saveBtn.disabled = false;
+      }
+    } catch {
+      errorBox.textContent = "Invalid current PIN or server error.";
+      errorBox.hidden = false;
+      saveBtn.disabled = false;
+    }
+  };
+
+  saveBtn.addEventListener("click", () => { void submit(); });
+  overlay.append(dialog);
+  document.body.append(overlay);
+  credentialModal = overlay;
+  (curInput ?? newInput).focus();
+}
 
 function openDotEnvModal(): void {
   if (credentialModal !== null) {
@@ -1602,6 +1794,97 @@ function renderSettings(view: HTMLElement): void {
     view.append(msg);
   }
 
+  // 4b. Local authentication & security gates (#19)
+  const authSection = settingsSection("Local authentication & security gates", "Require local PIN / biometric verification for approving sensitive capability grants and auto-locking idle sessions.");
+
+  const authStatusP = el("p", "settings-status", `Status: ${localAuthStatus.enabled ? "Active" : "Disabled"}${localAuthStatus.configured ? " · PIN configured" : " · No PIN set"}`);
+  authSection.append(authStatusP);
+
+  const authToggleRow = el("div", "settings-row");
+  const authToggleLabel = el("span", "settings-row-label", "Enable local authentication gate");
+  const authToggle = document.createElement("input");
+  authToggle.type = "checkbox";
+  authToggle.checked = localAuthStatus.enabled;
+  authToggle.addEventListener("change", () => {
+    if (authToggle.checked && !localAuthStatus.configured) {
+      openPinModal(() => {
+        void runSettingsAction(async () => {
+          const raw = await window.openvault.updateLocalAuthSettings({ enabled: true });
+          const projected = projectLocalAuthStatus(raw);
+          if (projected !== null) localAuthStatus = projected;
+          render();
+        });
+      });
+      authToggle.checked = false;
+      return;
+    }
+    void runSettingsAction(async () => {
+      const raw = await window.openvault.updateLocalAuthSettings({ enabled: authToggle.checked });
+      const projected = projectLocalAuthStatus(raw);
+      if (projected !== null) localAuthStatus = projected;
+      render();
+    });
+  });
+  authToggleRow.append(authToggleLabel, authToggle);
+  authSection.append(authToggleRow);
+
+  if (localAuthStatus.enabled) {
+    const apprRow = el("div", "settings-row");
+    const apprLabel = el("span", "settings-row-label", "Require PIN on sensitive/write approvals");
+    const apprToggle = document.createElement("input");
+    apprToggle.type = "checkbox";
+    apprToggle.checked = localAuthStatus.requireOnApproval;
+    apprToggle.addEventListener("change", () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateLocalAuthSettings({ requireOnApproval: apprToggle.checked });
+        const projected = projectLocalAuthStatus(raw);
+        if (projected !== null) localAuthStatus = projected;
+      });
+    });
+    apprRow.append(apprLabel, apprToggle);
+    authSection.append(apprRow);
+
+    const lockRow = el("div", "settings-row");
+    const lockLabel = el("span", "settings-row-label", "Auto-lock inactive session");
+    const lockSelect = document.createElement("select");
+    lockSelect.className = "vault-input";
+    lockSelect.style.width = "auto";
+    const options = [
+      { min: 0, label: "Disabled" },
+      { min: 5, label: "After 5 minutes" },
+      { min: 15, label: "After 15 minutes" },
+      { min: 30, label: "After 30 minutes" },
+    ];
+    for (const opt of options) {
+      const optEl = document.createElement("option");
+      optEl.value = String(opt.min);
+      optEl.textContent = opt.label;
+      if (localAuthStatus.autoLockMinutes === opt.min) optEl.selected = true;
+      lockSelect.append(optEl);
+    }
+    lockSelect.addEventListener("change", () => {
+      const mins = Number(lockSelect.value);
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateLocalAuthSettings({ autoLockMinutes: mins });
+        const projected = projectLocalAuthStatus(raw);
+        if (projected !== null) localAuthStatus = projected;
+      });
+    });
+    lockRow.append(lockLabel, lockSelect);
+    authSection.append(lockRow);
+  }
+
+  const pinBtn = el("button", "action", localAuthStatus.configured ? "Change local PIN" : "Set local PIN") as HTMLButtonElement;
+  pinBtn.type = "button";
+  pinBtn.addEventListener("click", () => {
+    openPinModal(() => {
+      void refresh().then(render);
+    });
+  });
+  authSection.append(pinBtn);
+
+  view.append(authSection);
+
   // 5. Daemon (read-only)
   const daemonSection = settingsSection("Daemon", "");
   const rows: readonly (readonly [string, string])[] = [
@@ -1976,6 +2259,73 @@ function render(): void {
     if (liveKey !== null) settingsKeyDraft = liveKey.value;
   }
   view.replaceChildren();
+  if (vaultLocked) {
+    view.replaceChildren();
+    const lockScreen = el("div", "lock-screen");
+    lockScreen.style.display = "flex";
+    lockScreen.style.flexDirection = "column";
+    lockScreen.style.alignItems = "center";
+    lockScreen.style.justifyContent = "center";
+    lockScreen.style.padding = "60px 20px";
+    lockScreen.style.textAlign = "center";
+
+    const lockIcon = el("div", "lock-icon", "🔒");
+    lockIcon.style.fontSize = "48px";
+    lockIcon.style.marginBottom = "16px";
+
+    const lockTitle = el("h2", "", "Vault Locked");
+    const lockSub = el("p", "sub", "Session locked due to inactivity. Enter your PIN to resume.");
+    lockSub.style.marginBottom = "24px";
+
+    const pinInput = document.createElement("input");
+    pinInput.className = "vault-input";
+    pinInput.type = "password";
+    pinInput.placeholder = "Enter PIN to unlock";
+    pinInput.style.maxWidth = "240px";
+    pinInput.style.textAlign = "center";
+    pinInput.style.marginBottom = "16px";
+
+    const errorP = el("p", "vault-modal-error");
+    errorP.hidden = true;
+
+    const unlockBtn = el("button", "action btn-approve", "Unlock Vault") as HTMLButtonElement;
+    unlockBtn.style.padding = "8px 24px";
+
+    const doUnlock = async () => {
+      const pin = pinInput.value.trim();
+      if (!pin) return;
+      unlockBtn.disabled = true;
+      try {
+        const res = (await window.openvault.verifyLocalPin(pin)) as { ok?: boolean } | null;
+        if (res?.ok) {
+          vaultLocked = false;
+          lastUserActivityTs = Date.now();
+          render();
+        } else {
+          errorP.textContent = "Incorrect PIN.";
+          errorP.hidden = false;
+          unlockBtn.disabled = false;
+          pinInput.value = "";
+          pinInput.focus();
+        }
+      } catch {
+        errorP.textContent = "Verification error.";
+        errorP.hidden = false;
+        unlockBtn.disabled = false;
+      }
+    };
+
+    unlockBtn.addEventListener("click", () => { void doUnlock(); });
+    pinInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") void doUnlock();
+    });
+
+    lockScreen.append(lockIcon, lockTitle, lockSub, errorP, pinInput, unlockBtn);
+    view.append(lockScreen);
+    setTimeout(() => { pinInput.focus(); }, 50);
+    return;
+  }
+
   showBanner(notice);
   if (currentView === "approval") {
     renderApproval(view);
@@ -1992,7 +2342,7 @@ function render(): void {
 
 async function refresh(): Promise<void> {
   try {
-    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw, postureRaw] = await Promise.all([
+    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw] = await Promise.all([
       window.openvault.pending(),
       window.openvault.aliases(),
       window.openvault.audit(),
@@ -2000,6 +2350,7 @@ async function refresh(): Promise<void> {
       window.openvault.getWardenSettings().catch(() => null),
       window.openvault.wardenKeyStatus().catch(() => null),
       window.openvault.getSecurityPosture().catch(() => null),
+      window.openvault.getLocalAuthStatus().catch(() => null),
     ]);
     const nextApprovals = projectPendingResponse(pendingRaw);
     const hasNewApproval = nextApprovals.some((a) => !knownGrantIds.has(a.grantId));
@@ -2017,6 +2368,13 @@ async function refresh(): Promise<void> {
     auditEvents = projectAuditResponse(auditRaw);
     policiesData = projectPoliciesResponse(policiesRaw);
     securityPosture = projectSecurityPosture(postureRaw);
+    const projAuth = projectLocalAuthStatus(localAuthRaw);
+    if (projAuth !== null) localAuthStatus = projAuth;
+    if (localAuthStatus.enabled && localAuthStatus.autoLockMinutes > 0 && !vaultLocked) {
+      if (Date.now() - lastUserActivityTs > localAuthStatus.autoLockMinutes * 60 * 1000) {
+        vaultLocked = true;
+      }
+    }
     const projectedWarden = projectWardenSettings(wardenRaw);
     if (projectedWarden !== null) {
       if (!wardenDirty) {

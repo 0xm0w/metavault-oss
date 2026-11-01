@@ -217,6 +217,9 @@ function isTokenProtected(method: string, path: string): boolean {
   ) {
     return true;
   }
+  if (path.startsWith("/settings/local-auth") && method !== "GET" && path !== "/settings/local-auth/verify") {
+    return true;
+  }
   return false;
 }
 
@@ -322,6 +325,40 @@ export async function handleVaultRequest(
   }
   if (method === "DELETE" && path === "/settings/warden/key") {
     return run(service.deleteWardenKey());
+  }
+    if (method === "GET" && path === "/settings/local-auth") {
+    return run(service.getLocalAuthStatus());
+  }
+  if (method === "PATCH" && path === "/settings/local-auth") {
+    const rawPatch = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    const patch: {
+      enabled?: boolean;
+      requireOnApproval?: boolean;
+      requireOnLaunch?: boolean;
+      autoLockMinutes?: number;
+    } = {};
+    if (typeof rawPatch["enabled"] === "boolean") patch.enabled = rawPatch["enabled"];
+    if (typeof rawPatch["requireOnApproval"] === "boolean") patch.requireOnApproval = rawPatch["requireOnApproval"];
+    if (typeof rawPatch["requireOnLaunch"] === "boolean") patch.requireOnLaunch = rawPatch["requireOnLaunch"];
+    if (typeof rawPatch["autoLockMinutes"] === "number") patch.autoLockMinutes = rawPatch["autoLockMinutes"];
+    return run(service.updateLocalAuthSettings(patch));
+  }
+  if (method === "POST" && path === "/settings/local-auth/pin") {
+    const data = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    const pin = data["pin"];
+    const currentPin = data["currentPin"];
+    if (typeof pin !== "string" || pin.trim().length < 4) {
+      return BAD_REQUEST;
+    }
+    return run(service.setLocalPin(pin.trim(), typeof currentPin === "string" ? currentPin.trim() : undefined));
+  }
+  if (method === "POST" && path === "/settings/local-auth/verify") {
+    const data = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    const pin = data["pin"];
+    if (typeof pin !== "string") {
+      return BAD_REQUEST;
+    }
+    return run(service.verifyLocalPin(pin.trim()));
   }
   if (method === "POST" && path === "/enrollments") {
     const decoded = await decode(EnrollmentRequestSchema, body ?? {});

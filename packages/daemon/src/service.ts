@@ -24,6 +24,10 @@ import {
   WARDEN_KEY_ALIAS,
   WARDEN_KEY_MIN_LENGTH,
   WARDEN_KEY_SCOPE,
+  generatePinSalt,
+  hashPin,
+  verifyPin,
+  type LocalAuthStatus,
   type WardenKeyStatus,
   type WardenSettings,
 } from "../../core/src/settings.js";
@@ -158,6 +162,18 @@ export interface VaultServiceService {
   readonly deleteWardenKey: () => Effect.Effect<WardenKeyStatus, StorageError>;
   readonly wardenKeyStatus: () => Effect.Effect<WardenKeyStatus, StorageError>;
   readonly testWarden: () => Effect.Effect<WardenTestResult, StorageError>;
+    readonly getLocalAuthStatus: () => Effect.Effect<LocalAuthStatus, StorageError>;
+  readonly updateLocalAuthSettings: (patch: {
+    readonly enabled?: boolean;
+    readonly requireOnApproval?: boolean;
+    readonly requireOnLaunch?: boolean;
+    readonly autoLockMinutes?: number;
+  }) => Effect.Effect<LocalAuthStatus, StorageError>;
+  readonly setLocalPin: (
+    pin: string,
+    currentPin?: string,
+  ) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
+  readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
   readonly getSecurityPosture: () => Effect.Effect<SecurityPostureReport, StorageError>;
 }
 
@@ -1009,6 +1025,72 @@ export function makeVaultServiceLive(
                   a.scope.localeCompare(b.scope),
               );
             return { ceilings, standingApprovals };
+          }),
+
+        getLocalAuthStatus: () =>
+          Effect.gen(function* () {
+            const record = yield* store.getLocalAuthRecord();
+            return {
+              enabled: record.enabled,
+              configured: record.pinHash !== null,
+              requireOnApproval: record.requireOnApproval,
+              requireOnLaunch: record.requireOnLaunch,
+              autoLockMinutes: record.autoLockMinutes,
+            };
+          }),
+
+        updateLocalAuthSettings: (patch) =>
+          Effect.gen(function* () {
+            const current = yield* store.getLocalAuthRecord();
+            const next = {
+              ...current,
+              enabled: patch.enabled !== undefined ? patch.enabled : current.enabled,
+              requireOnApproval:
+                patch.requireOnApproval !== undefined ? patch.requireOnApproval : current.requireOnApproval,
+              requireOnLaunch:
+                patch.requireOnLaunch !== undefined ? patch.requireOnLaunch : current.requireOnLaunch,
+              autoLockMinutes:
+                patch.autoLockMinutes !== undefined ? patch.autoLockMinutes : current.autoLockMinutes,
+            };
+            yield* store.setLocalAuthRecord(next);
+            return {
+              enabled: next.enabled,
+              configured: next.pinHash !== null,
+              requireOnApproval: next.requireOnApproval,
+              requireOnLaunch: next.requireOnLaunch,
+              autoLockMinutes: next.autoLockMinutes,
+            };
+          }),
+
+        setLocalPin: (pin, currentPin) =>
+          Effect.gen(function* () {
+            const current = yield* store.getLocalAuthRecord();
+            if (current.pinHash !== null && current.salt !== null) {
+              const matches = verifyPin(currentPin ?? "", current.salt, current.pinHash);
+              if (!matches) {
+                return yield* Effect.fail(
+                  new StorageError({ message: "invalid current pin", operation: "setLocalPin" }),
+                );
+              }
+            }
+            const salt = generatePinSalt();
+            const pinHash = hashPin(pin, salt);
+            yield* store.setLocalAuthRecord({
+              ...current,
+              pinHash,
+              salt,
+            });
+            return { ok: true } as const;
+          }),
+
+        verifyLocalPin: (pin) =>
+          Effect.gen(function* () {
+            const current = yield* store.getLocalAuthRecord();
+            if (current.pinHash === null || current.salt === null) {
+              return { ok: true } as const;
+            }
+            const ok = verifyPin(pin, current.salt, current.pinHash);
+            return { ok } as const;
           }),
 
         getSecurityPosture: () =>

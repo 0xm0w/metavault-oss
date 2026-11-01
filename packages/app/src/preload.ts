@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CapabilityRequestLike, DeeplinkAddParams, VaultApi, WardenSettingsPatch } from "./renderer/types.js";
+import type {
+  CapabilityRequestLike,
+  DeeplinkAddParams,
+  LocalAuthPatchLike,
+  VaultApi,
+  WardenSettingsPatch,
+} from "./renderer/types.js";
 
 // Thin IPC bridge: the sandboxed preload has no filesystem, network, or
 // token access. It only forwards the fixed VaultApi operations to the main
@@ -62,6 +68,11 @@ const api: VaultApi = {
   deleteWardenKey: () => invoke("DELETE", "/settings/warden/key"),
   wardenKeyStatus: () => invoke("GET", "/settings/warden/key"),
   testWarden: () => invoke("POST", "/settings/warden/test"),
+  getLocalAuthStatus: () => invoke("GET", "/settings/local-auth"),
+  updateLocalAuthSettings: (patch: LocalAuthPatchLike) => invoke("PATCH", "/settings/local-auth", patch),
+  setLocalPin: (pin: string, currentPin?: string) =>
+    invoke("POST", "/settings/local-auth/pin", { pin, ...(currentPin !== undefined && currentPin !== "" ? { currentPin } : {}) }),
+  verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),
   bringToFront: () => {
     ipcRenderer.send("openvault:bring-to-front");
   },

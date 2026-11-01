@@ -12,6 +12,7 @@ import type {
   SecurityPostureIssueLike,
   SecurityPostureRemediationLike,
   SecurityPostureReportLike,
+  LocalAuthStatusLike,
   StandingApproval,
   WardenEffort,
   WardenKeyStatusLike,
@@ -1174,3 +1175,36 @@ export {
   parseDotEnvWithInference,
   type DotEnvImportItem,
 } from "./dotenv.js";
+
+export const DEFAULT_LOCAL_AUTH_STATUS: LocalAuthStatusLike = {
+  enabled: false,
+  configured: false,
+  requireOnApproval: true,
+  requireOnLaunch: false,
+  autoLockMinutes: 0,
+};
+
+export function projectLocalAuthStatus(raw: unknown): LocalAuthStatusLike | null {
+  if (!isRecord(raw) || "pinHash" in raw || "salt" in raw || findSecretLikeKeys(raw).length > 0) return null;
+  const enabled = raw["enabled"];
+  const configured = raw["configured"];
+  const requireOnApproval = raw["requireOnApproval"];
+  const requireOnLaunch = raw["requireOnLaunch"];
+  const autoLockMinutes = raw["autoLockMinutes"];
+  if (
+    typeof enabled !== "boolean" ||
+    typeof configured !== "boolean" ||
+    typeof requireOnApproval !== "boolean" ||
+    typeof requireOnLaunch !== "boolean" ||
+    typeof autoLockMinutes !== "number"
+  ) {
+    return null;
+  }
+  return {
+    enabled,
+    configured,
+    requireOnApproval,
+    requireOnLaunch,
+    autoLockMinutes,
+  };
+}

@@ -159,6 +159,21 @@ export interface SecurityPostureReportLike {
   readonly remediations: readonly SecurityPostureRemediationLike[];
 }
 
+export interface LocalAuthStatusLike {
+  readonly enabled: boolean;
+  readonly configured: boolean;
+  readonly requireOnApproval: boolean;
+  readonly requireOnLaunch: boolean;
+  readonly autoLockMinutes: number;
+}
+
+export interface LocalAuthPatchLike {
+  readonly enabled?: boolean;
+  readonly requireOnApproval?: boolean;
+  readonly requireOnLaunch?: boolean;
+  readonly autoLockMinutes?: number;
+}
+
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
@@ -181,6 +196,10 @@ export interface VaultApi {
   readonly deleteWardenKey: () => Promise<unknown>;
   readonly wardenKeyStatus: () => Promise<unknown>;
   readonly testWarden: () => Promise<unknown>;
+  readonly getLocalAuthStatus: () => Promise<unknown>;
+  readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
+  readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
+  readonly verifyLocalPin: (pin: string) => Promise<unknown>;
   readonly bringToFront: () => void;
 }
 

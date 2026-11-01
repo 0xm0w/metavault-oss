@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
-import { DEFAULT_WARDEN_SETTINGS, type WardenSettings } from "./settings.js";
+import { DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, type LocalAuthRecord, type WardenSettings } from "./settings.js";
 import type { AuditEvent, DecisionSource, Risk } from "./types.js";
 
 export interface CredentialRecord {
@@ -39,9 +39,20 @@ export interface VaultStoreService {
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
   readonly getWardenSettings: () => Effect.Effect<WardenSettings, StorageError>;
   readonly setWardenSettings: (settings: WardenSettings) => Effect.Effect<void, StorageError>;
+  readonly getLocalAuthRecord: () => Effect.Effect<LocalAuthRecord, StorageError>;
+  readonly setLocalAuthRecord: (record: LocalAuthRecord) => Effect.Effect<void, StorageError>;
 }
 
 export class VaultStore extends Context.Tag("VaultStore")<VaultStore, VaultStoreService>() {}
+
+interface LocalAuthRow {
+  readonly enabled: number;
+  readonly pin_hash: string | null;
+  readonly salt: string | null;
+  readonly require_on_approval: number;
+  readonly require_on_launch: number;
+  readonly auto_lock_minutes: number;
+}
 
 interface CredentialRow {
   readonly ceiling: string;
@@ -108,7 +119,16 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
        effort TEXT NOT NULL,
        meta_api_base_url TEXT NOT NULL
      );
-     CREATE TABLE IF NOT EXISTS audit (
+     CREATE TABLE IF NOT EXISTS local_auth_settings (
+        id INTEGER PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        pin_hash TEXT,
+        salt TEXT,
+        require_on_approval INTEGER NOT NULL DEFAULT 1,
+        require_on_launch INTEGER NOT NULL DEFAULT 0,
+        auto_lock_minutes INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS audit (
        ts TEXT NOT NULL,
        agent TEXT NOT NULL,
        alias TEXT NOT NULL,
@@ -157,6 +177,12 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   );
   const upsertSettings = db.prepare(
     "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url",
+  );
+    const upsertLocalAuth = db.prepare(
+    "INSERT INTO local_auth_settings (id, enabled, pin_hash, salt, require_on_approval, require_on_launch, auto_lock_minutes) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, pin_hash = excluded.pin_hash, salt = excluded.salt, require_on_approval = excluded.require_on_approval, require_on_launch = excluded.require_on_launch, auto_lock_minutes = excluded.auto_lock_minutes",
+  );
+  const selectLocalAuth = db.prepare(
+    "SELECT enabled, pin_hash, salt, require_on_approval, require_on_launch, auto_lock_minutes FROM local_auth_settings WHERE id = 1",
   );
   const selectSettings = db.prepare(
     "SELECT provider, model, effort, meta_api_base_url FROM warden_settings WHERE id = 1",
@@ -261,6 +287,38 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
           };
         },
         catch: toStorageError("getWardenSettings"),
+      }),
+        getLocalAuthRecord: () =>
+      Effect.try({
+        try: () => {
+          const row = selectLocalAuth.get() as LocalAuthRow | undefined;
+          if (row === undefined) {
+            return { ...DEFAULT_LOCAL_AUTH_RECORD };
+          }
+          return {
+            enabled: Boolean(row.enabled),
+            pinHash: row.pin_hash,
+            salt: row.salt,
+            requireOnApproval: Boolean(row.require_on_approval),
+            requireOnLaunch: Boolean(row.require_on_launch),
+            autoLockMinutes: row.auto_lock_minutes,
+          };
+        },
+        catch: toStorageError("getLocalAuthRecord"),
+      }),
+    setLocalAuthRecord: (record) =>
+      Effect.try({
+        try: () => {
+          upsertLocalAuth.run(
+            record.enabled ? 1 : 0,
+            record.pinHash,
+            record.salt,
+            record.requireOnApproval ? 1 : 0,
+            record.requireOnLaunch ? 1 : 0,
+            record.autoLockMinutes,
+          );
+        },
+        catch: toStorageError("setLocalAuthRecord"),
       }),
     setWardenSettings: (settings) =>
       Effect.try({
