@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 // Pure window-hardening contract for the Electron main process. Kept free
 // of Electron imports so the security flags are unit-testable headlessly.
 
@@ -13,6 +15,7 @@ export interface VaultWindowOptions {
   readonly minHeight: number;
   readonly title: string;
   readonly backgroundColor: string;
+  readonly icon?: string;
   readonly webPreferences: {
     readonly preload: string;
     readonly nodeIntegration: false;
@@ -28,7 +31,8 @@ export function buildWindowOptions(preloadPath: string): VaultWindowOptions {
     minWidth: 720,
     minHeight: 520,
     title: "MetaVault OSS",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#0a0a0a",
+    icon: join(preloadPath, "..", "renderer", "icon.ico"),
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,

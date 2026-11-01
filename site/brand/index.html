@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brand Guidelines &amp; Identity — MetaVault OSS</title>
+<meta name="description" content="Official brand guidelines, color system, typography, and logo mockups for MetaVault OSS.">
+<link rel="icon" type="image/svg+xml" href="/brand/favicon.svg">
+<link rel="stylesheet" href="/assets/style.css">
+<style>
+.brand-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin: 32px 0; }
+.mockup-card { background: var(--canvas-card); border: 1px solid var(--hairline); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.mockup-img-wrap { width: 180px; height: 180px; margin: 16px auto 20px; display: flex; align-items: center; justify-content: center; }
+.mockup-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
+.color-swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin: 24px 0 36px; }
+.swatch { border-radius: 8px; border: 1px solid var(--hairline); overflow: hidden; background: var(--canvas-card); }
+.swatch-color { height: 72px; width: 100%; }
+.swatch-info { padding: 10px 12px; font-family: "Geist Mono", monospace; font-size: 11px; }
+.swatch-name { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; }
+.swatch-hex { color: var(--mute); }
+.asset-download { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 9999px; background: var(--canvas-soft); border: 1px solid var(--hairline); font-size: 12px; font-family: "Geist Mono", monospace; color: var(--accent-soft); text-decoration: none; margin-top: 10px; }
+.asset-download:hover { border-color: var(--accent); color: var(--ink); }
+</style>
+</head>
+<body>
+<nav><div class="nav-in">
+  <a class="logo" href="/">META<span>VAULT</span> OSS</a>
+  <div class="nav-links">
+    <a href="/docs/">Docs</a>
+    <a href="/architecture/">Architecture</a>
+    <a href="/research/">Research</a>
+    <a href="/brand/" class="active">Brand</a>
+    <a href="/hackathon/">Hackathon</a>
+    <a href="https://github.com/0xm0w/openvault">GitHub</a>
+    <a class="btn accent" href="/#download" style="padding:7px 18px">Download</a>
+  </div>
+</div></nav>
+
+<div class="wrap" style="padding: 56px 24px 80px;">
+  <p class="eyebrow">Visual Identity System</p>
+  <h1 style="font-size: clamp(34px, 5vw, 54px); margin-bottom: 16px;">MetaVault OSS Brand Guidelines</h1>
+  <p class="lede" style="max-width: 760px; margin-bottom: 40px;">
+    A unified visual system representing non-possessory security. The logo marries the continuous, infinite ribbon curves of <strong>Meta</strong> with the indestructible fortress geometry of the <strong>Vault</strong>. Built around high-contrast teal, deep void blacks, crisp white, and hairline slate.
+  </p>
+
+  <!-- 3 MOCKUPS SECTION -->
+  <section class="band" style="padding-top: 0; border-bottom: 1px solid var(--hairline);">
+    <p class="eyebrow dim">Exploration &amp; Concepts</p>
+    <h2>3 Official Logo Mockups</h2>
+    <p class="sub">Curvy, continuous Meta-inspired infinity geometry protecting the secret core.</p>
+
+    <div class="brand-grid">
+      <!-- MOCKUP 1 -->
+      <div class="mockup-card">
+        <span class="pill med">CONCEPT 01 &bull; SELECTED DEFAULT</span>
+        <div class="mockup-img-wrap">
+          <img src="/brand/mockup-1-infinity-ribbon.svg" alt="Mockup 1: The Infinity Ribbon">
+        </div>
+        <h3 style="margin-bottom: 6px;">The Infinity Ribbon</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 20px;">
+          A continuous parametric loop with glowing teal gradients. Echoes Meta’s famous ribbon while forming a locked center aperture representing mediated capability execution.
+        </p>
+        <a class="asset-download" href="/brand/mockup-1-infinity-ribbon.svg" download>Download SVG</a>
+      </div>
+
+      <!-- MOCKUP 2 -->
+      <div class="mockup-card">
+        <span class="pill high">CONCEPT 02 &bull; DEFENSE CREST</span>
+        <div class="mockup-img-wrap">
+          <img src="/brand/mockup-2-meta-crest.svg" alt="Mockup 2: The Meta Vault Crest">
+        </div>
+        <h3 style="margin-bottom: 6px;">The Meta Vault Crest</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 20px;">
+          Integrates the curvy "M" ribbon directly into an armored padlock shackle and crest silhouette. Emphasizes hardware-level enclosure and deterministic policy.
+        </p>
+        <a class="asset-download" href="/brand/mockup-2-meta-crest.svg" download>Download SVG</a>
+      </div>
+
+      <!-- MOCKUP 3 -->
+      <div class="mockup-card">
+        <span class="pill max">CONCEPT 03 &bull; M+V MINIMALIST</span>
+        <div class="mockup-img-wrap">
+          <img src="/brand/mockup-3-infinite-loop.svg" alt="Mockup 3: The M+V Loop">
+        </div>
+        <h3 style="margin-bottom: 6px;">The M+V Infinite Loop</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 20px;">
+          An ultra-clean single-stroke loop forming both 'M' (Meta) and 'V' (Vault) in one fluid gesture, anchored by a central hardware security key node.
+        </p>
+        <a class="asset-download" href="/brand/mockup-3-infinite-loop.svg" download>Download SVG</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- COLOR PALETTE -->
+  <section class="band" style="border-bottom: 1px solid var(--hairline);">
+    <p class="eyebrow dim">Palette</p>
+    <h2>Color System</h2>
+    <p class="sub">Original teal, void black, white, and hairline slate hierarchy.</p>
+
+    <div class="color-swatches">
+      <div class="swatch">
+        <div class="swatch-color" style="background: #2dd4bf;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Teal Accent</span>
+          <span class="swatch-hex">#2dd4bf &bull; Primary</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #99f6e4;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Soft Cyan</span>
+          <span class="swatch-hex">#99f6e4 &bull; Highlight</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #0f766e;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Deep Pine</span>
+          <span class="swatch-hex">#0f766e &bull; Shadow</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #0a0a0a;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Void Black</span>
+          <span class="swatch-hex">#0a0a0a &bull; Canvas</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #191919;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Card Slate</span>
+          <span class="swatch-hex">#191919 &bull; Card BG</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #212327;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Hairline</span>
+          <span class="swatch-hex">#212327 &bull; Borders</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #ffffff;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Pure White</span>
+          <span class="swatch-hex">#ffffff &bull; Headings</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #dadbdf;"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">Body Silver</span>
+          <span class="swatch-hex">#dadbdf &bull; Body Text</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ASSET DOWNLOADS FOR DEVELOPERS -->
+  <section class="band" style="border-bottom: none;">
+    <p class="eyebrow dim">Distribution</p>
+    <h2>Production App Icons &amp; Favicons</h2>
+    <p class="sub">Ready-to-use production assets for the Electron desktop client, website, and browser extensions.</p>
+
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+      <div class="card">
+        <span class="tag">Windows App</span>
+        <h3>Desktop Icon (.ico)</h3>
+        <p>Embedded 32x32 multi-plane BGRA bitmap for the Windows taskbar, desktop shortcuts, and NSIS installer.</p>
+        <a class="asset-download" href="/brand/icon.ico" download>Download icon.ico</a>
+      </div>
+      <div class="card">
+        <span class="tag">Browser &amp; Web</span>
+        <h3>Vector Favicon (.svg)</h3>
+        <p>Scalable, high-DPI vector favicon with squircle silhouette and crisp teal ribbon.</p>
+        <a class="asset-download" href="/brand/favicon.svg" download>Download favicon.svg</a>
+      </div>
+      <div class="card">
+        <span class="tag">Open Source</span>
+        <h3>Primary Vector Logo (.svg)</h3>
+        <p>Full-resolution 512x512 master SVG asset for GitHub headers, README badges, and press kits.</p>
+        <a class="asset-download" href="/brand/mockup-1-infinity-ribbon.svg" download>Download Master SVG</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer><div class="wrap foot">
+  <span>METAVAULT OSS — agents never see your secrets.</span>
+  <span><a href="/">Home</a> &bull; <a href="/docs/">Docs</a> &bull; <a href="/architecture/">Architecture</a> &bull; <a href="/research/">Research</a> &bull; <a href="/brand/">Brand</a> &bull; <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
+  <span>Apache-2.0. Local-first. Built for the Meta Hackathon.</span>
+</div></footer>
+</body>
+</html>

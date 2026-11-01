@@ -12,8 +12,11 @@ const srcRenderer = join(appRoot, "src", "renderer");
 const distRenderer = join(appRoot, "dist", "renderer");
 
 mkdirSync(distRenderer, { recursive: true });
-for (const name of ["index.html", "styles.css"]) {
-  copyFileSync(join(srcRenderer, name), join(distRenderer, name));
+for (const name of ["index.html", "styles.css", "favicon.svg", "icon.ico"]) {
+  const srcFile = join(srcRenderer, name);
+  if (existsSync(srcFile)) {
+    copyFileSync(srcFile, join(distRenderer, name));
+  }
 }
 
 const emittedPreload = join(appRoot, "dist", "preload.js");
