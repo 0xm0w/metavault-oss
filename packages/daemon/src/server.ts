@@ -274,6 +274,9 @@ export async function handleVaultRequest(
         ),
     );
   }
+  if (method === "GET" && path === "/security/posture") {
+    return run(service.getSecurityPosture());
+  }
   if (method === "GET" && path === "/settings/warden") {
     return run(service.getWardenSettings());
   }

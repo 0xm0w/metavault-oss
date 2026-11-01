@@ -29,6 +29,7 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "GET", path: "/audit" },
   { method: "GET", path: "/pending" },
   { method: "GET", path: "/policies" },
+  { method: "GET", path: "/security/posture" },
   { method: "POST", path: "/credentials" },
   { method: "GET", path: "/settings/warden" },
   { method: "PATCH", path: "/settings/warden" },

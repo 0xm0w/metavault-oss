@@ -38,6 +38,7 @@ import {
   wardenKeyStatusText,
   projectWardenTestResult,
   wardenTestMessage,
+  projectSecurityPosture,
 } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
@@ -928,5 +929,45 @@ describe("audit filtering and pagination", () => {
     expect(empty.totalPages).toBe(1);
     expect(empty.startIndex).toBe(0);
     expect(empty.endIndex).toBe(0);
+  });
+});
+
+
+describe("projectSecurityPosture", () => {
+  it("projects valid security posture report", () => {
+    const raw = {
+      score: 85,
+      grade: "A",
+      summary: "Vault is operating with high posture",
+      checks: [
+        { id: "chk-warden", name: "Active Warden", description: "Warden enabled", passed: true, severity: "critical", scoreImpact: 20 },
+      ],
+      issues: [],
+      remediations: [],
+    };
+    const res = projectSecurityPosture(raw);
+    expect(res).not.toBeNull();
+    expect(res?.score).toBe(85);
+    expect(res?.grade).toBe("A");
+    expect(res?.checks.length).toBe(1);
+  });
+
+  it("fails closed if secret-like fields leak into posture report", () => {
+    const leaky = {
+      score: 90,
+      grade: "A+",
+      summary: "Good",
+      checks: [],
+      issues: [],
+      remediations: [],
+      secret: "sk-ant-live-super-secret",
+    };
+    expect(projectSecurityPosture(leaky)).toBeNull();
+  });
+
+  it("returns null on invalid shapes", () => {
+    expect(projectSecurityPosture(null)).toBeNull();
+    expect(projectSecurityPosture("not-an-object")).toBeNull();
+    expect(projectSecurityPosture({ score: "NaN" })).toBeNull();
   });
 });

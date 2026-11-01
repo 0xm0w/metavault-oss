@@ -6,6 +6,82 @@ export interface PolicyConfig {
   rateLimitPerHour: number;
 }
 
+export interface AgentVelocityConfig {
+  readonly maxRequestsPerMinute: number;
+  readonly consecutiveFailureThreshold: number;
+  readonly circuitBreakerDurationMs: number;
+}
+
+export const DEFAULT_VELOCITY_CONFIG: AgentVelocityConfig = {
+  maxRequestsPerMinute: 15,
+  consecutiveFailureThreshold: 3,
+  circuitBreakerDurationMs: 60_000,
+};
+
+export interface AgentVelocityTracker {
+  readonly windowStartMs: number;
+  readonly requestsInWindow: number;
+  readonly consecutiveFailures: number;
+  readonly circuitBrokenUntilMs: number;
+}
+
+export function isAgentRateLimited(
+  tracker: AgentVelocityTracker | undefined,
+  config: AgentVelocityConfig = DEFAULT_VELOCITY_CONFIG,
+  nowMs: number = Date.now(),
+): { limited: boolean; reason?: "rate-limit-velocity" | "circuit-breaker-tripped" } {
+  if (tracker === undefined) {
+    return { limited: false };
+  }
+  // Check active circuit breaker
+  if (tracker.circuitBrokenUntilMs > nowMs) {
+    return { limited: true, reason: "circuit-breaker-tripped" };
+  }
+
+  // Check rolling minute window
+  const windowElapsed = nowMs - tracker.windowStartMs;
+  if (windowElapsed < 60_000) {
+    if (tracker.requestsInWindow >= config.maxRequestsPerMinute) {
+      return { limited: true, reason: "rate-limit-velocity" };
+    }
+  }
+
+  return { limited: false };
+}
+
+export function recordAgentRequest(
+  tracker: AgentVelocityTracker | undefined,
+  nowMs: number,
+  success: boolean,
+  config: AgentVelocityConfig = DEFAULT_VELOCITY_CONFIG,
+): AgentVelocityTracker {
+  const current = tracker ?? {
+    windowStartMs: nowMs,
+    requestsInWindow: 0,
+    consecutiveFailures: 0,
+    circuitBrokenUntilMs: 0,
+  };
+
+  const windowElapsed = nowMs - current.windowStartMs;
+  const newWindow = windowElapsed >= 60_000;
+  const requestsInWindow = newWindow ? 1 : current.requestsInWindow + 1;
+  const windowStartMs = newWindow ? nowMs : current.windowStartMs;
+
+  const consecutiveFailures = success ? 0 : current.consecutiveFailures + 1;
+  let circuitBrokenUntilMs = current.circuitBrokenUntilMs;
+
+  if (consecutiveFailures >= config.consecutiveFailureThreshold) {
+    circuitBrokenUntilMs = Math.max(circuitBrokenUntilMs, nowMs + config.circuitBreakerDurationMs);
+  }
+
+  return {
+    windowStartMs,
+    requestsInWindow,
+    consecutiveFailures,
+    circuitBrokenUntilMs,
+  };
+}
+
 export interface PolicyResult {
   allowedScope: string | null;
   requireApproval: boolean;

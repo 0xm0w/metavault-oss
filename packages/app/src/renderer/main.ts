@@ -38,8 +38,18 @@ import {
   wardenKeyStatusText,
   projectWardenTestResult,
   wardenTestMessage,
+  projectSecurityPosture,
 } from "./model.js";
-import type { AuditEventLike, CredentialMeta, DeeplinkAddParams, PendingApproval, PoliciesData, WardenKeyStatusLike, WardenSettingsLike } from "./types.js";
+import type {
+  AuditEventLike,
+  CredentialMeta,
+  DeeplinkAddParams,
+  PendingApproval,
+  PoliciesData,
+  SecurityPostureReportLike,
+  WardenKeyStatusLike,
+  WardenSettingsLike,
+} from "./types.js";
 
 // Renderer bootstrap: plain TypeScript over the preload bridge. Every
 // daemon payload is projected through model.ts whitelists before it is
@@ -55,6 +65,7 @@ let aliases: string[] = [];
 let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
+let securityPosture: SecurityPostureReportLike | null = null;
 let selectedGrantId: string | null = null;
 let knownGrantIds = new Set<string>();
 let auditFilter = "";
@@ -1559,6 +1570,94 @@ function renderSettings(view: HTMLElement): void {
 function renderPolicies(view: HTMLElement): void {
   view.append(el("h1", "", "Policies"));
   view.append(el("p", "sub", "Deterministic ceilings are enforced inside vaultd policy; the marshal can only narrow them. Revoking an agent blocks its pending and future grants immediately."));
+
+  if (securityPosture !== null) {
+    const postureCard = el("article", "row policy-row posture-card");
+    const postureHeader = el("div", "policy-card-header");
+    postureHeader.append(el("span", "chain", "Security Posture"));
+    const gradeBadge = el("span", "chip", `Grade ${securityPosture.grade} · Score ${String(securityPosture.score)}/100`);
+    gradeBadge.style.fontWeight = "600";
+    if (securityPosture.score >= 80) {
+      gradeBadge.style.borderColor = "var(--teal)";
+      gradeBadge.style.color = "var(--teal)";
+    } else if (securityPosture.score >= 60) {
+      gradeBadge.style.borderColor = "var(--warn)";
+      gradeBadge.style.color = "var(--warn)";
+    } else {
+      gradeBadge.style.borderColor = "var(--danger)";
+      gradeBadge.style.color = "var(--danger)";
+    }
+    postureHeader.append(gradeBadge);
+    postureCard.append(postureHeader);
+
+    const summaryPara = el("p", "sub", securityPosture.summary);
+    summaryPara.style.margin = "8px 0 12px";
+    postureCard.append(summaryPara);
+
+    const checksChips = el("div", "policy-chips-group");
+    checksChips.append(el("span", "policy-group-label", "Controls:"));
+    for (const chk of securityPosture.checks) {
+      const mark = chk.passed ? "✓ " : "✕ ";
+      const chip = el("span", "chip", `${mark}${chk.name}`);
+      if (chk.passed) {
+        chip.style.opacity = "0.85";
+      } else {
+        chip.style.borderColor = "var(--warn)";
+      }
+      checksChips.append(chip);
+    }
+    postureCard.append(checksChips);
+
+    if (securityPosture.remediations.length > 0) {
+      const remContainer = el("div", "policy-caps");
+      remContainer.style.marginTop = "12px";
+      remContainer.style.display = "flex";
+      remContainer.style.flexDirection = "column";
+      remContainer.style.gap = "8px";
+
+      for (const rem of securityPosture.remediations) {
+        const remRow = el("div", "row");
+        remRow.style.padding = "8px 12px";
+        remRow.style.display = "flex";
+        remRow.style.justifyContent = "space-between";
+        remRow.style.alignItems = "center";
+
+        const textCol = el("div", "");
+        const remTitle = el("div", "chain", rem.title);
+        remTitle.style.fontSize = "13px";
+        const remDesc = el("div", "when", rem.alias ? `Applies to alias: ${rem.alias}` : `Target: ${rem.target ?? "System policy"}`);
+        textCol.append(remTitle, remDesc);
+
+        const fixBtn = el("button", "action", "Resolve") as HTMLButtonElement;
+        fixBtn.type = "button";
+        fixBtn.style.padding = "4px 12px";
+        fixBtn.addEventListener("click", () => {
+          if (rem.action === "enable-warden") {
+            currentView = "settings";
+            document.querySelectorAll(".nav-btn").forEach((b) => {
+              b.classList.toggle("is-active", (b as HTMLElement).dataset["view"] === "settings");
+            });
+            render();
+          } else if (rem.action === "rotate-stale") {
+            currentView = "vault";
+            document.querySelectorAll(".nav-btn").forEach((b) => {
+              b.classList.toggle("is-active", (b as HTMLElement).dataset["view"] === "vault");
+            });
+            render();
+          } else {
+            showBanner(`Inspect policy rules below to fix: ${rem.title}`);
+          }
+        });
+
+        remRow.append(textCol, fixBtn);
+        remContainer.append(remRow);
+      }
+      postureCard.append(remContainer);
+    }
+
+    view.append(postureCard);
+  }
+
   const rows = buildPolicyRows(auditEvents, policiesData);
   const ceilingEntries = Object.entries(policiesData.ceilings).sort(([a], [b]) =>
     a.localeCompare(b),
@@ -1662,13 +1761,14 @@ function render(): void {
 
 async function refresh(): Promise<void> {
   try {
-    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw] = await Promise.all([
+    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw, postureRaw] = await Promise.all([
       window.openvault.pending(),
       window.openvault.aliases(),
       window.openvault.audit(),
       window.openvault.policies(),
       window.openvault.getWardenSettings().catch(() => null),
       window.openvault.wardenKeyStatus().catch(() => null),
+      window.openvault.getSecurityPosture().catch(() => null),
     ]);
     const nextApprovals = projectPendingResponse(pendingRaw);
     const hasNewApproval = nextApprovals.some((a) => !knownGrantIds.has(a.grantId));
@@ -1685,6 +1785,7 @@ async function refresh(): Promise<void> {
     credentialMeta = projectCredentialsResponse(aliasesRaw);
     auditEvents = projectAuditResponse(auditRaw);
     policiesData = projectPoliciesResponse(policiesRaw);
+    securityPosture = projectSecurityPosture(postureRaw);
     const projectedWarden = projectWardenSettings(wardenRaw);
     if (projectedWarden !== null) {
       if (!wardenDirty) {

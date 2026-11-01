@@ -11,7 +11,15 @@ import {
   StorageError,
 } from "../../core/src/errors.js";
 import { createGrant, makeGrantRegistry, type Grant } from "../../core/src/grants.js";
-import { evaluatePolicy, isWriteScope, type PolicyConfig } from "../../core/src/policy.js";
+import {
+  evaluatePolicy,
+  isAgentRateLimited,
+  isWriteScope,
+  recordAgentRequest,
+  type AgentVelocityTracker,
+  type PolicyConfig,
+} from "../../core/src/policy.js";
+import { calculateSecurityPosture, type SecurityPostureReport } from "../../core/src/posture.js";
 import {
   WARDEN_KEY_ALIAS,
   WARDEN_KEY_MIN_LENGTH,
@@ -150,6 +158,7 @@ export interface VaultServiceService {
   readonly deleteWardenKey: () => Effect.Effect<WardenKeyStatus, StorageError>;
   readonly wardenKeyStatus: () => Effect.Effect<WardenKeyStatus, StorageError>;
   readonly testWarden: () => Effect.Effect<WardenTestResult, StorageError>;
+  readonly getSecurityPosture: () => Effect.Effect<SecurityPostureReport, StorageError>;
 }
 
 export class VaultService extends Context.Tag("VaultService")<VaultService, VaultServiceService>() {}
@@ -221,6 +230,7 @@ export function makeVaultServiceLive(
         new Map<string, { readonly requestId: string; readonly decisionSource: AuditEvent["decisionSource"] }>(),
       );
       const enrollments = yield* Ref.make(new Map<string, EnrollmentRecord>());
+      const agentVelocities = yield* Ref.make(new Map<string, AgentVelocityTracker>());
 
       const purgeExpiredEnrollments = (now: number, keepId?: string): Effect.Effect<void> =>
         Ref.update(enrollments, (map) => {
@@ -564,6 +574,17 @@ export function makeVaultServiceLive(
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", "revoked", false, undefined, { requestId, decisionSource: "policy" });
               return { status: "denied", reason: "revoked" } as const;
             }
+
+            // Check granular agent rate limiting & burst circuit breaker (#18)
+            const velocities = yield* Ref.get(agentVelocities);
+            const agentTracker = velocities.get(req.agentId);
+            const velocityCheck = isAgentRateLimited(agentTracker, undefined, now);
+            if (velocityCheck.limited) {
+              const reason = velocityCheck.reason ?? "rate-limit-velocity";
+              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy" });
+              return { status: "denied", reason } as const;
+            }
             const agentEvents = auditEvents.filter((e) => e.agentId === req.agentId);
             const within = (e: AuditEvent, windowMs: number) => now - Date.parse(e.ts) < windowMs;
             const historyCount = agentEvents.filter(
@@ -586,6 +607,12 @@ export function makeVaultServiceLive(
             const preCheck = evaluatePolicy(req, null, cfg, historyCount);
             if (credential === undefined || preCheck.allowedScope === null) {
               const reason = credential === undefined ? "unknown-alias" : preCheck.reason;
+              // Record failure in velocity tracker
+              yield* Ref.update(agentVelocities, (map) => {
+                const next = new Map(map);
+                next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, false));
+                return next;
+              });
               yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy" });
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy" });
               return { status: "denied", reason } as const;
@@ -673,10 +700,22 @@ export function makeVaultServiceLive(
                   },
             );
             if (result.allowedScope === null) {
+              yield* Ref.update(agentVelocities, (map) => {
+                const next = new Map(map);
+                next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, false));
+                return next;
+              });
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
               return { status: "denied", reason: result.reason } as const;
             }
             const allowedScope = result.allowedScope;
+
+            // Record successful capability validation in tracker
+            yield* Ref.update(agentVelocities, (map) => {
+              const next = new Map(map);
+              next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, true));
+              return next;
+            });
 
             if (result.requireApproval) {
               const grantId = yield* Effect.sync(() => randomUUID());
@@ -970,6 +1009,23 @@ export function makeVaultServiceLive(
                   a.scope.localeCompare(b.scope),
               );
             return { ceilings, standingApprovals };
+          }),
+
+        getSecurityPosture: () =>
+          Effect.gen(function* () {
+            const credentials = yield* store.listCredentials();
+            const filteredCreds = credentials.filter((c) => c.alias !== WARDEN_KEY_ALIAS);
+            const standingApprovals = yield* Ref.get(standing);
+            const auditEvents = yield* store.listAudit();
+            const wardenSettings = yield* store.getWardenSettings();
+            const now = yield* Clock.currentTimeMillis;
+            return calculateSecurityPosture({
+              credentials: filteredCreds,
+              standingApprovals,
+              auditEvents,
+              wardenProvider: wardenSettings.provider,
+              nowMs: now,
+            });
           }),
       };
       return service;

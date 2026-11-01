@@ -123,6 +123,42 @@ export interface CredentialPatch {
   readonly secret?: string;
 }
 
+export interface SecurityPostureCheckLike {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly passed: boolean;
+  readonly severity: "critical" | "warning" | "info";
+  readonly scoreImpact: number;
+}
+
+export interface SecurityPostureIssueLike {
+  readonly id: string;
+  readonly title: string;
+  readonly detail: string;
+  readonly severity: "critical" | "warning" | "info";
+  readonly alias?: string;
+  readonly agentId?: string;
+}
+
+export interface SecurityPostureRemediationLike {
+  readonly id: string;
+  readonly title: string;
+  readonly action: "enable-warden" | "restrict-ceiling" | "revoke-standing" | "rotate-stale";
+  readonly alias?: string;
+  readonly target?: string;
+  readonly recommendedCeiling?: string;
+}
+
+export interface SecurityPostureReportLike {
+  readonly score: number;
+  readonly grade: "A+" | "A" | "B" | "C" | "D" | "F";
+  readonly summary: string;
+  readonly checks: readonly SecurityPostureCheckLike[];
+  readonly issues: readonly SecurityPostureIssueLike[];
+  readonly remediations: readonly SecurityPostureRemediationLike[];
+}
+
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
@@ -134,6 +170,7 @@ export interface VaultApi {
   readonly audit: () => Promise<unknown>;
   readonly pending: () => Promise<unknown>;
   readonly policies: () => Promise<unknown>;
+  readonly getSecurityPosture: () => Promise<unknown>;
   readonly addCredential: (alias: string, scope: string, secret: string, website?: string, enrollmentId?: string) => Promise<unknown>;
   readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
   readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;

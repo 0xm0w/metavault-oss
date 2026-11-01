@@ -8,6 +8,10 @@ import type {
   PendingApproval,
   PoliciesData,
   Risk,
+  SecurityPostureCheckLike,
+  SecurityPostureIssueLike,
+  SecurityPostureRemediationLike,
+  SecurityPostureReportLike,
   StandingApproval,
   WardenEffort,
   WardenKeyStatusLike,
@@ -1141,4 +1145,24 @@ export function wardenTestMessage(result: WardenTestResultLike): WardenTestResul
     return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };
   }
   return { ok: false, message: `Warden connection failed \u2014 ${result.provider} \u00b7 ${result.model} did not respond. Check the provider is running and the saved settings are correct, then try again.` };
+}
+
+export function projectSecurityPosture(raw: unknown): SecurityPostureReportLike | null {
+  if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) return null;
+  const score = raw["score"];
+  const grade = raw["grade"];
+  const summary = raw["summary"];
+  const checks = raw["checks"];
+  const issues = raw["issues"];
+  const remediations = raw["remediations"];
+  if (typeof score !== "number" || typeof grade !== "string" || typeof summary !== "string") return null;
+  if (!Array.isArray(checks) || !Array.isArray(issues) || !Array.isArray(remediations)) return null;
+  return {
+    score,
+    grade: grade as SecurityPostureReportLike["grade"],
+    summary,
+    checks: checks as SecurityPostureCheckLike[],
+    issues: issues as SecurityPostureIssueLike[],
+    remediations: remediations as SecurityPostureRemediationLike[],
+  };
 }

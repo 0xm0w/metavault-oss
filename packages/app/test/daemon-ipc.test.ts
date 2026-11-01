@@ -53,6 +53,7 @@ describe("main-process daemon whitelist", () => {
       { method: "GET", path: "/audit" },
       { method: "GET", path: "/pending" },
       { method: "GET", path: "/policies" },
+      { method: "GET", path: "/security/posture" },
       { method: "POST", path: "/credentials" },
       { method: "GET", path: "/settings/warden" },
       { method: "PATCH", path: "/settings/warden" },
