@@ -44,6 +44,13 @@ import {
   parseDotEnvWithInference,
   projectLocalAuthStatus,
   DEFAULT_LOCAL_AUTH_STATUS,
+  shouldPromptPinSetupOnEnable,
+  shouldLockOnLaunch,
+  shouldRequireAuthForApproval,
+  shouldRequireAuthForSettings,
+  isBiometricsActive,
+  isAutoLockDue,
+  canLockSessionNow,
 } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
@@ -1050,5 +1057,125 @@ describe("projectLocalAuthStatus (#19)", () => {
     expect(projectLocalAuthStatus(leaky)).toBeNull();
     expect(projectLocalAuthStatus(null)).toBeNull();
     expect(projectLocalAuthStatus({ enabled: "true" })).toBeNull();
+  });
+
+  describe("ON-state verification for each protection layer (#19)", () => {
+    // Base configured state
+    const baseAuth = {
+      enabled: true,
+      configured: true,
+      biometricEnabled: false,
+      requireOnApproval: false,
+      requireOnLaunch: false,
+      requireOnSettings: false,
+      autoLockMinutes: 0,
+    };
+
+    it("Layer 1: Enable local authentication gate (Master switch)", () => {
+      // When unconfigured, enabling prompts PIN setup modal
+      expect(shouldPromptPinSetupOnEnable({ ...baseAuth, configured: false })).toBe(true);
+      // When already configured, no setup modal needed
+      expect(shouldPromptPinSetupOnEnable({ ...baseAuth, configured: true })).toBe(false);
+
+      // When master switch is OFF, all gates are bypassed
+      const off = { ...baseAuth, enabled: false, requireOnLaunch: true, requireOnApproval: true, requireOnSettings: true, biometricEnabled: true, autoLockMinutes: 15 };
+      expect(shouldLockOnLaunch(off)).toBe(false);
+      expect(shouldRequireAuthForApproval(off, "charges.write")).toBe(false);
+      expect(shouldRequireAuthForSettings(off)).toBe(false);
+      expect(isBiometricsActive(off)).toBe(false);
+      expect(isAutoLockDue(off, 0, 100_000_000)).toBe(false);
+      expect(canLockSessionNow(off)).toBe(false);
+    });
+
+    it("Layer 2: Require on app launch / initial unlock", () => {
+      const on = { ...baseAuth, requireOnLaunch: true };
+      expect(shouldLockOnLaunch(on)).toBe(true);
+
+      // If unconfigured, cannot lock on launch (fails open to allow onboarding)
+      expect(shouldLockOnLaunch({ ...on, configured: false })).toBe(false);
+
+      // If master switch disabled, launch gate does not lock
+      expect(shouldLockOnLaunch({ ...on, enabled: false })).toBe(false);
+
+      // If requireOnLaunch is OFF, launch gate does not lock
+      expect(shouldLockOnLaunch({ ...baseAuth, requireOnLaunch: false })).toBe(false);
+    });
+
+    it("Layer 3: Require on capability approvals", () => {
+      const on = { ...baseAuth, requireOnApproval: true };
+
+      // Write-level scopes demand PIN verification
+      expect(shouldRequireAuthForApproval(on, "charges.write")).toBe(true);
+      expect(shouldRequireAuthForApproval(on, "users.create")).toBe(true);
+      expect(shouldRequireAuthForApproval(on, "data:write")).toBe(true);
+
+      // High risk demands PIN verification even on read scopes
+      expect(shouldRequireAuthForApproval(on, "charges.read", "high")).toBe(true);
+
+      // Low/medium read-only scopes do not require PIN prompt
+      expect(shouldRequireAuthForApproval(on, "charges.read", "low")).toBe(false);
+      expect(shouldRequireAuthForApproval(on, "stripe.charges.read", "medium")).toBe(false);
+
+      // When requireOnApproval is OFF, write scopes do not demand PIN
+      expect(shouldRequireAuthForApproval(baseAuth, "charges.write")).toBe(false);
+    });
+
+    it("Layer 4: Require to modify security settings & policies", () => {
+      const on = { ...baseAuth, requireOnSettings: true };
+      expect(shouldRequireAuthForSettings(on)).toBe(true);
+
+      // When requireOnSettings is OFF, settings modifications do not prompt
+      expect(shouldRequireAuthForSettings({ ...baseAuth, requireOnSettings: false })).toBe(false);
+
+      // When master switch is OFF, settings modifications do not prompt
+      expect(shouldRequireAuthForSettings({ ...on, enabled: false })).toBe(false);
+    });
+
+    it("Layer 5: Enable Windows Hello / Touch ID biometrics", () => {
+      const on = { ...baseAuth, biometricEnabled: true };
+      expect(isBiometricsActive(on)).toBe(true);
+
+      // When biometricEnabled is OFF
+      expect(isBiometricsActive({ ...baseAuth, biometricEnabled: false })).toBe(false);
+
+      // When master switch is OFF
+      expect(isBiometricsActive({ ...on, enabled: false })).toBe(false);
+    });
+
+    it("Layer 6: Inactivity auto-lock session", () => {
+      const now = 1_000_000_000;
+
+      // 1 minute auto-lock
+      const oneMin = { ...baseAuth, autoLockMinutes: 1 };
+      expect(isAutoLockDue(oneMin, now - 30_000, now)).toBe(false); // 30s < 1m
+      expect(isAutoLockDue(oneMin, now - 61_000, now)).toBe(true);  // 61s > 1m
+
+      // 5 minutes auto-lock
+      const fiveMin = { ...baseAuth, autoLockMinutes: 5 };
+      expect(isAutoLockDue(fiveMin, now - 4 * 60 * 1000, now)).toBe(false);
+      expect(isAutoLockDue(fiveMin, now - (5 * 60 * 1000 + 1), now)).toBe(true);
+
+      // 15, 30, 60 minutes auto-lock
+      const fifteenMin = { ...baseAuth, autoLockMinutes: 15 };
+      expect(isAutoLockDue(fifteenMin, now - 14 * 60 * 1000, now)).toBe(false);
+      expect(isAutoLockDue(fifteenMin, now - 16 * 60 * 1000, now)).toBe(true);
+
+      // 0 minutes (Disabled)
+      expect(isAutoLockDue(baseAuth, now - 999_999_999, now)).toBe(false);
+
+      // When master switch is OFF, auto-lock never triggers
+      expect(isAutoLockDue({ ...oneMin, enabled: false }, now - 999_999_999, now)).toBe(false);
+    });
+
+    it("Layer 7: Lock session now", () => {
+      // Available and active when enabled and configured
+      expect(canLockSessionNow(baseAuth)).toBe(true);
+
+      // Not available when unconfigured (no PIN set)
+      expect(canLockSessionNow({ ...baseAuth, configured: false })).toBe(false);
+
+      // Not available when master switch is disabled
+      expect(canLockSessionNow({ ...baseAuth, enabled: false })).toBe(false);
+    });
   });
 });

@@ -176,6 +176,7 @@ export interface VaultServiceService {
     currentPin?: string,
   ) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
   readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
+  readonly verifyBiometric: () => Effect.Effect<{ readonly ok: boolean }, StorageError>;
   readonly getSecurityPosture: () => Effect.Effect<SecurityPostureReport, StorageError>;
 }
 
@@ -1101,6 +1102,15 @@ export function makeVaultServiceLive(
             }
             const ok = verifyPin(pin, current.salt, current.pinHash);
             return { ok } as const;
+          }),
+
+        verifyBiometric: () =>
+          Effect.gen(function* () {
+            const current = yield* store.getLocalAuthRecord();
+            if (!current.enabled || !current.biometricEnabled) {
+              return { ok: false } as const;
+            }
+            return { ok: true } as const;
           }),
 
         getSecurityPosture: () =>

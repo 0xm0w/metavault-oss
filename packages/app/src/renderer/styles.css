@@ -49,6 +49,9 @@ body {
 
 .marshal-line { font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; color: var(--muted); }
 
+.header-lock-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: 11.5px; padding: 2px 8px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.header-lock-btn:hover { background: var(--surface); color: var(--ink); }
+
 .daemon-status { font-size: 11.5px; color: var(--warn); }
 .daemon-status.is-ok { color: var(--teal); }
 .daemon-status.is-down { color: var(--danger); }

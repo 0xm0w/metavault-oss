@@ -218,6 +218,7 @@ export interface VaultApi {
   readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
   readonly verifyLocalPin: (pin: string) => Promise<unknown>;
+  readonly verifyBiometric: () => Promise<unknown>;
   readonly bringToFront: () => void;
   readonly checkForUpdates: () => Promise<unknown>;
   readonly quitAndInstallUpdate: () => Promise<unknown>;

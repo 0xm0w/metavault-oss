@@ -217,7 +217,12 @@ function isTokenProtected(method: string, path: string): boolean {
   ) {
     return true;
   }
-  if (path.startsWith("/settings/local-auth") && method !== "GET" && path !== "/settings/local-auth/verify") {
+  if (
+    path.startsWith("/settings/local-auth") &&
+    method !== "GET" &&
+    path !== "/settings/local-auth/verify" &&
+    path !== "/settings/local-auth/verify-biometric"
+  ) {
     return true;
   }
   return false;
@@ -363,6 +368,9 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     return run(service.verifyLocalPin(pin.trim()));
+  }
+  if (method === "POST" && path === "/settings/local-auth/verify-biometric") {
+    return run(service.verifyBiometric());
   }
   if (method === "POST" && path === "/enrollments") {
     const decoded = await decode(EnrollmentRequestSchema, body ?? {});

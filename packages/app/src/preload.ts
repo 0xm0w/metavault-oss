@@ -74,6 +74,7 @@ const api: VaultApi = {
   setLocalPin: (pin: string, currentPin?: string) =>
     invoke("POST", "/settings/local-auth/pin", { pin, ...(currentPin !== undefined && currentPin !== "" ? { currentPin } : {}) }),
   verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),
+  verifyBiometric: () => invoke("POST", "/settings/local-auth/verify-biometric"),
   bringToFront: () => {
     ipcRenderer.send("openvault:bring-to-front");
   },

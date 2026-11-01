@@ -1214,3 +1214,32 @@ export function projectLocalAuthStatus(raw: unknown): LocalAuthStatusLike | null
     autoLockMinutes,
   };
 }
+
+export function shouldPromptPinSetupOnEnable(status: LocalAuthStatusLike): boolean {
+  return !status.configured;
+}
+
+export function shouldLockOnLaunch(status: LocalAuthStatusLike): boolean {
+  return status.enabled && status.requireOnLaunch && status.configured;
+}
+
+export function shouldRequireAuthForApproval(status: LocalAuthStatusLike, scope: string, risk?: string): boolean {
+  return status.enabled && status.requireOnApproval && (!isReadOnlyScope(scope) || risk === "high");
+}
+
+export function shouldRequireAuthForSettings(status: LocalAuthStatusLike): boolean {
+  return status.enabled && status.requireOnSettings;
+}
+
+export function isBiometricsActive(status: LocalAuthStatusLike): boolean {
+  return status.enabled && status.biometricEnabled;
+}
+
+export function isAutoLockDue(status: LocalAuthStatusLike, lastActivityTs: number, nowTs: number): boolean {
+  if (!status.enabled || status.autoLockMinutes <= 0) return false;
+  return nowTs - lastActivityTs > status.autoLockMinutes * 60 * 1000;
+}
+
+export function canLockSessionNow(status: LocalAuthStatusLike): boolean {
+  return status.enabled && status.configured;
+}

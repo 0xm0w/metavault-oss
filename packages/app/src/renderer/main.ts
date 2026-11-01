@@ -41,7 +41,12 @@ import {
   projectSecurityPosture,
   DEFAULT_LOCAL_AUTH_STATUS,
   projectLocalAuthStatus,
-  isReadOnlyScope,
+  shouldPromptPinSetupOnEnable,
+  shouldLockOnLaunch,
+  shouldRequireAuthForApproval,
+  shouldRequireAuthForSettings,
+  isAutoLockDue,
+  canLockSessionNow,
   parseDotEnvWithInference,
   type DotEnvImportItem,
 } from "./model.js";
@@ -244,8 +249,7 @@ function renderApproval(view: HTMLElement): void {
     const executeApproval = () => {
       void runAction(() => window.openvault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
     };
-    const isSensitive = hero.risk === "high" || !isReadOnlyScope(hero.allowedScope);
-    if (localAuthStatus.enabled && localAuthStatus.requireOnApproval && isSensitive) {
+    if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
       promptVerifyPin("Authenticate to approve capability", executeApproval);
     } else {
       executeApproval();
@@ -706,6 +710,28 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
   const actions = el("div", "vault-modal-actions");
   const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
   const confirmBtn = el("button", "vault-btn vault-btn-primary", "Confirm") as HTMLButtonElement;
+  if (localAuthStatus.biometricEnabled) {
+    const bioBtn = el("button", "vault-btn vault-btn-ghost", "Use Windows Hello / Touch ID") as HTMLButtonElement;
+    bioBtn.style.marginRight = "auto";
+    bioBtn.addEventListener("click", () => {
+      void (async () => {
+        try {
+          const res = (await window.openvault.verifyBiometric()) as { ok?: boolean } | null;
+          if (res?.ok) {
+            close();
+            onVerified();
+          } else {
+            errorBox.textContent = "Biometric authentication failed. Please enter PIN.";
+            errorBox.hidden = false;
+          }
+        } catch {
+          errorBox.textContent = "Biometric authentication error.";
+          errorBox.hidden = false;
+        }
+      })();
+    });
+    actions.append(bioBtn);
+  }
   actions.append(cancelBtn, confirmBtn);
   dialog.append(actions);
 
@@ -1718,7 +1744,7 @@ function renderSettings(view: HTMLElement): void {
         settingsMessage = { text: "Warden settings saved. They apply on the next request \u2014 no daemon restart needed.", ok: true };
       });
     };
-    if (localAuthStatus.enabled && localAuthStatus.requireOnSettings) {
+    if (shouldRequireAuthForSettings(localAuthStatus)) {
       promptVerifyPin("Authenticate to modify settings", doSave);
     } else {
       doSave();
@@ -1768,7 +1794,7 @@ function renderSettings(view: HTMLElement): void {
         settingsMessage = { text: "Meta API key saved. The field has been cleared; the key is never shown again.", ok: true };
       });
     };
-    if (localAuthStatus.enabled && localAuthStatus.requireOnSettings) {
+    if (shouldRequireAuthForSettings(localAuthStatus)) {
       promptVerifyPin("Authenticate to save key", doSaveKey);
     } else {
       doSaveKey();
@@ -1802,7 +1828,7 @@ function renderSettings(view: HTMLElement): void {
         settingsMessage = { text: "Meta API key deleted.", ok: true };
       });
     };
-    if (localAuthStatus.enabled && localAuthStatus.requireOnSettings) {
+    if (shouldRequireAuthForSettings(localAuthStatus)) {
       promptVerifyPin("Authenticate to delete key", doDeleteKey);
     } else {
       doDeleteKey();
@@ -1843,7 +1869,7 @@ function renderSettings(view: HTMLElement): void {
   authToggle.type = "checkbox";
   authToggle.checked = localAuthStatus.enabled;
   authToggle.addEventListener("change", () => {
-    if (authToggle.checked && !localAuthStatus.configured) {
+    if (authToggle.checked && shouldPromptPinSetupOnEnable(localAuthStatus)) {
       openPinModal(() => {
         void runSettingsAction(async () => {
           const raw = await window.openvault.updateLocalAuthSettings({ enabled: true });
@@ -1993,7 +2019,7 @@ function renderSettings(view: HTMLElement): void {
   });
   authBtns.append(pinBtn);
 
-  if (localAuthStatus.enabled && localAuthStatus.configured) {
+  if (canLockSessionNow(localAuthStatus)) {
     const lockNowBtn = el("button", "action btn-deny", "Lock session now") as HTMLButtonElement;
     lockNowBtn.type = "button";
     lockNowBtn.addEventListener("click", () => {
@@ -2420,6 +2446,10 @@ function renderPolicies(view: HTMLElement): void {
   view.append(note);
 }
 function render(): void {
+  const lockHeaderBtn = document.querySelector<HTMLButtonElement>("#lock-session-btn");
+  if (lockHeaderBtn !== null) {
+    lockHeaderBtn.hidden = !(canLockSessionNow(localAuthStatus) && !vaultLocked);
+  }
   const view = mustElement("#view");
   // Capture the audit filter caret before the old input is discarded, so
   // a poll re-render can restore focus and selection exactly.
@@ -2496,6 +2526,29 @@ function render(): void {
     });
 
     lockScreen.append(lockIcon, lockTitle, lockSub, errorP, pinInput, unlockBtn);
+    if (localAuthStatus.biometricEnabled) {
+      const bioBtn = el("button", "vault-btn vault-btn-ghost", "Use Windows Hello / Touch ID") as HTMLButtonElement;
+      bioBtn.style.marginTop = "12px";
+      bioBtn.addEventListener("click", () => {
+        void (async () => {
+          try {
+            const res = (await window.openvault.verifyBiometric()) as { ok?: boolean } | null;
+            if (res?.ok) {
+              vaultLocked = false;
+              lastUserActivityTs = Date.now();
+              render();
+            } else {
+              errorP.textContent = "Biometric check failed. Enter PIN to unlock.";
+              errorP.hidden = false;
+            }
+          } catch {
+            errorP.textContent = "Biometric check failed. Enter PIN to unlock.";
+            errorP.hidden = false;
+          }
+        })();
+      });
+      lockScreen.append(bioBtn);
+    }
     view.append(lockScreen);
     setTimeout(() => { pinInput.focus(); }, 50);
     return;
@@ -2547,16 +2600,14 @@ async function refresh(): Promise<void> {
     if (projAuth !== null) {
       if (!initialAuthChecked) {
         initialAuthChecked = true;
-        if (projAuth.enabled && projAuth.configured && projAuth.requireOnLaunch) {
+        if (shouldLockOnLaunch(projAuth)) {
           vaultLocked = true;
         }
       }
       localAuthStatus = projAuth;
     }
-    if (localAuthStatus.enabled && localAuthStatus.autoLockMinutes > 0 && !vaultLocked) {
-      if (Date.now() - lastUserActivityTs > localAuthStatus.autoLockMinutes * 60 * 1000) {
-        vaultLocked = true;
-      }
+    if (isAutoLockDue(localAuthStatus, lastUserActivityTs, Date.now()) && !vaultLocked) {
+      vaultLocked = true;
     }
     const projectedWarden = projectWardenSettings(wardenRaw);
     if (projectedWarden !== null) {
@@ -2648,6 +2699,13 @@ function start(): void {
       }
     });
   });
+  const lockHeaderBtn = document.querySelector<HTMLButtonElement>("#lock-session-btn");
+  if (lockHeaderBtn !== null) {
+    lockHeaderBtn.addEventListener("click", () => {
+      vaultLocked = true;
+      render();
+    });
+  }
   void refreshTracked();
   if (typeof window.openvault.onUpdaterStatus === "function") {
     window.openvault.onUpdaterStatus((status) => {
