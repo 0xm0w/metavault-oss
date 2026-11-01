@@ -529,7 +529,12 @@ export function createVaultHttpServer(
             ? await readBody(req)
             : undefined;
         const header = req.headers[DAEMON_TOKEN_HEADER];
-        const providedToken = Array.isArray(header) ? header[0] : header;
+        const authHeader = req.headers["authorization"];
+        const bearerToken =
+          typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
+            ? authHeader.slice(7).trim()
+            : undefined;
+        const providedToken = (Array.isArray(header) ? header[0] : header) ?? bearerToken;
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
           daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),

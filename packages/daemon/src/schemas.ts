@@ -1,24 +1,39 @@
 import { Schema } from "effect";
 
+// Bounds & safety filters for untrusted agent inputs
+export const SafeIdentifier = Schema.String.pipe(
+  Schema.maxLength(128),
+  Schema.filter((s) => !/[\0\u200E\u200F\u202A-\u202E]/.test(s), {
+    message: () => "prohibited control or bidi override characters",
+  }),
+);
+
+export const SafeText = Schema.String.pipe(
+  Schema.maxLength(1024),
+  Schema.filter((s) => !/[\0]/.test(s), {
+    message: () => "prohibited null bytes",
+  }),
+);
+
 // Shared daemon API schemas. The HTTP handler and the MCP adapter both
 // decode untrusted input with these exact schemas — one dialect, reused.
 export const CapabilityRequestSchema = Schema.Struct({
-  agentId: Schema.String,
-  ide: Schema.String,
-  tool: Schema.String,
-  alias: Schema.String,
-  requestedScope: Schema.String,
-  reason: Schema.String,
+  agentId: SafeIdentifier,
+  ide: SafeIdentifier,
+  tool: SafeIdentifier,
+  alias: SafeIdentifier,
+  requestedScope: SafeIdentifier,
+  reason: SafeText,
 });
 
-export const GrantIdSchema = Schema.Struct({ grantId: Schema.String });
-export const RevokeSchema = Schema.Struct({ target: Schema.String });
+export const GrantIdSchema = Schema.Struct({ grantId: SafeIdentifier });
+export const RevokeSchema = Schema.Struct({ target: SafeIdentifier });
 export const CredentialSchema = Schema.Struct({
-  alias: Schema.String,
-  scope: Schema.String,
+  alias: SafeIdentifier,
+  scope: SafeIdentifier,
   secret: Schema.String,
   website: Schema.optional(Schema.String),
-  enrollmentId: Schema.optional(Schema.String),
+  enrollmentId: Schema.optional(SafeIdentifier),
 });
 
 export const EnrollmentRequestSchema = Schema.Struct({
