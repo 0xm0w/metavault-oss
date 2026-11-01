@@ -55,6 +55,7 @@ let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let selectedGrantId: string | null = null;
+let knownGrantIds = new Set<string>();
 let auditFilter = "";
 let auditFilterWasFocused = false;
 let auditFilterSelectionStart: number | null = null;
@@ -210,7 +211,17 @@ function renderApproval(view: HTMLElement): void {
   denyBtn.addEventListener("click", () => {
     void runAction(() => window.openvault.deny(hero.grantId), "Denied — the agent was told no, with the allowed ceiling.");
   });
-  buttons.append(approveBtn, denyBtn);
+  const blockBtn = el("button", "action btn-deny", "Block agent") as HTMLButtonElement;
+  blockBtn.type = "button";
+  blockBtn.disabled = busy;
+  blockBtn.title = `Block ${hero.agentId} and cancel all its pending requests`;
+  blockBtn.addEventListener("click", () => {
+    void runAction(
+      () => window.openvault.revoke(hero.agentId),
+      `Blocked ${hero.agentId} — pending grants cancelled, all future requests denied.`,
+    );
+  });
+  buttons.append(approveBtn, denyBtn, blockBtn);
   // Always allow is offered only for read-only low-risk grants; the daemon
   // re-checks the same rule before creating a standing approval.
   if (canAlwaysAllow(hero)) {
@@ -790,6 +801,19 @@ function renderAudit(view: HTMLElement): void {
           }
           timeline.append(step);
         }
+        if (group.agentId !== "human") {
+          const blockAgentBtn = el("button", "action btn-deny", `Block ${group.agentId}`) as HTMLButtonElement;
+          blockAgentBtn.type = "button";
+          blockAgentBtn.disabled = busy;
+          blockAgentBtn.style.marginTop = "10px";
+          blockAgentBtn.addEventListener("click", () => {
+            void runAction(
+              () => window.openvault.revoke(group.agentId),
+              `Blocked ${group.agentId} — pending grants cancelled, all future requests denied.`,
+            );
+          });
+          timeline.append(blockAgentBtn);
+        }
         node.append(timeline);
       }
       list.append(node);
@@ -1159,7 +1183,7 @@ function renderPolicies(view: HTMLElement): void {
       el("div", "when", `${String(row.requestCount)} requests · last seen ${formatLastUsed(row.lastSeenTs, Date.now())} · ceiling enforced by vaultd`),
     );
     node.append(grow);
-    const revokeBtn = el("button", "action btn-revoke", "Revoke") as HTMLButtonElement;
+    const revokeBtn = el("button", "action btn-revoke", "Revoke / Block") as HTMLButtonElement;
     revokeBtn.type = "button";
     revokeBtn.disabled = busy;
     revokeBtn.addEventListener("click", () => {
@@ -1212,7 +1236,17 @@ async function refresh(): Promise<void> {
       window.openvault.getWardenSettings().catch(() => null),
       window.openvault.wardenKeyStatus().catch(() => null),
     ]);
-    approvals = projectPendingResponse(pendingRaw);
+    const nextApprovals = projectPendingResponse(pendingRaw);
+    const hasNewApproval = nextApprovals.some((a) => !knownGrantIds.has(a.grantId));
+    knownGrantIds = new Set(nextApprovals.map((a) => a.grantId));
+    if (hasNewApproval && nextApprovals.length > 0) {
+      currentView = "approval";
+      document.querySelectorAll<HTMLElement>(".nav-btn").forEach((b) => {
+        b.classList.toggle("is-active", b.dataset["view"] === "approval");
+      });
+      window.openvault.bringToFront();
+    }
+    approvals = nextApprovals;
     aliases = projectAliasesResponse(aliasesRaw);
     credentialMeta = projectCredentialsResponse(aliasesRaw);
     auditEvents = projectAuditResponse(auditRaw);

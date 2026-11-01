@@ -64,6 +64,15 @@ function showWindow(): void {
   mainWindow.focus();
 }
 
+function bringWindowToFront(): void {
+  showWindow();
+  if (mainWindow !== null) {
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.focus();
+    mainWindow.setAlwaysOnTop(false);
+  }
+}
+
 function createWindow(): void {
   rendererReady = false;
   const window = new BrowserWindow(buildWindowOptions(preloadPath));
@@ -142,6 +151,9 @@ if (!hasLock) {
   });
   void app.whenReady().then(() => {
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
+    ipcMain.on("openvault:bring-to-front", () => {
+      bringWindowToFront();
+    });
     createWindow();
     createTray();
     app.on("activate", () => {

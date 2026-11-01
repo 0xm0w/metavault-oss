@@ -144,6 +144,7 @@ export interface VaultApi {
   readonly deleteWardenKey: () => Promise<unknown>;
   readonly wardenKeyStatus: () => Promise<unknown>;
   readonly testWarden: () => Promise<unknown>;
+  readonly bringToFront: () => void;
 }
 
 declare global {

@@ -25,6 +25,10 @@ export function buildMarshalPrompt(
   return [
     "You are the OpenVault marshal. Assess a capability request from metadata only.",
     "You never receive secrets, tokens, passwords, or credential values.",
+    "Risk rubric:",
+    "- high: Suspicious shell commands (bash, curl, wget, python, nc, subshells), network exfiltration URLs, system credential paths (/etc, shadow, keys), data harvesting, or destructive operations.",
+    "- medium: Sensitive bulk reads, write/update operations, or atypical tool usage.",
+    "- low: Routine, standard read-only operations matching the declared reason and standard tools.",
     "Reply with strict JSON only, no prose, matching exactly:",
     '{"risk":"low"|"medium"|"high","recommendedScope":"<scope>","requireApproval":true|false,"explanation":"<short reason>"}',
     "",

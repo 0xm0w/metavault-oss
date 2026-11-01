@@ -61,6 +61,9 @@ const api: VaultApi = {
   deleteWardenKey: () => invoke("DELETE", "/settings/warden/key"),
   wardenKeyStatus: () => invoke("GET", "/settings/warden/key"),
   testWarden: () => invoke("POST", "/settings/warden/test"),
+  bringToFront: () => {
+    ipcRenderer.send("openvault:bring-to-front");
+  },
 };
 
 contextBridge.exposeInMainWorld("openvault", api);
