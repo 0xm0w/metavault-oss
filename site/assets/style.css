@@ -67,7 +67,7 @@ a.card:hover { border-color: var(--canvas-mid); }
 .terminal { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 8px; padding: 20px 22px; font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 22px; color: var(--body); overflow-x: auto; white-space: pre; margin-top: 28px; max-width: 100%; }
 .terminal .ok { color: var(--green); } .terminal .bad { color: var(--red); } .terminal .warn { color: var(--amber); } .terminal .dim { color: var(--mute); }
 
-table.levels { width: 100%; border-collapse: collapse; margin-top: 32px; font-size: 14px; }
+table.levels { width: 100%; border-collapse: collapse; margin-top: 32px; font-size: 14px; table-layout: fixed; }
 table.levels th, table.levels td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
 table.levels th { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--mute); font-weight: 500; }
 table.levels td.model { color: var(--ink); font-weight: 500; }
@@ -81,12 +81,13 @@ table.levels td.model { color: var(--ink); font-weight: 500; }
 .flow .step p { font-size: 13px; line-height: 20px; }
 .flow .n { font-family: "Geist Mono", ui-monospace, monospace; color: var(--accent); font-size: 12px; letter-spacing: 1.2px; display: block; margin-bottom: 10px; }
 
-.doc-layout { display: grid; grid-template-columns: 220px 1fr; gap: 48px; padding: 56px 0 80px; }
-@media (max-width: 800px) { .doc-layout { grid-template-columns: 1fr; } .side { position: static; } }
+.doc-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding: 56px 0 80px; }
 .side { position: sticky; top: 84px; align-self: start; font-size: 14px; }
+@media (max-width: 800px) { .doc-layout { grid-template-columns: 1fr; } .side { position: static; } }
 .side a { display: block; padding: 6px 0; color: var(--mute); }
 .side a:hover { color: var(--ink); }
-.doc h2 { font-size: 32px; letter-spacing: -.6px; margin: 44px 0 12px; }
+.doc { min-width: 0; }
+.doc h2 { font-size: 32px; letter-spacing: -.6px; margin: 44px 0 12px; scroll-margin-top: 96px; }
 .doc h2:first-child { margin-top: 0; }
 .doc p { margin-bottom: 14px; max-width: 720px; }
 .doc ul { margin: 0 0 14px 20px; } .doc li { margin-bottom: 6px; }
@@ -115,7 +116,8 @@ footer { padding: 48px 0 56px; }
 .proof-box .tag { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 8px; }
 .proof-box h3 { font-size: 18px; margin-bottom: 10px; color: var(--ink); }
 .theorem-pill { display: inline-block; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1px; padding: 2px 8px; border-radius: 4px; background: var(--canvas-soft); border: 1px solid var(--hairline); color: var(--accent-soft); margin-right: 6px; }
-.table-formal { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13px; }
+.table-formal { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13px; table-layout: fixed; }
+.table-formal th, .table-formal td, table.levels th, table.levels td { overflow-wrap: anywhere; }
 .table-formal th, .table-formal td { padding: 12px 14px; border: 1px solid var(--hairline); text-align: left; vertical-align: top; }
 .table-formal th { background: var(--canvas-soft); font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--mute); }
 .qa-box { background: var(--canvas-soft); border: 1px solid var(--canvas-mid); border-radius: 8px; padding: 28px; margin: 32px 0; }

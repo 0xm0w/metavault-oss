@@ -1,6 +1,6 @@
 import type { BrowserWindow } from "electron";
 import { ipcMain } from "electron";
-import { autoUpdater } from "electron-updater";
+import pkg from "electron-updater";
 
 export interface UpdaterStatusPayload {
   readonly status:
@@ -27,6 +27,13 @@ export function getCurrentUpdaterStatus(): UpdaterStatusPayload {
 }
 
 export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
+  let autoUpdater: typeof pkg.autoUpdater;
+  try {
+    autoUpdater = pkg.autoUpdater;
+  } catch {
+    return;
+  }
+
   function broadcast(payload: UpdaterStatusPayload): void {
     currentStatus = payload;
     const win = getWindow();
@@ -73,10 +80,12 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
     });
   });
 
+  const updaterInstance = autoUpdater;
+
   ipcMain.handle(CHECK_UPDATES_CHANNEL, async () => {
     try {
       broadcast({ status: "checking" });
-      const result = await autoUpdater.checkForUpdates();
+      const result = await updaterInstance.checkForUpdates();
       return { ok: true, updateInfo: result?.updateInfo };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -87,7 +96,7 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle(QUIT_AND_INSTALL_CHANNEL, () => {
     try {
-      autoUpdater.quitAndInstall();
+      updaterInstance.quitAndInstall();
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -96,7 +105,7 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
 
   // Background check on launch after brief delay (if in production)
   setTimeout(() => {
-    void autoUpdater.checkForUpdates().catch(() => {
+    void updaterInstance.checkForUpdates().catch(() => {
       // Ignored on initial offline/dev launch
     });
   }, 5000);
