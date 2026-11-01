@@ -42,8 +42,8 @@ export function buildWindowOptions(preloadPath: string): VaultWindowOptions {
     autoHideMenuBar: true,
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#ffffff",
-      symbolColor: "#1d1d1d",
+      color: "#8629ff",
+      symbolColor: "#ffffff",
       height: 40,
     },
     icon: join(preloadPath, "..", "renderer", "icon.ico"),
