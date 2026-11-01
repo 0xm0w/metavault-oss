@@ -10,7 +10,7 @@ import {
 import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 
-export const MCP_VERSION: string = "0.1.0-alpha.1";
+export const MCP_VERSION: string = "0.1.0";
 
 export type DaemonFetch = typeof fetch;
 

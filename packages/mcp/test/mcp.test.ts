@@ -94,7 +94,7 @@ afterAll(async () => {
 
 describe("OpenVault MCP server (in-process client)", () => {
   it("handshake reports MCP_VERSION and tools/list is exactly the five tools", async () => {
-    expect(MCP_VERSION).toBe("0.1.0-alpha.1");
+    expect(MCP_VERSION).toBe("0.1.0");
     expect(client.getServerVersion()?.version).toBe(MCP_VERSION);
     const listed = await client.listTools();
     expect(listed.tools.map((t) => t.name).sort()).toEqual([

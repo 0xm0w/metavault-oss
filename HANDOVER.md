@@ -77,7 +77,7 @@ From the ledger/final review: no audit event for Meta key set/delete;
 model/baseUrl free text (bounded in practice by 64 KiB body cap); key draft
 retained on ambiguous save response; completed enrollments never purged from
 memory; MCP bin unshebanged/monorepo-relative (documented `node dist/...` path
-works); `prerelease: true` hardcoded in release.yml for future non-alpha tags;
+works); release.yml marks a tag as a prerelease only when its name contains a hyphen;
 stale `OpenVault-0.1.0-win-x64.exe` name in the old VERIFICATION installer section;
 settings/brain double-read race (self-healing next request); provider-`none`
 skip lives only at the service layer; standard/deep timeouts asserted as
@@ -89,5 +89,6 @@ constants, not clock-tested; Meta API model ids user-editable, not docs-verified
   renderer after save. Policy is law; the model may narrow/escalate, never widen.
 - Human-mutation routes require `x-openvault-token`; agent/MCP traffic must never carry it.
 - Windows first. Effect TS in core/daemon/brain; plain TypeScript UI.
-- Versioning: `0.1.0-alpha.1` is correct (unsigned, no macOS, contract may change).
-  Drop `-alpha.N` at the first signed feature-frozen release.
+- Versioning: `0.1.0` is the first public release (2026-11-01). The Windows
+  installer is still unsigned, and there is still no macOS build.
+  `v0.1.0-alpha.1` remains the earlier prerelease.

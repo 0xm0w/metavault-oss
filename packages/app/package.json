@@ -1,6 +1,6 @@
 {
   "name": "openvault-app",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "OpenVault desktop app — Electron shell over vaultd. Holds no secrets.",

@@ -15,6 +15,13 @@ export interface VaultWindowOptions {
   readonly minHeight: number;
   readonly title: string;
   readonly backgroundColor: string;
+  readonly autoHideMenuBar: true;
+  readonly titleBarStyle: "hidden";
+  readonly titleBarOverlay: {
+    readonly color: string;
+    readonly symbolColor: string;
+    readonly height: number;
+  };
   readonly icon?: string;
   readonly webPreferences: {
     readonly preload: string;
@@ -28,10 +35,17 @@ export function buildWindowOptions(preloadPath: string): VaultWindowOptions {
   return {
     width: 980,
     height: 720,
-    minWidth: 720,
+    minWidth: 880,
     minHeight: 520,
     title: "MetaVault OSS",
-    backgroundColor: "#0a0a0a",
+    backgroundColor: "#ffffff",
+    autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#ffffff",
+      symbolColor: "#1d1d1d",
+      height: 40,
+    },
     icon: join(preloadPath, "..", "renderer", "icon.ico"),
     webPreferences: {
       preload: preloadPath,
