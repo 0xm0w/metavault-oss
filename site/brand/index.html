@@ -1,25 +1,31 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Brand Guidelines &amp; Identity â€” MetaVault OSS</title>
-<meta name="description" content="Official brand guidelines, color system, typography, and vault turn-key logo mockups for MetaVault OSS.">
-<link rel="icon" type="image/svg+xml" href="/brand/favicon.svg">
+<title>Brand Guidelines &amp; Identity — MetaVault OSS</title>
+<meta name="description" content="Official brand identity, vector assets, and favicon system for MetaVault OSS.">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/brand/site.webmanifest">
+<meta name="theme-color" content="#0a0a0a">
 <link rel="stylesheet" href="/assets/style.css">
 <style>
-.brand-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin: 32px 0; }
-.mockup-card { background: var(--canvas-card); border: 1px solid var(--hairline); border-radius: 12px; padding: 28px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.mockup-img-wrap { width: 200px; height: 200px; margin: 18px auto 20px; display: flex; align-items: center; justify-content: center; }
-.mockup-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
+.brand-hero { background: var(--canvas-card); border: 1px solid var(--hairline); border-radius: 12px; padding: 32px; display: flex; flex-direction: column; align-items: center; margin: 32px 0; }
+.brand-hero img { max-width: 100%; height: auto; border-radius: 8px; }
+.brand-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin: 24px 0 40px; }
+.asset-card { background: var(--canvas-card); border: 1px solid var(--hairline); border-radius: 10px; padding: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.asset-preview { width: 128px; height: 128px; display: flex; align-items: center; justify-content: center; margin: 12px 0 16px; background: #0a0a0a; border: 1px solid var(--hairline); border-radius: 24px; padding: 16px; }
+.asset-preview img { width: 100%; height: 100%; object-fit: contain; }
+.asset-download { display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 9999px; background: var(--canvas-soft); border: 1px solid var(--hairline); font-size: 12px; font-family: "Geist Mono", monospace; color: var(--accent-soft); text-decoration: none; margin-top: auto; }
+.asset-download:hover { border-color: var(--accent); color: var(--ink); }
 .color-swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px; margin: 24px 0 36px; }
 .swatch { border-radius: 8px; border: 1px solid var(--hairline); overflow: hidden; background: var(--canvas-card); }
 .swatch-color { height: 68px; width: 100%; }
 .swatch-info { padding: 10px 12px; font-family: "Geist Mono", monospace; font-size: 11px; }
 .swatch-name { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; }
 .swatch-hex { color: var(--mute); }
-.asset-download { display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 9999px; background: var(--canvas-soft); border: 1px solid var(--hairline); font-size: 12px; font-family: "Geist Mono", monospace; color: var(--accent-soft); text-decoration: none; margin-top: 14px; }
-.asset-download:hover { border-color: var(--accent); color: var(--ink); }
 </style>
 </head>
 <body>
@@ -37,28 +43,80 @@
 </div></nav>
 
 <div class="wrap" style="padding: 56px 24px 80px;">
-  <p class="eyebrow">Visual Identity &bull; Safe Turn-Key Series</p>
-  <h1 style="font-size: clamp(34px, 5vw, 54px); margin-bottom: 16px;">Vault Turn-Key Logo System</h1>
-  <p class="lede" style="max-width: 780px; margin-bottom: 40px;">
-    Replacing generic ribbons with the tactile, high-security iconography of the <strong>Vault Turn-Key</strong>. Each concept interprets the rotary turn-key, bank safe wheel, and physical mechanical key through Metaâ€™s signature fluid, curvy design language in high-contrast teal, void black, and slate.
+  <p class="eyebrow">Visual Identity &bull; Brand Assets</p>
+  <h1 style="font-size: clamp(34px, 5vw, 54px); margin-bottom: 16px;">MetaVault OSS Brand System</h1>
+  <p class="lede" style="max-width: 780px; margin-bottom: 32px;">
+    The official MetaVault OSS identity. Built around our teal safe outline, white door and rotary dial, and crisp typographic hierarchy on deep void black.
   </p>
 
-  <!-- MOCKUPS SECTION -->
-  <section class="band" style="padding-top: 0; border-bottom: 1px solid var(--hairline);">
-    <p class="eyebrow dim">Safe Turn-Key Concepts</p>
-    <h2>Stylistic Minimalist Mockups</h2>
-    <p class="sub">Pick your favorite direction for the app icon and installer branding.</p>
+  <div class="brand-hero">
+    <img src="/brand/logo-horizontal.svg" alt="MetaVault Horizontal Logo" style="max-width: 800px; width: 100%;">
+  </div>
+
+  <section class="band" style="padding-top: 10px; border-bottom: 1px solid var(--hairline);">
+    <p class="eyebrow dim">Master Assets</p>
+    <h2>Official Icons &amp; Downloads</h2>
+    <p class="sub">Production-ready SVG, PNG, and multi-plane Windows ICO assets.</p>
 
     <div class="brand-grid">
-<div class="mockup-card"><div class="mockup-img-wrap"><img src="/brand/icons/icon-a-safe.svg" alt="A · Safe"></div><h3>A · Safe</h3><p style="font-size:13px;color:var(--mute)">Filled vault silhouette with door, hinges and ticked combination dial. Closest to the reference.</p><a class="asset-download" href="/brand/icons/icon-a-safe.svg" download>Download SVG</a></div>
-<div class="mockup-card"><div class="mockup-img-wrap"><img src="/brand/icons/icon-b-dial.svg" alt="B · Dial"></div><h3>B · Dial</h3><p style="font-size:13px;color:var(--mute)">Just the dial: eight ticks around a hub on a teal tile. The most minimal, works at any size.</p><a class="asset-download" href="/brand/icons/icon-b-dial.svg" download>Download SVG</a></div>
-<div class="mockup-card"><div class="mockup-img-wrap"><img src="/brand/icons/icon-c-safe-outline.svg" alt="C · Safe Outline"></div><h3>C · Safe Outline</h3><p style="font-size:13px;color:var(--mute)">Line-style safe on black, white dial with cardinal marks. Light and modern.</p><a class="asset-download" href="/brand/icons/icon-c-safe-outline.svg" download>Download SVG</a></div>
-</div></section>
-<!-- COLOR PALETTE -->
+      <div class="asset-card">
+        <span class="pill high">APPLICATION ICON</span>
+        <div class="asset-preview">
+          <img src="/brand/app-icon.svg" alt="App Icon">
+        </div>
+        <h3 style="margin-bottom: 6px;">Desktop App Icon</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 18px; margin-bottom: 12px;">Windows taskbar, installer wizard, and dock icon on dark squircle tile.</p>
+        <a class="asset-download" href="/brand/app-icon.ico" download>Download .ICO</a>
+      </div>
+
+      <div class="asset-card">
+        <span class="pill med">ISOLATED MARK</span>
+        <div class="asset-preview" style="background: transparent;">
+          <img src="/brand/mark.svg" alt="MetaVault Mark">
+        </div>
+        <h3 style="margin-bottom: 6px;">Vector Safe Mark</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 18px; margin-bottom: 12px;">Full transparent vector mark for headers, docs, and graphic mockups.</p>
+        <a class="asset-download" href="/brand/mark.svg" download>Download .SVG</a>
+      </div>
+
+      <div class="asset-card">
+        <span class="pill low">WEB FAVICON</span>
+        <div class="asset-preview">
+          <img src="/brand/favicon.svg" alt="Favicon">
+        </div>
+        <h3 style="margin-bottom: 6px;">Scalable Favicon</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 18px; margin-bottom: 12px;">High-contrast vector and ICO bundle tailored for 16px to 48px tabs.</p>
+        <a class="asset-download" href="/brand/favicon.ico" download>Download .ICO</a>
+      </div>
+
+      <div class="asset-card">
+        <span class="pill max">MOBILE &amp; PWA</span>
+        <div class="asset-preview">
+          <img src="/brand/icon-192.png" alt="Touch Icon">
+        </div>
+        <h3 style="margin-bottom: 6px;">Touch &amp; Maskable</h3>
+        <p style="font-size: 13px; color: var(--mute); line-height: 18px; margin-bottom: 12px;">192x192 &amp; 512x512 PNGs with Android safe zones and Apple Touch icon.</p>
+        <a class="asset-download" href="/brand/icon-512.png" download>Download PNG (512px)</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- SIZE MATRIX PREVIEW -->
   <section class="band" style="border-bottom: 1px solid var(--hairline);">
+    <p class="eyebrow dim">Resolution Matrix</p>
+    <h2>Multi-Scale Fidelity</h2>
+    <p class="sub">Side-by-side preview showing the logo down to 16px tab icon sizes.</p>
+
+    <div style="background: #141618; border: 1px solid var(--hairline); border-radius: 12px; padding: 20px; text-align: center; margin-top: 24px;">
+      <img src="/brand/icons/preview.png" alt="Multi-scale icon preview" style="max-width: 100%; height: auto; border-radius: 8px;">
+    </div>
+  </section>
+
+  <!-- COLOR PALETTE -->
+  <section class="band" style="border-bottom: none;">
     <p class="eyebrow dim">Palette</p>
-    <h2>Original Color Palette</h2>
-    <p class="sub">Teal, void black, card slate, and crisp white.</p>
+    <h2>Color System</h2>
+    <p class="sub">Teal accent, void black canvas, pure white, and card slate.</p>
 
     <div class="color-swatches">
       <div class="swatch">
@@ -69,10 +127,10 @@
         </div>
       </div>
       <div class="swatch">
-        <div class="swatch-color" style="background: #5eead4;"></div>
+        <div class="swatch-color" style="background: #ffffff;"></div>
         <div class="swatch-info">
-          <span class="swatch-name">Teal Bright</span>
-          <span class="swatch-hex">#5eead4 &bull; Core Glow</span>
+          <span class="swatch-name">Pure White</span>
+          <span class="swatch-hex">#ffffff &bull; Dial &amp; Text</span>
         </div>
       </div>
       <div class="swatch">
@@ -97,10 +155,10 @@
         </div>
       </div>
       <div class="swatch">
-        <div class="swatch-color" style="background: #ffffff;"></div>
+        <div class="swatch-color" style="background: #dadbdf;"></div>
         <div class="swatch-info">
-          <span class="swatch-name">Pure White</span>
-          <span class="swatch-hex">#ffffff &bull; Headings</span>
+          <span class="swatch-name">Body Silver</span>
+          <span class="swatch-hex">#dadbdf &bull; Body Text</span>
         </div>
       </div>
     </div>
@@ -108,10 +166,9 @@
 </div>
 
 <footer><div class="wrap foot">
-  <span>METAVAULT OSS â€” agents never see your secrets.</span>
+  <span>METAVAULT OSS &bull; agents never see your secrets.</span>
   <span><a href="/">Home</a> &bull; <a href="/docs/">Docs</a> &bull; <a href="/architecture/">Architecture</a> &bull; <a href="/research/">Research</a> &bull; <a href="/brand/">Brand</a> &bull; <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
   <span>Apache-2.0. Local-first. Built for the Meta Hackathon.</span>
 </div></footer>
 </body>
 </html>
-

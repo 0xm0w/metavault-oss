@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="0" fill="#0a0a0a"/>
+   <g transform="translate(256 256) scale(0.62) translate(-256 -256)">
+  <defs><mask id="dial-k" maskUnits="userSpaceOnUse">
+    <rect width="512" height="512" fill="#fff"/>
+    <circle cx="262" cy="246" r="27" fill="#000"/>
+    <path d="M262.0 203.0 L262.0 185.0 M292.4 215.6 L305.1 202.9 M305.0 246.0 L323.0 246.0 M292.4 276.4 L305.1 289.1 M262.0 289.0 L262.0 307.0 M231.6 276.4 L218.9 289.1 M219.0 246.0 L201.0 246.0 M231.6 215.6 L218.9 202.9" stroke="#000" stroke-width="11" stroke-linecap="round"/>
+  </mask></defs>
+  <rect x="100" y="70" width="320" height="336" rx="60" fill="none" stroke="#2dd4bf" stroke-width="28"/>
+  <rect x="140" y="406" width="56" height="30" rx="11" fill="#2dd4bf"/>
+  <rect x="324" y="406" width="56" height="30" rx="11" fill="#2dd4bf"/>
+  <path d="M146 152 V148 A32 32 0 0 1 178 116 H342 A32 32 0 0 1 374 148 V328 A32 32 0 0 1 342 360 H178 A32 32 0 0 1 146 328 V324"
+        fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+  <rect x="76" y="160" width="46" height="62" rx="13" fill="#ffffff"/>
+  <rect x="76" y="254" width="46" height="62" rx="13" fill="#ffffff"/>
+  <circle cx="262" cy="246" r="80" fill="#ffffff" mask="url(#dial-k)"/></g></svg>

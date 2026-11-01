@@ -1,11 +1,15 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenVault — Agents never see your secrets</title>
+<title>OpenVault â€” Agents never see your secrets</title>
 <meta name="description" content="OpenVault is the open-source wallet for AI agents. One local vault for every coding IDE, guarded by Meta LLMs. Your keys are never pasted, never in chat, never in the model.">
-<link rel="icon" type="image/svg+xml" href="/brand/favicon.svg">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/brand/site.webmanifest">
+<meta name="theme-color" content="#0a0a0a">
 <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -19,22 +23,22 @@
 </div></nav>
 
 <header class="hero"><div class="wrap">
-  <p class="eyebrow">Open source · Local-first · Windows</p>
+  <p class="eyebrow">Open source Â· Local-first Â· Windows</p>
   <h1>Tired of pasting API keys into <span class="hl">every coding IDE?</span></h1>
-  <p class="lede">Put all your keys in one vault. Let Meta LLMs guard it from the requestors. OpenVault is the wallet for agents: Cursor, Claude Code, Codex and VS Code ask for a scoped capability, a local Meta model vets the request, you approve — and the key itself is never shown to the agent, the chat, or the model.</p>
+  <p class="lede">Put all your keys in one vault. Let Meta LLMs guard it from the requestors. OpenVault is the wallet for agents: Cursor, Claude Code, Codex and VS Code ask for a scoped capability, a local Meta model vets the request, you approve â€” and the key itself is never shown to the agent, the chat, or the model.</p>
   <div class="btns">
     <a class="btn" href="#download">Download for Windows</a>
     <a class="btn ghost" href="/docs/">Read the docs</a>
     <a class="btn ghost" href="/hackathon/">The pitch</a>
   </div>
   <div class="terminal"><span class="dim"># what your agent sees now</span>
-$ export STRIPE_KEY=sk-live-••••••••   <span class="bad"># pasted. in the transcript. forever.</span>
+$ export STRIPE_KEY=sk-live-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢   <span class="bad"># pasted. in the transcript. forever.</span>
 
 <span class="dim"># what your agent sees with OpenVault</span>
-agent → request_capability(stripe, charges.read, "list failed charges")
-marshal (llama3.2:3b, on-device) → risk LOW, approval required
-you → Approve once
-vaultd → injects key in-daemon → tool result only → grant expired
+agent â†’ request_capability(stripe, charges.read, "list failed charges")
+marshal (llama3.2:3b, on-device) â†’ risk LOW, approval required
+you â†’ Approve once
+vaultd â†’ injects key in-daemon â†’ tool result only â†’ grant expired
 <span class="ok"># the key appeared in zero chats, zero prompts, zero logs</span></div>
 </div></header>
 
@@ -44,7 +48,7 @@ vaultd → injects key in-daemon → tool result only → grant expired
   <p class="sub">Three failure modes, one root cause: <strong>the key was somewhere it never needed to be.</strong> In a transcript. In a tool's storage. In someone else's cloud.</p>
   <div class="grid">
     <div class="card"><span class="tag">Rotation fatigue</span><h3>Stop rotating keys because you pasted them</h3><p>Every paste into a chatbox, an IDE prompt, or a support ticket is a future 2 a.m. rotation. Transcripts persist. Context windows get logged. <strong>The key outlives the conversation.</strong></p></div>
-    <div class="card"><span class="tag">The nightmare scenario</span><h3>Keys stored in a tool get leaked. Next morning: <span class="t-bad">a $4,000 bill.</span></h3><p>It has happened to teams again and again — credentials sitting inside a dev tool are exfiltrated, and bots burn them within hours. <strong>If the key was never in the tool, there is nothing to steal.</strong></p></div>
+    <div class="card"><span class="tag">The nightmare scenario</span><h3>Keys stored in a tool get leaked. Next morning: <span class="t-bad">a $4,000 bill.</span></h3><p>It has happened to teams again and again â€” credentials sitting inside a dev tool are exfiltrated, and bots burn them within hours. <strong>If the key was never in the tool, there is nothing to steal.</strong></p></div>
     <div class="card"><span class="tag">Cloud trust</span><h3>Stop trusting cloud password managers with agent access</h3><p>Cloud vaults were built for humans logging in, not autonomous agents asking mid-task, fifty times a day. OpenVault keeps keys <strong>on your machine</strong>, encrypted at rest, under your OS keychain.</p></div>
   </div>
 </div></section>
@@ -52,15 +56,15 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band"><div class="wrap">
   <p class="eyebrow">How it works</p>
   <h2>A dumb vault. A smart warden.</h2>
-  <p class="lede">Like a crypto wallet — except the payloads are API requests, and they are far more complex than a signature.</p>
+  <p class="lede">Like a crypto wallet â€” except the payloads are API requests, and they are far more complex than a signature.</p>
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
-    <div class="card"><span class="tag">Layer 1 · The vault</span><h3>Dumb by design</h3><p>Encrypted keys, hard policy ceilings, expiring grants. <strong>No intelligence, no surprises.</strong> Secure with the model switched off.</p></div>
-    <div class="card"><span class="tag">Layer 2 · The warden</span><h3>Smart by design</h3><p>A Meta LLM assesses every requestor and every request: scope, history, intent. <em>It never sees plaintext keys. Ever.</em></p></div>
+    <div class="card"><span class="tag">Layer 1 Â· The vault</span><h3>Dumb by design</h3><p>Encrypted keys, hard policy ceilings, expiring grants. <strong>No intelligence, no surprises.</strong> Secure with the model switched off.</p></div>
+    <div class="card"><span class="tag">Layer 2 Â· The warden</span><h3>Smart by design</h3><p>A Meta LLM assesses every requestor and every request: scope, history, intent. <em>It never sees plaintext keys. Ever.</em></p></div>
   </div>
   <div class="flow">
     <div class="step"><span class="n">01</span><b>Store once</b><p>Add each key once. AES-256-GCM at rest, master key in your OS keychain.</p></div>
-    <div class="step"><span class="n">02</span><b>Agent requests a capability</b><p>Via one MCP snippet in any IDE: <span class="mono">stripe · charges.read</span> — never the key.</p></div>
-    <div class="step"><span class="n">03</span><b>The warden assesses</b><p>A local Meta model risk-scores the requestor, scope, and history. It can narrow or escalate — never widen.</p></div>
+    <div class="step"><span class="n">02</span><b>Agent requests a capability</b><p>Via one MCP snippet in any IDE: <span class="mono">stripe Â· charges.read</span> â€” never the key.</p></div>
+    <div class="step"><span class="n">03</span><b>The warden assesses</b><p>A local Meta model risk-scores the requestor, scope, and history. It can narrow or escalate â€” never widen.</p></div>
     <div class="step"><span class="n">04</span><b>You approve</b><p>One click in the desktop app. Writes always ask. Reads can earn standing approval.</p></div>
     <div class="step"><span class="n">05</span><b>Injection + tripwire</b><p>The daemon injects the key into that single call, returns only the result, then the grant dies. TTL and event tripwires auto-revoke.</p></div>
   </div>
@@ -69,29 +73,29 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band"><div class="wrap">
   <p class="eyebrow dim">LLM Security Levels</p>
   <h2>Stronger warden. Stronger vault.</h2>
-  <p class="lede">The vault is secure with no model at all — <strong>deterministic policy is the floor.</strong></p>
+  <p class="lede">The vault is secure with no model at all â€” <strong>deterministic policy is the floor.</strong></p>
   <p class="sub">Each warden tier adds judgement on top of that floor: spotting <span class="t-warn">writes phrased as reads</span>, <span class="t-warn">slow scope-creep</span>, and <span class="t-bad">malicious requests from rogue agents</span> you are testing. The floor itself never moves.</p>
   <table class="levels">
     <tr><th>Level</th><th>Warden</th><th>Runs</th><th>What you get</th></tr>
-    <tr><td><span class="pill low">STANDARD · LOW</span></td><td class="model">None — policy only</td><td>Anywhere</td><td>Hard ceilings, expiry, manual approval for everything sensitive. Safe, blunt.</td></tr>
-    <tr><td><span class="pill med">GUARDED · MEDIUM</span></td><td class="model">Llama 3.2 3B (Q4)</td><td>On-device, 8 GB GPU</td><td>Risk scoring, scope recommendation, one-line explanations. The default.</td></tr>
-    <tr><td><span class="pill high">FORTIFIED · HIGH</span></td><td class="model">Muse Glimmer 30B</td><td>On-device, 24 GB GPU</td><td>History pattern-spotting, injection resistance, senior-investigator judgement.</td></tr>
-    <tr><td><span class="pill max">MAXIMUM</span></td><td class="model">Muse Spark / Muse Wonder</td><td>Meta Model API</td><td>Frontier reasoning auditing every request. Metadata only — still no keys, ever.</td></tr>
+    <tr><td><span class="pill low">STANDARD Â· LOW</span></td><td class="model">None â€” policy only</td><td>Anywhere</td><td>Hard ceilings, expiry, manual approval for everything sensitive. Safe, blunt.</td></tr>
+    <tr><td><span class="pill med">GUARDED Â· MEDIUM</span></td><td class="model">Llama 3.2 3B (Q4)</td><td>On-device, 8 GB GPU</td><td>Risk scoring, scope recommendation, one-line explanations. The default.</td></tr>
+    <tr><td><span class="pill high">FORTIFIED Â· HIGH</span></td><td class="model">Muse Glimmer 30B</td><td>On-device, 24 GB GPU</td><td>History pattern-spotting, injection resistance, senior-investigator judgement.</td></tr>
+    <tr><td><span class="pill max">MAXIMUM</span></td><td class="model">Muse Spark / Muse Wonder</td><td>Meta Model API</td><td>Frontier reasoning auditing every request. Metadata only â€” still no keys, ever.</td></tr>
   </table>
 </div></section>
 
 <section class="band"><div class="wrap">
   <p class="eyebrow">Request Logs</p>
   <h2>Know exactly what is being requested.</h2>
-  <p class="lede">One timeline per request, with the model named on every warden row. <em>If an agent asked for something at 3 a.m., you will see it — and exactly what happened next.</em></p>
+  <p class="lede">One timeline per request, with the model named on every warden row. <em>If an agent asked for something at 3 a.m., you will see it â€” and exactly what happened next.</em></p>
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
     <div class="card"><span class="tag t-ok">Always logged</span><h3>Who asked, what, and what happened</h3><p>Agent and IDE, requested scope, the warden's assessment, the policy decision, <strong>your approval or denial</strong>, execution, expiry, revocation. Timestamped, in order.</p></div>
-    <div class="card"><span class="tag t-bad">Never logged</span><h3>The secret itself</h3><p>No key value, fragment, or hash ever reaches the log — or any transcript. <span class="t-ok"><strong>A canary test scans 17 surfaces in CI and fails the build on a single hit.</strong></span></p></div>
+    <div class="card"><span class="tag t-bad">Never logged</span><h3>The secret itself</h3><p>No key value, fragment, or hash ever reaches the log â€” or any transcript. <span class="t-ok"><strong>A canary test scans 17 surfaces in CI and fails the build on a single hit.</strong></span></p></div>
   </div>
   <div class="stat-row">
     <div class="stat"><b>146</b><span>automated tests, all passing</span></div>
     <div class="stat"><b>100%</b><span>safety rate, live brain eval (17 attack scenarios)</span></div>
-    <div class="stat"><b>17</b><span>external surfaces scanned by the canary test — zero leaks</span></div>
+    <div class="stat"><b>17</b><span>external surfaces scanned by the canary test â€” zero leaks</span></div>
     <div class="stat"><b>401</b><span>what an agent gets if it tries to approve its own request</span></div>
   </div>
 </div></section>
@@ -99,18 +103,18 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band" id="download"><div class="wrap">
   <p class="eyebrow dim">Distribution</p>
   <h2>Download. Open source. Yours.</h2>
-  <p class="lede">Windows first. OpenVault is Apache-2.0 open source — audit it, fork it, run it air-gapped. A browser extension for agent request approval is on the roadmap.</p>
+  <p class="lede">Windows first. OpenVault is Apache-2.0 open source â€” audit it, fork it, run it air-gapped. A browser extension for agent request approval is on the roadmap.</p>
   <div class="btns" style="margin-top:28px">
     <a class="btn" href="https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1">Download for Windows</a>
     <a class="btn ghost" href="https://github.com/0xm0w/openvault">Star on GitHub</a>
     <a class="btn ghost" href="/architecture/">How it's built</a>
   </div>
-  <p class="mute" style="margin-top:20px; font-size:14px">From the team behind <a href="https://keythings.xyz">Keythings Wallet</a> — we have shipped key management people trust with real assets. OpenVault is the same discipline, for the agent era. The future: hardened devices, secure enclaves, fully air-gapped vaults. Secure, easy, and full of possibility.</p>
+  <p class="mute" style="margin-top:20px; font-size:14px">From the team behind <a href="https://keythings.xyz">Keythings Wallet</a> â€” we have shipped key management people trust with real assets. OpenVault is the same discipline, for the agent era. The future: hardened devices, secure enclaves, fully air-gapped vaults. Secure, easy, and full of possibility.</p>
 </div></section>
 
 <footer><div class="wrap foot">
-  <span>OPENVAULT — agents never see your secrets.</span>
-  <span><a href="/docs/">Docs</a> · <a href="/architecture/">Architecture</a> · <a href="/research/">Research</a> · <a href="/brand/">Brand</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a> · <a href="https://keythings.xyz">Keythings</a></span>
+  <span>OPENVAULT â€” agents never see your secrets.</span>
+  <span><a href="/docs/">Docs</a> Â· <a href="/architecture/">Architecture</a> Â· <a href="/research/">Research</a> Â· <a href="/brand/">Brand</a> Â· <a href="/hackathon/">Hackathon</a> Â· <a href="https://github.com/0xm0w/openvault">GitHub</a> Â· <a href="https://keythings.xyz">Keythings</a></span>
   <span>Apache-2.0. Local-first. No telemetry.</span>
 </div></footer>
 </body>
