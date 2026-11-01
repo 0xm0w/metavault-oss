@@ -1017,17 +1017,25 @@ describe("dotenv parser and inference (#17)", () => {
 });
 
 describe("projectLocalAuthStatus (#19)", () => {
-  it("projects valid local auth status", () => {
+  it("projects valid local auth status and verifies all layers are off by default", () => {
     const raw = {
       enabled: true,
       configured: true,
+      biometricEnabled: true,
       requireOnApproval: true,
       requireOnLaunch: false,
+      requireOnSettings: true,
       autoLockMinutes: 15,
     };
     const projected = projectLocalAuthStatus(raw);
     expect(projected).toEqual(raw);
     expect(DEFAULT_LOCAL_AUTH_STATUS.enabled).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.configured).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.biometricEnabled).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.requireOnApproval).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.requireOnLaunch).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.requireOnSettings).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_STATUS.autoLockMinutes).toBe(0);
   });
 
   it("fails closed on secret-like leakage or invalid shapes", () => {

@@ -165,8 +165,10 @@ export interface VaultServiceService {
     readonly getLocalAuthStatus: () => Effect.Effect<LocalAuthStatus, StorageError>;
   readonly updateLocalAuthSettings: (patch: {
     readonly enabled?: boolean;
+    readonly biometricEnabled?: boolean;
     readonly requireOnApproval?: boolean;
     readonly requireOnLaunch?: boolean;
+    readonly requireOnSettings?: boolean;
     readonly autoLockMinutes?: number;
   }) => Effect.Effect<LocalAuthStatus, StorageError>;
   readonly setLocalPin: (
@@ -1033,8 +1035,10 @@ export function makeVaultServiceLive(
             return {
               enabled: record.enabled,
               configured: record.pinHash !== null,
+              biometricEnabled: record.biometricEnabled,
               requireOnApproval: record.requireOnApproval,
               requireOnLaunch: record.requireOnLaunch,
+              requireOnSettings: record.requireOnSettings,
               autoLockMinutes: record.autoLockMinutes,
             };
           }),
@@ -1045,10 +1049,14 @@ export function makeVaultServiceLive(
             const next = {
               ...current,
               enabled: patch.enabled !== undefined ? patch.enabled : current.enabled,
+              biometricEnabled:
+                patch.biometricEnabled !== undefined ? patch.biometricEnabled : current.biometricEnabled,
               requireOnApproval:
                 patch.requireOnApproval !== undefined ? patch.requireOnApproval : current.requireOnApproval,
               requireOnLaunch:
                 patch.requireOnLaunch !== undefined ? patch.requireOnLaunch : current.requireOnLaunch,
+              requireOnSettings:
+                patch.requireOnSettings !== undefined ? patch.requireOnSettings : current.requireOnSettings,
               autoLockMinutes:
                 patch.autoLockMinutes !== undefined ? patch.autoLockMinutes : current.autoLockMinutes,
             };
@@ -1056,8 +1064,10 @@ export function makeVaultServiceLive(
             return {
               enabled: next.enabled,
               configured: next.pinHash !== null,
+              biometricEnabled: next.biometricEnabled,
               requireOnApproval: next.requireOnApproval,
               requireOnLaunch: next.requireOnLaunch,
+              requireOnSettings: next.requireOnSettings,
               autoLockMinutes: next.autoLockMinutes,
             };
           }),

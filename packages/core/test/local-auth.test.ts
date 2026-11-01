@@ -22,6 +22,15 @@ describe("Local Authentication & Biometric Gates (#19)", () => {
     expect(verifyPin("", salt, hashed)).toBe(false);
   });
 
+  it("guarantees all local protection layers are strictly OFF by default", () => {
+    expect(DEFAULT_LOCAL_AUTH_RECORD.enabled).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_RECORD.requireOnApproval).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_RECORD.requireOnLaunch).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_RECORD.requireOnSettings).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_RECORD.biometricEnabled).toBe(false);
+    expect(DEFAULT_LOCAL_AUTH_RECORD.autoLockMinutes).toBe(0);
+  });
+
   it("persists and updates local authentication settings in VaultStore", () => {
     const salt = generatePinSalt();
     const pinHash = hashPin("9876", salt);
@@ -30,8 +39,10 @@ describe("Local Authentication & Biometric Gates (#19)", () => {
       enabled: true,
       pinHash,
       salt,
+      biometricEnabled: true,
       requireOnApproval: true,
       requireOnLaunch: true,
+      requireOnSettings: true,
       autoLockMinutes: 15,
     };
 

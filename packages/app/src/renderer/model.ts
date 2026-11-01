@@ -1179,8 +1179,10 @@ export {
 export const DEFAULT_LOCAL_AUTH_STATUS: LocalAuthStatusLike = {
   enabled: false,
   configured: false,
-  requireOnApproval: true,
+  biometricEnabled: false,
+  requireOnApproval: false,
   requireOnLaunch: false,
+  requireOnSettings: false,
   autoLockMinutes: 0,
 };
 
@@ -1188,8 +1190,10 @@ export function projectLocalAuthStatus(raw: unknown): LocalAuthStatusLike | null
   if (!isRecord(raw) || "pinHash" in raw || "salt" in raw || findSecretLikeKeys(raw).length > 0) return null;
   const enabled = raw["enabled"];
   const configured = raw["configured"];
+  const biometricEnabled = typeof raw["biometricEnabled"] === "boolean" ? raw["biometricEnabled"] : false;
   const requireOnApproval = raw["requireOnApproval"];
   const requireOnLaunch = raw["requireOnLaunch"];
+  const requireOnSettings = typeof raw["requireOnSettings"] === "boolean" ? raw["requireOnSettings"] : false;
   const autoLockMinutes = raw["autoLockMinutes"];
   if (
     typeof enabled !== "boolean" ||
@@ -1203,8 +1207,10 @@ export function projectLocalAuthStatus(raw: unknown): LocalAuthStatusLike | null
   return {
     enabled,
     configured,
+    biometricEnabled,
     requireOnApproval,
     requireOnLaunch,
+    requireOnSettings,
     autoLockMinutes,
   };
 }

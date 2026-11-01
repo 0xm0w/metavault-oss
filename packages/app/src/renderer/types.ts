@@ -162,15 +162,19 @@ export interface SecurityPostureReportLike {
 export interface LocalAuthStatusLike {
   readonly enabled: boolean;
   readonly configured: boolean;
+  readonly biometricEnabled: boolean;
   readonly requireOnApproval: boolean;
   readonly requireOnLaunch: boolean;
+  readonly requireOnSettings: boolean;
   readonly autoLockMinutes: number;
 }
 
 export interface LocalAuthPatchLike {
   readonly enabled?: boolean;
+  readonly biometricEnabled?: boolean;
   readonly requireOnApproval?: boolean;
   readonly requireOnLaunch?: boolean;
+  readonly requireOnSettings?: boolean;
   readonly autoLockMinutes?: number;
 }
 

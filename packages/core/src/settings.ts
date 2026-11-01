@@ -39,16 +39,20 @@ export interface LocalAuthRecord {
   readonly enabled: boolean;
   readonly pinHash: string | null;
   readonly salt: string | null;
+  readonly biometricEnabled: boolean;
   readonly requireOnApproval: boolean;
   readonly requireOnLaunch: boolean;
+  readonly requireOnSettings: boolean;
   readonly autoLockMinutes: number;
 }
 
 export interface LocalAuthStatus {
   readonly enabled: boolean;
   readonly configured: boolean;
+  readonly biometricEnabled: boolean;
   readonly requireOnApproval: boolean;
   readonly requireOnLaunch: boolean;
+  readonly requireOnSettings: boolean;
   readonly autoLockMinutes: number;
 }
 
@@ -56,16 +60,20 @@ export const DEFAULT_LOCAL_AUTH_RECORD: LocalAuthRecord = {
   enabled: false,
   pinHash: null,
   salt: null,
-  requireOnApproval: true,
+  biometricEnabled: false,
+  requireOnApproval: false,
   requireOnLaunch: false,
+  requireOnSettings: false,
   autoLockMinutes: 0,
 };
 
 export const DEFAULT_LOCAL_AUTH_STATUS: LocalAuthStatus = {
   enabled: false,
   configured: false,
-  requireOnApproval: true,
+  biometricEnabled: false,
+  requireOnApproval: false,
   requireOnLaunch: false,
+  requireOnSettings: false,
   autoLockMinutes: 0,
 };
 

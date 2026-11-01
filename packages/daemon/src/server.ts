@@ -333,13 +333,17 @@ export async function handleVaultRequest(
     const rawPatch = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
     const patch: {
       enabled?: boolean;
+      biometricEnabled?: boolean;
       requireOnApproval?: boolean;
       requireOnLaunch?: boolean;
+      requireOnSettings?: boolean;
       autoLockMinutes?: number;
     } = {};
     if (typeof rawPatch["enabled"] === "boolean") patch.enabled = rawPatch["enabled"];
+    if (typeof rawPatch["biometricEnabled"] === "boolean") patch.biometricEnabled = rawPatch["biometricEnabled"];
     if (typeof rawPatch["requireOnApproval"] === "boolean") patch.requireOnApproval = rawPatch["requireOnApproval"];
     if (typeof rawPatch["requireOnLaunch"] === "boolean") patch.requireOnLaunch = rawPatch["requireOnLaunch"];
+    if (typeof rawPatch["requireOnSettings"] === "boolean") patch.requireOnSettings = rawPatch["requireOnSettings"];
     if (typeof rawPatch["autoLockMinutes"] === "number") patch.autoLockMinutes = rawPatch["autoLockMinutes"];
     return run(service.updateLocalAuthSettings(patch));
   }

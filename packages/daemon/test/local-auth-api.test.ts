@@ -42,8 +42,10 @@ describe("Local Authentication & Biometric API (#19)", () => {
     expect(res.body).toEqual({
       enabled: false,
       configured: false,
-      requireOnApproval: true,
+      biometricEnabled: false,
+      requireOnApproval: false,
       requireOnLaunch: false,
+      requireOnSettings: false,
       autoLockMinutes: 0,
     });
     // Never leaks cryptographic state
@@ -101,15 +103,17 @@ describe("Local Authentication & Biometric API (#19)", () => {
       service,
       "PATCH",
       "/settings/local-auth",
-      { enabled: true, autoLockMinutes: 15, requireOnLaunch: true },
+      { enabled: true, autoLockMinutes: 15, requireOnLaunch: true, biometricEnabled: true, requireOnSettings: true },
       withToken,
     );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       enabled: true,
       configured: false,
-      requireOnApproval: true,
+      biometricEnabled: true,
+      requireOnApproval: false,
       requireOnLaunch: true,
+      requireOnSettings: true,
       autoLockMinutes: 15,
     });
   });

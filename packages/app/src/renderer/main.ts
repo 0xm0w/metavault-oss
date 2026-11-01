@@ -90,6 +90,7 @@ let auditPageSize = 10;
 let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "skill" = "claude";
 let localAuthStatus: LocalAuthStatusLike = { ...DEFAULT_LOCAL_AUTH_STATUS };
 let vaultLocked = false;
+let initialAuthChecked = false;
 let lastUserActivityTs = Date.now();
 
 function recordActivity(): void {
@@ -1704,17 +1705,24 @@ function renderSettings(view: HTMLElement): void {
   saveBtn.type = "button";
   saveBtn.disabled = settingsBusy || !isWardenFormComplete(wardenDraft);
   saveBtn.addEventListener("click", () => {
-    void runSettingsAction(async () => {
-      const raw = await window.openvault.updateWardenSettings(buildWardenPatch(wardenDraft));
-      const projected = projectWardenSettings(raw);
-      if (projected !== null) {
-        wardenDraft = projected;
-      }
-      wardenDirty = false;
-      wardenLoaded = true;
-      updateMarshalLine();
-      settingsMessage = { text: "Warden settings saved. They apply on the next request \u2014 no daemon restart needed.", ok: true };
-    });
+    const doSave = () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateWardenSettings(buildWardenPatch(wardenDraft));
+        const projected = projectWardenSettings(raw);
+        if (projected !== null) {
+          wardenDraft = projected;
+        }
+        wardenDirty = false;
+        wardenLoaded = true;
+        updateMarshalLine();
+        settingsMessage = { text: "Warden settings saved. They apply on the next request \u2014 no daemon restart needed.", ok: true };
+      });
+    };
+    if (localAuthStatus.enabled && localAuthStatus.requireOnSettings) {
+      promptVerifyPin("Authenticate to modify settings", doSave);
+    } else {
+      doSave();
+    }
   });
   effortSection.append(saveBtn);
   view.append(effortSection);
@@ -1747,17 +1755,24 @@ function renderSettings(view: HTMLElement): void {
   saveKeyBtn.id = "warden-save-key";
   saveKeyBtn.disabled = settingsBusy || settingsKeyDraft.trim() === "";
   saveKeyBtn.addEventListener("click", () => {
-    void runSettingsAction(async () => {
-      const key = settingsKeyDraft;
-      const raw = await window.openvault.setWardenKey(key);
-      const projected = projectWardenKeyStatus(raw);
-      if (projected !== null) wardenKeyStatusState = projected;
-      // Clear the field and never repopulate it from the daemon response.
-      settingsKeyDraft = "";
-      const live = document.querySelector<HTMLInputElement>("#warden-key-input");
-      if (live !== null) live.value = "";
-      settingsMessage = { text: "Meta API key saved. The field has been cleared; the key is never shown again.", ok: true };
-    });
+    const doSaveKey = () => {
+      void runSettingsAction(async () => {
+        const key = settingsKeyDraft;
+        const raw = await window.openvault.setWardenKey(key);
+        const projected = projectWardenKeyStatus(raw);
+        if (projected !== null) wardenKeyStatusState = projected;
+        // Clear the field and never repopulate it from the daemon response.
+        settingsKeyDraft = "";
+        const live = document.querySelector<HTMLInputElement>("#warden-key-input");
+        if (live !== null) live.value = "";
+        settingsMessage = { text: "Meta API key saved. The field has been cleared; the key is never shown again.", ok: true };
+      });
+    };
+    if (localAuthStatus.enabled && localAuthStatus.requireOnSettings) {
+      promptVerifyPin("Authenticate to save key", doSaveKey);
+    } else {
+      doSaveKey();
+    }
   });
   const testBtn = el("button", "action btn-always", "Test connection") as HTMLButtonElement;
   testBtn.type = "button";
@@ -1778,13 +1793,20 @@ function renderSettings(view: HTMLElement): void {
   deleteKeyBtn.type = "button";
   deleteKeyBtn.disabled = settingsBusy || !wardenKeyStatusState.configured;
   deleteKeyBtn.addEventListener("click", () => {
-    void runSettingsAction(async () => {
-      const raw = await window.openvault.deleteWardenKey();
-      const projected = projectWardenKeyStatus(raw);
-      wardenKeyStatusState = projected ?? { configured: false, last4: null };
-      settingsKeyDraft = "";
-      settingsMessage = { text: "Meta API key deleted.", ok: true };
-    });
+    const doDeleteKey = () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.deleteWardenKey();
+        const projected = projectWardenKeyStatus(raw);
+        wardenKeyStatusState = projected ?? { configured: false, last4: null };
+        settingsKeyDraft = "";
+        settingsMessage = { text: "Meta API key deleted.", ok: true };
+      });
+    };
+    if (localAuthStatus.enabled && localAuthStatus.requireOnSettings) {
+      promptVerifyPin("Authenticate to delete key", doDeleteKey);
+    } else {
+      doDeleteKey();
+    }
   });
   keyBtns.append(saveKeyBtn, testBtn, deleteKeyBtn);
   keySection.append(keyBtns);
@@ -1797,13 +1819,26 @@ function renderSettings(view: HTMLElement): void {
   }
 
   // 4b. Local authentication & security gates (#19)
-  const authSection = settingsSection("Local authentication & security gates", "Require local PIN / biometric verification for approving sensitive capability grants and auto-locking idle sessions.");
+  const authSection = settingsSection(
+    "Local authentication & security gates",
+    "Additional layers of local protection (PIN, biometrics, auto-lock) to secure your workstation against unauthorized physical access. (All protection layers are off by default).",
+  );
 
-  const authStatusP = el("p", "settings-status", `Status: ${localAuthStatus.enabled ? "Active" : "Disabled"}${localAuthStatus.configured ? " · PIN configured" : " · No PIN set"}`);
+  const authStatusP = el(
+    "p",
+    "settings-status",
+    `Status: ${localAuthStatus.enabled ? "Active" : "Disabled"} · ${
+      localAuthStatus.configured ? "PIN configured" : "No PIN set"
+    }${localAuthStatus.biometricEnabled ? " · Biometrics ready" : ""}`,
+  );
   authSection.append(authStatusP);
 
   const authToggleRow = el("div", "settings-row");
-  const authToggleLabel = el("span", "settings-row-label", "Enable local authentication gate");
+  const authToggleLabel = el(
+    "span",
+    "settings-row-label",
+    "Enable local authentication gate (Off by default)",
+  );
   const authToggle = document.createElement("input");
   authToggle.type = "checkbox";
   authToggle.checked = localAuthStatus.enabled;
@@ -1831,8 +1866,33 @@ function renderSettings(view: HTMLElement): void {
   authSection.append(authToggleRow);
 
   if (localAuthStatus.enabled) {
+    // 1. Require on Launch
+    const launchRow = el("div", "settings-row");
+    const launchLabel = el(
+      "span",
+      "settings-row-label",
+      "Require verification on app launch / initial unlock (Off by default)",
+    );
+    const launchToggle = document.createElement("input");
+    launchToggle.type = "checkbox";
+    launchToggle.checked = localAuthStatus.requireOnLaunch;
+    launchToggle.addEventListener("change", () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateLocalAuthSettings({ requireOnLaunch: launchToggle.checked });
+        const projected = projectLocalAuthStatus(raw);
+        if (projected !== null) localAuthStatus = projected;
+      });
+    });
+    launchRow.append(launchLabel, launchToggle);
+    authSection.append(launchRow);
+
+    // 2. Require on Approval
     const apprRow = el("div", "settings-row");
-    const apprLabel = el("span", "settings-row-label", "Require PIN on sensitive/write approvals");
+    const apprLabel = el(
+      "span",
+      "settings-row-label",
+      "Require verification on capability approvals (Off by default)",
+    );
     const apprToggle = document.createElement("input");
     apprToggle.type = "checkbox";
     apprToggle.checked = localAuthStatus.requireOnApproval;
@@ -1846,16 +1906,59 @@ function renderSettings(view: HTMLElement): void {
     apprRow.append(apprLabel, apprToggle);
     authSection.append(apprRow);
 
+    // 3. Require on Settings & Policy mutation
+    const settingsRow = el("div", "settings-row");
+    const settingsLabel = el(
+      "span",
+      "settings-row-label",
+      "Require verification to edit security settings & policies (Off by default)",
+    );
+    const settingsToggle = document.createElement("input");
+    settingsToggle.type = "checkbox";
+    settingsToggle.checked = localAuthStatus.requireOnSettings;
+    settingsToggle.addEventListener("change", () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateLocalAuthSettings({ requireOnSettings: settingsToggle.checked });
+        const projected = projectLocalAuthStatus(raw);
+        if (projected !== null) localAuthStatus = projected;
+      });
+    });
+    settingsRow.append(settingsLabel, settingsToggle);
+    authSection.append(settingsRow);
+
+    // 4. Windows Hello / Touch ID biometrics
+    const bioRow = el("div", "settings-row");
+    const bioLabel = el(
+      "span",
+      "settings-row-label",
+      "Enable Windows Hello / Touch ID biometrics (Off by default)",
+    );
+    const bioToggle = document.createElement("input");
+    bioToggle.type = "checkbox";
+    bioToggle.checked = localAuthStatus.biometricEnabled;
+    bioToggle.addEventListener("change", () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateLocalAuthSettings({ biometricEnabled: bioToggle.checked });
+        const projected = projectLocalAuthStatus(raw);
+        if (projected !== null) localAuthStatus = projected;
+      });
+    });
+    bioRow.append(bioLabel, bioToggle);
+    authSection.append(bioRow);
+
+    // 5. Inactivity Auto-Lock
     const lockRow = el("div", "settings-row");
-    const lockLabel = el("span", "settings-row-label", "Auto-lock inactive session");
+    const lockLabel = el("span", "settings-row-label", "Auto-lock inactive session (Off by default)");
     const lockSelect = document.createElement("select");
     lockSelect.className = "vault-input";
     lockSelect.style.width = "auto";
     const options = [
-      { min: 0, label: "Disabled" },
+      { min: 0, label: "Disabled (Off by default)" },
+      { min: 1, label: "After 1 minute" },
       { min: 5, label: "After 5 minutes" },
       { min: 15, label: "After 15 minutes" },
       { min: 30, label: "After 30 minutes" },
+      { min: 60, label: "After 60 minutes" },
     ];
     for (const opt of options) {
       const optEl = document.createElement("option");
@@ -1876,15 +1979,31 @@ function renderSettings(view: HTMLElement): void {
     authSection.append(lockRow);
   }
 
-  const pinBtn = el("button", "action", localAuthStatus.configured ? "Change local PIN" : "Set local PIN") as HTMLButtonElement;
+  const authBtns = el("div", "settings-btns");
+  const pinBtn = el(
+    "button",
+    "action",
+    localAuthStatus.configured ? "Change local PIN" : "Set local PIN",
+  ) as HTMLButtonElement;
   pinBtn.type = "button";
   pinBtn.addEventListener("click", () => {
     openPinModal(() => {
       void refresh().then(render);
     });
   });
-  authSection.append(pinBtn);
+  authBtns.append(pinBtn);
 
+  if (localAuthStatus.enabled && localAuthStatus.configured) {
+    const lockNowBtn = el("button", "action btn-deny", "Lock session now") as HTMLButtonElement;
+    lockNowBtn.type = "button";
+    lockNowBtn.addEventListener("click", () => {
+      vaultLocked = true;
+      render();
+    });
+    authBtns.append(lockNowBtn);
+  }
+
+  authSection.append(authBtns);
   view.append(authSection);
 
   // 5. Daemon (read-only)
@@ -2425,7 +2544,15 @@ async function refresh(): Promise<void> {
     policiesData = projectPoliciesResponse(policiesRaw);
     securityPosture = projectSecurityPosture(postureRaw);
     const projAuth = projectLocalAuthStatus(localAuthRaw);
-    if (projAuth !== null) localAuthStatus = projAuth;
+    if (projAuth !== null) {
+      if (!initialAuthChecked) {
+        initialAuthChecked = true;
+        if (projAuth.enabled && projAuth.configured && projAuth.requireOnLaunch) {
+          vaultLocked = true;
+        }
+      }
+      localAuthStatus = projAuth;
+    }
     if (localAuthStatus.enabled && localAuthStatus.autoLockMinutes > 0 && !vaultLocked) {
       if (Date.now() - lastUserActivityTs > localAuthStatus.autoLockMinutes * 60 * 1000) {
         vaultLocked = true;

@@ -49,8 +49,10 @@ interface LocalAuthRow {
   readonly enabled: number;
   readonly pin_hash: string | null;
   readonly salt: string | null;
+  readonly biometric_enabled: number;
   readonly require_on_approval: number;
   readonly require_on_launch: number;
+  readonly require_on_settings: number;
   readonly auto_lock_minutes: number;
 }
 
@@ -124,8 +126,10 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
         enabled INTEGER NOT NULL DEFAULT 0,
         pin_hash TEXT,
         salt TEXT,
-        require_on_approval INTEGER NOT NULL DEFAULT 1,
+        biometric_enabled INTEGER NOT NULL DEFAULT 0,
+        require_on_approval INTEGER NOT NULL DEFAULT 0,
         require_on_launch INTEGER NOT NULL DEFAULT 0,
+        require_on_settings INTEGER NOT NULL DEFAULT 0,
         auto_lock_minutes INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS audit (
@@ -178,11 +182,21 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   const upsertSettings = db.prepare(
     "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url",
   );
-    const upsertLocalAuth = db.prepare(
-    "INSERT INTO local_auth_settings (id, enabled, pin_hash, salt, require_on_approval, require_on_launch, auto_lock_minutes) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, pin_hash = excluded.pin_hash, salt = excluded.salt, require_on_approval = excluded.require_on_approval, require_on_launch = excluded.require_on_launch, auto_lock_minutes = excluded.auto_lock_minutes",
+  try {
+    db.exec("ALTER TABLE local_auth_settings ADD COLUMN biometric_enabled INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // Column already exists
+  }
+  try {
+    db.exec("ALTER TABLE local_auth_settings ADD COLUMN require_on_settings INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // Column already exists
+  }
+  const upsertLocalAuth = db.prepare(
+    "INSERT INTO local_auth_settings (id, enabled, pin_hash, salt, biometric_enabled, require_on_approval, require_on_launch, require_on_settings, auto_lock_minutes) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, pin_hash = excluded.pin_hash, salt = excluded.salt, biometric_enabled = excluded.biometric_enabled, require_on_approval = excluded.require_on_approval, require_on_launch = excluded.require_on_launch, require_on_settings = excluded.require_on_settings, auto_lock_minutes = excluded.auto_lock_minutes",
   );
   const selectLocalAuth = db.prepare(
-    "SELECT enabled, pin_hash, salt, require_on_approval, require_on_launch, auto_lock_minutes FROM local_auth_settings WHERE id = 1",
+    "SELECT enabled, pin_hash, salt, biometric_enabled, require_on_approval, require_on_launch, require_on_settings, auto_lock_minutes FROM local_auth_settings WHERE id = 1",
   );
   const selectSettings = db.prepare(
     "SELECT provider, model, effort, meta_api_base_url FROM warden_settings WHERE id = 1",
@@ -299,8 +313,10 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
             enabled: Boolean(row.enabled),
             pinHash: row.pin_hash,
             salt: row.salt,
+            biometricEnabled: Boolean(row.biometric_enabled),
             requireOnApproval: Boolean(row.require_on_approval),
             requireOnLaunch: Boolean(row.require_on_launch),
+            requireOnSettings: Boolean(row.require_on_settings),
             autoLockMinutes: row.auto_lock_minutes,
           };
         },
@@ -313,8 +329,10 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
             record.enabled ? 1 : 0,
             record.pinHash,
             record.salt,
+            record.biometricEnabled ? 1 : 0,
             record.requireOnApproval ? 1 : 0,
             record.requireOnLaunch ? 1 : 0,
+            record.requireOnSettings ? 1 : 0,
             record.autoLockMinutes,
           );
         },
