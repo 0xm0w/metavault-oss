@@ -85,7 +85,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: openvault-windows-${{ github.ref_name }}
+          name: metavault-oss-windows-${{ github.ref_name }}
           path: |
             packages/app/release/*.exe
             packages/app/release/SHA256SUMS

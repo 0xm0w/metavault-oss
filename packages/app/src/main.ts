@@ -28,7 +28,8 @@ if (process.defaultApp) {
   if (script !== undefined) {
     app.setAsDefaultProtocolClient("openvault", process.execPath, [script]);
   } else {
-    app.setAsDefaultProtocolClient("openvault");
+    app.setAsDefaultProtocolClient("metavault");
+  app.setAsDefaultProtocolClient("openvault");
   }
 } else {
   app.setAsDefaultProtocolClient("openvault");

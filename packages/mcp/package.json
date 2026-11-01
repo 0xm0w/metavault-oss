@@ -1,9 +1,9 @@
 {
-  "name": "openvault-mcp",
+  "name": "metavault-mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "OpenVault MCP server — stdio adapter over vaultd. Holds no secrets.",
+  "description": "MetaVault OSS MCP server — stdio adapter over vaultd. Holds no secrets.",
   "main": "../../dist/packages/mcp/src/server.js",
   "bin": {
     "openvault-mcp": "../../dist/packages/mcp/src/server.js"
@@ -11,5 +11,5 @@
   "scripts": {
     "build": "tsc -p ../../tsconfig.json --outDir ../../dist"
   },
-  "author": "OpenVault contributors"
+  "author": "MetaVault OSS contributors"
 }
