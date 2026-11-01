@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,6 +9,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { DEFAULT_MARSHAL_MODEL } from "../../brain/src/ollama.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
 import { parseDotEnvWithInference } from "../../core/src/dotenv.js";
+import { retrieveMasterKey, storeMasterKey } from "../../core/src/keychain.js";
 import { MarshalUnavailable, StorageError } from "../../core/src/errors.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { AuditEvent } from "../../core/src/types.js";
@@ -207,28 +208,7 @@ function envMasterKey(): Buffer | null {
 }
 
 function keychainMasterKey(): Buffer | null {
-  try {
-    let raw = "";
-    if (process.platform === "darwin") {
-      raw = execFileSync(
-        "security",
-        ["find-generic-password", "-s", "openvault", "-a", "master-key", "-w"],
-        { encoding: "utf8" },
-      ).trim();
-    } else if (process.platform === "linux") {
-      raw = execFileSync(
-        "secret-tool",
-        ["lookup", "service", "openvault", "account", "master-key"],
-        { encoding: "utf8" },
-      ).trim();
-    } else {
-      return null;
-    }
-    const decoded = Buffer.from(raw, "base64");
-    return decoded.length === 32 ? decoded : null;
-  } catch {
-    return null;
-  }
+  return retrieveMasterKey();
 }
 
 function existingMasterKey(deps: CliDeps): Buffer | null {
@@ -406,6 +386,10 @@ function initProgram(deps: CliDeps): Effect.Effect<string, CliFailure> {
     });
     const generated = existing === null;
     const masterKey = existing ?? (yield* Effect.sync(() => randomBytes(32)));
+    let savedToKeychain = false;
+    if (generated) {
+      savedToKeychain = storeMasterKey(masterKey);
+    }
     const dbPath = resolveDbPath(deps);
     // Force the vault open so init actually creates the encrypted store.
     yield* Effect.gen(function* () {
@@ -416,9 +400,14 @@ function initProgram(deps: CliDeps): Effect.Effect<string, CliFailure> {
     if (!generated) {
       return `${header}master key: existing key reused (not shown)\n`;
     }
+    const keychainNotice = savedToKeychain
+      ? (process.platform === "darwin"
+          ? "master key saved to Apple Keychain (service=openvault, account=master-key)\n"
+          : "master key saved to OS keyring\n")
+      : "store this key in your OS keychain or set OPENVAULT_MASTER_KEY; it will not be shown again\n";
     return (
       `${header}master key (shown once): ${masterKey.toString("base64")}\n` +
-      "store this key in your OS keychain or set OPENVAULT_MASTER_KEY; it will not be shown again\n"
+      keychainNotice
     );
   });
 }

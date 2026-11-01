@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -10,6 +9,7 @@ import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../c
 import { Connector } from "../../core/src/connector.js";
 import { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH } from "../../core/src/settings.js";
 import { decryptSecret } from "../../core/src/crypto.js";
+import { retrieveMasterKey } from "../../core/src/keychain.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
@@ -562,33 +562,13 @@ export function resolveDaemonMasterKey(): Buffer {
     }
     return decoded;
   }
-  try {
-    let raw = "";
-    if (process.platform === "darwin") {
-      raw = execFileSync(
-        "security",
-        ["find-generic-password", "-s", "openvault", "-a", "master-key", "-w"],
-        { encoding: "utf8" },
-      ).trim();
-    } else if (process.platform === "linux") {
-      raw = execFileSync(
-        "secret-tool",
-        ["lookup", "service", "openvault", "account", "master-key"],
-        { encoding: "utf8" },
-      ).trim();
-    } else {
-      throw new Error(`no keychain command for platform ${process.platform}`);
-    }
-    const decoded = Buffer.from(raw, "base64");
-    if (decoded.length !== 32) {
-      throw new Error("keychain master key must be base64-encoded 32 bytes");
-    }
-    return decoded;
-  } catch {
-    throw new Error(
-      "master key unavailable: set OPENVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
-    );
+  const fromKeychain = retrieveMasterKey();
+  if (fromKeychain !== null) {
+    return fromKeychain;
   }
+  throw new Error(
+    "master key unavailable: set OPENVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
+  );
 }
 
 export interface VaultDaemonOptions {

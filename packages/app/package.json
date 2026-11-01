@@ -56,15 +56,38 @@
           "target": "dmg",
           "arch": [
             "x64",
-            "arm64"
+            "arm64",
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
           ]
         }
       ],
-      "category": "public.app-category.productivity",
+      "category": "public.app-category.developer-tools",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "identity": null
     },
     "dmg": {
-      "sign": false
+      "title": "MetaVault OSS",
+      "sign": false,
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "linux": {
       "target": [
