@@ -3,7 +3,7 @@
   "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
-  "description": "OpenVault desktop app â€” Electron shell over vaultd. Holds no secrets.",
+  "description": "OpenVault desktop app — Electron shell over vaultd. Holds no secrets.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",

@@ -1,16 +1,16 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Research &amp; Formal Verification â€” MetaVault OSS</title>
+<title>Research &amp; Formal Verification — MetaVault OSS</title>
 <meta name="description" content="Formal security verification, threat models, and empirical proofs for MetaVault OSS (OpenVault). Answers to key capability execution and zero plain-text visibility questions.">
+<link rel="stylesheet" href="/assets/style.css">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/brand/site.webmanifest">
 <meta name="theme-color" content="#0a0a0a">
-<link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
 <nav><div class="nav-in">
@@ -95,9 +95,9 @@
       <h3>Definition: Capability Brokering vs. Credential Possession</h3>
       <p>Let $\mathcal{K}$ represent the set of high-entropy API secrets (e.g. Cloudflare tokens, Stripe secret keys). In a standard system, an agent $\mathcal{A}$ requests credential possession: $\mathcal{A} \leftarrow k$ where $k \in \mathcal{K}$, allowing $\mathcal{A}$ to perform arbitrary network operations $\mathcal{O}(k)$.</p>
       <p>In MetaVault OSS, $\mathcal{A}$ never receives $k$. Instead, $\mathcal{A}$ issues a capability tuple $\langle \alpha, \sigma, \rho \rangle$ where $\alpha$ is an alias, $\sigma$ is a requested scope, and $\rho$ is an untrusted intent rationale. If verified by policy $\mathcal{P}$, assessed by Warden $\mathcal{W}$, and authorized by Human $\mathcal{H}$, the daemon computes:</p>
-      <pre><code>vaultd.execute(k, endpoint) â†’ DownstreamResponse (JSON)
+      <pre><code>vaultd.execute(k, endpoint) → DownstreamResponse (JSON)
 Agent Receives: Filtered(DownstreamResponse)
-Key State: k stays resident in daemon memory for â‰¤ 15ms, then purged.</code></pre>
+Key State: k stays resident in daemon memory for ≤ 15ms, then purged.</code></pre>
     </div>
 
     <!-- 5-STAGE GATE -->
@@ -146,11 +146,11 @@ Key State: k stays resident in daemon memory for â‰¤ 15ms, then purged.</cod
   scope: "read",
   reason: "Verify Cloudflare API token validity and status"
 })
-â†’ Response: { status: "awaiting-approval", grantId: "grant_cf_89b2f1" }</code></pre>
+→ Response: { status: "awaiting-approval", grantId: "grant_cf_89b2f1" }</code></pre>
       <p><strong>2. Warden &amp; Policy Assessment:</strong></p>
       <pre><code>Warden Model: Llama 3.2 3B Instruct (Local Ollama)
 Assessment: { risk: "low", recommendedScope: "read", requireApproval: true, explanation: "Standard read-only token status verification" }
-Ceiling Check: PASS (requested "read" â‰¤ ceiling "read")</code></pre>
+Ceiling Check: PASS (requested "read" ≤ ceiling "read")</code></pre>
       <p><strong>3. Human UI Action:</strong></p>
       <p>Human clicked <strong>Approve</strong> in the MetaVault OSS desktop client (authenticated via internal OS bearer token).</p>
       <p><strong>4. Result Received by Agent:</strong></p>
@@ -222,37 +222,37 @@ Ceiling Check: PASS (requested "read" â‰¤ ceiling "read")</code></pre>
     <div class="terminal"><span class="dim"># Synthetic canary seeded into test harness</span>
 const CANARY = "OPENVAULT-CANARY-9f27c41a-this-string-must-never-leak";
 
-<span class="ok"># Verified 27 distinct external surfaces â€” zero string matches:</span>
-âœ“ audit JSON (GET /audit body)               â†’ CLEAN (0 occurrences)
-âœ“ audit JSON string serialization             â†’ CLEAN (0 occurrences)
-âœ“ audit database rows                         â†’ CLEAN (0 occurrences)
-âœ“ MCP request_enrollment result               â†’ CLEAN (0 occurrences)
-âœ“ MCP enrollment_status result                â†’ CLEAN (0 occurrences)
-âœ“ MCP request_capability result               â†’ CLEAN (0 occurrences)
-âœ“ MCP list_aliases result                     â†’ CLEAN (0 occurrences)
-âœ“ MCP revoke result                           â†’ CLEAN (0 occurrences)
-âœ“ Deeplink URL construction                   â†’ CLEAN (0 occurrences)
-âœ“ Parsed deeplink IPC parameters              â†’ CLEAN (0 occurrences)
-âœ“ Settings GET /settings/warden               â†’ CLEAN (0 occurrences)
-âœ“ Settings PATCH /settings/warden             â†’ CLEAN (0 occurrences)
-âœ“ Settings PUT warden key response            â†’ CLEAN (shows only {last4})
-âœ“ Settings warden key status                  â†’ CLEAN (shows only {configured: true})
-âœ“ Settings warden test result                 â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected audit view               â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected aliases view             â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected credentials view         â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected pending view             â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected policies view            â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected warden settings          â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected warden key status        â†’ CLEAN (0 occurrences)
-âœ“ Renderer-projected warden test              â†’ CLEAN (0 occurrences)
-âœ“ Renderer IPC call payloads                  â†’ CLEAN (0 occurrences)
-âœ“ Human approve API response                  â†’ CLEAN (0 occurrences)
-âœ“ Stored ciphertext SQLite blob               â†’ CLEAN (ciphertext only)
-âœ“ Captured Llama 3.2 3B warden prompts        â†’ CLEAN (0 occurrences)
+<span class="ok"># Verified 27 distinct external surfaces — zero string matches:</span>
+✓ audit JSON (GET /audit body)               → CLEAN (0 occurrences)
+✓ audit JSON string serialization             → CLEAN (0 occurrences)
+✓ audit database rows                         → CLEAN (0 occurrences)
+✓ MCP request_enrollment result               → CLEAN (0 occurrences)
+✓ MCP enrollment_status result                → CLEAN (0 occurrences)
+✓ MCP request_capability result               → CLEAN (0 occurrences)
+✓ MCP list_aliases result                     → CLEAN (0 occurrences)
+✓ MCP revoke result                           → CLEAN (0 occurrences)
+✓ Deeplink URL construction                   → CLEAN (0 occurrences)
+✓ Parsed deeplink IPC parameters              → CLEAN (0 occurrences)
+✓ Settings GET /settings/warden               → CLEAN (0 occurrences)
+✓ Settings PATCH /settings/warden             → CLEAN (0 occurrences)
+✓ Settings PUT warden key response            → CLEAN (shows only {last4})
+✓ Settings warden key status                  → CLEAN (shows only {configured: true})
+✓ Settings warden test result                 → CLEAN (0 occurrences)
+✓ Renderer-projected audit view               → CLEAN (0 occurrences)
+✓ Renderer-projected aliases view             → CLEAN (0 occurrences)
+✓ Renderer-projected credentials view         → CLEAN (0 occurrences)
+✓ Renderer-projected pending view             → CLEAN (0 occurrences)
+✓ Renderer-projected policies view            → CLEAN (0 occurrences)
+✓ Renderer-projected warden settings          → CLEAN (0 occurrences)
+✓ Renderer-projected warden key status        → CLEAN (0 occurrences)
+✓ Renderer-projected warden test              → CLEAN (0 occurrences)
+✓ Renderer IPC call payloads                  → CLEAN (0 occurrences)
+✓ Human approve API response                  → CLEAN (0 occurrences)
+✓ Stored ciphertext SQLite blob               → CLEAN (ciphertext only)
+✓ Captured Llama 3.2 3B warden prompts        → CLEAN (0 occurrences)
 
 <span class="ok"># Non-vacuous check: proves the secret really flowed into the connector</span>
-expect(connectorSecrets).toEqual([CANARY]);   â†’ <span class="ok">PASS (in-daemon only)</span></div>
+expect(connectorSecrets).toEqual([CANARY]);   → <span class="ok">PASS (in-daemon only)</span></div>
 
     <!-- MATRIX -->
     <h2 id="matrix">7. Formal Verification Matrix</h2>
@@ -339,8 +339,8 @@ node dist/packages/brain/eval/run-eval.js --live</code></pre>
 </div>
 
 <footer><div class="wrap foot">
-  <span>OPENVAULT â€” agents never see your secrets.</span>
-  <span><a href="/">Home</a> Â· <a href="/docs/">Docs</a> Â· <a href="/architecture/">Architecture</a> Â· <a href="/research/">Research</a> Â· <a href="/brand/">Brand</a> Â· <a href="/hackathon/">Hackathon</a> Â· <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
+  <span>OPENVAULT — agents never see your secrets.</span>
+  <span><a href="/">Home</a> · <a href="/docs/">Docs</a> · <a href="/architecture/">Architecture</a> · <a href="/research/">Research</a> · <a href="/brand/">Brand</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
   <span>Apache-2.0. Local-first. No telemetry.</span>
 </div></footer>
 </body>

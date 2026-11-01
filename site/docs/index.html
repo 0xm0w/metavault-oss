@@ -1,15 +1,15 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Docs â€” OpenVault</title>
+<title>Docs — OpenVault</title>
+<link rel="stylesheet" href="/assets/style.css">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/brand/site.webmanifest">
 <meta name="theme-color" content="#0a0a0a">
-<link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
 <nav><div class="nav-in">
@@ -48,11 +48,11 @@ openvault add stripe --scope charges.read</code></pre>
     }
   }
 }</code></pre>
-    <p>Tools exposed (exactly five): <code>request_capability</code>, <code>list_aliases</code> (aliases + ceilings only), <code>request_enrollment</code>, <code>enrollment_status</code>, <code>revoke</code>. There is deliberately no approve tool â€” approval belongs to the human, in the app. An agent that tries to approve its own request over the daemon HTTP API gets a 401; those routes require the daemon token, which only the app and CLI hold.</p>
+    <p>Tools exposed (exactly five): <code>request_capability</code>, <code>list_aliases</code> (aliases + ceilings only), <code>request_enrollment</code>, <code>enrollment_status</code>, <code>revoke</code>. There is deliberately no approve tool — approval belongs to the human, in the app. An agent that tries to approve its own request over the daemon HTTP API gets a 401; those routes require the daemon token, which only the app and CLI hold.</p>
     <p>Copy-paste host configs for <strong>Claude Code, Cursor, VS Code, Codex and OpenCode</strong> (each with its own <code>OPENVAULT_AGENT_ID</code>) live in <code>docs/MCP.md</code> in the repo. Hosts launch <code>node dist/packages/mcp/src/server.js</code> (or the packaged <code>openvault-mcp</code> bin); the server reads <code>OPENVAULT_DAEMON_URL</code> (default <code>http://127.0.0.1:7077</code>), <code>OPENVAULT_AGENT_ID</code> and <code>OPENVAULT_IDE</code>.</p>
 
     <h2 id="flows">Agent flows (real screenshots)</h2>
-    <p>Every screenshot below is the real running app against a real daemon, seeded with a fake test credential â€” never a real secret. Full-size copies live in <code>docs/verification/</code> in the repo.</p>
+    <p>Every screenshot below is the real running app against a real daemon, seeded with a fake test credential — never a real secret. Full-size copies live in <code>docs/verification/</code> in the repo.</p>
 
     <h3>1. Agent asks to save a key (enrollment)</h3>
     <ol>
@@ -67,27 +67,27 @@ openvault add stripe --scope charges.read</code></pre>
     <ol>
       <li>The agent calls <code>request_capability</code>; deterministic policy checks the ceiling first, then the warden scores metadata only.</li>
       <li>The request parks in the Approval view with the agent, scope, reason, warden risk and explanation, and a 60-second expiry.</li>
-      <li>You choose <strong>Approve once</strong> (single execution), <strong>Always allow</strong> (standing approval â€” read-only, low-risk only; writes always ask), or <strong>Deny</strong>.</li>
+      <li>You choose <strong>Approve once</strong> (single execution), <strong>Always allow</strong> (standing approval — read-only, low-risk only; writes always ask), or <strong>Deny</strong>.</li>
       <li>On approval, vaultd injects the credential into that one call inside the daemon and returns only the tool result. The grant then expires.</li>
     </ol>
-    <figure class="shot"><img src="/assets/shots/approval-dialog.png" alt="Approval view: cursor-agent wants charges.read on stripe, LOW RISK marshal assessment, Approve once, Deny and Always allow buttons"><figcaption>Approval: risk, scope and the warden explanation are shown before you decide. Buttons: Approve once Â· Deny Â· Always allow.</figcaption></figure>
+    <figure class="shot"><img src="/assets/shots/approval-dialog.png" alt="Approval view: cursor-agent wants charges.read on stripe, LOW RISK marshal assessment, Approve once, Deny and Always allow buttons"><figcaption>Approval: risk, scope and the warden explanation are shown before you decide. Buttons: Approve once · Deny · Always allow.</figcaption></figure>
 
     <h3>3. Audit: the warden verdict, per request</h3>
-    <p>The Audit view groups every event by request. Expanding a row shows the verification timeline â€” requested â†’ marshal â†’ policy â†’ approved/denied â†’ executed â€” with the marshal explanation, recommended scope, latency, decision source (<code>policy</code> / <code>marshal</code> / <code>marshal+policy</code> / <code>human</code>) and the model named. No secret ever appears in a row; a canary test enforces that in CI.</p>
+    <p>The Audit view groups every event by request. Expanding a row shows the verification timeline — requested → marshal → policy → approved/denied → executed — with the marshal explanation, recommended scope, latency, decision source (<code>policy</code> / <code>marshal</code> / <code>marshal+policy</code> / <code>human</code>) and the model named. No secret ever appears in a row; a canary test enforces that in CI.</p>
     <figure class="shot"><img src="/assets/shots/audit-verdict.png" alt="Audit view with one request expanded: Requested, Marshal, Policy, Approved and Executed stages with explanation, recommended scope, latency and decision sources"><figcaption>Audit: one expanded request showing the full warden verdict timeline.</figcaption></figure>
 
     <h3>4. Settings: choose who judges</h3>
-    <p>Settings picks the warden provider, model and effort (next section). The Meta API key field is empty in the shot, as it always is after saving â€” the status line shows only <code>Configured â€¢â€¢â€¢â€¢last4</code>.</p>
-    <figure class="shot"><img src="/assets/shots/settings.png" alt="Settings view: Warden provider radios (None, Local Ollama, Meta API cloud), Ollama model select, effort options"><figcaption>Settings: provider, model and effort. Changing them changes who judges â€” never the policy rules.</figcaption></figure>
+    <p>Settings picks the warden provider, model and effort (next section). The Meta API key field is empty in the shot, as it always is after saving — the status line shows only <code>Configured ••••last4</code>.</p>
+    <figure class="shot"><img src="/assets/shots/settings.png" alt="Settings view: Warden provider radios (None, Local Ollama, Meta API cloud), Ollama model select, effort options"><figcaption>Settings: provider, model and effort. Changing them changes who judges — never the policy rules.</figcaption></figure>
 
     <h2 id="settings">Settings &amp; the warden</h2>
     <ul>
-      <li><b>Warden provider</b> â€” <code>None (policy only)</code>, <code>Local â€” Ollama</code>, or <code>Meta API (cloud)</code>. Meta API sends request metadata (agent, alias, scope, reason â€” never secrets) off-device; the Settings copy says so plainly.</li>
-      <li><b>Model</b> â€” for Ollama, pick from the catalogue below (or type any model id); for Meta API, type the API model id and, if needed, edit the base URL (default <code>https://api.llama.com/v1</code>).</li>
-      <li><b>Effort</b> â€” <code>Fast</code>: one marshal pass, 10s timeout. <code>Standard</code>: one pass, 30s. <code>Deep</code>: two passes (assess + verify), 60s; if the passes disagree it escalates to you and keeps the narrower scope. Effort never changes policy ceilings.</li>
-      <li><b>Meta API key</b> â€” paste once, Save, and the field clears. Status shows only <code>Not configured</code> or <code>Configured â€¢â€¢â€¢â€¢last4</code>. The key is stored as an ordinary encrypted credential and decrypted only inside the daemon at call time. <b>Test connection</b> runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.</li>
-      <li><b>Daemon</b> â€” read-only daemon URL, vault path and version, plus restart guidance. Settings apply on the next request; no daemon restart is needed.</li>
-      <li><b>Security defaults</b> â€” a read-only summary of the policy floor with a jump to Policies. Editing policy stays on the Policies view.</li>
+      <li><b>Warden provider</b> — <code>None (policy only)</code>, <code>Local — Ollama</code>, or <code>Meta API (cloud)</code>. Meta API sends request metadata (agent, alias, scope, reason — never secrets) off-device; the Settings copy says so plainly.</li>
+      <li><b>Model</b> — for Ollama, pick from the catalogue below (or type any model id); for Meta API, type the API model id and, if needed, edit the base URL (default <code>https://api.llama.com/v1</code>).</li>
+      <li><b>Effort</b> — <code>Fast</code>: one marshal pass, 10s timeout. <code>Standard</code>: one pass, 30s. <code>Deep</code>: two passes (assess + verify), 60s; if the passes disagree it escalates to you and keeps the narrower scope. Effort never changes policy ceilings.</li>
+      <li><b>Meta API key</b> — paste once, Save, and the field clears. Status shows only <code>Not configured</code> or <code>Configured ••••last4</code>. The key is stored as an ordinary encrypted credential and decrypted only inside the daemon at call time. <b>Test connection</b> runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.</li>
+      <li><b>Daemon</b> — read-only daemon URL, vault path and version, plus restart guidance. Settings apply on the next request; no daemon restart is needed.</li>
+      <li><b>Security defaults</b> — a read-only summary of the policy floor with a jump to Policies. Editing policy stays on the Policies view.</li>
     </ul>
 
     <h2 id="cli">CLI</h2>
@@ -98,29 +98,29 @@ openvault revoke &lt;agent-or-alias&gt;        # kill pending + future grants
 openvault model pull                       # fetch/upgrade the warden model</code></pre>
 
     <h2 id="levels">LLM Security Levels</h2>
-    <p>The vault is secure at every level â€” deterministic policy ceilings, single-use expiring grants, and human approval cannot be overridden by any model. Higher levels buy judgement, not permission. These tiers are exactly the warden catalogue the daemon and Settings use (<code>OLLAMA_MODELS</code> plus the Meta API provider):</p>
+    <p>The vault is secure at every level — deterministic policy ceilings, single-use expiring grants, and human approval cannot be overridden by any model. Higher levels buy judgement, not permission. These tiers are exactly the warden catalogue the daemon and Settings use (<code>OLLAMA_MODELS</code> plus the Meta API provider):</p>
     <ul>
-      <li><b>Policy only</b> â€” provider <code>none</code>. No model judges; deterministic policy alone decides and anything needing approval comes to you. Audit records <code>decisionSource: policy</code>.</li>
-      <li><b>Medium</b> â€” <code>llama3.2:3b</code> via Ollama, on-device (default; runs well on an 8 GB GPU). Risk labels, scope recommendations, one-line explanations.</li>
-      <li><b>High</b> â€” <code>llama3.1:8b</code> via Ollama, on-device. Stronger judgement on the same metadata.</li>
-      <li><b>Maximum-local</b> â€” <code>llama3.3:70b</code> via Ollama, on-device (large-GPU machines). The strongest local warden; nothing leaves the machine.</li>
-      <li><b>Meta API (cloud)</b> â€” any Meta API model id via <code>https://api.llama.com/v1</code> (base URL editable in Settings). Frontier reasoning over request metadata only â€” never keys. Opt-in.</li>
+      <li><b>Policy only</b> — provider <code>none</code>. No model judges; deterministic policy alone decides and anything needing approval comes to you. Audit records <code>decisionSource: policy</code>.</li>
+      <li><b>Medium</b> — <code>llama3.2:3b</code> via Ollama, on-device (default; runs well on an 8 GB GPU). Risk labels, scope recommendations, one-line explanations.</li>
+      <li><b>High</b> — <code>llama3.1:8b</code> via Ollama, on-device. Stronger judgement on the same metadata.</li>
+      <li><b>Maximum-local</b> — <code>llama3.3:70b</code> via Ollama, on-device (large-GPU machines). The strongest local warden; nothing leaves the machine.</li>
+      <li><b>Meta API (cloud)</b> — any Meta API model id via <code>https://api.llama.com/v1</code> (base URL editable in Settings). Frontier reasoning over request metadata only — never keys. Opt-in.</li>
     </ul>
     <p>Effort is orthogonal to the tier: <code>Fast</code> (1 pass / 10s), <code>Standard</code> (1 pass / 30s), <code>Deep</code> (2 passes / 60s, disagreement escalates and keeps the narrower scope). No tier or effort setting can widen a scope past its policy ceiling.</p>
     <p>Measured on the reference machine: live marshal call ~1.9 s warm; eval safety 100% at every level (see <a href="/architecture/">Architecture</a>).</p>
 
     <h2 id="tripwire">Tripwires (auto-revocation)</h2>
     <ul>
-      <li><b>After use</b> â€” every grant is single-purpose and expires the moment the call completes.</li>
-      <li><b>After TTL</b> â€” pending approvals die in 60 seconds by default; standing approvals can carry their own TTL.</li>
-      <li><b>After event</b> â€” one click (or one CLI command, or one MCP <code>revoke</code>) cancels pending grants and blocks all future ones for that agent or credential, effective immediately.</li>
+      <li><b>After use</b> — every grant is single-purpose and expires the moment the call completes.</li>
+      <li><b>After TTL</b> — pending approvals die in 60 seconds by default; standing approvals can carry their own TTL.</li>
+      <li><b>After event</b> — one click (or one CLI command, or one MCP <code>revoke</code>) cancels pending grants and blocks all future ones for that agent or credential, effective immediately.</li>
     </ul>
 
     <h2 id="logs">Request Logs</h2>
-    <p>The Audit view (and <code>openvault audit</code>) shows the full timeline per request: agent â†’ scope â†’ marshal assessment (model named) â†’ policy â†’ your decision â†’ executed/expired/revoked. If it happened, it is in the log; if it is in the log, it contains no secret â€” the canary test enforces that in CI.</p>
+    <p>The Audit view (and <code>openvault audit</code>) shows the full timeline per request: agent → scope → marshal assessment (model named) → policy → your decision → executed/expired/revoked. If it happened, it is in the log; if it is in the log, it contains no secret — the canary test enforces that in CI.</p>
 
     <h2 id="policies">Policies</h2>
-    <p>Per-alias ceilings cap what any agent can ever receive (e.g. <code>stripe â†’ charges.read</code>). A requested write under a read ceiling is denied outright. "Always allow" creates a standing approval only for read-only, warden-rated low-risk scopes; writes ask every time. Standing approvals live in daemon memory and clear on restart â€” fail-safe by design.</p>
+    <p>Per-alias ceilings cap what any agent can ever receive (e.g. <code>stripe → charges.read</code>). A requested write under a read ceiling is denied outright. "Always allow" creates a standing approval only for read-only, warden-rated low-risk scopes; writes ask every time. Standing approvals live in daemon memory and clear on restart — fail-safe by design.</p>
 
     <h2 id="oss">Open source readiness</h2>
     <p>Apache-2.0. 268 automated tests, strict TypeScript, lint-gated Effect discipline in the daemon core, a canary secrecy test that fails the build on any leak, and public <code>CONTRIBUTING.md</code> / <code>SECURITY.md</code> in the repo. macOS packaging is parked; Windows is the supported platform today.</p>
@@ -128,8 +128,8 @@ openvault model pull                       # fetch/upgrade the warden model</cod
 </div>
 
 <footer><div class="wrap foot">
-  <span>OPENVAULT â€” agents never see your secrets.</span>
-  <span><a href="/">Home</a> Â· <a href="/architecture/">Architecture</a> Â· <a href="/research/">Research</a> Â· <a href="/brand/">Brand</a> Â· <a href="/hackathon/">Hackathon</a> Â· <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
+  <span>OPENVAULT — agents never see your secrets.</span>
+  <span><a href="/">Home</a> · <a href="/architecture/">Architecture</a> · <a href="/research/">Research</a> · <a href="/brand/">Brand</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
   <span>Apache-2.0. Local-first. No telemetry.</span>
 </div></footer>
 </body>
