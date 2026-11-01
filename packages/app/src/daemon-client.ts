@@ -41,6 +41,8 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "PATCH", path: "/settings/local-auth" },
   { method: "POST", path: "/settings/local-auth/pin" },
   { method: "POST", path: "/settings/local-auth/verify" },
+  { method: "GET", path: "/settings/security" },
+  { method: "PATCH", path: "/settings/security" },
 ];
 
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(

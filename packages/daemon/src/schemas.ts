@@ -24,6 +24,8 @@ export const CapabilityRequestSchema = Schema.Struct({
   alias: SafeIdentifier,
   requestedScope: SafeIdentifier,
   reason: SafeText,
+  agentToken: Schema.optional(Schema.String),
+  clientPid: Schema.optional(Schema.Number),
 });
 
 export const GrantIdSchema = Schema.Struct({ grantId: SafeIdentifier });
@@ -68,6 +70,14 @@ export const UpdateCredentialSchema = Schema.Struct({
 // Response contract for GET /policies: enforced ceilings (alias -> scope
 // ceiling) plus current standing approvals. Metadata only by construction —
 // no secret values, no ciphertext, no credential material of any kind.
+export const AgentRecordSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  token: Schema.String,
+  createdAt: Schema.String,
+  revoked: Schema.Boolean,
+});
+
 export const PoliciesResponseSchema = Schema.Struct({
   ceilings: Schema.Record({ key: Schema.String, value: Schema.String }),
   standingApprovals: Schema.Array(
@@ -77,4 +87,15 @@ export const PoliciesResponseSchema = Schema.Struct({
       scope: Schema.String,
     }),
   ),
+  agents: Schema.optional(Schema.Array(AgentRecordSchema)),
+});
+
+export const AgentSecuritySettingsSchema = Schema.Struct({
+  strictMode: Schema.Boolean,
+  verifyCallerProcess: Schema.Boolean,
+});
+
+export const AgentSecuritySettingsPatchSchema = Schema.Struct({
+  strictMode: Schema.optional(Schema.Boolean),
+  verifyCallerProcess: Schema.optional(Schema.Boolean),
 });

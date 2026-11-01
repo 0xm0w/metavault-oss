@@ -36,6 +36,14 @@ describe("evaluatePolicy", () => {
     const d = { risk: "low" as const, recommendedScope: "charges.read", requireApproval: true, explanation: "x" };
     expect(evaluatePolicy(req, d, c2, 0).requireApproval).toBe(false);
   });
+  it("standing approval with verifiedOnly never applies to unverified or spoofed requests", () => {
+    const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read", verifiedOnly: true }] };
+    const d = { risk: "low" as const, recommendedScope: "charges.read", requireApproval: true, explanation: "x" };
+    const spoofedReq = { ...req, verified: false };
+    expect(evaluatePolicy(spoofedReq, d, c2, 0).requireApproval).toBe(true);
+    const verifiedReq = { ...req, verified: true };
+    expect(evaluatePolicy(verifiedReq, d, c2, 0).requireApproval).toBe(false);
+  });
   it("standing approval does not apply when risk is not low", () => {
     const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
     const d = { risk: "medium" as const, recommendedScope: "charges.read", requireApproval: false, explanation: "x" };

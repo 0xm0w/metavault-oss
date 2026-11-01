@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   CapabilityRequestLike,
   DeeplinkAddParams,
+  AgentSecuritySettingsPatchLike,
   LocalAuthPatchLike,
   BuiltinAiProgressLike,
   UpdaterStatusLike,
@@ -72,6 +73,8 @@ const api: VaultApi = {
   testWarden: () => invoke("POST", "/settings/warden/test"),
   getLocalAuthStatus: () => invoke("GET", "/settings/local-auth"),
   updateLocalAuthSettings: (patch: LocalAuthPatchLike) => invoke("PATCH", "/settings/local-auth", patch),
+  getAgentSecuritySettings: () => invoke("GET", "/settings/security"),
+  updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => invoke("PATCH", "/settings/security", patch),
   setLocalPin: (pin: string, currentPin?: string) =>
     invoke("POST", "/settings/local-auth/pin", { pin, ...(currentPin !== undefined && currentPin !== "" ? { currentPin } : {}) }),
   verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),

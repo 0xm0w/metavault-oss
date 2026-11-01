@@ -2,7 +2,7 @@ import type { CapabilityRequest, MarshalDecision } from "./types.js";
 
 export interface PolicyConfig {
   ceilings: Record<string, string>;
-  standingApprovals: { agentId: string; alias: string; scope: string }[];
+  standingApprovals: { agentId: string; alias: string; scope: string; verifiedOnly?: boolean }[];
   rateLimitPerHour: number;
 }
 
@@ -145,7 +145,9 @@ export function evaluatePolicy(
     clamped = true;
   }
 
+
   const hasStandingApproval =
+
     decision !== null &&
     decision.risk === "low" &&
     !isWriteScope(allowedScope) &&
@@ -153,7 +155,8 @@ export function evaluatePolicy(
       (approval) =>
         approval.agentId === req.agentId &&
         approval.alias === req.alias &&
-        approval.scope === allowedScope,
+        approval.scope === allowedScope &&
+        (!approval.verifiedOnly || req.verified === true),
     );
 
   let requireApproval: boolean;

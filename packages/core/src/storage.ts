@@ -1,7 +1,8 @@
+import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
-import { DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, type LocalAuthRecord, type WardenSettings } from "./settings.js";
+import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
 import type { AuditEvent, DecisionSource, Risk } from "./types.js";
 
 export interface CredentialRecord {
@@ -14,6 +15,14 @@ export interface CredentialMeta {
   readonly alias: string;
   readonly scopeCeiling: string;
   readonly website: string;
+}
+
+export interface AgentRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly token: string;
+  readonly createdAt: string;
+  readonly revoked: boolean;
 }
 
 export interface VaultStoreService {
@@ -41,6 +50,13 @@ export interface VaultStoreService {
   readonly setWardenSettings: (settings: WardenSettings) => Effect.Effect<void, StorageError>;
   readonly getLocalAuthRecord: () => Effect.Effect<LocalAuthRecord, StorageError>;
   readonly setLocalAuthRecord: (record: LocalAuthRecord) => Effect.Effect<void, StorageError>;
+  readonly getAgentSecuritySettings: () => Effect.Effect<AgentSecuritySettings, StorageError>;
+  readonly setAgentSecuritySettings: (settings: AgentSecuritySettings) => Effect.Effect<void, StorageError>;
+  readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
+  readonly getAgent: (id: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
+  readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
+  readonly addAgent: (id: string, name: string, token: string) => Effect.Effect<void, StorageError>;
+  readonly revokeAgent: (id: string) => Effect.Effect<void, StorageError>;
 }
 
 export class VaultStore extends Context.Tag("VaultStore")<VaultStore, VaultStoreService>() {}
@@ -93,6 +109,17 @@ interface AuditRow {
   readonly decision_source: string | null;
   readonly latency_ms: number | null;
   readonly explanation: string | null;
+  readonly verified: number | null;
+  readonly client_pid: number | null;
+  readonly client_process: string | null;
+}
+
+interface AgentRow {
+  readonly id: string;
+  readonly name: string;
+  readonly token: string;
+  readonly created_at: string;
+  readonly revoked: number;
 }
 
 function toStorageError(operation: string) {
@@ -113,6 +140,11 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
        alias TEXT PRIMARY KEY,
        ceiling TEXT NOT NULL,
        ciphertext TEXT NOT NULL
+     );
+     CREATE TABLE IF NOT EXISTS agent_security_settings (
+       id INTEGER PRIMARY KEY CHECK (id = 1),
+       strict_mode INTEGER NOT NULL DEFAULT 0,
+       verify_caller_process INTEGER NOT NULL DEFAULT 0
      );
      CREATE TABLE IF NOT EXISTS warden_settings (
        id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -139,7 +171,15 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
        scope TEXT NOT NULL,
        stage TEXT NOT NULL,
        detail TEXT NOT NULL,
-       model_id TEXT
+       model_id TEXT,
+       verified INTEGER
+     );
+     CREATE TABLE IF NOT EXISTS agents (
+       id TEXT PRIMARY KEY,
+       name TEXT NOT NULL,
+       token TEXT NOT NULL UNIQUE,
+       created_at TEXT NOT NULL,
+       revoked INTEGER NOT NULL DEFAULT 0
      );`,
   );
   const cols = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
@@ -154,6 +194,9 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     decision_source: "TEXT",
     latency_ms: "REAL",
     explanation: "TEXT",
+    verified: "INTEGER",
+    client_pid: "INTEGER",
+    client_process: "TEXT",
   };
   for (const [name, def] of Object.entries(auditColumnDefs)) {
     if (!auditCols.some((c) => c.name === name)) {
@@ -177,7 +220,40 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     "SELECT alias FROM credentials ORDER BY alias ASC",
   );
   const insertAudit = db.prepare(
-    "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  const countAgents = db.prepare("SELECT count(*) as count FROM agents").get() as { count: number };
+  if (countAgents.count === 0) {
+    const seedAgent = db.prepare(
+      "INSERT INTO agents (id, name, token, created_at, revoked) VALUES (?, ?, ?, ?, 0)",
+    );
+    const now = new Date().toISOString();
+    seedAgent.run("cursor", "Cursor", "ov_agent_cursor_" + randomBytes(16).toString("hex"), now);
+    seedAgent.run("claude-code", "Claude Code", "ov_agent_claude_" + randomBytes(16).toString("hex"), now);
+    seedAgent.run("vscode", "VS Code", "ov_agent_vscode_" + randomBytes(16).toString("hex"), now);
+    seedAgent.run("codex", "Codex", "ov_agent_codex_" + randomBytes(16).toString("hex"), now);
+  }
+  const selectAllAgents = db.prepare(
+    "SELECT id, name, token, created_at, revoked FROM agents ORDER BY id ASC",
+  );
+  const selectAgentById = db.prepare(
+    "SELECT id, name, token, created_at, revoked FROM agents WHERE id = ?",
+  );
+  const selectAgentByToken = db.prepare(
+    "SELECT id, name, token, created_at, revoked FROM agents WHERE token = ?",
+  );
+  const insertAgent = db.prepare(
+    "INSERT OR REPLACE INTO agents (id, name, token, created_at, revoked) VALUES (?, ?, ?, ?, ?)",
+  );
+  const revokeAgentStmt = db.prepare(
+    "UPDATE agents SET revoked = 1 WHERE id = ?",
+  );
+
+  const upsertSecuritySettings = db.prepare(
+    "INSERT INTO agent_security_settings (id, strict_mode, verify_caller_process) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET strict_mode = excluded.strict_mode, verify_caller_process = excluded.verify_caller_process"
+  );
+  const selectSecuritySettings = db.prepare(
+    "SELECT strict_mode, verify_caller_process FROM agent_security_settings WHERE id = 1"
   );
   const upsertSettings = db.prepare(
     "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url",
@@ -202,7 +278,7 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     "SELECT provider, model, effort, meta_api_base_url FROM warden_settings WHERE id = 1",
   );
   const selectAudit = db.prepare(
-    "SELECT ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation FROM audit ORDER BY rowid ASC",
+    "SELECT ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process FROM audit ORDER BY rowid ASC",
   );
 
   return {
@@ -256,7 +332,7 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     appendAudit: (e) =>
       Effect.try({
         try: () => {
-          insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null, e.requestId ?? null, e.risk ?? null, e.recommendedScope ?? null, e.decisionSource ?? null, e.latencyMs ?? null, e.explanation ?? null);
+          insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null, e.requestId ?? null, e.risk ?? null, e.recommendedScope ?? null, e.decisionSource ?? null, e.latencyMs ?? null, e.explanation ?? null, (e.verified === undefined ? null : e.verified ? 1 : 0), e.clientPid ?? null, e.clientProcess ?? null);
         },
         catch: toStorageError("appendAudit"),
       }),
@@ -281,10 +357,33 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
             if (row.decision_source !== null) event = { ...event, decisionSource: row.decision_source as DecisionSource };
             if (row.latency_ms !== null) event = { ...event, latencyMs: row.latency_ms };
             if (row.explanation !== null) event = { ...event, explanation: row.explanation };
+            if (row.verified !== null) event = { ...event, verified: row.verified === 1 };
+            if (row.client_pid !== null) event = { ...event, clientPid: row.client_pid };
+            if (row.client_process !== null) event = { ...event, clientProcess: row.client_process };
             return event;
           });
         },
         catch: toStorageError("listAudit"),
+      }),
+
+    getAgentSecuritySettings: () =>
+      Effect.try({
+        try: () => {
+          const row = selectSecuritySettings.get() as { strict_mode: number; verify_caller_process: number } | undefined;
+          if (row === undefined) return { ...DEFAULT_AGENT_SECURITY_SETTINGS };
+          return {
+            strictMode: Boolean(row.strict_mode),
+            verifyCallerProcess: Boolean(row.verify_caller_process),
+          };
+        },
+        catch: toStorageError("getAgentSecuritySettings"),
+      }),
+    setAgentSecuritySettings: (settings) =>
+      Effect.try({
+        try: () => {
+          upsertSecuritySettings.run(settings.strictMode ? 1 : 0, settings.verifyCallerProcess ? 1 : 0);
+        },
+        catch: toStorageError("setAgentSecuritySettings"),
       }),
     getWardenSettings: () =>
       Effect.try({
@@ -344,6 +443,66 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
           upsertSettings.run(settings.provider, settings.model, settings.effort, settings.metaApiBaseUrl);
         },
         catch: toStorageError("setWardenSettings"),
+      }),
+    listAgents: () =>
+      Effect.try({
+        try: () => {
+          const rows = selectAllAgents.all() as AgentRow[];
+          return rows.map((r): AgentRecord => ({
+            id: r.id,
+            name: r.name,
+            token: r.token,
+            createdAt: r.created_at,
+            revoked: r.revoked === 1,
+          }));
+        },
+        catch: toStorageError("listAgents"),
+      }),
+    getAgent: (id) =>
+      Effect.try({
+        try: () => {
+          const row = selectAgentById.get(id) as AgentRow | undefined;
+          return row === undefined
+            ? undefined
+            : {
+                id: row.id,
+                name: row.name,
+                token: row.token,
+                createdAt: row.created_at,
+                revoked: row.revoked === 1,
+              };
+        },
+        catch: toStorageError("getAgent"),
+      }),
+    getAgentByToken: (token) =>
+      Effect.try({
+        try: () => {
+          const row = selectAgentByToken.get(token) as AgentRow | undefined;
+          return row === undefined
+            ? undefined
+            : {
+                id: row.id,
+                name: row.name,
+                token: row.token,
+                createdAt: row.created_at,
+                revoked: row.revoked === 1,
+              };
+        },
+        catch: toStorageError("getAgentByToken"),
+      }),
+    addAgent: (id, name, token) =>
+      Effect.try({
+        try: () => {
+          insertAgent.run(id, name, token, new Date().toISOString(), 0);
+        },
+        catch: toStorageError("addAgent"),
+      }),
+    revokeAgent: (id) =>
+      Effect.try({
+        try: () => {
+          revokeAgentStmt.run(id);
+        },
+        catch: toStorageError("revokeAgent"),
       }),
   };
 }

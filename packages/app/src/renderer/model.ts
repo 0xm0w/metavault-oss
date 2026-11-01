@@ -7,6 +7,7 @@ import type {
   DeeplinkAddParams,
   PendingApproval,
   PoliciesData,
+  RegisteredAgent,
   Risk,
   SecurityPostureCheckLike,
   SecurityPostureIssueLike,
@@ -71,7 +72,7 @@ export function isReadOnlyScope(scope: string): boolean {
 // "Always allow" creates a standing approval, so it is offered only where
 // the daemon will accept one: read-only scope, marshal-rated low risk.
 export function canAlwaysAllow(approval: PendingApproval): boolean {
-  return approval.risk === "low" && isReadOnlyScope(approval.allowedScope);
+  return approval.risk === "low" && isReadOnlyScope(approval.allowedScope) && approval.verified !== false;
 }
 
 export function formatExpiry(expiresAtMs: number, nowMs: number): string {
@@ -427,7 +428,22 @@ export function projectPoliciesResponse(raw: unknown): PoliciesData {
       standingApprovals.push(projected);
     }
   }
-  return { ceilings, standingApprovals };
+  const agentsRaw = raw["agents"];
+  const agents: RegisteredAgent[] = [];
+  if (Array.isArray(agentsRaw)) {
+    for (const item of agentsRaw as unknown[]) {
+      if (isRecord(item) && typeof item["id"] === "string" && typeof item["name"] === "string" && typeof item["token"] === "string") {
+        agents.push({
+          id: item["id"],
+          name: item["name"],
+          token: item["token"],
+          createdAt: typeof item["createdAt"] === "string" ? item["createdAt"] : "",
+          revoked: Boolean(item["revoked"]),
+        });
+      }
+    }
+  }
+  return { ceilings, standingApprovals, ...(agents.length > 0 ? { agents } : {}) };
 }
 
 export function projectCredentialsResponse(raw: unknown): CredentialMeta[] {
@@ -553,6 +569,7 @@ export interface CeilingEntry {
 export interface EnrichedPolicyRow extends PolicyRow {
   readonly ceilings: readonly CeilingEntry[];
   readonly standingApprovals: readonly StandingApproval[];
+  readonly verified?: boolean;
 }
 
 // Policies view rows built from real daemon policy state: observed scopes,
