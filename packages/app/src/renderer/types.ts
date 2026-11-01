@@ -87,7 +87,7 @@ export interface DeeplinkAddParams {
   readonly enrollmentId: string;
 }
 
-export type WardenProvider = "none" | "ollama" | "meta-api";
+export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin";
 export type WardenEffort = "fast" | "standard" | "deep";
 
 export interface WardenSettingsLike {
@@ -178,6 +178,16 @@ export interface LocalAuthPatchLike {
   readonly autoLockMinutes?: number;
 }
 
+export interface WindowsHelloAvailabilityResult {
+  readonly available: boolean;
+  readonly reason: "available" | "not-configured" | "unavailable" | "failed";
+}
+
+export interface WindowsHelloVerifyResult {
+  readonly ok: boolean;
+  readonly reason: "verified" | "canceled" | "not-configured" | "unavailable" | "failed";
+}
+
 export interface UpdaterStatusLike {
   readonly status:
     | "idle"
@@ -190,6 +200,26 @@ export interface UpdaterStatusLike {
   readonly version?: string;
   readonly percent?: number;
   readonly message?: string;
+}
+
+
+export interface BuiltinAiProgressLike {
+  readonly state: "idle" | "downloading" | "verifying" | "completed" | "error" | "cancelled";
+  readonly percent: number;
+  readonly downloadedBytes: number;
+  readonly totalBytes: number;
+  readonly speedBytesPerSec: number;
+  readonly error?: string;
+}
+
+export interface BuiltinAiStatusLike {
+  readonly resolverStatus: {
+    readonly state: "bundled" | "cached" | "missing";
+    readonly modelId: string;
+    readonly path: string | null;
+    readonly requiredBytes: number;
+  };
+  readonly downloadStatus: BuiltinAiProgressLike | null;
 }
 
 // The whole preload bridge surface: daemon API calls only, nothing else.
@@ -219,10 +249,16 @@ export interface VaultApi {
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
   readonly verifyLocalPin: (pin: string) => Promise<unknown>;
   readonly verifyBiometric: () => Promise<unknown>;
+  readonly windowsHelloAvailability: () => Promise<WindowsHelloAvailabilityResult>;
+  readonly verifyWindowsHello: (purpose: "setup" | "unlock") => Promise<WindowsHelloVerifyResult>;
   readonly bringToFront: () => void;
   readonly checkForUpdates: () => Promise<unknown>;
   readonly quitAndInstallUpdate: () => Promise<unknown>;
   readonly onUpdaterStatus: (handler: (status: UpdaterStatusLike) => void) => () => void;
+  readonly getBuiltinAiStatus: () => Promise<BuiltinAiStatusLike>;
+  readonly startBuiltinAiDownload: () => Promise<boolean>;
+  readonly cancelBuiltinAiDownload: () => Promise<boolean>;
+  readonly onBuiltinAiProgress: (handler: (progress: BuiltinAiProgressLike) => void) => () => void;
 }
 
 declare global {

@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "pack:win": "electron-builder --win",
-    "pack:mac": "electron-builder --mac"
+    "pack:mac": "electron-builder --mac",
+    "pack:win:ai": "electron-builder --win -c.extraResources[0].from=models -c.extraResources[0].to=models -c.artifactName=OpenVault--with-ai--."
   },
   "build": {
     "appId": "dev.openvault.app",

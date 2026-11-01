@@ -9,6 +9,7 @@ import {
 import { isWriteScope } from "../../core/src/policy.js";
 import type { WardenSettings } from "../../core/src/settings.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
+import { requestBuiltinDecision } from "./builtin.js";
 import { requestMetaApiDecision } from "./meta-api.js";
 import { DEFAULT_MARSHAL_MODEL, requestOllamaDecision } from "./ollama.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
@@ -29,6 +30,15 @@ export {
   requestMetaApiDecision,
   type MetaApiRequest,
 } from "./meta-api.js";
+export {
+  BUILTIN_MODELS,
+  DEFAULT_BUILTIN_MODEL,
+  getBuiltinInferenceHandler,
+  requestBuiltinDecision,
+  setBuiltinInferenceHandler,
+  type BuiltinInferenceHandler,
+  type BuiltinModelInfo,
+} from "./builtin.js";
 export type { WardenSettings } from "../../core/src/settings.js";
 
 export interface BrainService {
@@ -152,6 +162,9 @@ function singlePass(
               timeoutMs,
             ),
     ).pipe(Effect.provide(FetchHttpClient.layer));
+  }
+  if (settings.provider === "builtin") {
+    return requestBuiltinDecision(settings.model, prompt, timeoutMs);
   }
   if (settings.provider === "none") {
     return Effect.fail(

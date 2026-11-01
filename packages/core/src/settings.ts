@@ -3,8 +3,10 @@ import { Schema } from "effect";
 // Warden (marshal) configuration persisted by the daemon. This record holds
 // provider/model/effort/base-URL only — never a raw API key. The Meta API key
 // lives as an ordinary encrypted credential under WARDEN_KEY_ALIAS.
+export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin";
+
 export interface WardenSettings {
-  readonly provider: "none" | "ollama" | "meta-api";
+  readonly provider: WardenProvider;
   readonly model: string;
   readonly effort: "fast" | "standard" | "deep";
   readonly metaApiBaseUrl: string;
@@ -17,8 +19,10 @@ export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
   metaApiBaseUrl: "https://api.llama.com/v1",
 };
 
+export const DEFAULT_BUILTIN_MODEL = "llama3.2:1b";
+
 export const WardenSettingsSchema = Schema.Struct({
-  provider: Schema.Literal("none", "ollama", "meta-api"),
+  provider: Schema.Literal("none", "ollama", "meta-api", "builtin"),
   model: Schema.String,
   effort: Schema.Literal("fast", "standard", "deep"),
   metaApiBaseUrl: Schema.String,

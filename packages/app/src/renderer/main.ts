@@ -43,6 +43,8 @@ import {
   projectLocalAuthStatus,
   shouldPromptPinSetupOnEnable,
   shouldLockOnLaunch,
+  isBiometricsActive,
+  localAuthFactorLabel,
   shouldRequireAuthForApproval,
   shouldRequireAuthForSettings,
   isAutoLockDue,
@@ -58,6 +60,8 @@ import type {
   PoliciesData,
   SecurityPostureReportLike,
   LocalAuthStatusLike,
+  BuiltinAiProgressLike,
+  BuiltinAiStatusLike,
   UpdaterStatusLike,
   WardenKeyStatusLike,
   WardenSettingsLike,
@@ -114,7 +118,10 @@ let wardenDirty = false;
 let settingsKeyDraft = "";
 let settingsBusy = false;
 let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
+let localAuthNotice: { readonly text: string; readonly ok: boolean } | null = null;
 let updaterStatus: UpdaterStatusLike = { status: "idle" };
+let builtinAiStatus: BuiltinAiStatusLike | null = null;
+let builtinAiProgress: BuiltinAiProgressLike | null = null;
 type SettingsTab = "general" | "warden" | "daemon" | "security";
 let settingsOpen = false;
 let settingsTab: SettingsTab = "general";
@@ -228,6 +235,8 @@ function updateMarshalLine(): void {
       line.textContent = "Marshal \u00B7 Off \u00B7 Policy only";
     } else if (wardenDraft.provider === "meta-api") {
       line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Meta API (cloud)`;
+    } else if (wardenDraft.provider === "builtin") {
+      line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Built-in (WebGPU)`;
     } else {
       line.textContent = marshalStatusLine(wardenDraft.model);
     }
@@ -344,7 +353,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
       void runAction(() => window.openvault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
     };
     if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
-      promptVerifyPin("Authenticate to approve capability", executeApproval);
+      void confirmLocalPresence("Authenticate to approve capability", executeApproval);
     } else {
       executeApproval();
     }
@@ -842,24 +851,21 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
   const actions = el("div", "vault-modal-actions");
   const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
   const confirmBtn = el("button", "vault-btn vault-btn-primary", "Confirm") as HTMLButtonElement;
-  if (localAuthStatus.biometricEnabled) {
-    const bioBtn = el("button", "vault-btn vault-btn-ghost", "Use Windows Hello / Touch ID") as HTMLButtonElement;
+  if (isBiometricsActive(localAuthStatus)) {
+    const bioBtn = el("button", "vault-btn vault-btn-primary", "Windows Hello") as HTMLButtonElement;
     bioBtn.style.marginRight = "auto";
     bioBtn.addEventListener("click", () => {
       void (async () => {
-        try {
-          const res = (await window.openvault.verifyBiometric()) as { ok?: boolean } | null;
-          if (res?.ok) {
-            close();
-            onVerified();
-          } else {
-            errorBox.textContent = "Biometric authentication failed. Please enter PIN.";
-            errorBox.hidden = false;
-          }
-        } catch {
-          errorBox.textContent = "Biometric authentication error.";
-          errorBox.hidden = false;
+        bioBtn.disabled = true;
+        const res = await window.openvault.verifyWindowsHello("unlock");
+        if (res.ok) {
+          close();
+          onVerified();
+          return;
         }
+        errorBox.textContent = "Windows Hello was not confirmed.";
+        errorBox.hidden = false;
+        bioBtn.disabled = false;
       })();
     });
     actions.append(bioBtn);
@@ -905,6 +911,47 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
   input.focus();
 }
 
+async function confirmLocalPresence(title: string, onVerified: () => void): Promise<void> {
+  if (isBiometricsActive(localAuthStatus)) {
+    const result = await window.openvault.verifyWindowsHello("unlock");
+    if (result.ok) {
+      onVerified();
+      return;
+    }
+    if (result.reason === "canceled" || !localAuthStatus.configured) {
+      notice = "Windows Hello was not confirmed.";
+      render();
+      return;
+    }
+  }
+  promptVerifyPin(title, onVerified);
+}
+
+async function tryEnableWindowsHello(): Promise<"on" | "unavailable" | "canceled"> {
+  const availability = await window.openvault.windowsHelloAvailability();
+  if (!availability.available) {
+    localAuthNotice = {
+      text: "Windows Hello is not set up on this PC. Add a Windows Hello PIN in Windows Settings, or set an app PIN below.",
+      ok: false,
+    };
+    render();
+    return "unavailable";
+  }
+  const verified = await window.openvault.verifyWindowsHello("setup");
+  if (!verified.ok) {
+    localAuthNotice = { text: "Windows Hello was not confirmed.", ok: false };
+    render();
+    return verified.reason === "canceled" ? "canceled" : "unavailable";
+  }
+  await runSettingsAction(async () => {
+    const raw = await window.openvault.updateLocalAuthSettings({ enabled: true, biometricEnabled: true });
+    const projected = projectLocalAuthStatus(raw);
+    if (projected !== null) localAuthStatus = projected;
+    localAuthNotice = { text: "Windows Hello is on. MetaVault never sees that PIN.", ok: true };
+  });
+  return localAuthStatus.biometricEnabled ? "on" : "unavailable";
+}
+
 function openPinModal(onSuccess?: () => void): void {
   if (credentialModal !== null) return;
   const overlay = el("div", "vault-modal-overlay");
@@ -917,7 +964,7 @@ function openPinModal(onSuccess?: () => void): void {
   header.append(closeBtn);
   dialog.append(header);
 
-  const sub = el("p", "vault-modal-sub", "Configure a 4-8 digit numeric or alphanumeric PIN for protecting your local vault sessions.");
+  const sub = el("p", "vault-modal-sub", "App PIN fallback, 4-8 characters. Windows Hello is the lock when it is on. MetaVault stores a hash of this PIN, never the Windows Hello PIN.");
   dialog.append(sub);
 
   const errorBox = el("p", "vault-modal-error");
@@ -1714,6 +1761,12 @@ function openSettings(tab?: SettingsTab): void {
   if (tab !== undefined) settingsTab = tab;
   settingsFocusOnOpen = !settingsOpen;
   settingsOpen = true;
+  if (typeof window.openvault.getBuiltinAiStatus === "function") {
+    void window.openvault.getBuiltinAiStatus().then((s) => {
+      builtinAiStatus = s;
+      render();
+    });
+  }
   render();
 }
 
@@ -1833,6 +1886,7 @@ function renderSettings(view: HTMLElement): void {
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
     ollama: "Ollama runs on this device. Request metadata stays on-device.",
     "meta-api": "Meta API (cloud) sends request metadata \u2014 agent, alias, scope and reason, never secrets \u2014 off-device to Meta's API for judgement. Secrets never leave vaultd.",
+    builtin: "Local WebGPU acceleration (Llama 3.2 1B INT4). 100% private, runs directly on your GPU without Ollama installed.",
   };
   for (const provider of WARDEN_PROVIDERS) {
     const label = el("label", "settings-radio");
@@ -1842,7 +1896,8 @@ function renderSettings(view: HTMLElement): void {
     radio.value = provider.id;
     radio.checked = wardenDraft.provider === provider.id;
     radio.addEventListener("change", () => {
-      wardenDraft = { ...wardenDraft, provider: provider.id };
+      const nextModel = provider.id === "builtin" ? "llama3.2:1b" : wardenDraft.model;
+      wardenDraft = { ...wardenDraft, provider: provider.id, model: nextModel };
       wardenDirty = true;
       settingsMessage = null;
       render();
@@ -1858,7 +1913,86 @@ function renderSettings(view: HTMLElement): void {
   // 2. Model
   const modelSection = settingsSection("Model", "", "warden");
   if (wardenDraft.provider === "none") {
-    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose Ollama or Meta API to enable a warden model."));
+    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose Built-in AI, Ollama, or Meta API to enable a warden model."));
+  } else if (wardenDraft.provider === "builtin") {
+    const card = el("div", "builtin-ai-card");
+    const head = el("div", "builtin-ai-head");
+    const info = el("div", "");
+    info.append(el("div", "builtin-ai-title", "Llama 3.2 1B Instruct (INT4 WebGPU)"));
+    info.append(el("div", "builtin-ai-desc", "Compact ~680 MB edge model running locally via WebGPU on Direct3D 12 / Vulkan. Zero network egress."));
+    head.append(info);
+
+    const isDownloading = builtinAiProgress?.state === "downloading" || builtinAiProgress?.state === "verifying";
+    const resolverState = builtinAiStatus?.resolverStatus.state ?? "missing";
+
+    let badgeClass = "status-badge";
+    let badgeText = "Checking...";
+
+    if (isDownloading) {
+      badgeClass = "status-badge is-warn";
+      badgeText = builtinAiProgress?.state === "verifying" ? "Verifying..." : `Downloading (${String(Math.round(builtinAiProgress?.percent ?? 0))}%)`;
+    } else if (resolverState === "bundled") {
+      badgeClass = "status-badge is-ok";
+      badgeText = "\u25CF Ready \u00B7 Baked-in";
+    } else if (resolverState === "cached") {
+      badgeClass = "status-badge is-ok";
+      badgeText = "\u25CF Ready \u00B7 Cached";
+    } else {
+      badgeClass = "status-badge";
+      badgeText = "\u25CB Download Available (~680 MB)";
+    }
+
+    head.append(el("span", badgeClass, badgeText));
+    card.append(head);
+
+    if (isDownloading && builtinAiProgress !== null) {
+      const prog = el("div", "builtin-ai-progress");
+      const track = el("div", "builtin-ai-progress-track");
+      const fill = el("div", "builtin-ai-progress-fill") as HTMLDivElement;
+      fill.style.width = `${String(builtinAiProgress.percent)}%`;
+      track.append(fill);
+      prog.append(track);
+
+      const stats = el("div", "builtin-ai-progress-stats");
+      const dlMb = (builtinAiProgress.downloadedBytes / (1024 * 1024)).toFixed(1);
+      const totMb = (builtinAiProgress.totalBytes / (1024 * 1024)).toFixed(1);
+      const speedMb = (builtinAiProgress.speedBytesPerSec / (1024 * 1024)).toFixed(1);
+      stats.append(el("span", "mono", `${dlMb} / ${totMb} MB (${String(Math.round(builtinAiProgress.percent))}%) \u00B7 ${speedMb} MB/s`));
+
+      const cancelBtn = el("button", "action btn-deny", "Cancel") as HTMLButtonElement;
+      cancelBtn.type = "button";
+      cancelBtn.addEventListener("click", () => {
+        void window.openvault.cancelBuiltinAiDownload().then(() => {
+          builtinAiProgress = null;
+          render();
+        });
+      });
+      stats.append(cancelBtn);
+      prog.append(stats);
+      card.append(prog);
+    } else if (resolverState === "missing") {
+      const actions = el("div", "builtin-ai-actions");
+      const dlBtn = el("button", "action btn-approve", "Download Model (~680 MB)") as HTMLButtonElement;
+      dlBtn.type = "button";
+      dlBtn.disabled = settingsBusy;
+      dlBtn.addEventListener("click", () => {
+        void window.openvault.startBuiltinAiDownload().then((started) => {
+          if (started) {
+            render();
+          }
+        });
+      });
+      actions.append(dlBtn);
+      card.append(actions);
+      card.append(el("p", "settings-copy", "Model files will be cached locally in your user profile for fast on-device inference."));
+    } else {
+      const pathText = builtinAiStatus?.resolverStatus.path ?? "Default storage location";
+      const infoP = el("p", "settings-copy", "Local model weights are verified and ready for WebGPU execution.");
+      const pathLine = el("p", "settings-status mono", `Path: ${pathText}`);
+      card.append(infoP, pathLine);
+    }
+
+    modelSection.append(card);
   } else {
     if (wardenDraft.provider === "ollama") {
       const selectLabel = el("label", "vault-field");
@@ -1961,7 +2095,7 @@ function renderSettings(view: HTMLElement): void {
       });
     };
     if (shouldRequireAuthForSettings(localAuthStatus)) {
-      promptVerifyPin("Authenticate to modify settings", doSave);
+      void confirmLocalPresence("Authenticate to modify settings", doSave);
     } else {
       doSave();
     }
@@ -2014,7 +2148,7 @@ function renderSettings(view: HTMLElement): void {
       });
     };
     if (shouldRequireAuthForSettings(localAuthStatus)) {
-      promptVerifyPin("Authenticate to save key", doSaveKey);
+      void confirmLocalPresence("Authenticate to save key", doSaveKey);
     } else {
       doSaveKey();
     }
@@ -2048,7 +2182,7 @@ function renderSettings(view: HTMLElement): void {
       });
     };
     if (shouldRequireAuthForSettings(localAuthStatus)) {
-      promptVerifyPin("Authenticate to delete key", doDeleteKey);
+      void confirmLocalPresence("Authenticate to delete key", doDeleteKey);
     } else {
       doDeleteKey();
     }
@@ -2070,18 +2204,49 @@ function renderSettings(view: HTMLElement): void {
   // 4b. Local authentication & security gates (#19)
   const authSection = settingsSection(
     "Local authentication & security gates",
-    "Additional layers of local protection (PIN, biometrics, auto-lock) to secure your workstation against unauthorized physical access. (All protection layers are off by default).",
+    "Windows Hello is the lock. It uses the PIN, face, or fingerprint on this PC, and MetaVault never sees that PIN. An app PIN is only a fallback.",
     "general",
   );
 
-  const authStatusP = el(
-    "p",
-    "settings-status",
-    `Status: ${localAuthStatus.enabled ? "Active" : "Disabled"} · ${
-      localAuthStatus.configured ? "PIN configured" : "No PIN set"
-    }${localAuthStatus.biometricEnabled ? " · Biometrics ready" : ""}`,
-  );
+  const authStatusP = el("p", "settings-status", localAuthFactorLabel(localAuthStatus));
   authSection.append(authStatusP);
+  if (localAuthNotice !== null) {
+    authSection.append(el(
+      "p",
+      localAuthNotice.ok ? "settings-message is-ok" : "settings-message is-error",
+      localAuthNotice.text,
+    ));
+  }
+
+  const helloRow = el("div", "settings-row");
+  helloRow.append(el("span", "settings-row-label", "Windows Hello"));
+  const helloBtns = el("div", "settings-btns");
+  if (isBiometricsActive(localAuthStatus)) {
+    const offBtn = el("button", "action", "Turn off") as HTMLButtonElement;
+    offBtn.type = "button";
+    offBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        const raw = await window.openvault.updateLocalAuthSettings(
+          localAuthStatus.configured
+            ? { biometricEnabled: false }
+            : { biometricEnabled: false, enabled: false },
+        );
+        const projected = projectLocalAuthStatus(raw);
+        if (projected !== null) localAuthStatus = projected;
+        localAuthNotice = null;
+      });
+    });
+    helloBtns.append(offBtn);
+  } else {
+    const helloBtn = el("button", "action btn-approve", "Use Windows Hello") as HTMLButtonElement;
+    helloBtn.type = "button";
+    helloBtn.addEventListener("click", () => {
+      void tryEnableWindowsHello();
+    });
+    helloBtns.append(helloBtn);
+  }
+  helloRow.append(helloBtns);
+  authSection.append(helloRow);
 
   const authToggleRow = el("div", "settings-row");
   const authToggleLabel = el(
@@ -2093,15 +2258,19 @@ function renderSettings(view: HTMLElement): void {
   authToggle.type = "checkbox";
   authToggle.checked = localAuthStatus.enabled;
   authToggle.addEventListener("change", () => {
-    if (authToggle.checked && shouldPromptPinSetupOnEnable(localAuthStatus)) {
-      openPinModal(() => {
-        void runSettingsAction(async () => {
-          const raw = await window.openvault.updateLocalAuthSettings({ enabled: true });
-          const projected = projectLocalAuthStatus(raw);
-          if (projected !== null) localAuthStatus = projected;
-          render();
+    if (authToggle.checked && !isBiometricsActive(localAuthStatus) && shouldPromptPinSetupOnEnable(localAuthStatus)) {
+      void (async () => {
+        const outcome = await tryEnableWindowsHello();
+        if (outcome === "on" || outcome === "canceled" || localAuthStatus.configured) return;
+        openPinModal(() => {
+          void runSettingsAction(async () => {
+            const raw = await window.openvault.updateLocalAuthSettings({ enabled: true });
+            const projected = projectLocalAuthStatus(raw);
+            if (projected !== null) localAuthStatus = projected;
+            render();
+          });
         });
-      });
+      })();
       authToggle.checked = false;
       return;
     }
@@ -2176,27 +2345,6 @@ function renderSettings(view: HTMLElement): void {
     settingsRow.append(settingsLabel, settingsToggle);
     authSection.append(settingsRow);
 
-    // 4. Windows Hello / Touch ID biometrics
-    const bioRow = el("div", "settings-row");
-    const bioLabel = el(
-      "span",
-      "settings-row-label",
-      "Enable Windows Hello / Touch ID biometrics (Off by default)",
-    );
-    const bioToggle = document.createElement("input");
-    bioToggle.type = "checkbox";
-    bioToggle.checked = localAuthStatus.biometricEnabled;
-    bioToggle.addEventListener("change", () => {
-      void runSettingsAction(async () => {
-        const raw = await window.openvault.updateLocalAuthSettings({ biometricEnabled: bioToggle.checked });
-        const projected = projectLocalAuthStatus(raw);
-        if (projected !== null) localAuthStatus = projected;
-      });
-    });
-    bioRow.append(bioLabel, bioToggle);
-    authSection.append(bioRow);
-
-    // 5. Inactivity Auto-Lock
     const lockRow = el("div", "settings-row");
     const lockLabel = el("span", "settings-row-label", "Auto-lock inactive session (Off by default)");
     const lockSelect = document.createElement("select");
@@ -2254,7 +2402,7 @@ function renderSettings(view: HTMLElement): void {
   }
 
   const authActionRow = el("div", "settings-row");
-  authActionRow.append(el("span", "settings-row-label", "Local PIN"));
+  authActionRow.append(el("span", "settings-row-label", "App PIN"));
   authActionRow.append(authBtns);
   authSection.append(authActionRow);
   view.append(authSection);
@@ -2699,76 +2847,87 @@ function render(): void {
     const lockIcon = el("div", "lock-icon");
     lockIcon.append(lockSvg());
 
+    const helloOn = isBiometricsActive(localAuthStatus);
     const lockTitle = el("h2", "", "Vault Locked");
-    const lockSub = el("p", "sub", "Session locked due to inactivity. Enter your PIN to resume.");
+    const lockSub = el(
+      "p",
+      "sub",
+      helloOn
+        ? "Confirm with Windows Hello. MetaVault never sees that PIN."
+        : "Session locked due to inactivity. Enter your PIN to resume.",
+    );
     lockSub.style.marginBottom = "24px";
-
-    const pinInput = document.createElement("input");
-    pinInput.className = "vault-input";
-    pinInput.type = "password";
-    pinInput.placeholder = "Enter PIN to unlock";
-    pinInput.style.maxWidth = "240px";
-    pinInput.style.textAlign = "center";
-    pinInput.style.marginBottom = "16px";
 
     const errorP = el("p", "vault-modal-error");
     errorP.hidden = true;
+    lockScreen.append(lockIcon, lockTitle, lockSub, errorP);
 
-    const unlockBtn = el("button", "action btn-approve", "Unlock Vault") as HTMLButtonElement;
-    unlockBtn.style.padding = "8px 24px";
-
-    const doUnlock = async () => {
-      const pin = pinInput.value.trim();
-      if (!pin) return;
-      unlockBtn.disabled = true;
-      try {
-        const res = (await window.openvault.verifyLocalPin(pin)) as { ok?: boolean } | null;
-        if (res?.ok) {
-          vaultLocked = false;
-          lastUserActivityTs = Date.now();
-          render();
-        } else {
-          errorP.textContent = "Incorrect PIN.";
-          errorP.hidden = false;
-          unlockBtn.disabled = false;
-          pinInput.value = "";
-          pinInput.focus();
-        }
-      } catch {
-        errorP.textContent = "Verification error.";
-        errorP.hidden = false;
-        unlockBtn.disabled = false;
-      }
-    };
-
-    unlockBtn.addEventListener("click", () => { void doUnlock(); });
-    pinInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") void doUnlock();
-    });
-
-    lockScreen.append(lockIcon, lockTitle, lockSub, errorP, pinInput, unlockBtn);
-    if (localAuthStatus.biometricEnabled) {
-      const bioBtn = el("button", "vault-btn vault-btn-ghost", "Use Windows Hello / Touch ID") as HTMLButtonElement;
-      bioBtn.style.marginTop = "12px";
-      bioBtn.addEventListener("click", () => {
+    let pinInput: HTMLInputElement | null = null;
+    if (helloOn) {
+      const helloBtn = el("button", "action btn-approve", "Unlock with Windows Hello") as HTMLButtonElement;
+      helloBtn.type = "button";
+      helloBtn.style.padding = "8px 24px";
+      helloBtn.addEventListener("click", () => {
         void (async () => {
-          try {
-            const res = (await window.openvault.verifyBiometric()) as { ok?: boolean } | null;
-            if (res?.ok) {
-              vaultLocked = false;
-              lastUserActivityTs = Date.now();
-              render();
-            } else {
-              errorP.textContent = "Biometric check failed. Enter PIN to unlock.";
-              errorP.hidden = false;
-            }
-          } catch {
-            errorP.textContent = "Biometric check failed. Enter PIN to unlock.";
-            errorP.hidden = false;
+          helloBtn.disabled = true;
+          const res = await window.openvault.verifyWindowsHello("unlock");
+          if (res.ok) {
+            vaultLocked = false;
+            lastUserActivityTs = Date.now();
+            render();
+            return;
           }
+          errorP.textContent = "Windows Hello was not confirmed.";
+          errorP.hidden = false;
+          helloBtn.disabled = false;
         })();
       });
-      lockScreen.append(bioBtn);
+      lockScreen.append(helloBtn);
+    }
+    if (localAuthStatus.configured) {
+      const field = document.createElement("input");
+      pinInput = field;
+      field.className = "vault-input";
+      field.type = "password";
+      field.placeholder = helloOn ? "App PIN fallback" : "Enter PIN to unlock";
+      field.style.maxWidth = "240px";
+      field.style.textAlign = "center";
+      field.style.margin = helloOn ? "16px 0" : "0 0 16px";
+
+      const unlockBtn = el("button", "action", "Unlock with app PIN") as HTMLButtonElement;
+      unlockBtn.type = "button";
+      unlockBtn.style.padding = "8px 24px";
+      if (!helloOn) unlockBtn.classList.add("btn-approve");
+
+      const doUnlock = async () => {
+        const pin = field.value.trim();
+        if (!pin) return;
+        unlockBtn.disabled = true;
+        try {
+          const res = (await window.openvault.verifyLocalPin(pin)) as { ok?: boolean } | null;
+          if (res?.ok) {
+            vaultLocked = false;
+            lastUserActivityTs = Date.now();
+            render();
+          } else {
+            errorP.textContent = "Incorrect PIN.";
+            errorP.hidden = false;
+            unlockBtn.disabled = false;
+            field.value = "";
+            field.focus();
+          }
+        } catch {
+          errorP.textContent = "Verification error.";
+          errorP.hidden = false;
+          unlockBtn.disabled = false;
+        }
+      };
+
+      unlockBtn.addEventListener("click", () => { void doUnlock(); });
+      field.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") void doUnlock();
+      });
+      lockScreen.append(field, unlockBtn);
     }
     view.append(lockScreen);
     view.querySelectorAll("h1").forEach((node) => {
@@ -2777,7 +2936,10 @@ function render(): void {
     paintSettingsModal();
     paintApprovalDialog();
     syncChrome();
-    setTimeout(() => { pinInput.focus(); }, 50);
+    const pinField = pinInput;
+    if (!helloOn && pinField !== null) {
+      setTimeout(() => { pinField.focus(); }, 50);
+    }
     return;
   }
 
@@ -2976,6 +3138,19 @@ function start(): void {
     });
   }
   void refreshTracked();
+  if (typeof window.openvault.onBuiltinAiProgress === "function") {
+    window.openvault.onBuiltinAiProgress((progress) => {
+      builtinAiProgress = progress;
+      if (progress.state === "completed" || progress.state === "idle") {
+        void window.openvault.getBuiltinAiStatus().then((s) => {
+          builtinAiStatus = s;
+          render();
+        });
+      } else {
+        render();
+      }
+    });
+  }
   if (typeof window.openvault.onUpdaterStatus === "function") {
     window.openvault.onUpdaterStatus((status) => {
       updaterStatus = status;
