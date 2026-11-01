@@ -3,6 +3,9 @@ export type Risk = "low" | "medium" | "high";
 export interface CapabilityRequest {
   agentId: string; ide: string; tool: string; alias: string;
   requestedScope: string; reason: string;
+  verified?: boolean;
+  clientPid?: number | undefined;
+  clientProcess?: string | undefined;
 }
 export interface MarshalDecision {
   risk: Risk; recommendedScope: string; requireApproval: boolean; explanation: string;
@@ -14,4 +17,7 @@ export interface AuditEvent {
   detail: string; modelId?: string;
   requestId?: string; risk?: Risk; recommendedScope?: string;
   decisionSource?: DecisionSource; latencyMs?: number; explanation?: string;
+  verified?: boolean;
+  clientPid?: number | undefined;
+  clientProcess?: string | undefined;
 }

@@ -35,8 +35,21 @@ export interface PendingApproval {
   readonly createdAtMs: number;
   readonly expiresAtMs: number;
   readonly modelId?: string;
+  readonly verified?: boolean;
+  readonly clientPid?: number;
+  readonly clientProcess?: string;
 }
 
+
+export interface AgentSecuritySettingsLike {
+  readonly strictMode: boolean;
+  readonly verifyCallerProcess: boolean;
+}
+
+export interface AgentSecuritySettingsPatchLike {
+  readonly strictMode?: boolean;
+  readonly verifyCallerProcess?: boolean;
+}
 export interface AuditEventLike {
   readonly ts: string;
   readonly agentId: string;
@@ -51,6 +64,7 @@ export interface AuditEventLike {
   readonly decisionSource?: DecisionSource;
   readonly latencyMs?: number;
   readonly explanation?: string;
+  readonly verified?: boolean;
 }
 
 export interface CapabilityRequestLike {
@@ -70,9 +84,18 @@ export interface StandingApproval {
 
 // Real policy state from GET /policies: enforced ceiling per alias plus the
 // standing approvals currently in force. Metadata only.
+export interface RegisteredAgent {
+  readonly id: string;
+  readonly name: string;
+  readonly token: string;
+  readonly createdAt: string;
+  readonly revoked: boolean;
+}
+
 export interface PoliciesData {
   readonly ceilings: Readonly<Record<string, string>>;
   readonly standingApprovals: readonly StandingApproval[];
+  readonly agents?: readonly RegisteredAgent[];
 }
 
 export interface CredentialMeta {
@@ -246,6 +269,8 @@ export interface VaultApi {
   readonly testWarden: () => Promise<unknown>;
   readonly getLocalAuthStatus: () => Promise<unknown>;
   readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
+  readonly getAgentSecuritySettings: () => Promise<unknown>;
+  readonly updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => Promise<unknown>;
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
   readonly verifyLocalPin: (pin: string) => Promise<unknown>;
   readonly verifyBiometric: () => Promise<unknown>;

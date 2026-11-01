@@ -14,6 +14,28 @@ Report privately to the maintainers with:
 - Reproduction steps or a proof of concept that does not use real
   credentials. Use fake/canary secrets only.
 
+
+## Agent Identity & Anti-Spoofing Architecture
+
+OpenVault implements multi-tiered, defense-in-depth protections to prevent agent identity spoofing, approval phishing, and token hijacking:
+
+1. **Authoritative Cryptographic Enrollment Tokens**:
+   - Registered agents (Cursor, Claude Code, VS Code, Codex) receive persistent bearer tokens (`ov_agent_<id>_<hex32>`).
+   - The daemon (`vaultd`) resolves the agent identity **authoritatively from the token** (`x-openvault-agent-token` header or Authorization bearer token). Any `agentId` self-reported in untrusted JSON bodies is overwritten by the registered identity.
+   - Requests presenting an invalid token are immediately rejected with HTTP `401 Unauthorized`.
+
+2. **Standing Approval Isolation**:
+   - Standing approvals created for verified agents enforce `verifiedOnly: true`.
+   - Unverified callers (requests lacking a token) can never inherit, consume, or bypass human authorization using existing standing approvals.
+
+3. **Strict Agent Verification Mode (Configurable in Settings > Security)**:
+   - When enabled, `vaultd` enforces zero-trust: any capability request from an unverified caller without an authentic enrollment token is immediately rejected with HTTP `403 Forbidden` (`strict-mode-unverified-blocked`). Unverified callers cannot even open approval modals.
+
+4. **Caller Process & Binary Boundary Inspection (Defense-in-Depth)**:
+   - When enabled in Settings, `vaultd` inspects the client's OS process ID (PID) and executable binary.
+   - Cross-references the caller binary against approved agent runtimes (`Cursor.exe`, `Code.exe`, `node.exe`, `electron.exe`, `claude.exe`).
+   - If an unauthorized script runner or tool (`python.exe`, `curl.exe`, `powershell.exe`, `cmd.exe`, `bash`) attempts to exploit a stolen agent token, the process inspection engine blocks the call with HTTP `403 Forbidden` (`process-verification-failed`).
+
 ## Security model (summary)
 
 - Secrets are stored only as AES-256-GCM ciphertext; the master key

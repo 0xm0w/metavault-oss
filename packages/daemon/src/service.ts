@@ -27,11 +27,12 @@ import {
   generatePinSalt,
   hashPin,
   verifyPin,
+  type AgentSecuritySettings,
   type LocalAuthStatus,
   type WardenKeyStatus,
   type WardenSettings,
 } from "../../core/src/settings.js";
-import { VaultStore } from "../../core/src/storage.js";
+import { VaultStore, type AgentRecord } from "../../core/src/storage.js";
 import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 
 export interface CapabilityResult {
@@ -58,6 +59,9 @@ export interface PendingApproval {
   readonly createdAtMs: number;
   readonly expiresAtMs: number;
   readonly modelId?: string;
+  readonly verified?: boolean;
+  readonly clientPid?: number | undefined;
+  readonly clientProcess?: string | undefined;
 }
 
 // Policy state the desktop app may see: the enforced ceiling per alias and
@@ -70,6 +74,7 @@ export interface PoliciesState {
     readonly alias: string;
     readonly scope: string;
   }[];
+  readonly agents?: readonly AgentRecord[];
 }
 
 export { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, WARDEN_KEY_SCOPE };
@@ -154,6 +159,14 @@ export interface VaultServiceService {
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
   readonly listPendingApprovals: () => Effect.Effect<PendingApproval[], StorageError>;
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
+  readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
+  readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
+  readonly registerAgent: (id: string, name: string) => Effect.Effect<AgentRecord, StorageError>;
+  readonly revokeAgentToken: (id: string) => Effect.Effect<void, StorageError>;
+  readonly getAgentSecuritySettings: () => Effect.Effect<AgentSecuritySettings, StorageError>;
+  readonly updateAgentSecuritySettings: (
+    patch: { readonly strictMode?: boolean | undefined; readonly verifyCallerProcess?: boolean | undefined },
+  ) => Effect.Effect<AgentSecuritySettings, StorageError>;
   readonly getWardenSettings: () => Effect.Effect<WardenSettings, StorageError>;
   readonly updateWardenSettings: (
     patch: WardenSettingsPatch,
@@ -297,7 +310,7 @@ export function makeVaultServiceLive(
         withModel: boolean,
         modelOverride?: string,
         extras?: Partial<
-          Pick<AuditEvent, "requestId" | "risk" | "recommendedScope" | "decisionSource" | "latencyMs" | "explanation">
+          Pick<AuditEvent, "requestId" | "risk" | "recommendedScope" | "decisionSource" | "latencyMs" | "explanation" | "verified">
         >,
       ): Effect.Effect<void, StorageError> =>
         Effect.flatMap(Clock.currentTimeMillis, (now) => {
@@ -587,7 +600,7 @@ export function makeVaultServiceLive(
             const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;
             const auditEvents = yield* store.listAudit();
             const requestId = yield* Effect.sync(() => randomUUID());
-            yield* audit(req.agentId, req.alias, req.requestedScope, "requested", "capability requested", false, undefined, { requestId });
+            yield* audit(req.agentId, req.alias, req.requestedScope, "requested", req.verified ? "capability requested (verified)" : "capability requested (unverified)", false, undefined, { requestId, ...(req.verified !== undefined ? { verified: req.verified } : {}) });
 
             if (yield* registry.isRevoked(req.agentId, req.alias)) {
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", "revoked", false, undefined, { requestId, decisionSource: "policy" });
@@ -809,6 +822,7 @@ export function makeVaultServiceLive(
                       agentId: grant.request.agentId,
                       alias: grant.request.alias,
                       scope: grant.allowedScope,
+                      verifiedOnly: grant.request.verified === true,
                     },
                   ];
             });
@@ -904,6 +918,9 @@ export function makeVaultServiceLive(
                     : "Policy requires human approval."),
                 createdAtMs: grant.createdAtMs,
                 expiresAtMs: grant.expiresAtMs,
+                verified: grant.request.verified ?? false,
+                ...(grant.request.clientPid !== undefined ? { clientPid: grant.request.clientPid } : {}),
+                ...(grant.request.clientProcess !== undefined ? { clientProcess: grant.request.clientProcess } : {}),
               };
               pending.push(hasMarshal ? { ...base, modelId: pendingModelId } : base);
             }
@@ -913,6 +930,26 @@ export function makeVaultServiceLive(
         // Real policy state for the Policies view: the enforced ceiling for
         // every enrolled alias (read back from the vault, never inferred
         // from audit) plus the standing approvals currently in force.
+        getAgentSecuritySettings: () => store.getAgentSecuritySettings(),
+        updateAgentSecuritySettings: (patch) =>
+          Effect.gen(function* () {
+            const current = yield* store.getAgentSecuritySettings();
+            const next: AgentSecuritySettings = {
+              strictMode: patch.strictMode !== undefined ? patch.strictMode : current.strictMode,
+              verifyCallerProcess:
+                patch.verifyCallerProcess !== undefined ? patch.verifyCallerProcess : current.verifyCallerProcess,
+            };
+            yield* store.setAgentSecuritySettings(next);
+            yield* audit(
+              "system",
+              "security",
+              "settings",
+              "settings-changed",
+              `agent security settings changed: strictMode=${String(next.strictMode)} verifyCallerProcess=${String(next.verifyCallerProcess)}`,
+              false,
+            );
+            return next;
+          }),
         getWardenSettings: () => store.getWardenSettings(),
 
         updateWardenSettings: (patch) =>
@@ -1027,7 +1064,25 @@ export function makeVaultServiceLive(
                   a.alias.localeCompare(b.alias) ||
                   a.scope.localeCompare(b.scope),
               );
-            return { ceilings, standingApprovals };
+            const agents = yield* store.listAgents();
+            return { ceilings, standingApprovals, agents };
+          }),
+
+        listAgents: () => store.listAgents(),
+        getAgentByToken: (token) => store.getAgentByToken(token),
+        registerAgent: (id, name) =>
+          Effect.gen(function* () {
+            const token = `ov_agent_${id.replace(/[^a-zA-Z0-9_-]/g, "")}_${randomBytes(16).toString("hex")}`;
+            yield* store.addAgent(id, name, token);
+            const created = yield* store.getAgent(id);
+            if (created === undefined) {
+              return yield* Effect.fail(new StorageError({ message: "failed to create agent", operation: "registerAgent" }));
+            }
+            return created;
+          }),
+        revokeAgentToken: (id) =>
+          Effect.gen(function* () {
+            yield* store.revokeAgent(id);
           }),
 
         getLocalAuthStatus: () =>

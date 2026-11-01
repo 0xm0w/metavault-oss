@@ -17,6 +17,7 @@ export type DaemonFetch = typeof fetch;
 export interface OpenVaultMcpOptions {
   readonly daemonUrl?: string;
   readonly agentId?: string;
+  readonly agentToken?: string;
   readonly ide?: string;
   readonly defaultTool?: string;
   readonly fetchFn?: DaemonFetch;
@@ -117,6 +118,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
     "http://127.0.0.1:7077"
   ).replace(/\/+$/, "");
   const agentId = options.agentId ?? process.env["OPENVAULT_AGENT_ID"] ?? "mcp-agent";
+  const agentToken = options.agentToken ?? process.env["OPENVAULT_AGENT_TOKEN"];
   const ide = options.ide ?? process.env["OPENVAULT_IDE"] ?? "mcp";
   const defaultTool = options.defaultTool ?? "http";
   const fetchFn: DaemonFetch = options.fetchFn ?? fetch;
@@ -130,7 +132,13 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
     try {
       response = await fetchFn(`${daemonUrl}${path}`, {
         method,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-openvault-client-pid": String(process.pid),
+          ...(agentToken !== undefined && agentToken !== ""
+            ? { "x-openvault-agent-token": agentToken }
+            : {}),
+        },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch {
@@ -162,6 +170,8 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
       alias: input.alias,
       requestedScope: input.scope,
       reason: input.reason,
+      clientPid: process.pid,
+      ...(agentToken !== undefined && agentToken !== "" ? { agentToken } : {}),
     };
     const decoded = await decode(CapabilityRequestSchema, candidate);
     if (decoded === null) {

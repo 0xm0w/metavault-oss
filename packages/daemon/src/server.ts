@@ -7,7 +7,8 @@ import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
 import { assessFromSettings, Brain, MarshalUnavailable } from "../../brain/src/brain.js";
 import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
 import { Connector } from "../../core/src/connector.js";
-import { WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH } from "../../core/src/settings.js";
+import { DEFAULT_AGENT_SECURITY_SETTINGS, WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, type AgentSecuritySettings } from "../../core/src/settings.js";
+import { inspectProcess } from "./process-inspector.js";
 import { decryptSecret } from "../../core/src/crypto.js";
 import { retrieveMasterKey } from "../../core/src/keychain.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
@@ -21,6 +22,7 @@ import {
   RevokeSchema,
   UpdateCredentialSchema,
   WardenKeyPutSchema,
+  AgentSecuritySettingsPatchSchema,
   WardenSettingsPatchSchema,
 } from "./schemas.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./service.js";
@@ -185,6 +187,8 @@ export function resolveDaemonToken(dbPath: string): string {
 export interface VaultRequestOptions {
   readonly daemonToken?: string;
   readonly providedToken?: string;
+  readonly providedAgentToken?: string;
+  readonly clientPid?: number | undefined;
 }
 
 const UNAUTHORIZED: { status: number; body: unknown } = {
@@ -193,6 +197,9 @@ const UNAUTHORIZED: { status: number; body: unknown } = {
 };
 
 function isTokenProtected(method: string, path: string): boolean {
+  if ((path === "/agents" || path.startsWith("/agents/")) && (method === "GET" || method === "POST")) {
+    return true;
+  }
   if (method === "GET" && path === "/pending") {
     return true;
   }
@@ -203,6 +210,9 @@ function isTokenProtected(method: string, path: string): boolean {
     return true;
   }
   if ((method === "PATCH" || method === "DELETE") && path.startsWith("/credentials/")) {
+    return true;
+  }
+  if ((path === "/settings/warden" || path === "/settings/security") && (method === "GET" || method === "PATCH")) {
     return true;
   }
   if (path === "/settings/warden" && (method === "GET" || method === "PATCH")) {
@@ -268,6 +278,20 @@ export async function handleVaultRequest(
   if (method === "GET" && path === "/audit") {
     return run(service.listAudit().pipe(Effect.map((events) => ({ events }))));
   }
+  if (method === "GET" && path === "/agents") {
+    return run(service.listAgents());
+  }
+  if (method === "POST" && path === "/agents/revoke") {
+    const decoded = await decode(RevokeSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    return run(
+      Effect.all([service.revokeAgentToken(decoded.target), service.revoke(decoded.target)]).pipe(
+        Effect.map(() => ({ revoked: true, target: decoded.target })),
+      ),
+    );
+  }
   if (method === "GET" && path === "/pending") {
     return run(service.listPendingApprovals().pipe(Effect.map((approvals) => ({ approvals }))));
   }
@@ -284,6 +308,19 @@ export async function handleVaultRequest(
   }
   if (method === "GET" && path === "/security/posture") {
     return run(service.getSecurityPosture());
+  }
+  if (method === "GET" && path === "/settings/security") {
+    return run(service.getAgentSecuritySettings());
+  }
+    if (method === "PATCH" && path === "/settings/security") {
+    const decoded = await decode(AgentSecuritySettingsPatchSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const patch: { strictMode?: boolean; verifyCallerProcess?: boolean } = {};
+    if (decoded.strictMode !== undefined) patch.strictMode = decoded.strictMode;
+    if (decoded.verifyCallerProcess !== undefined) patch.verifyCallerProcess = decoded.verifyCallerProcess;
+    return run(service.updateAgentSecuritySettings(patch));
   }
   if (method === "GET" && path === "/settings/warden") {
     return run(service.getWardenSettings());
@@ -478,12 +515,109 @@ export async function handleVaultRequest(
     const meta = updated.body as { scopeCeiling: string; website: string };
     return { status: 200, body: { alias, scope: meta.scopeCeiling, website: meta.website } };
   }
-  if (method === "POST" && path === "/request") {
+    if (method === "POST" && path === "/request") {
     const decoded = await decode(CapabilityRequestSchema, body ?? {});
     if (decoded === null) {
       return BAD_REQUEST;
     }
-    const request: CapabilityRequest = decoded;
+    const tokenFromOptions = options?.providedAgentToken;
+    const tokenFromBody = decoded.agentToken;
+    const token =
+      tokenFromOptions !== undefined && tokenFromOptions !== ""
+        ? tokenFromOptions
+        : tokenFromBody !== undefined && tokenFromBody !== ""
+          ? tokenFromBody
+          : undefined;
+
+    let verified = false;
+    let agentId = decoded.agentId;
+
+    if (token !== undefined) {
+      const agentRes = await run(service.getAgentByToken(token.trim()));
+      if (agentRes.status === 200 && agentRes.body !== null && agentRes.body !== undefined) {
+        const agent = agentRes.body as { id: string; name: string; revoked: boolean };
+        if (agent.revoked) {
+          return { status: 403, body: { error: { _tag: "Revoked", message: "agent is revoked" } } };
+        }
+        agentId = agent.id;
+        verified = true;
+      } else {
+        return { status: 401, body: { error: { _tag: "Unauthorized", message: "invalid agent token" } } };
+      }
+    }
+
+    const secSettingsRes = await run(service.getAgentSecuritySettings());
+    const secSettings =
+      secSettingsRes.status === 200
+        ? (secSettingsRes.body as AgentSecuritySettings)
+        : DEFAULT_AGENT_SECURITY_SETTINGS;
+
+    // Defense-in-depth Layer 1: Strict Agent Verification Mode
+    if (secSettings.strictMode && !verified) {
+      return {
+        status: 403,
+        body: {
+          status: "denied",
+          reason: "strict-mode-unverified-blocked",
+          error: {
+            _tag: "Forbidden",
+            message: "Strict agent verification is enabled: unverified agents without a valid token are rejected.",
+          },
+        },
+      };
+    }
+
+    // Defense-in-depth Layer 2: Caller Process & Binary Inspection
+    const clientPid = decoded.clientPid ?? options?.clientPid;
+    let clientProcess: string | undefined = undefined;
+
+    if (secSettings.verifyCallerProcess) {
+      if (clientPid === undefined) {
+        return {
+          status: 403,
+          body: {
+            status: "denied",
+            reason: "process-verification-failed",
+            error: {
+              _tag: "Forbidden",
+              message: "Process verification failed: missing caller process PID.",
+            },
+          },
+        };
+      }
+      const inspectRes = inspectProcess(clientPid);
+      if (!inspectRes.ok) {
+        return {
+          status: 403,
+          body: {
+            status: "denied",
+            reason: "process-verification-failed",
+            error: {
+              _tag: "Forbidden",
+              message: `Caller process verification failed: ${inspectRes.reason ?? "unauthorized process"}`,
+            },
+          },
+        };
+      }
+      clientProcess = inspectRes.binary;
+    } else if (clientPid !== undefined) {
+      const inspectRes = inspectProcess(clientPid);
+      if (inspectRes.ok) {
+        clientProcess = inspectRes.binary;
+      }
+    }
+
+        const request: CapabilityRequest = {
+      agentId,
+      ide: decoded.ide,
+      tool: decoded.tool,
+      alias: decoded.alias,
+      requestedScope: decoded.requestedScope,
+      reason: decoded.reason,
+      verified,
+      ...(clientPid !== undefined ? { clientPid } : {}),
+      ...(clientProcess !== undefined ? { clientProcess } : {}),
+    };
     return run(service.requestCapability(request));
   }
   if (method === "POST" && path === "/approve") {
@@ -547,9 +681,19 @@ export function createVaultHttpServer(
             ? authHeader.slice(7).trim()
             : undefined;
         const providedToken = (Array.isArray(header) ? header[0] : header) ?? bearerToken;
+        const agentTokenHeader = req.headers["x-openvault-agent-token"];
+        const rawAgentToken = Array.isArray(agentTokenHeader) ? agentTokenHeader[0] : agentTokenHeader;
+        const providedAgentToken =
+          rawAgentToken ?? (bearerToken !== undefined && bearerToken !== guardToken ? bearerToken : undefined);
+        const clientPidHeader = req.headers["x-openvault-client-pid"];
+        const rawClientPid = Array.isArray(clientPidHeader) ? clientPidHeader[0] : clientPidHeader;
+        const parsedPid = rawClientPid !== undefined ? parseInt(rawClientPid, 10) : undefined;
+        const clientPid = parsedPid !== undefined && !Number.isNaN(parsedPid) ? parsedPid : undefined;
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
+          ...(clientPid !== undefined ? { clientPid } : {}),
           daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
+          ...(providedAgentToken !== undefined ? { providedAgentToken } : {}),
         });
         sendJson(res, out.status, out.body);
       } catch (err) {

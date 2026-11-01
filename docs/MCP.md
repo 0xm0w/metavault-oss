@@ -37,6 +37,7 @@ Environment consumed by the server:
 | `OPENVAULT_DAEMON_URL` | `http://127.0.0.1:7077` | Daemon HTTP API base URL |
 | `OPENVAULT_AGENT_ID` | `mcp-agent` | Agent identity presented to the daemon (set per IDE) |
 | `OPENVAULT_IDE` | `mcp` | IDE label presented to the daemon |
+| `OPENVAULT_AGENT_TOKEN` | *(none)* | Secret enrollment bearer token proving agent identity to prevent spoofing |
 
 Replace `C:/path/to/openvault` below with your checkout path. Keep the
 per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
@@ -54,6 +55,7 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
       "env": {
         "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
         "OPENVAULT_AGENT_ID": "claude-code",
+        "OPENVAULT_AGENT_TOKEN": "ov_agent_claude_xxxxxxxx",
         "OPENVAULT_IDE": "Claude Code"
       }
     }
@@ -74,6 +76,7 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
       "env": {
         "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
         "OPENVAULT_AGENT_ID": "cursor",
+        "OPENVAULT_AGENT_TOKEN": "ov_agent_cursor_xxxxxxxx",
         "OPENVAULT_IDE": "Cursor"
       }
     }
@@ -96,6 +99,7 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
       "env": {
         "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
         "OPENVAULT_AGENT_ID": "vscode",
+        "OPENVAULT_AGENT_TOKEN": "ov_agent_vscode_xxxxxxxx",
         "OPENVAULT_IDE": "VS Code"
       }
     }

@@ -65,6 +65,8 @@ describe("main-process daemon whitelist", () => {
       { method: "PATCH", path: "/settings/local-auth" },
       { method: "POST", path: "/settings/local-auth/pin" },
       { method: "POST", path: "/settings/local-auth/verify" },
+      { method: "GET", path: "/settings/security" },
+      { method: "PATCH", path: "/settings/security" },
     ]);
     for (const call of ALLOWED_DAEMON_CALLS) {
       expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);

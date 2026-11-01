@@ -3,6 +3,26 @@ import { Schema } from "effect";
 // Warden (marshal) configuration persisted by the daemon. This record holds
 // provider/model/effort/base-URL only — never a raw API key. The Meta API key
 // lives as an ordinary encrypted credential under WARDEN_KEY_ALIAS.
+export interface AgentSecuritySettings {
+  readonly strictMode: boolean;
+  readonly verifyCallerProcess: boolean;
+}
+
+export const DEFAULT_AGENT_SECURITY_SETTINGS: AgentSecuritySettings = {
+  strictMode: false,
+  verifyCallerProcess: false,
+};
+
+export const AgentSecuritySettingsSchema = Schema.Struct({
+  strictMode: Schema.Boolean,
+  verifyCallerProcess: Schema.Boolean,
+});
+
+export const AgentSecuritySettingsPatchSchema = Schema.Struct({
+  strictMode: Schema.optional(Schema.Boolean),
+  verifyCallerProcess: Schema.optional(Schema.Boolean),
+});
+
 export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin";
 
 export interface WardenSettings {

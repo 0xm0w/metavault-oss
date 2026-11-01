@@ -113,6 +113,7 @@ describe("scope risk helpers", () => {
     expect(canAlwaysAllow(approval({ allowedScope: "charges.write" }))).toBe(false);
     expect(canAlwaysAllow(approval({ risk: "medium" }))).toBe(false);
     expect(canAlwaysAllow(approval({ risk: "high" }))).toBe(false);
+    expect(canAlwaysAllow(approval({ verified: false }))).toBe(false);
   });
 });
 

@@ -67,3 +67,24 @@ MetaVault OSS enforces these protections through automated CI test suites:
 - **PQC Suite**: [`packages/core/test/pqc.test.ts`](file:///c:/Users/Mowreez.DESKTOP-D1GHS6J/openvault/packages/core/test/pqc.test.ts) (7 tests verifying ML-KEM-768 encapsulation, decapsulation, tamper resistance, and envelope round-tripping).
 - **Canary Sweep**: [`test/security/canary.test.ts`](file:///c:/Users/Mowreez.DESKTOP-D1GHS6J/openvault/test/security/canary.test.ts) (27 external surfaces scanned for zero plain-text leaks).
 - **Concurrency Fuzzing**: [`test/security/fuzz-concurrency.test.ts`](file:///c:/Users/Mowreez.DESKTOP-D1GHS6J/openvault/test/security/fuzz-concurrency.test.ts) (50-way concurrent race attacks and heap profiling).
+
+---
+
+## 5. Agent Anti-Spoofing, Cryptographic Identity & Process Boundary Verification
+
+### 5.1 Threat Model: Localhost Impersonation & Standing Approval Theft
+In a local AI agent development environment:
+1. **Unauthenticated HTTP Bodies**: A malicious script, prompt-injected plugin, or local curl execution can easily POST JSON to `127.0.0.1:7077/request` declaring `agentId: "cursor"`.
+2. **Social Engineering / Approval Phishing**: Users who see "Cursor in Cursor wants repo:read" in the desktop modal may reflexively approve access.
+3. **Standing Approval Theft**: Without cryptographic binding, an attacker claiming a legitimate agent's ID inherits standing approvals, executing actions silently without human intervention.
+4. **Token Exfiltration Risk**: Even when agent tokens are introduced in local configuration files (e.g. `~/.cursor/mcp.json`), local malware or unauthorized binaries (`python.exe`, `curl.exe`, `powershell.exe`) could attempt to read the file and present the stolen token to `vaultd`.
+
+### 5.2 Multi-Layered Defense-in-Depth Architecture
+
+| Layer | Mechanism | Protection | Implementation Location | Pentest Verification |
+|:---|:---|:---|:---|:---|
+| **Layer 1: Cryptographic Identity Tokens** | Registered agents possess persistent tokens (`ov_agent_<id>_<hex32>`). The daemon sets `agentId` strictly from the token lookup in SQLite; payload `agentId` is overwritten. | Eliminates arbitrary name spoofing. Invalid tokens return 401 Unauthorized. | [`packages/daemon/src/server.ts`](../packages/daemon/src/server.ts)<br>[`packages/core/src/storage.ts`](../packages/core/src/storage.ts) | `test/security/pentest.test.ts` (Probe 6) |
+| **Layer 2: Standing Approval Hardening** | Standing approvals created for verified agents enforce `verifiedOnly: true`. | Unverified callers can never inherit or execute standing approvals. | [`packages/core/src/policy.ts`](../packages/core/src/policy.ts) | `packages/core/test/policy.test.ts`<br>`test/security/pentest.test.ts` |
+| **Layer 3: Strict Agent Verification Mode** | Configurable toggle in Settings > Security (`strictMode: boolean`). Rejects unverified callers with 403 Forbidden. | Zero-trust enforcement. Blocks unauthenticated scripts from even queuing approval prompts. | [`packages/daemon/src/server.ts`](../packages/daemon/src/server.ts)<br>[`packages/app/src/renderer/main.ts`](../packages/app/src/renderer/main.ts) | `test/security/pentest.test.ts` (Probe 6) |
+| **Layer 4: OS Process & Binary Inspection** | Configurable toggle in Settings > Security (`verifyCallerProcess: boolean`). Inspects client PID and binary executable. | Blocks unauthorized binaries (`python.exe`, `curl.exe`, `powershell.exe`) even if they hold a valid stolen token. | [`packages/daemon/src/process-inspector.ts`](../packages/daemon/src/process-inspector.ts) | `test/security/pentest.test.ts` (Probe 6) |
+| **Layer 5: UI Integrity & Alerts** | Policies table shows `Verified` vs `⚠️ Unverified` status badges. Approval modal shows prominent security warning for unverified callers. | Transparent visibility prevents user deception. | [`packages/app/src/renderer/main.ts`](../packages/app/src/renderer/main.ts) | `packages/app/test/model.test.ts` |
