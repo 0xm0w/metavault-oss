@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -7,7 +7,8 @@ import { Writable, type Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { DEFAULT_MARSHAL_MODEL } from "../../brain/src/ollama.js";
-import { encryptSecret } from "../../core/src/crypto.js";
+import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
+import { parseDotEnvWithInference } from "../../core/src/dotenv.js";
 import { MarshalUnavailable, StorageError } from "../../core/src/errors.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { AuditEvent } from "../../core/src/types.js";
@@ -56,6 +57,18 @@ type CliFailure =
 
 export type CliFetch = typeof fetch;
 
+export type CliSpawn = (
+  command: string,
+  args: readonly string[],
+  options: {
+    readonly stdio: "inherit";
+    readonly shell?: boolean;
+    readonly env: NodeJS.ProcessEnv;
+  },
+) => {
+  readonly on: (event: string, cb: (code: number | null) => void) => void;
+};
+
 export interface CliDeps {
   readonly daemonUrl?: string | undefined;
   readonly ollamaUrl?: string | undefined;
@@ -68,6 +81,7 @@ export interface CliDeps {
   readonly err?: ((text: string) => void) | undefined;
   readonly input?: Readable | undefined;
   readonly output?: Writable | undefined;
+  readonly spawnFn?: CliSpawn | undefined;
 }
 
 interface ResolvedIo {
@@ -81,7 +95,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: openvault <init|add <alias> --scope <s>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|model pull>\n";
+  "usage: openvault <init|add <alias> --scope <s>|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|model pull>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -457,6 +471,104 @@ function addProgram(
   });
 }
 
+function importProgram(
+  deps: CliDeps,
+  filePath: string,
+): Effect.Effect<string, CliFailure> {
+  return Effect.gen(function* () {
+    const content = yield* Effect.try({
+      try: () => readFileSync(filePath, "utf8"),
+      catch: () => new UsageError({ message: `failed to read .env file at ${filePath}` }),
+    });
+    const items = parseDotEnvWithInference(content);
+    if (items.length === 0) {
+      return `no credentials found in ${filePath}\n`;
+    }
+    const masterKey = yield* masterKeyEffect(deps);
+    const dbPath = resolveDbPath(deps);
+
+    yield* Effect.gen(function* () {
+      const store = yield* VaultStore;
+      for (const item of items) {
+        const ciphertext = encryptSecret(masterKey, item.value);
+        yield* store.addCredential(item.alias, item.scope, ciphertext, `env:${item.rawKey}`);
+      }
+    }).pipe(Effect.provide(VaultStoreLive(dbPath, masterKey)));
+
+    let out = `imported ${String(items.length)} credential${items.length === 1 ? "" : "s"} from ${filePath}:\n`;
+    for (const item of items) {
+      out += `  • ${item.rawKey} -> alias: ${item.alias} (scope ${item.scope})\n`;
+    }
+    return out;
+  });
+}
+
+function runProgram(
+  deps: CliDeps,
+  commandAndArgs: readonly string[],
+): Effect.Effect<string, CliFailure> {
+  return Effect.gen(function* () {
+    if (commandAndArgs.length === 0) {
+      return yield* Effect.fail(new UsageError({ message: "run requires a command to execute" }));
+    }
+    const masterKey = yield* masterKeyEffect(deps);
+    const dbPath = resolveDbPath(deps);
+
+    const envSecrets: Record<string, string> = {};
+    yield* Effect.gen(function* () {
+      const store = yield* VaultStore;
+      const aliases = yield* store.listCredentialAliases();
+      for (const alias of aliases) {
+        const rec = yield* store.getCredential(alias);
+        if (rec) {
+          try {
+            const secret = decryptSecret(masterKey, rec.ciphertext);
+            const envKey = rec.website.startsWith("env:")
+              ? rec.website.slice(4)
+              : alias.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+            envSecrets[envKey] = secret;
+          } catch {
+            // Ignore un-decryptable records
+          }
+        }
+      }
+    }).pipe(Effect.provide(VaultStoreLive(dbPath, masterKey)));
+
+    const [cmd, ...args] = commandAndArgs;
+    if (!cmd) {
+      return yield* Effect.fail(new UsageError({ message: "command cannot be empty" }));
+    }
+
+    const spawnExecutor = deps.spawnFn ?? ((c, a, opt) => spawn(c, a as string[], opt));
+
+    yield* Effect.tryPromise({
+      try: () =>
+        new Promise<void>((resolve, reject) => {
+          const child = spawnExecutor(cmd, args, {
+            stdio: "inherit",
+            shell: process.platform === "win32",
+            env: {
+              ...process.env,
+              ...envSecrets,
+            },
+          });
+          child.on("close", (code: number | null) => {
+            if (code !== 0 && code !== null) {
+              process.exitCode = code;
+            }
+            resolve();
+          });
+          child.on("error", (err: unknown) => {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          });
+        }),
+      catch: () => new UsageError({ message: "failed to spawn child process" }),
+    });
+
+    return "";
+  });
+}
+
 function approveProgram(
   io: ResolvedIo,
   grantId: string,
@@ -561,6 +673,21 @@ function programFor(
         return Effect.fail(new UsageError({ message: "add requires <alias> --scope <s>" }));
       }
       return addProgram(deps, io, parsed.alias, parsed.scope);
+    }
+    case "import": {
+      const filePath = argv[1];
+      if (filePath === undefined || filePath === "") {
+        return Effect.fail(new UsageError({ message: "import requires <filePath>" }));
+      }
+      return importProgram(deps, filePath);
+    }
+    case "run": {
+      const rest = argv.slice(1);
+      const commandArgs = rest[0] === "--" ? rest.slice(1) : rest;
+      if (commandArgs.length === 0) {
+        return Effect.fail(new UsageError({ message: "run requires -- <command> [args...]" }));
+      }
+      return runProgram(deps, commandArgs);
     }
     case "approve": {
       const grantId = argv[1];

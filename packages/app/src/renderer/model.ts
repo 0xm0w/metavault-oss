@@ -1166,3 +1166,11 @@ export function projectSecurityPosture(raw: unknown): SecurityPostureReportLike 
     remediations: remediations as SecurityPostureRemediationLike[],
   };
 }
+
+
+export {
+  parseDotEnv,
+  inferAliasAndScope,
+  parseDotEnvWithInference,
+  type DotEnvImportItem,
+} from "./dotenv.js";

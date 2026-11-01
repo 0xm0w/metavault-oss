@@ -39,6 +39,9 @@ import {
   projectWardenTestResult,
   wardenTestMessage,
   projectSecurityPosture,
+  parseDotEnv,
+  inferAliasAndScope,
+  parseDotEnvWithInference,
 } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
@@ -969,5 +972,44 @@ describe("projectSecurityPosture", () => {
     expect(projectSecurityPosture(null)).toBeNull();
     expect(projectSecurityPosture("not-an-object")).toBeNull();
     expect(projectSecurityPosture({ score: "NaN" })).toBeNull();
+  });
+});
+
+describe("dotenv parser and inference (#17)", () => {
+  it("parses environment entries and strips comments", () => {
+    const raw = "PORT=8080\n# comment\nDEBUG=true # inline";
+    const entries = parseDotEnv(raw);
+    expect(entries).toEqual([
+      { key: "PORT", value: "8080" },
+      { key: "DEBUG", value: "true" },
+    ]);
+  });
+
+  it("infers alias and scope correctly", () => {
+    expect(inferAliasAndScope("STRIPE_SECRET_KEY")).toEqual({
+      alias: "stripe",
+      scope: "charges.read",
+    });
+    expect(inferAliasAndScope("OPENAI_API_KEY")).toEqual({
+      alias: "openai",
+      scope: "chat.completions",
+    });
+    expect(inferAliasAndScope("MY_KEY")).toEqual({
+      alias: "my",
+      scope: "read",
+    });
+  });
+
+  it("generates import items with default included true", () => {
+    const raw = "STRIPE_KEY=sk_test_123";
+    const items = parseDotEnvWithInference(raw);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({
+      rawKey: "STRIPE_KEY",
+      alias: "stripe",
+      scope: "charges.read",
+      value: "sk_test_123",
+      included: true,
+    });
   });
 });

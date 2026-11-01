@@ -39,6 +39,8 @@ import {
   projectWardenTestResult,
   wardenTestMessage,
   projectSecurityPosture,
+  parseDotEnvWithInference,
+  type DotEnvImportItem,
 } from "./model.js";
 import type {
   AuditEventLike,
@@ -647,10 +649,237 @@ function openCredentialDetail(card: { alias: string; website: string; scopes: re
   scopeInput.focus();
 }
 
+
+function openDotEnvModal(): void {
+  if (credentialModal !== null) {
+    return;
+  }
+  const overlay = el("div", "vault-modal-overlay");
+  const dialog = el("div", "vault-modal");
+  dialog.style.maxWidth = "660px";
+  dialog.style.width = "90%";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+
+  const header = el("div", "vault-modal-header");
+  const title = el("h2", "vault-modal-title", "Import .env file");
+  const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Close");
+  header.append(title, closeBtn);
+  dialog.append(header);
+
+  const sub = el("p", "vault-modal-sub", "Select or paste a .env file. MetaVault parses your environment keys, infers least-privilege scope ceilings, and encrypts secrets directly into vault storage.");
+  dialog.append(sub);
+
+  const errorBox = el("p", "vault-modal-error");
+  errorBox.hidden = true;
+  dialog.append(errorBox);
+
+  const dropZone = el("div", "vault-field");
+  dropZone.style.border = "1px dashed var(--border)";
+  dropZone.style.borderRadius = "8px";
+  dropZone.style.padding = "14px";
+  dropZone.style.textAlign = "center";
+  dropZone.style.cursor = "pointer";
+  dropZone.style.marginBottom = "10px";
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".env,.env.*,text/plain";
+  fileInput.style.display = "none";
+
+  const dropText = el("p", "", "Click to select a .env file, or paste contents below");
+  dropText.style.margin = "0";
+  dropText.style.fontSize = "13px";
+  dropText.style.color = "var(--muted)";
+  dropZone.append(fileInput, dropText);
+  dropZone.addEventListener("click", () => { fileInput.click(); });
+  dialog.append(dropZone);
+
+  const textWrap = el("label", "vault-field");
+  textWrap.append(el("span", "vault-field-label", "Or paste .env contents:"));
+  const textarea = document.createElement("textarea");
+  textarea.className = "vault-input";
+  textarea.style.height = "85px";
+  textarea.style.fontFamily = "monospace";
+  textarea.style.fontSize = "12px";
+  textarea.placeholder = "STRIPE_SECRET_KEY=sk_live_...\nOPENAI_API_KEY=sk-proj-...\nDATABASE_URL=postgresql://...";
+  textWrap.append(textarea);
+  dialog.append(textWrap);
+
+  const previewContainer = el("div", "dotenv-preview-container");
+  previewContainer.style.marginTop = "10px";
+  previewContainer.style.maxHeight = "220px";
+  previewContainer.style.overflowY = "auto";
+  dialog.append(previewContainer);
+
+  let parsedItems: DotEnvImportItem[] = [];
+
+  const actions = el("div", "vault-modal-actions");
+  const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
+  cancelBtn.type = "button";
+  const saveBtn = el("button", "vault-btn vault-btn-primary", "Import Selected Secrets") as HTMLButtonElement;
+  saveBtn.type = "button";
+  saveBtn.disabled = true;
+  actions.append(cancelBtn, saveBtn);
+  dialog.append(actions);
+
+  const updatePreview = (text: string) => {
+    previewContainer.replaceChildren();
+    parsedItems = parseDotEnvWithInference(text);
+
+    if (parsedItems.length === 0) {
+      if (text.trim()) {
+        const noItems = el("p", "vault-muted", "No valid environment variables detected.");
+        noItems.style.padding = "8px 0";
+        previewContainer.append(noItems);
+      }
+      saveBtn.disabled = true;
+      return;
+    }
+
+    saveBtn.disabled = false;
+    const table = el("table", "audit-table");
+    table.style.width = "100%";
+    table.style.fontSize = "12px";
+
+    const thead = el("thead", "");
+    const headerRow = el("tr", "");
+    const thCheck = el("th", "", "Use");
+    const thKey = el("th", "", "Variable");
+    const thAlias = el("th", "", "Inferred Alias");
+    const thScope = el("th", "", "Ceiling Scope");
+    const thSecret = el("th", "", "Secret");
+    headerRow.append(thCheck, thKey, thAlias, thScope, thSecret);
+    thead.append(headerRow);
+    table.append(thead);
+
+    const tbody = el("tbody", "");
+    for (const item of parsedItems) {
+      const tr = el("tr", "");
+
+      const tdCheck = el("td", "");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = item.included;
+      cb.addEventListener("change", () => {
+        item.included = cb.checked;
+        saveBtn.disabled = !parsedItems.some((i) => i.included);
+      });
+      tdCheck.append(cb);
+
+      const tdKey = el("td", "", item.rawKey);
+      tdKey.style.fontWeight = "600";
+
+      const tdAlias = el("td", "");
+      const aliasInp = document.createElement("input");
+      aliasInp.className = "vault-input";
+      aliasInp.style.padding = "2px 6px";
+      aliasInp.style.fontSize = "11px";
+      aliasInp.value = item.alias;
+      aliasInp.addEventListener("input", () => {
+        item.alias = aliasInp.value.trim();
+      });
+      tdAlias.append(aliasInp);
+
+      const tdScope = el("td", "");
+      const scopeInp = document.createElement("input");
+      scopeInp.className = "vault-input";
+      scopeInp.style.padding = "2px 6px";
+      scopeInp.style.fontSize = "11px";
+      scopeInp.value = item.scope;
+      scopeInp.addEventListener("input", () => {
+        item.scope = scopeInp.value.trim();
+      });
+      tdScope.append(scopeInp);
+
+      const tdSecret = el("td", "vault-muted", "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
+
+      tr.append(tdCheck, tdKey, tdAlias, tdScope, tdSecret);
+      tbody.append(tr);
+    }
+    table.append(tbody);
+    previewContainer.append(table);
+  };
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = typeof reader.result === "string" ? reader.result : "";
+        textarea.value = text;
+        updatePreview(text);
+      };
+      reader.readAsText(file);
+    }
+  });
+
+  textarea.addEventListener("input", () => {
+    updatePreview(textarea.value);
+  });
+
+  const close = (): void => {
+    closeCredentialModal();
+  };
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+
+  saveBtn.addEventListener("click", () => {
+    const toImport = parsedItems.filter((i) => i.included && i.alias && i.scope && i.value);
+    if (toImport.length === 0) {
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+
+    void (async () => {
+      let count = 0;
+      for (const item of toImport) {
+        try {
+          await window.openvault.addCredential(
+            item.alias,
+            item.scope,
+            item.value,
+            `env:${item.rawKey}`
+          );
+          count += 1;
+        } catch {
+          // ignore duplicate conflicts
+        }
+      }
+      close();
+      await refresh();
+      render();
+      showBanner(`Successfully imported ${String(count)} credential${count === 1 ? "" : "s"} into vault.`);
+    })();
+  });
+
+  overlay.append(dialog);
+  document.body.append(overlay);
+  credentialModal = overlay;
+}
+
 function renderVault(view: HTMLElement): void {
   const panel = el("section", "vault-panel");
   const headerRow = el("div", "vault-section-header");
   headerRow.append(el("h1", "vault-title", "Agent credentials"));
+
+  const actionGroup = el("div", "vault-header-actions");
+  actionGroup.style.display = "flex";
+  actionGroup.style.gap = "8px";
+  actionGroup.style.alignItems = "center";
+
+  const importBtn = el("button", "action btn-import-dotenv", "Import .env") as HTMLButtonElement;
+  importBtn.type = "button";
+  importBtn.style.padding = "5px 12px";
+  importBtn.style.fontSize = "12px";
+  importBtn.addEventListener("click", () => {
+    openDotEnvModal();
+  });
+  actionGroup.append(importBtn);
+
   const addBtn = el("button", "vault-add-btn", "+") as HTMLButtonElement;
   addBtn.type = "button";
   addBtn.setAttribute("aria-label", "Add credential");
@@ -658,7 +887,9 @@ function renderVault(view: HTMLElement): void {
   addBtn.addEventListener("click", () => {
     openCredentialModal();
   });
-  headerRow.append(addBtn);
+  actionGroup.append(addBtn);
+
+  headerRow.append(actionGroup);
   panel.append(headerRow);
   panel.append(el("p", "vault-sub", "Aliases and scopes only \u2014 values are never displayed, copied, or sent to this window."));
   if (aliases.length === 0) {

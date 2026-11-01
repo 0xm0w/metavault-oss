@@ -413,4 +413,74 @@ describe("openvault CLI (in-process daemon wire)", () => {
     expect(echoed).toContain("Secret:");
     expect(echoed).not.toContain(CANARY);
   });
+
+  it("openvault import imports .env file into encrypted vault storage (#17)", async () => {
+    const envFile = join(workDir, "test.env");
+    writeFileSync(
+      envFile,
+      `
+# Test environment
+STRIPE_API_KEY=sk_test_import_stripe_999
+OPENAI_API_KEY=sk-proj-import-openai-888
+`,
+      "utf8",
+    );
+
+    const c = capture();
+    const code = await runCli(["import", envFile], c.deps);
+    expect(code).toBe(0);
+    expect(c.out()).toContain("imported 2 credentials");
+    expect(c.out()).toContain("STRIPE_API_KEY -> alias: stripe");
+    expect(c.out()).toContain("OPENAI_API_KEY -> alias: openai");
+    // Secrets must NEVER be leaked in stdout
+    expect(c.out()).not.toContain("sk_test_import_stripe_999");
+    expect(c.out()).not.toContain("sk-proj-import-openai-888");
+
+    // Verify stored in vault
+    const store = Effect.runSync(
+      VaultStore.pipe(
+        Effect.flatMap((s) => s.getCredential("stripe")),
+        Effect.provide(VaultStoreLive(dbPath, MASTER_KEY)),
+      ),
+    );
+    expect(store).toBeDefined();
+    if (store === undefined) {
+      throw new Error("expected store record");
+    }
+    expect(store.scopeCeiling).toBe("charges.read");
+    const decrypted = decryptSecret(MASTER_KEY, store.ciphertext);
+    expect(decrypted).toBe("sk_test_import_stripe_999");
+  });
+
+  it("openvault run injects decrypted secrets in-memory into child process (#17)", async () => {
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    let commandSpawned = "";
+
+    const mockSpawn = (
+      command: string,
+      _args: readonly string[],
+      options: { readonly env: NodeJS.ProcessEnv },
+    ) => {
+      commandSpawned = command;
+      capturedEnv = options.env;
+      return {
+        on: (event: string, cb: (code: number | null) => void) => {
+          if (event === "close") {
+            cb(0);
+          }
+        },
+      };
+    };
+
+    const c = capture({ spawnFn: mockSpawn });
+    const code = await runCli(["run", "--", "npm", "run", "dev"], c.deps);
+    expect(code).toBe(0);
+    expect(commandSpawned).toBe("npm");
+    expect(capturedEnv).toBeDefined();
+    if (capturedEnv === undefined) {
+      throw new Error("expected capturedEnv");
+    }
+    expect(capturedEnv["STRIPE_API_KEY"]).toBe("sk_test_import_stripe_999");
+    expect(capturedEnv["OPENAI_API_KEY"]).toBe("sk-proj-import-openai-888");
+  });
 });
