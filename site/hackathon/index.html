@@ -3,80 +3,145 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MetaVault OSS — Meta Hackathon Pitch</title>
-<link rel="stylesheet" href="/assets/style.css">
+<title>Hackathon — MetaVault OSS</title>
+<meta name="description" content="MetaVault OSS for the Meta hackathon. Agents ask for a capability. A local Meta model scores it. The key never enters the chat.">
+<meta name="theme-color" content="#8629ff">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/brand/site.webmanifest">
-<meta name="theme-color" content="#0a0a0a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/landing.css">
+<link rel="stylesheet" href="/assets/pages.css">
 </head>
-<body class="deck">
-<nav><div class="nav-in">
-  <a class="logo" href="/">META<span>VAULT</span> OSS</a>
-  <div class="nav-links"><a href="/docs/">Docs</a><a href="/architecture/">Architecture</a><a href="/research/">Research</a><a href="/brand/">Brand</a><a href="/hackathon/" class="active">Hackathon</a><a href="https://github.com/0xm0w/openvault">GitHub</a></div>
-</div></nav>
-
-<section><div class="wrap">
-  <p class="eyebrow">Meta Global AI Developer Hackathon · Indie Track</p>
-  <p class="big">Tired of pasting API keys into <span class="hl">all your coding IDEs?</span></p>
-  <p class="lede" style="margin-top:24px">So is every developer on Earth. We did it this morning. The key is in a transcript now. Forever.</p>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow dim">Problem</p>
-  <p class="big">Your keys are stored inside your tools. When a tool leaks, <span class="hl">you wake up to a $4,000 bill.</span></p>
-  <p class="lede" style="margin-top:24px">It keeps happening: credentials sitting in dev tools get exfiltrated and burned by bots within hours. Tired of rotating keys because you pasted one? Tired of manually revoking? Tired of trusting cloud password managers with your agent's hands?</p>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow">Solution</p>
-  <p class="big">One vault for all your keys. <span class="hl">Meta LLMs guard it</span> from the requestors.</p>
-  <p class="lede" style="margin-top:24px">MetaVault OSS puts every credential in one local, encrypted vault. Agents in Cursor, Claude Code, Codex, and VS Code request scoped capabilities over MCP. A Meta LLM warden assesses each requestor. You approve once. The key is injected inside the daemon and never enters a chat, a prompt, or a model.</p>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow dim">Security</p>
-  <p class="big">A dumb vault. <span class="hl">A smart warden.</span> <span class="dim">A tripwire on every grant.</span></p>
-  <div class="grid">
-    <div class="card"><span class="tag">The vault</span><h3>Deliberately dumb</h3><p>AES-256-GCM at rest, OS-keychain master key, hard policy ceilings, single-use grants. Secure with no AI at all.</p></div>
-    <div class="card"><span class="tag">The warden</span><h3>Meta LLMs on guard</h3><p>Llama 3.2 3B locally today; Muse Glimmer 30B; Muse Spark and Wonder at maximum. Wardens see metadata only — never plaintext keys. A stronger warden detects attacks from rogue agents mid-flight.</p></div>
-    <div class="card"><span class="tag">The tripwire</span><h3>Auto-revocation</h3><p>Grants die after use, after TTL, after events, or on one click — mid-task. Manual revocation is over.</p></div>
+<body>
+<div class="mb-landing">
+<nav class="mb-landing-nav">
+  <div class="mb-nav-container">
+    <a class="mb-logo" href="/">METAVAULT OSS</a>
+    <div class="mb-nav-desktop-links">
+      <a class="caption-mono-sm" href="/docs/">Docs</a>
+      <a class="caption-mono-sm" href="/architecture/">Architecture</a>
+      <a class="caption-mono-sm" href="/research/">Research</a>
+      <a class="caption-mono-sm" href="/brand/">Brand</a>
+      <a class="caption-mono-sm is-active" href="/hackathon/">Hackathon</a>
+      <a class="mb-btn-nav" href="/#download">Download</a>
+    </div>
+    <button class="mb-nav-hamburger-btn" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
   </div>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow">Why Meta models are load-bearing</p>
-  <p class="big">The warden makes <span class="hl">access decisions</span>, not chat replies.</p>
-  <p class="lede" style="margin-top:24px">Every request is risk-scored by a Meta model with a published, measured eval: 17 attack scenarios — disguised writes, scope escalation, prompt injection, bursts. Live Llama 3.2 3B on an 8 GB GPU: <b style="color:var(--ink)">safety 100%</b>. Its risk labels are weak (23.5%) and we publish that too — because deterministic policy holds the floor either way. MetaVault OSS is secure even if the AI is wrong, and measurably safer when it's smart.</p>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow dim">Proof, not promises</p>
-  <div class="stat-row">
-    <div class="stat"><b>146</b><span>tests passing, strict TS + lint gated</span></div>
-    <div class="stat"><b>7/7</b><span>live rehearsal checks in 3.6 s</span></div>
-    <div class="stat"><b>17</b><span>canary-scanned surfaces, zero leaks</span></div>
-    <div class="stat"><b>3</b><span>real bugs caught by our own gates (and fixed)</span></div>
+  <div class="mb-nav-mobile-menu" id="mobile-menu" hidden>
+    <a class="mb-mobile-menu-item" href="/docs/">Docs</a>
+    <a class="mb-mobile-menu-item" href="/architecture/">Architecture</a>
+    <a class="mb-mobile-menu-item" href="/research/">Research</a>
+    <a class="mb-mobile-menu-item" href="/brand/">Brand</a>
+    <a class="mb-mobile-menu-item is-active" href="/hackathon/">Hackathon</a>
+    <a class="mb-btn-nav" href="/#download">Download</a>
   </div>
-  <p class="lede" style="margin-top:28px">Built by the team behind <a href="https://keythings.xyz">Keythings Wallet</a>. Same discipline as a crypto wallet — except the payloads are API requests, and they are far more complex than signatures. Roadmap: air-gapped vaults, secure enclaves, hardened devices.</p>
-</div></section>
+</nav>
 
-<section><div class="wrap" style="text-align:left">
-  <p class="eyebrow">The new standard</p>
-  <p class="big">NEVER LEAK YOUR KEYS ANYMORE. <span class="hl">This is the new standard.</span></p>
-  <div class="btns" style="margin-top:36px">
-    <a class="btn" href="https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1">Download for Windows</a>
-    <a class="btn ghost" href="https://github.com/0xm0w/openvault">Open source — Apache-2.0</a>
-    <a class="btn ghost" href="/">keythings.xyz</a>
-  </div>
-  <p class="mute" style="margin-top:24px">The future is secure, easy, and has infinite possibilities.</p>
-</div></section>
+<div class="mb-wrap">
+  <header class="pg-hero">
+    <span class="caption-mono-sm pg-kicker">Meta hackathon · Indie track</span>
+    <h1>Stop pasting live keys into coding agents.</h1>
+    <p class="pg-lead">One local vault. Agents in Cursor, Claude Code, Codex, and VS Code ask for a <span class="buzz">capability</span>. A Meta model scores the request. You approve. The secret never enters the chat.</p>
+    <div class="pg-row" style="justify-content:center;margin-top:20px">
+      <a class="mb-btn-primary" href="/#download">Download for Windows</a>
+      <a class="mb-btn-secondary" href="/research/">The proofs</a>
+      <a class="mb-btn-tertiary" href="https://github.com/0xm0w/openvault">Apache-2.0</a>
+    </div>
+  </header>
 
-<footer><div class="wrap foot">
-  <span>METAVAULT OSS — agents never see your secrets.</span>
-  <span><a href="/">Home</a> · <a href="/docs/">Docs</a> · <a href="/architecture/">Architecture</a> · <a href="/research/">Research</a> · <a href="/brand/">Brand</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
-  <span>Indie track. Built in the open.</span>
-</div></footer>
+  <section class="pg-section" id="problem">
+    <span class="caption-mono-sm pg-kicker">The mess</span>
+    <h2>The key is already in a transcript</h2>
+    <div class="pg-grid">
+      <article class="pg-card"><span class="n">Paste</span><h3>It outlives the chat</h3><p class="pg-note">A key in a prompt is in a log, a sync, and someone else's retention window.</p></article>
+      <article class="pg-card"><span class="n">Rotate</span><h3>You are late</h3><p class="pg-note">Rotation starts after the leak. The bill does not wait for your dashboard.</p></article>
+      <article class="pg-card"><span class="n">Cloud vaults</span><h3>Built for humans</h3><p class="pg-note">Agents ask all day. A password manager prompt was not designed for that.</p></article>
+    </div>
+  </section>
+
+  <section class="pg-section" id="product">
+    <span class="caption-mono-sm pg-kicker">The product</span>
+    <h2>Broker the call. Do not hand over the key.</h2>
+    <div class="pg-grid">
+      <article class="pg-card"><span class="n">Vault</span><h3>Deliberately dumb</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. Master key in the OS keychain. Hard ceilings. Secure with no model at all.</p></article>
+      <article class="pg-card"><span class="n">Warden</span><h3>A Meta model on guard</h3><p class="pg-note">Default <span class="buzz">llama3.2:3b</span> on this machine. It sees the request, never the key.</p></article>
+      <article class="pg-card"><span class="n">Tripwire</span><h3>The grant dies</h3><p class="pg-note">After the call, after 60 seconds, or on one revoke. Standing approval is a low read only.</p></article>
+    </div>
+  </section>
+
+  <section class="pg-section" id="try">
+    <span class="caption-mono-sm pg-kicker">Try the gate</span>
+    <h2>Three requests. Pick one.</h2>
+    <p class="pg-note">Nothing is stored. These buttons only show which gate fires.</p>
+    <div id="pitch-sim">
+      <div class="pg-tablist" role="group" aria-label="Sample requests">
+        <button type="button" data-case="read" aria-pressed="true">A normal read</button>
+        <button type="button" data-case="write" aria-pressed="false">A write under a read ceiling</button>
+        <button type="button" data-case="self" aria-pressed="false">The agent approves itself</button>
+      </div>
+      <article class="pg-card">
+        <p id="pitch-ask"></p>
+        <p class="pg-kicker caption-mono-sm" id="pitch-gate"></p>
+        <pre id="pitch-out" style="font-family:var(--font-mono);font-size:13px;white-space:pre-wrap;margin:12px 0 0"></pre>
+      </article>
+    </div>
+  </section>
+
+  <section class="pg-section" id="why-meta">
+    <span class="caption-mono-sm pg-kicker">Why a Meta model</span>
+    <h2>It makes an access decision, not a chat reply.</h2>
+    <div class="pg-grid-2">
+      <article class="pg-card">
+        <h3>What it is allowed to see</h3>
+        <p>Agent, IDE, alias, scope, reason. That is the whole prompt.</p>
+      </article>
+      <article class="pg-card">
+        <h3>What it is not allowed to change</h3>
+        <p>The <span class="buzz">policy floor</span>. A write under a read ceiling is dead before the model runs.</p>
+      </article>
+    </div>
+    <div class="pg-row" style="margin-top:16px">
+      <span class="pg-pill">llama3.2:3b</span>
+      <span class="pg-pill">llama3.1:8b</span>
+      <span class="pg-pill">llama3.3:70b</span>
+      <span class="pg-pill">Meta API, opt-in</span>
+    </div>
+  </section>
+
+  <section class="pg-section">
+    <span class="caption-mono-sm pg-kicker">What to open</span>
+    <h2>Proofs, not a slide of numbers</h2>
+    <div class="pg-grid">
+      <article class="pg-card"><span class="n">0 / 27</span><h3>Canary leaks</h3><p class="pg-note">Twenty-seven surfaces. The build fails if the secret shows up. <a href="/research/#q2-proofs">The sweep</a>.</p></article>
+      <article class="pg-card"><span class="n">5 tools</span><h3>MCP, and no approve</h3><p class="pg-note">The agent can ask, list aliases, enroll, check status, and revoke. <a href="/docs/#mcp">The snippet</a>.</p></article>
+      <article class="pg-card"><span class="n">Local</span><h3>127.0.0.1</h3><p class="pg-note">The daemon does not leave the machine. <a href="/architecture/#flow">The path</a>.</p></article>
+    </div>
+    <p class="pg-note" style="margin-top:16px">From the team behind <a href="https://keythings.xyz">Keythings</a>. Same rule as a wallet: the key is used, and it is not displayed.</p>
+    <div class="pg-row">
+      <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1">Download for Windows</a>
+      <a class="mb-btn-secondary" href="https://github.com/0xm0w/openvault">View source</a>
+    </div>
+  </section>
+
+  <footer class="mb-foot pg-foot-gap">
+    <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="/architecture/">Architecture</a>
+      <a href="/research/">Research</a>
+      <a href="/brand/">Brand</a>
+      <a href="https://github.com/0xm0w/openvault">GitHub</a>
+    </nav>
+  </footer>
+</div>
+</div>
+<script src="/assets/pages.js"></script>
 </body>
 </html>
