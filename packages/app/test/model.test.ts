@@ -49,6 +49,7 @@ import {
   shouldRequireAuthForApproval,
   shouldRequireAuthForSettings,
   isBiometricsActive,
+  localAuthFactorLabel,
   isAutoLockDue,
   canLockSessionNow,
 } from "../src/renderer/model.js";
@@ -1091,8 +1092,10 @@ describe("projectLocalAuthStatus (#19)", () => {
       const on = { ...baseAuth, requireOnLaunch: true };
       expect(shouldLockOnLaunch(on)).toBe(true);
 
-      // If unconfigured, cannot lock on launch (fails open to allow onboarding)
+      // No app PIN and no Windows Hello: cannot lock on launch.
       expect(shouldLockOnLaunch({ ...on, configured: false })).toBe(false);
+      // Windows Hello alone is enough to lock on launch.
+      expect(shouldLockOnLaunch({ ...on, configured: false, biometricEnabled: true })).toBe(true);
 
       // If master switch disabled, launch gate does not lock
       expect(shouldLockOnLaunch({ ...on, enabled: false })).toBe(false);
@@ -1140,6 +1143,10 @@ describe("projectLocalAuthStatus (#19)", () => {
 
       // When master switch is OFF
       expect(isBiometricsActive({ ...on, enabled: false })).toBe(false);
+      expect(localAuthFactorLabel({ ...baseAuth, enabled: false, biometricEnabled: true })).toBe("Off");
+      expect(localAuthFactorLabel(on)).toBe("Windows Hello on · App PIN set");
+      expect(localAuthFactorLabel({ ...baseAuth, configured: false, biometricEnabled: true })).toBe("Windows Hello on");
+      expect(localAuthFactorLabel({ ...baseAuth, biometricEnabled: false })).toBe("App PIN only");
     });
 
     it("Layer 6: Inactivity auto-lock session", () => {
@@ -1171,8 +1178,9 @@ describe("projectLocalAuthStatus (#19)", () => {
       // Available and active when enabled and configured
       expect(canLockSessionNow(baseAuth)).toBe(true);
 
-      // Not available when unconfigured (no PIN set)
+      // Not available when there is no app PIN and no Windows Hello
       expect(canLockSessionNow({ ...baseAuth, configured: false })).toBe(false);
+      expect(canLockSessionNow({ ...baseAuth, configured: false, biometricEnabled: true })).toBe(true);
 
       // Not available when master switch is disabled
       expect(canLockSessionNow({ ...baseAuth, enabled: false })).toBe(false);

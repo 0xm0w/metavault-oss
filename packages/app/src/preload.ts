@@ -3,6 +3,7 @@ import type {
   CapabilityRequestLike,
   DeeplinkAddParams,
   LocalAuthPatchLike,
+  BuiltinAiProgressLike,
   UpdaterStatusLike,
   VaultApi,
   WardenSettingsPatch,
@@ -75,6 +76,8 @@ const api: VaultApi = {
     invoke("POST", "/settings/local-auth/pin", { pin, ...(currentPin !== undefined && currentPin !== "" ? { currentPin } : {}) }),
   verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),
   verifyBiometric: () => invoke("POST", "/settings/local-auth/verify-biometric"),
+  windowsHelloAvailability: () => ipcRenderer.invoke("openvault:windows-hello-availability"),
+  verifyWindowsHello: (purpose: "setup" | "unlock") => ipcRenderer.invoke("openvault:windows-hello-verify", purpose),
   bringToFront: () => {
     ipcRenderer.send("openvault:bring-to-front");
   },
@@ -87,6 +90,18 @@ const api: VaultApi = {
     ipcRenderer.on("openvault:updater-status", listener);
     return () => {
       ipcRenderer.removeListener("openvault:updater-status", listener);
+    };
+  },
+  getBuiltinAiStatus: () => ipcRenderer.invoke("openvault:builtin-ai-status"),
+  startBuiltinAiDownload: () => ipcRenderer.invoke("openvault:start-builtin-ai-download"),
+  cancelBuiltinAiDownload: () => ipcRenderer.invoke("openvault:cancel-builtin-ai-download"),
+  onBuiltinAiProgress: (handler: (progress: BuiltinAiProgressLike) => void) => {
+    const listener = (_event: unknown, data: unknown): void => {
+      handler(data as BuiltinAiProgressLike);
+    };
+    ipcRenderer.on("openvault:builtin-ai-progress", listener);
+    return () => {
+      ipcRenderer.removeListener("openvault:builtin-ai-progress", listener);
     };
   },
 };

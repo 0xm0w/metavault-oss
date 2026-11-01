@@ -1050,16 +1050,17 @@ export const EFFORT_OPTIONS: readonly EffortOption[] = [
 ];
 
 export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
-  { id: "none", label: "None (policy only)" },
+  { id: "builtin", label: "Built-in AI (On-Device WebGPU)" },
   { id: "ollama", label: "Local \u2014 Ollama" },
   { id: "meta-api", label: "Meta API (cloud)" },
+  { id: "none", label: "None (policy only)" },
 ];
 
 export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
 export const VAULT_PATH_DISPLAY = "openvault.db (in vaultd's working directory; OPENVAULT_DB_PATH can override it)";
 export const APP_VERSION_DISPLAY = "0.1.0";
 
-const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api"];
+const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api", "builtin"];
 const WARDEN_EFFORTS_LIST: readonly WardenEffort[] = ["fast", "standard", "deep"];
 
 export function projectWardenSettings(raw: unknown): WardenSettingsLike | null {
@@ -1142,6 +1143,11 @@ export function wardenTestMessage(result: WardenTestResultLike): WardenTestResul
   if (result.provider === "none" || result.detail === "policy-only") {
     return { ok: result.ok, message: "Policy-only mode: no warden provider to test \u2014 deterministic policy is deciding requests." };
   }
+  if (result.provider === "builtin") {
+    return result.ok
+      ? { ok: true, message: `Built-in AI OK \u2014 Llama 3.2 on WebGPU responded in ${String(Math.round(result.latencyMs))} ms.` }
+      : { ok: false, message: `Built-in AI model not ready \u2014 ${result.detail}. Download or bundle the model files in Settings.` };
+  }
   if (result.ok) {
     return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };
   }
@@ -1219,8 +1225,20 @@ export function shouldPromptPinSetupOnEnable(status: LocalAuthStatusLike): boole
   return !status.configured;
 }
 
+export function hasLocalFactor(status: LocalAuthStatusLike): boolean {
+  return status.configured || status.biometricEnabled;
+}
+
+export function localAuthFactorLabel(status: LocalAuthStatusLike): string {
+  if (!status.enabled) return "Off";
+  if (status.biometricEnabled && status.configured) return "Windows Hello on · App PIN set";
+  if (status.biometricEnabled) return "Windows Hello on";
+  if (status.configured) return "App PIN only";
+  return "On · no factor set";
+}
+
 export function shouldLockOnLaunch(status: LocalAuthStatusLike): boolean {
-  return status.enabled && status.requireOnLaunch && status.configured;
+  return status.enabled && status.requireOnLaunch && hasLocalFactor(status);
 }
 
 export function shouldRequireAuthForApproval(status: LocalAuthStatusLike, scope: string, risk?: string): boolean {
@@ -1241,5 +1259,5 @@ export function isAutoLockDue(status: LocalAuthStatusLike, lastActivityTs: numbe
 }
 
 export function canLockSessionNow(status: LocalAuthStatusLike): boolean {
-  return status.enabled && status.configured;
+  return status.enabled && hasLocalFactor(status);
 }
