@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenVault — Agents never see your secrets</title>
-<meta name="description" content="OpenVault is the open-source wallet for AI agents. One local vault for every coding IDE, guarded by Meta LLMs. Your keys are never pasted, never in chat, never in the model.">
+<title>MetaVault OSS — Agents never see your secrets</title>
+<meta name="description" content="MetaVault OSS is the open-source wallet for AI agents. One local vault for every coding IDE, guarded by Meta LLMs. Your keys are never pasted, never in chat, never in the model.">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -14,7 +14,7 @@
 </head>
 <body>
 <nav><div class="nav-in">
-  <a class="logo" href="/">OPEN<span>VAULT</span></a>
+  <a class="logo" href="/">META<span>VAULT</span> OSS</a>
   <div class="nav-links">
     <a href="/docs/">Docs</a><a href="/architecture/">Architecture</a><a href="/research/">Research</a><a href="/brand/">Brand</a><a href="/hackathon/">Hackathon</a>
     <a href="https://github.com/0xm0w/openvault">GitHub</a>
@@ -25,7 +25,7 @@
 <header class="hero"><div class="wrap">
   <p class="eyebrow">Open source · Local-first · Windows</p>
   <h1>Tired of pasting API keys into <span class="hl">every coding IDE?</span></h1>
-  <p class="lede">Put all your keys in one vault. Let Meta LLMs guard it from the requestors. OpenVault is the wallet for agents: Cursor, Claude Code, Codex and VS Code ask for a scoped capability, a local Meta model vets the request, you approve — and the key itself is never shown to the agent, the chat, or the model.</p>
+  <p class="lede">Put all your keys in one vault. Let Meta LLMs guard it from the requestors. MetaVault OSS is the wallet for agents: Cursor, Claude Code, Codex and VS Code ask for a scoped capability, a local Meta model vets the request, you approve — and the key itself is never shown to the agent, the chat, or the model.</p>
   <div class="btns">
     <a class="btn" href="#download">Download for Windows</a>
     <a class="btn ghost" href="/docs/">Read the docs</a>
@@ -34,7 +34,7 @@
   <div class="terminal"><span class="dim"># what your agent sees now</span>
 $ export STRIPE_KEY=sk-live-••••••••   <span class="bad"># pasted. in the transcript. forever.</span>
 
-<span class="dim"># what your agent sees with OpenVault</span>
+<span class="dim"># what your agent sees with MetaVault</span>
 agent → request_capability(stripe, charges.read, "list failed charges")
 marshal (llama3.2:3b, on-device) → risk LOW, approval required
 you → Approve once
@@ -49,7 +49,7 @@ vaultd → injects key in-daemon → tool result only → grant expired
   <div class="grid">
     <div class="card"><span class="tag">Rotation fatigue</span><h3>Stop rotating keys because you pasted them</h3><p>Every paste into a chatbox, an IDE prompt, or a support ticket is a future 2 a.m. rotation. Transcripts persist. Context windows get logged. <strong>The key outlives the conversation.</strong></p></div>
     <div class="card"><span class="tag">The nightmare scenario</span><h3>Keys stored in a tool get leaked. Next morning: <span class="t-bad">a $4,000 bill.</span></h3><p>It has happened to teams again and again — credentials sitting inside a dev tool are exfiltrated, and bots burn them within hours. <strong>If the key was never in the tool, there is nothing to steal.</strong></p></div>
-    <div class="card"><span class="tag">Cloud trust</span><h3>Stop trusting cloud password managers with agent access</h3><p>Cloud vaults were built for humans logging in, not autonomous agents asking mid-task, fifty times a day. OpenVault keeps keys <strong>on your machine</strong>, encrypted at rest, under your OS keychain.</p></div>
+    <div class="card"><span class="tag">Cloud trust</span><h3>Stop trusting cloud password managers with agent access</h3><p>Cloud vaults were built for humans logging in, not autonomous agents asking mid-task, fifty times a day. MetaVault OSS keeps keys <strong>on your machine</strong>, encrypted at rest, under your OS keychain.</p></div>
   </div>
 </div></section>
 
@@ -103,17 +103,17 @@ vaultd → injects key in-daemon → tool result only → grant expired
 <section class="band" id="download"><div class="wrap">
   <p class="eyebrow dim">Distribution</p>
   <h2>Download. Open source. Yours.</h2>
-  <p class="lede">Windows first. OpenVault is Apache-2.0 open source — audit it, fork it, run it air-gapped. A browser extension for agent request approval is on the roadmap.</p>
+  <p class="lede">Windows first. MetaVault OSS is Apache-2.0 open source — audit it, fork it, run it air-gapped. A browser extension for agent request approval is on the roadmap.</p>
   <div class="btns" style="margin-top:28px">
     <a class="btn" href="https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1">Download for Windows</a>
     <a class="btn ghost" href="https://github.com/0xm0w/openvault">Star on GitHub</a>
     <a class="btn ghost" href="/architecture/">How it's built</a>
   </div>
-  <p class="mute" style="margin-top:20px; font-size:14px">From the team behind <a href="https://keythings.xyz">Keythings Wallet</a> — we have shipped key management people trust with real assets. OpenVault is the same discipline, for the agent era. The future: hardened devices, secure enclaves, fully air-gapped vaults. Secure, easy, and full of possibility.</p>
+  <p class="mute" style="margin-top:20px; font-size:14px">From the team behind <a href="https://keythings.xyz">Keythings Wallet</a> — we have shipped key management people trust with real assets. MetaVault OSS is the same discipline, for the agent era. The future: hardened devices, secure enclaves, fully air-gapped vaults. Secure, easy, and full of possibility.</p>
 </div></section>
 
 <footer><div class="wrap foot">
-  <span>OPENVAULT — agents never see your secrets.</span>
+  <span>METAVAULT OSS — agents never see your secrets.</span>
   <span><a href="/docs/">Docs</a> · <a href="/architecture/">Architecture</a> · <a href="/research/">Research</a> · <a href="/brand/">Brand</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a> · <a href="https://keythings.xyz">Keythings</a></span>
   <span>Apache-2.0. Local-first. No telemetry.</span>
 </div></footer>

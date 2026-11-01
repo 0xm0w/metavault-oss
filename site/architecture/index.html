@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Architecture — OpenVault</title>
+<title>Architecture — MetaVault OSS</title>
 <link rel="stylesheet" href="/assets/style.css">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -13,7 +13,7 @@
 </head>
 <body>
 <nav><div class="nav-in">
-  <a class="logo" href="/">OPEN<span>VAULT</span></a>
+  <a class="logo" href="/">META<span>VAULT</span> OSS</a>
   <div class="nav-links"><a href="/docs/">Docs</a><a href="/architecture/" class="active">Architecture</a><a href="/research/">Research</a><a href="/brand/">Brand</a><a href="/hackathon/">Hackathon</a><a href="https://github.com/0xm0w/openvault">GitHub</a></div>
 </div></nav>
 
@@ -65,7 +65,7 @@
     <p>Effect-TS services with tagged errors (<code>MarshalUnavailable</code>, <code>GrantExpired</code>, …) and Effect Schema at every boundary. The warden prompt treats all agent-supplied fields as untrusted data; output is schema-decoded, never hand-parsed. Levels: none → Llama 3.2 3B (local) → Muse Glimmer 30B (local) → Muse Spark / Wonder (Meta Model API). Stronger wardens detect attacks — writes phrased as reads, injection in the reason field, slow scope-creep — and can flag rogue agents mid-testing.</p>
 
     <h2 id="wallet">How this compares to a crypto wallet</h2>
-    <p>Same skeleton: an encrypted vault, a human approval surface, keys that are used but never displayed. Different payload: a wallet signs one predictable transaction; OpenVault authorises arbitrary API behaviour, so approval needs context a signature prompt never had — who is asking, what scope, what history, what the warden thinks. That context is the product.</p>
+    <p>Same skeleton: an encrypted vault, a human approval surface, keys that are used but never displayed. Different payload: a wallet signs one predictable transaction; MetaVault OSS authorises arbitrary API behaviour, so approval needs context a signature prompt never had — who is asking, what scope, what history, what the warden thinks. That context is the product.</p>
 
     <h2 id="evidence">Measured evidence (2026-10-31, RTX 3070 8 GB)</h2>
     <ul>
@@ -82,7 +82,7 @@
 </div>
 
 <footer><div class="wrap foot">
-  <span>OPENVAULT — agents never see your secrets.</span>
+  <span>METAVAULT OSS — agents never see your secrets.</span>
   <span><a href="/">Home</a> · <a href="/docs/">Docs</a> · <a href="/research/">Research</a> · <a href="/brand/">Brand</a> · <a href="/hackathon/">Hackathon</a> · <a href="https://github.com/0xm0w/openvault">GitHub</a></span>
   <span>Apache-2.0. Local-first. No telemetry.</span>
 </div></footer>
