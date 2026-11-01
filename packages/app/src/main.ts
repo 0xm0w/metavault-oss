@@ -5,7 +5,7 @@ import { DAEMON_CALL_CHANNEL, callDaemon } from "./daemon-client.js";
 import { DEEPLINK_CHANNEL, findOpenVaultUrl, parseOpenVaultUrl, type DeeplinkAddParams } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 
-// OpenVault desktop shell: a window over vaultd, in the wallet pattern.
+// MetaVault OSS desktop shell: a window over vaultd, in the wallet pattern.
 // This main process owns the daemon HTTP client and the daemon token (see
 // daemon-client.ts); the token stays in main and never crosses IPC into
 // the preload or renderer. It talks to nothing but the local daemon. Closing the window minimises to the
@@ -108,13 +108,13 @@ function createTray(): void {
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   );
   tray = new Tray(icon);
-  tray.setToolTip("OpenVault");
+  tray.setToolTip("MetaVault OSS");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Open OpenVault", click: () => { showWindow(); } },
+      { label: "Open MetaVault OSS", click: () => { showWindow(); } },
       { type: "separator" },
       {
-        label: "Quit OpenVault",
+        label: "Quit MetaVault OSS",
         click: () => {
           isQuitting = true;
           app.quit();

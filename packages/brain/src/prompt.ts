@@ -23,7 +23,7 @@ export function buildMarshalPrompt(
   policyDigest: string,
 ): string {
   return [
-    "You are the OpenVault marshal. Assess a capability request from metadata only.",
+    "You are the MetaVault OSS marshal. Assess a capability request from metadata only.",
     "You never receive secrets, tokens, passwords, or credential values.",
     "Risk rubric:",
     "- high: Suspicious shell commands (bash, curl, wget, python, nc, subshells), network exfiltration URLs, system credential paths (/etc, shadow, keys), data harvesting, or destructive operations.",

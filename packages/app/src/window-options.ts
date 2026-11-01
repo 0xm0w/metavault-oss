@@ -27,7 +27,7 @@ export function buildWindowOptions(preloadPath: string): VaultWindowOptions {
     height: 720,
     minWidth: 720,
     minHeight: 520,
-    title: "OpenVault",
+    title: "MetaVault OSS",
     backgroundColor: "#FFFFFF",
     webPreferences: {
       preload: preloadPath,

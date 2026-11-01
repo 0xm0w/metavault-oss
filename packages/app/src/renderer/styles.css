@@ -1,3 +1,7 @@
+html {
+  scrollbar-gutter: stable;
+}
+
 /* Unified warm theme — promoted from the Vault page to the whole app.
    Tokens mirror TOKENS in model.ts exactly. Teal is reserved for the
    marshal/connected status dot and scope chips. */
@@ -277,12 +281,14 @@ button.action:disabled { opacity: 0.5; cursor: default; }
 }
 .vault-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 8px 0 6px; }
 .vault-add-btn {
-  font: inherit; font-size: 20px; line-height: 1; width: 34px; height: 34px; flex: none;
-  border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 22px; font-weight: 500; line-height: 1; width: 32px; height: 32px; flex: none;
+  border-radius: 6px; border: none; background: transparent;
   color: var(--ink); cursor: pointer;
-  transition-property: transform, opacity; transition-duration: 150ms; transition-timing-function: ease-out;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background-color 150ms ease-out, transform 150ms ease-out, opacity 150ms ease-out;
 }
-.vault-add-btn:active { transform: scale(0.96); }
+.vault-add-btn:hover { background: var(--field); }
+.vault-add-btn:active { transform: scale(0.94); background: var(--border); }
 .vault-empty { padding: 28px 0 32px; text-align: center; font-size: 13.5px; color: var(--muted); }
 .vault-list { display: flex; flex-direction: column; }
 .vault-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
@@ -397,3 +403,104 @@ button.vault-row-btn:hover { background: var(--field); }
 .settings-message.is-error { border-color: var(--danger); color: var(--danger); background: var(--surface); }
 .settings-link { background: transparent; color: var(--teal); border-color: var(--border); padding: 7px 12px; }
 select.vault-input { appearance: auto; }
+
+/* Policies page cards & layout enhancements */
+.policy-caps { margin-bottom: 14px; }
+.policy-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 16px; }
+.policy-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.policy-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.policy-card-meta { font-size: 11.5px; color: var(--muted); }
+.policy-chips-group { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.policy-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 2px; }
+
+/* Audit search, filters & pagination */
+.audit-controls {
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+}
+.audit-search-row { display: flex; align-items: center; gap: 10px; }
+.audit-search-input {
+  font: inherit; font-size: 13px; flex: 1; padding: 9px 13px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--field); color: var(--ink); outline: none;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.audit-search-input:focus { border-color: var(--ink); background: var(--surface); }
+.audit-filters-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: flex-end;
+}
+.audit-filter-item { display: flex; flex-direction: column; gap: 4px; }
+.audit-select-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.audit-select {
+  font: inherit; font-size: 12px; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--field); color: var(--ink); outline: none; cursor: pointer; appearance: auto;
+}
+.audit-select:focus { border-color: var(--ink); background: var(--surface); }
+.audit-reset-btn {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer;
+  height: 33px; transition: color 120ms ease, border-color 120ms ease;
+}
+.audit-reset-btn:hover { color: var(--ink); border-color: var(--ink); }
+
+.pagination-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 2px; margin-top: 14px; font-size: 12px; color: var(--muted);
+}
+.pagination-info { display: flex; align-items: center; gap: 8px; }
+.pagination-controls { display: flex; align-items: center; gap: 6px; }
+.pagination-btn {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); cursor: pointer;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.pagination-btn:disabled { opacity: 0.4; cursor: default; }
+.pagination-btn:not(:disabled):hover { background: var(--field); }
+.pagination-page-indicator { font-size: 12px; font-weight: 600; color: var(--ink); padding: 0 4px; }
+
+/* Verbose vs Simple mode */
+body.is-simple-mode .settings-copy,
+body.is-simple-mode .vault-sub,
+body.is-simple-mode .view > .sub,
+body.is-simple-mode .fine,
+body.is-simple-mode .app-footer,
+body.is-simple-mode .verbose-note {
+  display: none !important;
+}
+
+.mode-toggle-group {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px;
+}
+.mode-option-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--field);
+  cursor: pointer; display: flex; gap: 10px; align-items: flex-start;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.mode-option-card.is-selected {
+  border-color: var(--ink); background: var(--surface); box-shadow: 0 2px 8px rgba(32, 26, 23, 0.05);
+}
+.mode-option-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.mode-option-desc { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+
+/* Agent Integration & MCP section */
+.agent-tab-btns { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 8px; }
+.agent-tab-btn {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--field); color: var(--ink); cursor: pointer;
+}
+.agent-tab-btn.is-active { background: var(--ink); color: #FFF; border-color: var(--ink); }
+.agent-code-block {
+  position: relative; background: #1E1A17; color: #EDE7DE; border-radius: 10px;
+  padding: 14px 16px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; line-height: 1.5;
+  overflow-x: auto; margin: 10px 0 14px;
+}
+.agent-code-copy-btn {
+  position: absolute; top: 10px; right: 10px; font: inherit; font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.15); color: #FFF; cursor: pointer; transition: background 120ms ease;
+}
+.agent-code-copy-btn:hover { background: rgba(255, 255, 255, 0.3); }
+.agent-skill-box {
+  border: 1px solid var(--border); border-radius: 10px; background: var(--field); padding: 14px; margin-top: 10px;
+}
+.agent-skill-title { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+.agent-skill-step { font-size: 12px; color: var(--ink); line-height: 1.55; margin-bottom: 6px; }

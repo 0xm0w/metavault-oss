@@ -1,17 +1,17 @@
-# OpenVault
+# MetaVault OSS
 
 **Agents never see your secrets.**
 
-OpenVault is a local-first **wallet for AI coding agents**. Agents request a
+MetaVault OSS is a local-first **wallet for AI coding agents**. Agents request a
 scoped capability — `stripe` at `charges.read`, say — never the raw key. A
 local Meta model (the **marshal**) vets each request from metadata only, the
 deterministic **policy** layer enforces scope ceilings, rate limits, and
-expiry, and you approve in the desktop app. OpenVault then injects the
+expiry, and you approve in the desktop app. MetaVault OSS then injects the
 credential into that single tool execution inside the daemon (`vaultd`) and
 returns only the result. The raw key never enters a chat, a prompt, a model
 context, an audit row, or the desktop UI.
 
-> Judging line: OpenVault is secure even if the AI is wrong — and measurably
+> Judging line: MetaVault OSS is secure even if the AI is wrong — and measurably
 > safer when it is smart. The security floor is cryptography and policy; the
 > model is discretion within bounds. See [Brain eval](#brain-eval) for the
 > measured evidence and [Security model](#security-model) for the invariants.
@@ -236,7 +236,7 @@ Re-run the `--live` command after `model pull` to reproduce.
 ## Demo script (3 minutes)
 
 1. (15s) The horror: a real key pasted into an agent chat, now in a transcript.
-2. (20s) Without OpenVault, the agent is blocked or the human pastes the key.
+2. (20s) Without MetaVault OSS, the agent is blocked or the human pastes the key.
 3. (45s) Agent requests `stripe:charges.read` via MCP. Llama 3.2 3B explains
    the risk in one sentence. Human approves once.
 4. (30s) Tool succeeds. Show the chat/transcript: the key never appeared.

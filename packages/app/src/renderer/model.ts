@@ -800,30 +800,174 @@ export function wardenVerdict(group: AuditRequestGroup): WardenVerdict {
   };
 }
 
+export interface AuditFilterOptions {
+  readonly query?: string;
+  readonly outcome?: string;
+  readonly dateRange?: string;
+  readonly agentId?: string;
+  readonly alias?: string;
+  readonly nowMs?: number;
+}
+
 export function filterAuditGroups(
   groups: readonly AuditRequestGroup[],
-  query: string,
+  queryOrOptions: string | AuditFilterOptions,
 ): AuditRequestGroup[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") {
-    return [...groups];
+  const options: AuditFilterOptions =
+    typeof queryOrOptions === "string" ? { query: queryOrOptions } : queryOrOptions;
+
+  const rawQuery = (options.query ?? "").trim();
+  const queryTokens = rawQuery.toLowerCase().split(/\s+/).filter(Boolean);
+
+  let structuredAgent: string | null = null;
+  let structuredAlias: string | null = null;
+  let structuredOutcome: string | null = null;
+  let structuredScope: string | null = null;
+  const freeTextTokens: string[] = [];
+
+  for (const token of queryTokens) {
+    if (token.startsWith("agent:") || token.startsWith("caller:")) {
+      structuredAgent = token.slice(token.indexOf(":") + 1);
+    } else if (token.startsWith("alias:") || token.startsWith("website:") || token.startsWith("cred:")) {
+      structuredAlias = token.slice(token.indexOf(":") + 1);
+    } else if (token.startsWith("outcome:") || token.startsWith("action:") || token.startsWith("status:")) {
+      structuredOutcome = token.slice(token.indexOf(":") + 1);
+    } else if (token.startsWith("scope:")) {
+      structuredScope = token.slice(token.indexOf(":") + 1);
+    } else {
+      freeTextTokens.push(token);
+    }
   }
+
+  const filterOutcome =
+    options.outcome !== undefined && options.outcome !== "all" && options.outcome !== ""
+      ? options.outcome.toLowerCase()
+      : structuredOutcome;
+
+  const filterAgent =
+    options.agentId !== undefined && options.agentId !== "all" && options.agentId !== ""
+      ? options.agentId.toLowerCase()
+      : structuredAgent;
+
+  const filterAlias =
+    options.alias !== undefined && options.alias !== "all" && options.alias !== ""
+      ? options.alias.toLowerCase()
+      : structuredAlias;
+
+  const dateRange = options.dateRange ?? "all";
+  const nowMs = options.nowMs ?? Date.now();
+
   return groups.filter((group) => {
-    const verdict = wardenVerdict(group);
-    const haystack = [
-      group.agentId,
-      group.alias,
-      group.outcome,
-      group.outcomeLabel,
-      verdict.wardenLabel,
-      group.requestedScope,
-      group.allowedScope ?? "—",
-      ...(group.isLegacy ? ["legacy", "earlier activity"] : []),
-    ]
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(needle);
+    if (filterOutcome !== null && filterOutcome !== "all") {
+      if (group.outcome.toLowerCase() !== filterOutcome) {
+        return false;
+      }
+    }
+
+    if (filterAgent !== null && filterAgent !== "all") {
+      if (!group.agentId.toLowerCase().includes(filterAgent)) {
+        return false;
+      }
+    }
+
+    if (filterAlias !== null && filterAlias !== "all") {
+      if (!group.alias.toLowerCase().includes(filterAlias)) {
+        return false;
+      }
+    }
+
+    if (structuredScope !== null) {
+      const allowedStr = (group.allowedScope ?? "").toLowerCase();
+      const requestedStr = group.requestedScope.toLowerCase();
+      if (!allowedStr.includes(structuredScope) && !requestedStr.includes(structuredScope)) {
+        return false;
+      }
+    }
+
+    if (dateRange !== "all") {
+      const groupTsMs = Date.parse(group.lastTs || group.firstTs);
+      if (!Number.isNaN(groupTsMs)) {
+        const diffMs = nowMs - groupTsMs;
+        if (dateRange === "today") {
+          const nowDate = new Date(nowMs);
+          const groupDate = new Date(groupTsMs);
+          const isSameDay =
+            nowDate.getFullYear() === groupDate.getFullYear() &&
+            nowDate.getMonth() === groupDate.getMonth() &&
+            nowDate.getDate() === groupDate.getDate();
+          if (!isSameDay) return false;
+        } else if (dateRange === "24h") {
+          if (diffMs < 0 || diffMs > 24 * 60 * 60 * 1000) return false;
+        } else if (dateRange === "7d") {
+          if (diffMs < 0 || diffMs > 7 * 24 * 60 * 60 * 1000) return false;
+        } else if (dateRange === "30d") {
+          if (diffMs < 0 || diffMs > 30 * 24 * 60 * 60 * 1000) return false;
+        }
+      }
+    }
+
+    if (freeTextTokens.length > 0) {
+      const verdict = wardenVerdict(group);
+      const eventDetails = group.events
+        .map((e) => `${e.detail} ${e.explanation ?? ""} ${e.stage}`)
+        .join(" ");
+      const haystack = [
+        group.requestId,
+        group.agentId,
+        group.alias,
+        group.outcome,
+        group.outcomeLabel,
+        verdict.wardenLabel,
+        group.requestedScope,
+        group.allowedScope ?? "—",
+        eventDetails,
+        ...(group.isLegacy ? ["legacy", "earlier activity"] : []),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      for (const token of freeTextTokens) {
+        if (!haystack.includes(token)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   });
+}
+
+export interface PaginatedResult<T> {
+  readonly items: readonly T[];
+  readonly totalItems: number;
+  readonly totalPages: number;
+  readonly currentPage: number;
+  readonly pageSize: number;
+  readonly startIndex: number;
+  readonly endIndex: number;
+}
+
+export function paginate<T>(
+  items: readonly T[],
+  page: number,
+  pageSize: number,
+): PaginatedResult<T> {
+  const safePageSize = Math.max(1, pageSize);
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * safePageSize;
+  const endIndex = Math.min(startIndex + safePageSize, totalItems);
+  const slice = items.slice(startIndex, endIndex);
+  return {
+    items: slice,
+    totalItems,
+    totalPages,
+    currentPage,
+    pageSize: safePageSize,
+    startIndex: totalItems === 0 ? 0 : startIndex + 1,
+    endIndex,
+  };
 }
 
 export function buildAuditRows(events: readonly AuditEventLike[]): AuditRow[] {

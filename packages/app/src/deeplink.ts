@@ -46,7 +46,7 @@ export function parseOpenVaultUrl(raw: unknown): DeeplinkAddParams | null {
   } catch {
     return null;
   }
-  if (url.protocol !== "openvault:" || url.hostname !== "add") {
+  if ((url.protocol !== "openvault:" && url.protocol !== "metavault:") || url.hostname !== "add") {
     return null;
   }
   // Duplicate known params are ambiguous: reject instead of picking one.

@@ -1,5 +1,6 @@
 import {
   filterAuditGroups,
+  paginate,
   buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
@@ -61,6 +62,14 @@ let auditFilterWasFocused = false;
 let auditFilterSelectionStart: number | null = null;
 let auditFilterSelectionEnd: number | null = null;
 const expandedAuditIds = new Set<string>();
+let uiMode: "verbose" | "simple" = localStorage.getItem("metavault_ui_mode") === "simple" ? "simple" : "verbose";
+let auditOutcomeFilter = "all";
+let auditAgentFilter = "all";
+let auditAliasFilter = "all";
+let auditDateRangeFilter = "all";
+let auditPage = 1;
+let auditPageSize = 10;
+let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "skill" = "claude";
 let busy = false;
 let notice: string | null = null;
 let wardenDraft: WardenSettingsLike = { ...DEFAULT_WARDEN_SETTINGS };
@@ -686,34 +695,177 @@ function renderAudit(view: HTMLElement): void {
       "One row per request. Expand a row to see the warden verification timeline: marshal explanation, recommended scope, latency and who decided.",
     ),
   );
-  const filterWrap = el("div", "audit-filter-wrap");
-  const filterLabel = el("label", "audit-filter-label", "Filter");
-  filterLabel.setAttribute("for", "audit-filter");
-  const filterInput = document.createElement("input");
-  filterInput.id = "audit-filter";
-  filterInput.className = "audit-filter";
-  filterInput.type = "text";
-  filterInput.placeholder = "Filter by agent, alias or outcome";
-  filterInput.value = auditFilter;
-  filterInput.setAttribute("aria-label", "Filter audit by agent, alias or outcome");
-  filterWrap.append(filterLabel, filterInput);
-  view.append(filterWrap);
+
+  const controls = el("div", "audit-controls");
+
+  // Search input row
+  const searchRow = el("div", "audit-search-row");
+  const searchInput = document.createElement("input");
+  searchInput.id = "audit-filter";
+  searchInput.className = "audit-search-input";
+  searchInput.type = "text";
+  searchInput.placeholder = "Search requests by agent, alias, scope, outcome, or details (e.g. agent:cursor, outcome:denied)...";
+  searchInput.value = auditFilter;
+  searchInput.setAttribute("aria-label", "Search audit requests");
+  searchRow.append(searchInput);
+  controls.append(searchRow);
+
+  // Filters grid
+  const filtersGrid = el("div", "audit-filters-grid");
+
+  // 1. Outcome filter
+  const outcomeItem = el("div", "audit-filter-item");
+  const outcomeLabel = el("label", "audit-select-label", "Outcome");
+  outcomeLabel.setAttribute("for", "audit-outcome-select");
+  const outcomeSelect = document.createElement("select");
+  outcomeSelect.id = "audit-outcome-select";
+  outcomeSelect.className = "audit-select";
+  const outcomeOptions = [
+    { value: "all", text: "All Outcomes" },
+    { value: "executed", text: "Executed" },
+    { value: "denied", text: "Denied" },
+    { value: "expired", text: "Expired" },
+    { value: "revoked", text: "Revoked" },
+    { value: "pending", text: "Pending" },
+  ];
+  for (const opt of outcomeOptions) {
+    const o = document.createElement("option");
+    o.value = opt.value;
+    o.textContent = opt.text;
+    outcomeSelect.append(o);
+  }
+  outcomeSelect.value = auditOutcomeFilter;
+  outcomeItem.append(outcomeLabel, outcomeSelect);
+  filtersGrid.append(outcomeItem);
+
+  // Derive distinct agents and aliases from all groups
+  const allGroups = groupAuditByRequest(auditEvents);
+  const distinctAgents = [...new Set(allGroups.map((g) => g.agentId).filter(Boolean))].sort();
+  const distinctAliases = [...new Set(allGroups.map((g) => g.alias).filter(Boolean))].sort();
+
+  // 2. Caller filter
+  const agentItem = el("div", "audit-filter-item");
+  const agentLabel = el("label", "audit-select-label", "Caller / Agent");
+  agentLabel.setAttribute("for", "audit-agent-select");
+  const agentSelect = document.createElement("select");
+  agentSelect.id = "audit-agent-select";
+  agentSelect.className = "audit-select";
+  const allAgentsOpt = document.createElement("option");
+  allAgentsOpt.value = "all";
+  allAgentsOpt.textContent = "All Callers";
+  agentSelect.append(allAgentsOpt);
+  for (const agent of distinctAgents) {
+    const o = document.createElement("option");
+    o.value = agent;
+    o.textContent = agent;
+    agentSelect.append(o);
+  }
+  agentSelect.value = auditAgentFilter;
+  agentItem.append(agentLabel, agentSelect);
+  filtersGrid.append(agentItem);
+
+  // 3. Credential / Alias filter
+  const aliasItem = el("div", "audit-filter-item");
+  const aliasLabel = el("label", "audit-select-label", "Credential / Alias");
+  aliasLabel.setAttribute("for", "audit-alias-select");
+  const aliasSelect = document.createElement("select");
+  aliasSelect.id = "audit-alias-select";
+  aliasSelect.className = "audit-select";
+  const allAliasesOpt = document.createElement("option");
+  allAliasesOpt.value = "all";
+  allAliasesOpt.textContent = "All Credentials";
+  aliasSelect.append(allAliasesOpt);
+  for (const a of distinctAliases) {
+    const o = document.createElement("option");
+    o.value = a;
+    o.textContent = a;
+    aliasSelect.append(o);
+  }
+  aliasSelect.value = auditAliasFilter;
+  aliasItem.append(aliasLabel, aliasSelect);
+  filtersGrid.append(aliasItem);
+
+  // 4. Date range filter
+  const dateItem = el("div", "audit-filter-item");
+  const dateLabel = el("label", "audit-select-label", "Date Range");
+  dateLabel.setAttribute("for", "audit-date-select");
+  const dateSelect = document.createElement("select");
+  dateSelect.id = "audit-date-select";
+  dateSelect.className = "audit-select";
+  const dateOptions = [
+    { value: "all", text: "All Time" },
+    { value: "today", text: "Today" },
+    { value: "24h", text: "Last 24 Hours" },
+    { value: "7d", text: "Last 7 Days" },
+    { value: "30d", text: "Last 30 Days" },
+  ];
+  for (const opt of dateOptions) {
+    const o = document.createElement("option");
+    o.value = opt.value;
+    o.textContent = opt.text;
+    dateSelect.append(o);
+  }
+  dateSelect.value = auditDateRangeFilter;
+  dateItem.append(dateLabel, dateSelect);
+  filtersGrid.append(dateItem);
+
+  // Reset button
+  const hasActiveFilter =
+    auditFilter.trim() !== "" ||
+    auditOutcomeFilter !== "all" ||
+    auditAgentFilter !== "all" ||
+    auditAliasFilter !== "all" ||
+    auditDateRangeFilter !== "all";
+
+  if (hasActiveFilter) {
+    const resetBtn = el("button", "audit-reset-btn", "Reset filters") as HTMLButtonElement;
+    resetBtn.type = "button";
+    resetBtn.addEventListener("click", () => {
+      auditFilter = "";
+      auditOutcomeFilter = "all";
+      auditAgentFilter = "all";
+      auditAliasFilter = "all";
+      auditDateRangeFilter = "all";
+      auditPage = 1;
+      render();
+    });
+    filtersGrid.append(resetBtn);
+  }
+
+  controls.append(filtersGrid);
+  view.append(controls);
 
   const list = el("div", "rows");
   view.append(list);
 
+  const paginationContainer = el("div", "pagination-wrap");
+  view.append(paginationContainer);
+
   const renderList = (): void => {
     list.replaceChildren();
-    const groups = filterAuditGroups(groupAuditByRequest(auditEvents), auditFilter);
+    paginationContainer.replaceChildren();
+
+    const filtered = filterAuditGroups(allGroups, {
+      query: auditFilter,
+      outcome: auditOutcomeFilter,
+      agentId: auditAgentFilter,
+      alias: auditAliasFilter,
+      dateRange: auditDateRangeFilter,
+    });
+
     if (auditEvents.length === 0) {
       list.append(el("div", "empty", "No audit events yet."));
       return;
     }
-    if (groups.length === 0) {
-      list.append(el("div", "empty", "No requests match this filter."));
+    if (filtered.length === 0) {
+      list.append(el("div", "empty", "No requests match the active filters."));
       return;
     }
-    for (const group of groups) {
+
+    const paginated = paginate(filtered, auditPage, auditPageSize);
+    auditPage = paginated.currentPage;
+
+    for (const group of paginated.items) {
       const verdict = wardenVerdict(group);
       const expanded = expandedAuditIds.has(group.requestId);
       const node = el("article", "row audit-row");
@@ -723,9 +875,7 @@ function renderAudit(view: HTMLElement): void {
         group.requestedScope !== "" && group.requestedScope !== allowedText
           ? `${group.requestedScope} → ${allowedText}`
           : allowedText || group.requestedScope;
-      // The legacy bucket mixes unrelated pre-requestId admin events, so
-      // no single outcome/warden verdict describes it: label it honestly
-      // and suppress both chips for that row.
+
       const chainText = group.isLegacy
         ? `Earlier activity · ${String(group.events.length)} ${group.events.length === 1 ? "event" : "events"}`
         : `${group.agentId} · ${group.alias} · ${scopeText}`;
@@ -746,6 +896,7 @@ function renderAudit(view: HTMLElement): void {
       }
       node.append(summary);
       node.append(el("div", "when", group.lastTs));
+
       const toggle = el(
         "button",
         "action audit-toggle",
@@ -768,6 +919,7 @@ function renderAudit(view: HTMLElement): void {
         renderList();
       });
       node.append(toggle);
+
       if (expanded) {
         const timeline = el("div", "audit-timeline");
         for (const event of group.events) {
@@ -818,37 +970,114 @@ function renderAudit(view: HTMLElement): void {
       }
       list.append(node);
     }
+
+    // Pagination controls bar
+    const paginationBar = el("div", "pagination-bar");
+    const info = el(
+      "div",
+      "pagination-info",
+      `Showing ${String(paginated.startIndex)}–${String(paginated.endIndex)} of ${String(paginated.totalItems)} requests`,
+    );
+
+    const controlsGroup = el("div", "pagination-controls");
+
+    const prevBtn = el("button", "pagination-btn", "‹ Previous") as HTMLButtonElement;
+    prevBtn.type = "button";
+    prevBtn.disabled = paginated.currentPage <= 1;
+    prevBtn.addEventListener("click", () => {
+      if (auditPage > 1) {
+        auditPage -= 1;
+        renderList();
+      }
+    });
+
+    const pageIndicator = el(
+      "span",
+      "pagination-page-indicator",
+      `Page ${String(paginated.currentPage)} of ${String(paginated.totalPages)}`,
+    );
+
+    const nextBtn = el("button", "pagination-btn", "Next ›") as HTMLButtonElement;
+    nextBtn.type = "button";
+    nextBtn.disabled = paginated.currentPage >= paginated.totalPages;
+    nextBtn.addEventListener("click", () => {
+      if (auditPage < paginated.totalPages) {
+        auditPage += 1;
+        renderList();
+      }
+    });
+
+    const pageSizeSelect = document.createElement("select");
+    pageSizeSelect.className = "audit-select";
+    pageSizeSelect.style.marginLeft = "8px";
+    for (const size of [10, 25, 50]) {
+      const opt = document.createElement("option");
+      opt.value = String(size);
+      opt.textContent = `${String(size)} / page`;
+      pageSizeSelect.append(opt);
+    }
+    pageSizeSelect.value = String(auditPageSize);
+    pageSizeSelect.addEventListener("change", () => {
+      auditPageSize = Number(pageSizeSelect.value) || 10;
+      auditPage = 1;
+      renderList();
+    });
+
+    controlsGroup.append(prevBtn, pageIndicator, nextBtn, pageSizeSelect);
+    paginationBar.append(info, controlsGroup);
+    paginationContainer.append(paginationBar);
   };
 
   const rememberSelection = (): void => {
-    auditFilterSelectionStart = filterInput.selectionStart;
-    auditFilterSelectionEnd = filterInput.selectionEnd;
+    auditFilterSelectionStart = searchInput.selectionStart;
+    auditFilterSelectionEnd = searchInput.selectionEnd;
   };
-  filterInput.addEventListener("input", () => {
-    auditFilter = filterInput.value;
+  searchInput.addEventListener("input", () => {
+    auditFilter = searchInput.value;
+    auditPage = 1;
     rememberSelection();
     renderList();
   });
-  filterInput.addEventListener("select", rememberSelection);
-  filterInput.addEventListener("keyup", rememberSelection);
-  filterInput.addEventListener("click", rememberSelection);
-  filterInput.addEventListener("focus", () => {
+  searchInput.addEventListener("select", rememberSelection);
+  searchInput.addEventListener("keyup", rememberSelection);
+  searchInput.addEventListener("click", rememberSelection);
+  searchInput.addEventListener("focus", () => {
     auditFilterWasFocused = true;
     rememberSelection();
   });
-  filterInput.addEventListener("blur", () => {
+  searchInput.addEventListener("blur", () => {
     auditFilterWasFocused = false;
   });
+
+  outcomeSelect.addEventListener("change", () => {
+    auditOutcomeFilter = outcomeSelect.value;
+    auditPage = 1;
+    renderList();
+  });
+  agentSelect.addEventListener("change", () => {
+    auditAgentFilter = agentSelect.value;
+    auditPage = 1;
+    renderList();
+  });
+  aliasSelect.addEventListener("change", () => {
+    auditAliasFilter = aliasSelect.value;
+    auditPage = 1;
+    renderList();
+  });
+  dateSelect.addEventListener("change", () => {
+    auditDateRangeFilter = dateSelect.value;
+    auditPage = 1;
+    renderList();
+  });
+
   renderList();
   if (auditFilterWasFocused) {
-    filterInput.focus();
-    const start = Math.min(auditFilterSelectionStart ?? filterInput.value.length, filterInput.value.length);
-    const end = Math.min(auditFilterSelectionEnd ?? start, filterInput.value.length);
-    filterInput.setSelectionRange(start, end);
+    searchInput.focus();
+    const start = Math.min(auditFilterSelectionStart ?? searchInput.value.length, searchInput.value.length);
+    const end = Math.min(auditFilterSelectionEnd ?? start, searchInput.value.length);
+    searchInput.setSelectionRange(start, end);
   }
 }
-
-
 function settingsSection(title: string, copy: string): HTMLElement {
   const section = el("section", "settings-section");
   section.append(el("h2", "settings-title", title));
@@ -878,6 +1107,46 @@ function renderSettings(view: HTMLElement): void {
   if (!wardenLoaded) {
     view.append(el("div", "empty", "Loading warden settings from vaultd\u2026"));
   }
+
+  // 0. Interface Mode (Verbose vs Simple)
+  const modeSection = settingsSection("Interface mode", "Choose between a simplified, minimal UI and the full security-first interface.");
+  const modeGroup = el("div", "mode-toggle-group");
+
+  const simpleCard = el("div", `mode-option-card ${uiMode === "simple" ? "is-selected" : ""}`);
+  const simpleRadio = document.createElement("input");
+  simpleRadio.type = "radio";
+  simpleRadio.name = "ui-mode-toggle";
+  simpleRadio.checked = uiMode === "simple";
+  const simpleText = el("div", "");
+  simpleText.append(el("div", "mode-option-title", "Simple mode"));
+  simpleText.append(el("div", "mode-option-desc", "Streamlined view. Text blocks, instructional walls, and background copy are hidden for a clean, distraction-free view."));
+  simpleCard.append(simpleRadio, simpleText);
+  simpleCard.addEventListener("click", () => {
+    uiMode = "simple";
+    localStorage.setItem("metavault_ui_mode", "simple");
+    document.body.classList.add("is-simple-mode");
+    render();
+  });
+
+  const verboseCard = el("div", `mode-option-card ${uiMode === "verbose" ? "is-selected" : ""}`);
+  const verboseRadio = document.createElement("input");
+  verboseRadio.type = "radio";
+  verboseRadio.name = "ui-mode-toggle";
+  verboseRadio.checked = uiMode === "verbose";
+  const verboseText = el("div", "");
+  verboseText.append(el("div", "mode-option-title", "Verbose mode (Security-first)"));
+  verboseText.append(el("div", "mode-option-desc", "Security-first interface. Honest, helpful, and proactive guidance with architectural notes, policy ceilings, and full risk explanations."));
+  verboseCard.append(verboseRadio, verboseText);
+  verboseCard.addEventListener("click", () => {
+    uiMode = "verbose";
+    localStorage.setItem("metavault_ui_mode", "verbose");
+    document.body.classList.remove("is-simple-mode");
+    render();
+  });
+
+  modeGroup.append(simpleCard, verboseCard);
+  modeSection.append(modeGroup);
+  view.append(modeSection);
 
   // 1. Provider
   const providerSection = settingsSection("Warden provider", "");
@@ -1096,7 +1365,7 @@ function renderSettings(view: HTMLElement): void {
   const rows: readonly (readonly [string, string])[] = [
     ["Daemon URL", DAEMON_URL_DISPLAY],
     ["Vault path", VAULT_PATH_DISPLAY],
-    ["Version", `OpenVault ${APP_VERSION_DISPLAY}`],
+    ["Version", `MetaVault OSS ${APP_VERSION_DISPLAY}`],
   ];
   for (const [label, value] of rows) {
     const row = el("div", "settings-row");
@@ -1106,6 +1375,169 @@ function renderSettings(view: HTMLElement): void {
   }
   daemonSection.append(el("p", "settings-copy", "Read-only. Warden settings apply on the next request, so no restart is needed after saving. If vaultd is unreachable, restart it from the terminal where it was launched, then reopen this page."));
   view.append(daemonSection);
+
+  // 5b. Agent Integration & MCP
+  const agentSection = settingsSection(
+    "Agent Integration & MCP",
+    "Connect AI coding agents to MetaVault OSS via the Model Context Protocol (MCP) or built-in agent skills. All requests route to vaultd for policy enforcement and human approval.",
+  );
+
+  const tabsRow = el("div", "agent-tab-btns");
+  const tabs = [
+    { id: "claude", label: "Claude Code" },
+    { id: "cursor", label: "Cursor" },
+    { id: "vscode", label: "VS Code" },
+    { id: "codex", label: "Codex" },
+    { id: "opencode", label: "OpenCode" },
+    { id: "skill", label: "Skill: add-secret" },
+  ] as const;
+
+  for (const tab of tabs) {
+    const tabBtn = el("button", `agent-tab-btn ${activeAgentTab === tab.id ? "is-active" : ""}`, tab.label) as HTMLButtonElement;
+    tabBtn.type = "button";
+    tabBtn.addEventListener("click", () => {
+      activeAgentTab = tab.id;
+      render();
+    });
+    tabsRow.append(tabBtn);
+  }
+  agentSection.append(tabsRow);
+
+  const codeBox = el("div", "agent-code-block");
+  let codeSnippet = "";
+  let configPath = "";
+
+  if (activeAgentTab === "claude") {
+    configPath = ".mcp.json in workspace or ~/.claude.json";
+    codeSnippet = JSON.stringify(
+      {
+        mcpServers: {
+          metavault: {
+            command: "node",
+            args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
+            env: {
+              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              OPENVAULT_AGENT_ID: "claude-code",
+              OPENVAULT_IDE: "Claude Code",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
+  } else if (activeAgentTab === "cursor") {
+    configPath = ".cursor/mcp.json or ~/.cursor/mcp.json";
+    codeSnippet = JSON.stringify(
+      {
+        mcpServers: {
+          metavault: {
+            command: "node",
+            args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
+            env: {
+              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              OPENVAULT_AGENT_ID: "cursor",
+              OPENVAULT_IDE: "Cursor",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
+  } else if (activeAgentTab === "vscode") {
+    configPath = ".vscode/mcp.json";
+    codeSnippet = JSON.stringify(
+      {
+        servers: {
+          metavault: {
+            type: "stdio",
+            command: "node",
+            args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
+            env: {
+              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              OPENVAULT_AGENT_ID: "vscode",
+              OPENVAULT_IDE: "VS Code",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
+  } else if (activeAgentTab === "codex") {
+    configPath = "~/.codex/config.toml";
+    codeSnippet = [
+      "[mcp_servers.metavault]",
+      "command = \"node\"",
+      "args = [\"<path-to-repo>/dist/packages/mcp/src/server.js\"]",
+      "",
+      "[mcp_servers.metavault.env]",
+      "OPENVAULT_DAEMON_URL = \"http://127.0.0.1:7077\"",
+      "OPENVAULT_AGENT_ID = \"codex\"",
+      "OPENVAULT_IDE = \"Codex\"",
+    ].join("\n");
+  } else if (activeAgentTab === "opencode") {
+    configPath = "opencode.json";
+    codeSnippet = JSON.stringify(
+      {
+        $schema: "https://opencode.ai/config.json",
+        mcp: {
+          metavault: {
+            type: "local",
+            command: ["node", "<path-to-repo>/dist/packages/mcp/src/server.js"],
+            enabled: true,
+            environment: {
+              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              OPENVAULT_AGENT_ID: "opencode",
+              OPENVAULT_IDE: "OpenCode",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
+  } else {
+    configPath = "Built-in Skill: add-secret-to-vault";
+    codeSnippet = [
+      "# Add Secret to MetaVault OSS (Agent Workflow)",
+      "When you need an API key or token not in MetaVault OSS:",
+      "1. Call MCP request_enrollment(alias, scope, reason)",
+      "2. Present deeplink (openvault://add?...) to the user",
+      "3. Only the user types the secret in the MetaVault OSS window",
+      "4. Poll enrollment_status(enrollmentId) until completed",
+      "5. Call request_capability to verify granted access",
+    ].join("\n");
+  }
+
+  const copyBtn = el("button", "agent-code-copy-btn", "Copy Config") as HTMLButtonElement;
+  copyBtn.type = "button";
+  copyBtn.addEventListener("click", () => {
+    void navigator.clipboard.writeText(codeSnippet);
+    copyBtn.textContent = "Copied!";
+    window.setTimeout(() => {
+      copyBtn.textContent = "Copy Config";
+    }, 2000);
+  });
+
+  const pre = el("pre", "");
+  pre.textContent = codeSnippet;
+  codeBox.append(copyBtn, pre);
+  agentSection.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
+  agentSection.append(codeBox);
+
+  const skillInfo = el("div", "agent-skill-box");
+  skillInfo.append(el("div", "agent-skill-title", "Zero Secret Leakage Invariant"));
+  skillInfo.append(
+    el(
+      "div",
+      "agent-skill-step",
+      "Secrets never pass through MCP, agents, terminal stdout, or audit trails. AI agents request scoped capabilities; vaultd holds the encrypted secrets and executes calls; the MetaVault OSS UI prompts the human for approval."
+    )
+  );
+  agentSection.append(skillInfo);
+  view.append(agentSection);
 
   // 6. Security defaults (read-only summary)
   const policySection = settingsSection("Security defaults", "");
@@ -1136,10 +1568,10 @@ function renderPolicies(view: HTMLElement): void {
     return;
   }
   if (ceilingEntries.length > 0) {
-    const caps = el("div", "rows");
+    const caps = el("div", "rows policy-caps");
     const capsNode = el("article", "row");
     capsNode.append(el("div", "chain", "Enforced ceilings (per alias)"));
-    const capChips = el("div", "");
+    const capChips = el("div", "policy-chips-group");
     for (const [alias, ceiling] of ceilingEntries) {
       capChips.append(el("span", "chip", `${alias}: ${ceiling}`));
     }
@@ -1151,38 +1583,41 @@ function renderPolicies(view: HTMLElement): void {
   const list = el("div", "rows");
   for (const row of rows) {
     const node = el("article", "row policy-row");
-    const grow = el("div", "grow");
-    grow.append(el("div", "chain", row.agentId));
-    const chips = el("div", "");
+    const main = el("div", "policy-card-main");
+
+    // Header: agentId + meta horizontally distributed
+    const head = el("div", "policy-card-header");
+    head.append(el("span", "chain", row.agentId));
+    head.append(el("span", "policy-card-meta", `${String(row.requestCount)} requests · last seen ${formatLastUsed(row.lastSeenTs, Date.now())}`));
+    main.append(head);
+
+    // Horizontal chips group
+    const chipsGroup = el("div", "policy-chips-group");
+    chipsGroup.append(el("span", "policy-group-label", "Observed:"));
     if (row.scopes.length === 0) {
-      chips.append(el("span", "chip", "no scopes observed"));
+      chipsGroup.append(el("span", "chip", "none"));
+    } else {
+      for (const scope of row.scopes) {
+        chipsGroup.append(el("span", "chip", scope));
+      }
     }
-    for (const scope of row.scopes) {
-      chips.append(el("span", "chip", scope));
+
+    if (row.ceilings.length > 0) {
+      chipsGroup.append(el("span", "policy-group-label", "Ceilings:"));
+      for (const entry of row.ceilings) {
+        chipsGroup.append(el("span", "chip", `${entry.alias}: ${entry.ceiling}`));
+      }
     }
-    grow.append(chips);
-    const ceilingChips = el("div", "");
-    if (row.ceilings.length === 0) {
-      ceilingChips.append(el("span", "chip", "no ceiling on record"));
+
+    if (row.standingApprovals.length > 0) {
+      chipsGroup.append(el("span", "policy-group-label", "Standing:"));
+      for (const approval of row.standingApprovals) {
+        chipsGroup.append(el("span", "chip", `${approval.alias}: ${approval.scope}`));
+      }
     }
-    for (const entry of row.ceilings) {
-      ceilingChips.append(el("span", "chip", `ceiling ${entry.alias}: ${entry.ceiling}`));
-    }
-    grow.append(ceilingChips);
-    const standingChips = el("div", "");
-    if (row.standingApprovals.length === 0) {
-      standingChips.append(el("span", "chip", "no standing approvals"));
-    }
-    for (const approval of row.standingApprovals) {
-      standingChips.append(
-        el("span", "chip", `standing ${approval.alias}: ${approval.scope}`),
-      );
-    }
-    grow.append(standingChips);
-    grow.append(
-      el("div", "when", `${String(row.requestCount)} requests · last seen ${formatLastUsed(row.lastSeenTs, Date.now())} · ceiling enforced by vaultd`),
-    );
-    node.append(grow);
+    main.append(chipsGroup);
+    node.append(main);
+
     const revokeBtn = el("button", "action btn-revoke", "Revoke / Block") as HTMLButtonElement;
     revokeBtn.type = "button";
     revokeBtn.disabled = busy;
@@ -1196,7 +1631,6 @@ function renderPolicies(view: HTMLElement): void {
   const note = el("p", "fine", `Stages: ${(["requested", "marshal", "policy", "approved", "denied", "executed", "expired", "revoked", "credential-added", "credential-deleted"] as const).map(stageLabel).join(" · ")}`);
   view.append(note);
 }
-
 function render(): void {
   const view = mustElement("#view");
   // Capture the audit filter caret before the old input is discarded, so
@@ -1298,7 +1732,7 @@ function tickExpiryLabels(): void {
 }
 
 function start(): void {
-  window.openvault.onDeeplinkAdd((params) => {
+  document.body.classList.toggle("is-simple-mode", uiMode === "simple");  window.openvault.onDeeplinkAdd((params) => {
     // Sequenced by runDeeplinkAddFlow: the prefilled Add modal opens only
     // after the Vault render (and any refresh already in flight) has fully
     // completed, replacing any modal that is open. A failure surfaces in

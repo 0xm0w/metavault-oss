@@ -10,6 +10,7 @@ import {
   deriveVaultCards,
   faviconUrl,
   filterAuditGroups,
+  paginate,
   groupAuditByRequest,
   findSecretLikeKeys,
   formatExpiry,
@@ -860,5 +861,72 @@ describe("warden settings form state (Task 6)", () => {
     const noneMsg = wardenTestMessage({ ok: true, provider: "none", model: "llama3.2:3b", latencyMs: 0, detail: "policy-only" });
     expect(noneMsg.ok).toBe(true);
     expect(noneMsg.message.toLowerCase()).toContain("policy-only");
+  });
+});
+
+describe("audit filtering and pagination", () => {
+  function auditEvent(overrides: Record<string, unknown> = {}) {
+    return {
+      ts: "2026-10-31T10:00:00.000Z",
+      agentId: "cursor",
+      alias: "stripe",
+      scope: "charges.read",
+      stage: "requested" as const,
+      detail: "read charges",
+      ...overrides,
+    };
+  }
+
+  it("supports advanced filter options and structured queries for audit groups", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const groups = groupAuditByRequest([
+      auditEvent({ requestId: "r1", stage: "requested", ts: "2026-10-31T11:55:00.000Z", agentId: "cursor", alias: "stripe", scope: "charges.read" }),
+      auditEvent({ requestId: "r1", stage: "executed", ts: "2026-10-31T11:55:01.000Z", agentId: "cursor", alias: "stripe", scope: "charges.read" }),
+      auditEvent({ requestId: "r2", stage: "requested", ts: "2026-10-30T10:00:00.000Z", agentId: "claude-code", alias: "github", scope: "repos.write" }),
+      auditEvent({ requestId: "r2", stage: "denied", ts: "2026-10-30T10:00:01.000Z", agentId: "claude-code", alias: "github", scope: "repos.write" }),
+    ]);
+
+    // Structured tokens in query
+    expect(filterAuditGroups(groups, "agent:cursor").map(g => g.requestId)).toEqual(["r1"]);
+    expect(filterAuditGroups(groups, "caller:claude").map(g => g.requestId)).toEqual(["r2"]);
+    expect(filterAuditGroups(groups, "alias:stripe").map(g => g.requestId)).toEqual(["r1"]);
+    expect(filterAuditGroups(groups, "outcome:denied").map(g => g.requestId)).toEqual(["r2"]);
+    expect(filterAuditGroups(groups, "scope:write").map(g => g.requestId)).toEqual(["r2"]);
+
+    // Options object
+    expect(filterAuditGroups(groups, { outcome: "executed" }).map(g => g.requestId)).toEqual(["r1"]);
+    expect(filterAuditGroups(groups, { outcome: "denied" }).map(g => g.requestId)).toEqual(["r2"]);
+    expect(filterAuditGroups(groups, { agentId: "cursor" }).map(g => g.requestId)).toEqual(["r1"]);
+    expect(filterAuditGroups(groups, { alias: "github" }).map(g => g.requestId)).toEqual(["r2"]);
+    expect(filterAuditGroups(groups, { dateRange: "today", nowMs: now }).map(g => g.requestId)).toEqual(["r1"]);
+    expect(filterAuditGroups(groups, { dateRange: "7d", nowMs: now }).map(g => g.requestId)).toEqual(["r1", "r2"]);
+  });
+
+  it("paginates arrays correctly", () => {
+    const items = [1, 2, 3, 4, 5, 6, 7];
+    const p1 = paginate(items, 1, 3);
+    expect(p1.items).toEqual([1, 2, 3]);
+    expect(p1.totalItems).toBe(7);
+    expect(p1.totalPages).toBe(3);
+    expect(p1.currentPage).toBe(1);
+    expect(p1.startIndex).toBe(1);
+    expect(p1.endIndex).toBe(3);
+
+    const p3 = paginate(items, 3, 3);
+    expect(p3.items).toEqual([7]);
+    expect(p3.currentPage).toBe(3);
+    expect(p3.startIndex).toBe(7);
+    expect(p3.endIndex).toBe(7);
+
+    const pOut = paginate(items, 99, 3);
+    expect(pOut.currentPage).toBe(3);
+    expect(pOut.items).toEqual([7]);
+
+    const empty = paginate([], 1, 10);
+    expect(empty.items).toEqual([]);
+    expect(empty.totalItems).toBe(0);
+    expect(empty.totalPages).toBe(1);
+    expect(empty.startIndex).toBe(0);
+    expect(empty.endIndex).toBe(0);
   });
 });
