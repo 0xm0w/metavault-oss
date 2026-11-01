@@ -1,6 +1,6 @@
-# OpenVault MCP server
+# MetaVault OSS MCP Server
 
-OpenVault ships a stdio MCP server that IDE hosts launch as a local process.
+MetaVault OSS ships a stdio MCP server that IDE hosts launch as a local process.
 It is a thin adapter over the vault daemon (`vaultd`, `127.0.0.1:7077`): it
 never sees secret values, validates tool inputs, forwards calls to the
 daemon, and returns the daemon result verbatim.
@@ -14,7 +14,7 @@ Tools (exactly five): `request_capability`, `list_aliases`,
 
 ## Prerequisites
 
-1. Start the OpenVault daemon / desktop app so `vaultd` is listening.
+1. Start the MetaVault OSS daemon / desktop app so `vaultd` is listening.
 2. Build once from the repository root:
 
 ```bash

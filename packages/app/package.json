@@ -1,20 +1,20 @@
 {
-  "name": "openvault-app",
+  "name": "metavault-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "OpenVault desktop app — Electron shell over vaultd. Holds no secrets.",
+  "description": "MetaVault OSS desktop app — Electron shell over vaultd. Holds no secrets.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "pack:win": "electron-builder --win",
     "pack:mac": "electron-builder --mac",
-    "pack:win:ai": "electron-builder --win -c.extraResources[0].from=models -c.extraResources[0].to=models -c.artifactName=OpenVault--with-ai--."
+    "pack:win:ai": "electron-builder --win -c.extraResources[0].from=models -c.extraResources[0].to=models -c.artifactName=MetaVault-OSS--with-ai--."
   },
   "build": {
-    "appId": "dev.openvault.app",
+    "appId": "dev.metavault.app",
     "productName": "MetaVault OSS",
-    "artifactName": "OpenVault-${version}-${os}-${arch}.${ext}",
+    "artifactName": "MetaVault-OSS-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -103,5 +103,5 @@
     },
     "electronVersion": "45.2.1"
   },
-  "author": "OpenVault contributors"
+  "author": "MetaVault OSS contributors"
 }
