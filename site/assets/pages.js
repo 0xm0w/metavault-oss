@@ -117,4 +117,126 @@
     });
     show("read");
   }
+
+  var deck = document.querySelector(".hack-deck");
+  if (deck) {
+    var scroller = document.getElementById("hack-scroller");
+    var slides = Array.prototype.slice.call(scroller.querySelectorAll(".hack-slide"));
+    var dots = Array.prototype.slice.call(document.querySelectorAll(".hack-dot"));
+    var up = document.getElementById("hack-up");
+    var down = document.getElementById("hack-down");
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var index = 0;
+    var frame = 0;
+    var moving = false;
+    var wheelUntil = 0;
+
+    function paint() {
+      dots.forEach(function (dot, i) {
+        if (i === index) dot.setAttribute("aria-current", "true");
+        else dot.removeAttribute("aria-current");
+      });
+      if (up) up.disabled = index <= 0;
+      if (down) down.disabled = index >= slides.length - 1;
+    }
+
+    function go(next, instant) {
+      var i = Math.max(0, Math.min(slides.length - 1, next));
+      var same = i === index && Math.abs(scroller.scrollTop - slides[i].offsetTop) < 2;
+      index = i;
+      paint();
+      if (same) return;
+      moving = true;
+      scroller.scrollTo({
+        top: slides[i].offsetTop,
+        behavior: instant || reduce ? "auto" : "smooth"
+      });
+      window.clearTimeout(go.timer);
+      go.timer = window.setTimeout(function () { moving = false; }, instant || reduce ? 40 : 700);
+    }
+
+    dots.forEach(function (dot, i) {
+      dot.addEventListener("click", function () { go(i); });
+    });
+    if (up) up.addEventListener("click", function () { go(index - 1); });
+    if (down) down.addEventListener("click", function () { go(index + 1); });
+
+    function syncFromScroll() {
+      var h = scroller.clientHeight || 1;
+      var i = Math.round(scroller.scrollTop / h);
+      i = Math.max(0, Math.min(slides.length - 1, i));
+      if (i !== index) {
+        index = i;
+        paint();
+      }
+    }
+
+    scroller.addEventListener("scroll", function () {
+      if (moving || frame) return;
+      frame = requestAnimationFrame(function () {
+        frame = 0;
+        if (!moving) syncFromScroll();
+      });
+    }, { passive: true });
+
+    scroller.addEventListener("scrollend", function () {
+      moving = false;
+      syncFromScroll();
+    });
+
+    scroller.addEventListener("wheel", function (event) {
+      if (!moving) syncFromScroll();
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      var slide = slides[index];
+      var extra = slide.scrollHeight - slide.clientHeight;
+      if (extra > 2) {
+        var atTop = slide.scrollTop <= 0;
+        var atBottom = slide.scrollTop + slide.clientHeight >= slide.scrollHeight - 2;
+        var goingDown = event.deltaY > 0;
+        if ((goingDown && !atBottom) || (!goingDown && !atTop)) {
+          event.preventDefault();
+          slide.scrollTop += event.deltaY;
+          return;
+        }
+      }
+      event.preventDefault();
+      if (Math.abs(event.deltaY) < 12) return;
+      var now = Date.now();
+      if (now < wheelUntil) return;
+      wheelUntil = now + (reduce ? 0 : 680);
+      go(index + (event.deltaY > 0 ? 1 : -1));
+    }, { passive: false });
+
+    document.addEventListener("keydown", function (event) {
+      var target = event.target;
+      var tag = target && target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (target && target.isContentEditable)) return;
+      if (target && target.closest && target.closest("#pitch-sim, .mb-nav-mobile-menu")) return;
+      if (event.key === "ArrowDown" || event.key === "PageDown") {
+        event.preventDefault();
+        go(index + 1);
+      } else if (event.key === "ArrowUp" || event.key === "PageUp") {
+        event.preventDefault();
+        go(index - 1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        go(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        go(slides.length - 1);
+      }
+    });
+
+    window.addEventListener("resize", function () {
+      scroller.scrollTo({ top: slides[index].offsetTop, behavior: "auto" });
+    });
+
+    var start = 0;
+    if (location.hash) {
+      var found = slides.findIndex(function (slide) { return "#" + slide.id === location.hash; });
+      if (found > 0) start = found;
+    }
+    if (start) go(start, true);
+    else paint();
+  }
 })();
