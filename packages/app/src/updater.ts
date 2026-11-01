@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { BrowserWindow } from "electron";
 import { ipcMain } from "electron";
 import pkg from "electron-updater";
@@ -103,10 +105,18 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
     }
   });
 
-  // Background check on launch after brief delay (if in production)
+  // Background check on launch after brief delay (if in production with update config)
   setTimeout(() => {
-    void updaterInstance.checkForUpdates().catch(() => {
-      // Ignored on initial offline/dev launch
-    });
+    try {
+      const resourcesDir = typeof process.resourcesPath === "string" ? process.resourcesPath : "";
+      const updateYml = join(resourcesDir, "app-update.yml");
+      if (existsSync(updateYml)) {
+        void updaterInstance.checkForUpdates().catch(() => {
+          // Ignored on network failure
+        });
+      }
+    } catch {
+      // Ignored
+    }
   }, 5000);
 }
