@@ -20,10 +20,10 @@ a:hover { color: var(--ink-hover); }
 .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
 nav { position: sticky; top: 0; z-index: 10; background: rgba(10,10,10,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hairline); }
-.nav-in { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; max-width: 1120px; margin: 0 auto; }
+.nav-in { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; padding: 12px 24px; max-width: 1120px; margin: 0 auto; }
 .logo { font-weight: 600; letter-spacing: -.02em; font-size: 17px; color: var(--ink); }
 .logo span { color: var(--accent); }
-.nav-links { display: flex; gap: 28px; align-items: center; font-size: 14px; }
+.nav-links { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: flex-end; font-size: 14px; }
 .nav-links a { color: var(--body); }
 .nav-links a:hover, .nav-links a.active { color: var(--ink); }
 
@@ -58,11 +58,13 @@ em, .quote { font-style: italic; color: var(--accent-soft); }
 .band { padding: 72px 0; border-bottom: 1px solid var(--hairline); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 36px; }
 .card { background: var(--canvas-card); border: 1px solid var(--hairline); border-radius: 8px; padding: 24px; }
+a.card { display: block; }
+a.card:hover { border-color: var(--canvas-mid); }
 .card p { font-size: 14px; line-height: 21px; color: var(--mute); }
 .card p strong { color: var(--body); }
 .card .tag { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 12px; }
 
-.terminal { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 8px; padding: 20px 22px; font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 22px; color: var(--body); overflow-x: auto; white-space: pre; margin-top: 28px; }
+.terminal { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 8px; padding: 20px 22px; font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 22px; color: var(--body); overflow-x: auto; white-space: pre; margin-top: 28px; max-width: 100%; }
 .terminal .ok { color: var(--green); } .terminal .bad { color: var(--red); } .terminal .warn { color: var(--amber); } .terminal .dim { color: var(--mute); }
 
 table.levels { width: 100%; border-collapse: collapse; margin-top: 32px; font-size: 14px; }

@@ -23,10 +23,17 @@ Report privately to the maintainers with:
   marshal model sees metadata only — never a secret, fragment, or hash.
 - Deterministic policy ceilings cannot be widened by the model.
   Standing approvals cover read-only, low-risk scopes only.
+- Prompt injection and scope escalation are neutralized via nonce-delimited
+  XML tags and automated scope clamping (OWASP LLM01/LLM02 compliance).
+- Post-quantum hybrid envelope encryption (NIST FIPS 203 ML-KEM-768 + X25519)
+  is available for long-term vault export and inter-daemon synchronization.
 - The daemon binds to `127.0.0.1`; human-decision routes require the
   daemon token. MCP exposes no approval operation.
 - The canary test in `test/canary.test.ts` fails the build if a planted
   secret appears in any transcript, log, audit entry, or model prompt.
+
+See [`docs/SECURITY-AUDIT.md`](docs/SECURITY-AUDIT.md) for the full OWASP LLM Top 10
+compliance matrix and Post-Quantum Cryptography threat model.
 
 ## Supported versions
 

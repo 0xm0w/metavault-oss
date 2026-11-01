@@ -88,6 +88,41 @@ export function narrowerScope(a: string, b: string): string {
   return a;
 }
 
+/**
+ * OWASP LLM02 & LLM08 defense:
+ * Enforces that a warden's recommendedScope is strictly an exact match or a narrower sub-scope
+ * of the requestedScope. Any attempt to widen scope (e.g. wildcards, root, cross-resource)
+ * or to demote a write scope to auto-approved read is clamped to requestedScope, escalated to
+ * 'high' risk, and forces human approval.
+ */
+export function enforceScopeSafety(
+  decision: MarshalDecision,
+  requestedScope: string,
+): MarshalDecision {
+  const isSafe =
+    decision.recommendedScope === requestedScope ||
+    isExtensionOf(decision.recommendedScope, requestedScope);
+
+  if (!isSafe || decision.recommendedScope.includes("*")) {
+    return {
+      risk: "high",
+      recommendedScope: requestedScope,
+      requireApproval: true,
+      explanation: `Warden proposed scope '${decision.recommendedScope}' does not narrow '${requestedScope}'; clamped to requested scope and escalated to high risk.`,
+    };
+  }
+
+  if (isWriteScope(requestedScope) && !decision.requireApproval) {
+    return {
+      ...decision,
+      requireApproval: true,
+      explanation: `Write capability '${requestedScope}' strictly requires approval. ${decision.explanation}`,
+    };
+  }
+
+  return decision;
+}
+
 export function buildVerifyPrompt(prompt: string, first: MarshalDecision): string {
   return [
     prompt,
@@ -138,7 +173,9 @@ export function assessFromSettings(
   const prompt = buildMarshalPrompt(req, historySummary, policyDigest);
   const totalMs = EFFORT_TIMEOUT_MS[settings.effort];
   if (settings.effort !== "deep") {
-    return singlePass(settings, getKey, prompt, totalMs);
+    return singlePass(settings, getKey, prompt, totalMs).pipe(
+      Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope)),
+    );
   }
   const perPassMs = Math.floor(totalMs / 2);
   const program = Effect.gen(function* () {
@@ -148,14 +185,17 @@ export function assessFromSettings(
       first.risk === second.risk &&
       first.recommendedScope === second.recommendedScope &&
       first.requireApproval === second.requireApproval;
-    if (agrees) return first;
+    if (agrees) return enforceScopeSafety(first, req.requestedScope);
     const risk = RISK_RANK[first.risk] >= RISK_RANK[second.risk] ? first.risk : second.risk;
-    return {
-      risk,
-      recommendedScope: narrowerScope(first.recommendedScope, second.recommendedScope),
-      requireApproval: true,
-      explanation: `deep verify disagreement; escalated. first: ${first.explanation}; verify: ${second.explanation}`,
-    } satisfies MarshalDecision;
+    return enforceScopeSafety(
+      {
+        risk,
+        recommendedScope: narrowerScope(first.recommendedScope, second.recommendedScope),
+        requireApproval: true,
+        explanation: `deep verify disagreement; escalated. first: ${first.explanation}; verify: ${second.explanation}`,
+      },
+      req.requestedScope,
+    );
   });
   return program.pipe(
     Effect.timeoutFail({
@@ -180,6 +220,7 @@ export function BrainOllamaLive(model: string = DEFAULT_MARSHAL_MODEL): Layer.La
   return Layer.succeed(Brain, {
     assess: (req, historySummary, policyDigest) =>
       requestOllamaDecision(model, buildMarshalPrompt(req, historySummary, policyDigest)).pipe(
+        Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope)),
         Effect.provide(FetchHttpClient.layer),
       ),
   });

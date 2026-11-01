@@ -26,6 +26,7 @@
   <aside class="side">
     <a href="#abstract">Abstract &amp; Scope</a>
     <a href="#model">Active LLM Warden</a>
+    <a href="#tiers">Stronger warden, same floor</a>
     <a href="#question-1">Q1: Can You Use Keys?</a>
     <a href="#verification-gate">5-Stage Verification Gate</a>
     <a href="#q1-proofs">Proof: Brokered Execution</a>
@@ -77,6 +78,16 @@
     </div>
 
     <p>The warden operates under an <em>untrusted metadata schema</em>. It generates structured risk assessments conforming to an Effect-TS schema (<span class="mono">risk: "low" | "medium" | "high"</span>, <span class="mono">recommendedScope</span>, <span class="mono">requireApproval: boolean</span>, and a concise rationale). Crucially, the system enforces a <strong>deterministic policy floor</strong>: the LLM may narrow permissions or escalate approval thresholds, but can <em>never widen permissions beyond configured policy ceilings</em>.</p>
+
+    <h2 id="tiers">2.1 What a stronger warden changes</h2>
+    <p>Policy is the floor. With the model switched off, ceilings, expiry, and human approval still hold, and anything that needs a decision comes to you. A warden adds judgement on that floor. It does not add permission.</p>
+    <p>The shipped catalogue is the one Settings exposes: no model, then <span class="mono">llama3.2:3b</span> (default, on-device), <span class="mono">llama3.1:8b</span>, <span class="mono">llama3.3:70b</span> for a large local GPU, and an opt-in Meta API model. How to switch them is in the <a href="/docs/#levels">docs</a>. Every tier receives the same metadata and the same ban on seeing a key. What a larger model buys is a better chance of catching three things the policy floor cannot see on its own:</p>
+    <ul>
+      <li><b>A write phrased as a read.</b> The ceiling check denies a write scope under a read ceiling. The warden is there for the case where the requested scope still says read and the reason describes a write.</li>
+      <li><b>Slow scope-creep.</b> One request is inside the ceiling. The pattern across history is not. The warden sees that history. The ceiling check sees one request.</li>
+      <li><b>A malicious request from an agent under test.</b> The warden can raise the risk and force a human. It still cannot approve the grant. An agent that calls the approve route itself gets HTTP 401, because that route requires the daemon token. See the <a href="#matrix">verification matrix</a>.</li>
+    </ul>
+    <p>A fooled, down, or missing model falls through to policy plus the human. That fail-closed path is the property the ceiling row of the matrix records: executed scope stays inside the alias ceiling no matter what the model recommended.</p>
 
     <!-- SECTION 3: QUESTION 1 -->
     <div class="qa-box" id="question-1">

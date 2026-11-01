@@ -98,16 +98,18 @@ openvault revoke &lt;agent-or-alias&gt;        # kill pending + future grants
 openvault model pull                       # fetch/upgrade the warden model</code></pre>
 
     <h2 id="levels">LLM Security Levels</h2>
-    <p>The vault is secure at every level — deterministic policy ceilings, single-use expiring grants, and human approval cannot be overridden by any model. Higher levels buy judgement, not permission. These tiers are exactly the warden catalogue the daemon and Settings use (<code>OLLAMA_MODELS</code> plus the Meta API provider):</p>
-    <ul>
-      <li><b>Policy only</b> — provider <code>none</code>. No model judges; deterministic policy alone decides and anything needing approval comes to you. Audit records <code>decisionSource: policy</code>.</li>
-      <li><b>Medium</b> — <code>llama3.2:3b</code> via Ollama, on-device (default; runs well on an 8 GB GPU). Risk labels, scope recommendations, one-line explanations.</li>
-      <li><b>High</b> — <code>llama3.1:8b</code> via Ollama, on-device. Stronger judgement on the same metadata.</li>
-      <li><b>Maximum-local</b> — <code>llama3.3:70b</code> via Ollama, on-device (large-GPU machines). The strongest local warden; nothing leaves the machine.</li>
-      <li><b>Meta API (cloud)</b> — any Meta API model id via <code>https://api.llama.com/v1</code> (base URL editable in Settings). Frontier reasoning over request metadata only — never keys. Opt-in.</li>
-    </ul>
+    <p>The vault is secure with no model at all. Deterministic policy ceilings, single-use expiring grants, and human approval cannot be overridden by any model. Each tier adds judgement on top of that floor: spotting a write phrased as a read, slow scope-creep across history, and a malicious request from an agent you are testing. The floor never moves. A stronger warden is not a stronger permission.</p>
+    <p>These tiers are the catalogue Settings and the daemon use (<code>OLLAMA_MODELS</code> in <code>packages/brain/src/ollama.ts</code>, plus the Meta API provider). Why the floor holds is in <a href="/research/#tiers">Research</a>.</p>
+    <table class="levels">
+      <tr><th>Level</th><th>Warden</th><th>Runs</th><th>What you get</th></tr>
+      <tr><td><span class="pill low">Policy only</span></td><td class="model">None</td><td>Anywhere. Provider <code>none</code>.</td><td>Hard ceilings, expiry, manual approval for anything sensitive. Audit records <code>decisionSource: policy</code>.</td></tr>
+      <tr><td><span class="pill med">Medium</span></td><td class="model">llama3.2:3b</td><td>On-device, Ollama. The default. About 2 GB; comfortable on an 8 GB GPU.</td><td>Risk labels, a recommended scope, a one-line explanation.</td></tr>
+      <tr><td><span class="pill high">High</span></td><td class="model">llama3.1:8b</td><td>On-device, Ollama.</td><td>Stronger judgement on the same metadata. Still no keys in the prompt.</td></tr>
+      <tr><td><span class="pill max">Maximum-local</span></td><td class="model">llama3.3:70b</td><td>On-device, Ollama, on a large GPU. Nothing leaves the machine.</td><td>The strongest local warden.</td></tr>
+      <tr><td><span class="pill max">Meta API</span></td><td class="model">Any Meta API model id</td><td><code>https://api.llama.com/v1</code>. Base URL editable in Settings. Opt-in.</td><td>Frontier reasoning over request metadata only. Never keys.</td></tr>
+    </table>
     <p>Effort is orthogonal to the tier: <code>Fast</code> (1 pass / 10s), <code>Standard</code> (1 pass / 30s), <code>Deep</code> (2 passes / 60s, disagreement escalates and keeps the narrower scope). No tier or effort setting can widen a scope past its policy ceiling.</p>
-    <p>Measured on the reference machine: live marshal call ~1.9 s warm; eval safety 100% at every level (see <a href="/architecture/">Architecture</a>).</p>
+    <p>Measured on the reference machine: live marshal call ~1.9 s warm. The eval and the canary are written up in <a href="/research/">Research</a>.</p>
 
     <h2 id="tripwire">Tripwires (auto-revocation)</h2>
     <ul>
@@ -117,7 +119,9 @@ openvault model pull                       # fetch/upgrade the warden model</cod
     </ul>
 
     <h2 id="logs">Request Logs</h2>
-    <p>The Audit view (and <code>openvault audit</code>) shows the full timeline per request: agent → scope → marshal assessment (model named) → policy → your decision → executed/expired/revoked. If it happened, it is in the log; if it is in the log, it contains no secret — the canary test enforces that in CI.</p>
+    <p>The Audit view and <code>openvault audit</code> show one timeline per request. The model is named on every warden row. If an agent asked for something at 3 a.m., the row shows the request and what happened next.</p>
+    <p><b>Always logged.</b> Agent and IDE, requested scope, the warden's assessment, the policy decision, your approval or denial, execution, expiry, revocation. Timestamped, in order.</p>
+    <p><b>Never logged.</b> No key value, fragment, or hash, in the log or in any transcript. The same ban covers MCP responses, settings responses, and the renderer. An agent that calls the approve route itself gets <code>401</code>: those routes need the daemon token, which only the app and CLI hold. The sweep that enforces this is the <a href="/research/#q2-proofs">27-surface canary</a>.</p>
 
     <h2 id="policies">Policies</h2>
     <p>Per-alias ceilings cap what any agent can ever receive (e.g. <code>stripe → charges.read</code>). A requested write under a read ceiling is denied outright. "Always allow" creates a standing approval only for read-only, warden-rated low-risk scopes; writes ask every time. Standing approvals live in daemon memory and clear on restart — fail-safe by design.</p>

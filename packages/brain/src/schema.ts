@@ -9,11 +9,22 @@ export const MarshalDecisionSchema: Schema.Schema<MarshalDecision> = Schema.Stru
   explanation: Schema.String,
 });
 
+export function stripMarkdownFences(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("```")) {
+    const lines = trimmed.split("\n");
+    const start = lines[0]?.startsWith("```") ? 1 : 0;
+    const end = lines[lines.length - 1]?.startsWith("```") ? lines.length - 1 : lines.length;
+    return lines.slice(start, end).join("\n").trim();
+  }
+  return trimmed;
+}
+
 export function parseMarshalDecision(
   raw: string,
 ): Effect.Effect<MarshalDecision, MarshalInvalidOutput> {
   return Effect.try({
-    try: (): unknown => JSON.parse(raw),
+    try: (): unknown => JSON.parse(stripMarkdownFences(raw)),
     catch: () => new MarshalInvalidOutput({ message: "MarshalInvalidOutput: output is not valid JSON" }),
   }).pipe(
     Effect.flatMap((parsed) =>
