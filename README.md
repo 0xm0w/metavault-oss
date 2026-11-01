@@ -18,9 +18,9 @@ context, an audit row, or the desktop UI.
 
 ## Install
 
-### Windows Installer (v0.1.0-alpha.1)
+### Windows Installer (v0.1.0)
 
-Download the Windows NSIS installer (`OpenVault-0.1.0-alpha.1-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1).
+Download the Windows NSIS installer (`OpenVault-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/openvault/releases/tag/v0.1.0). The installer is unsigned.
 
 To build the installer locally from source:
 

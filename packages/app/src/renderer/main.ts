@@ -67,11 +67,13 @@ import type {
 // daemon payload is projected through model.ts whitelists before it is
 // rendered, and all daemon text reaches the page via textContent only.
 
-type ViewName = "approval" | "vault" | "audit" | "policies" | "settings";
+type ViewName = "approval" | "vault" | "audit" | "policies" | "posture" | "settings";
 
 const POLL_MS = 4_000;
 
-let currentView: ViewName = "approval";
+let currentView: ViewName = "vault";
+let approvalDialogDismissed = false;
+let approvalDialogKey = "";
 let approvals: PendingApproval[] = [];
 let aliases: string[] = [];
 let credentialMeta: CredentialMeta[] = [];
@@ -113,6 +115,25 @@ let settingsKeyDraft = "";
 let settingsBusy = false;
 let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
 let updaterStatus: UpdaterStatusLike = { status: "idle" };
+type SettingsTab = "general" | "warden" | "daemon" | "security";
+let settingsOpen = false;
+let settingsTab: SettingsTab = "general";
+let settingsFocusOnOpen = false;
+
+const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
+  general: "General",
+  warden: "Warden",
+  daemon: "Daemon",
+  security: "Security",
+};
+
+const VIEW_TITLE: Record<Exclude<ViewName, "settings">, string> = {
+  approval: "Approval",
+  vault: "Vault",
+  audit: "Audit",
+  policies: "Policies",
+  posture: "Posture",
+};
 
 function mustElement(selector: string): HTMLElement {
   const found = document.querySelector(selector);
@@ -133,6 +154,55 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   return node;
 }
 
+function cell(text: string): HTMLTableCellElement {
+  const node = el("td", "", text) as HTMLTableCellElement;
+  node.title = text;
+  return node;
+}
+
+function pagerButton(label: string, direction: "prev" | "next"): HTMLButtonElement {
+  const button = el("button", "pagination-btn") as HTMLButtonElement;
+  button.type = "button";
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", direction === "prev" ? "M14.5 6.5 9 12l5.5 5.5" : "M9.5 6.5 15 12l-5.5 5.5");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  icon.append(path);
+  const text = el("span", "", label);
+  if (direction === "prev") button.append(icon, text);
+  else button.append(text, icon);
+  return button;
+}
+
+function lockSvg(): SVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.setAttribute("x", "5");
+  rect.setAttribute("y", "10");
+  rect.setAttribute("width", "14");
+  rect.setAttribute("height", "10");
+  rect.setAttribute("rx", "2");
+  rect.setAttribute("fill", "none");
+  rect.setAttribute("stroke", "currentColor");
+  rect.setAttribute("stroke-width", "1.6");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M8 10V7.5a4 4 0 0 1 8 0V10");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linecap", "round");
+  svg.append(rect, path);
+  return svg;
+}
+
 function showBanner(message: string | null): void {
   const banner = mustElement("#banner");
   if (message === null) {
@@ -148,6 +218,7 @@ function setDaemonStatus(ok: boolean): void {
   const status = mustElement("#daemon-status");
   status.textContent = ok ? "● vaultd connected" : "● vaultd unreachable";
   status.className = ok ? "daemon-status is-ok" : "daemon-status is-down";
+  document.querySelector(".sidebar-mark")?.classList.toggle("is-ok", ok);
 }
 
 function updateMarshalLine(): void {
@@ -204,11 +275,34 @@ function renderApproval(view: HTMLElement): void {
   if (hero === null) {
     const empty = el("div", "empty");
     empty.append(el("p", "", "No pending requests."));
-    empty.append(el("p", "", "When an agent asks for access, the marshal assessment appears here for your decision. If this window is closed, requests wait in the tray queue and in vaultd."));
+    empty.append(el("p", "", "When an agent asks for access, the request opens over whichever page you are on. If this window is closed, requests wait in the tray queue and in vaultd."));
     view.append(empty);
     return;
   }
+  view.append(buildApprovalCard(hero));
 
+  const others = sortApprovals(approvals).filter((a) => a.grantId !== hero.grantId);
+  if (others.length > 0) {
+    const queue = el("div", "queue");
+    queue.append(el("p", "label", `ALSO WAITING (${String(others.length)})`));
+    for (const item of others) {
+      const row = el("button", "queue-item") as HTMLButtonElement;
+      row.type = "button";
+      const left = el("span", "mono", `${item.agentId} · ${item.allowedScope}`);
+      const right = el("span", "", formatExpiry(item.expiresAtMs, Date.now()));
+      right.dataset["expiry"] = String(item.expiresAtMs);
+      row.append(left, right);
+      row.addEventListener("click", () => {
+        selectedGrantId = item.grantId;
+        render();
+      });
+      queue.append(row);
+    }
+    view.append(queue);
+  }
+}
+
+function buildApprovalCard(hero: PendingApproval): HTMLElement {
   const card = el("section", "hero");
   const want = el("p", "want");
   want.append(document.createTextNode(`${hero.agentId} in ${hero.ide} wants `));
@@ -287,26 +381,64 @@ function renderApproval(view: HTMLElement): void {
     buttons.append(alwaysBtn);
   }
   card.append(buttons);
-  view.append(card);
+  return card;
+}
 
-  const others = sortApprovals(approvals).filter((a) => a.grantId !== hero.grantId);
-  if (others.length > 0) {
-    const queue = el("div", "queue");
-    queue.append(el("p", "label", `ALSO WAITING (${String(others.length)})`));
-    for (const item of others) {
-      const row = el("button", "queue-item") as HTMLButtonElement;
-      row.type = "button";
-      const left = el("span", "mono", `${item.agentId} · ${item.allowedScope}`);
-      const right = el("span", "", formatExpiry(item.expiresAtMs, Date.now()));
-      right.dataset["expiry"] = String(item.expiresAtMs);
-      row.append(left, right);
-      row.addEventListener("click", () => {
-        selectedGrantId = item.grantId;
-        render();
-      });
-      queue.append(row);
-    }
-    view.append(queue);
+function dismissApprovalDialog(): void {
+  approvalDialogDismissed = true;
+  approvalDialogKey = "";
+  document.querySelector("#approval-dialog")?.remove();
+}
+
+function paintApprovalDialog(): void {
+  const existing = document.querySelector("#approval-dialog");
+  const hero = vaultLocked || approvalDialogDismissed || currentView === "approval" ? null : selectedApproval();
+  if (hero === null) {
+    existing?.remove();
+    approvalDialogKey = "";
+    return;
+  }
+  const key = `${hero.grantId}|${String(approvals.length)}|${busy ? "1" : "0"}`;
+  if (existing !== null && approvalDialogKey === key) return;
+  const previousGrant = approvalDialogKey.split("|")[0] ?? "";
+  approvalDialogKey = key;
+  existing?.remove();
+  const overlay = el("div", "approval-overlay");
+  overlay.id = "approval-dialog";
+  const dialog = el("div", "approval-dialog");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "approval-dialog-title");
+  const head = el("div", "approval-dialog-head");
+  const title = el("h2", "", "Approval needed");
+  title.id = "approval-dialog-title";
+  const closeBtn = el("button", "icon-btn") as HTMLButtonElement;
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Close");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M7 7l10 10M17 7 7 17");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linecap", "round");
+  svg.append(path);
+  closeBtn.append(svg);
+  closeBtn.addEventListener("click", dismissApprovalDialog);
+  head.append(title, closeBtn);
+  dialog.append(head);
+  const waiting = approvals.length;
+  dialog.append(el("p", "approval-dialog-count", waiting === 1 ? "1 request needs a decision" : `${String(waiting)} requests need a decision`));
+  dialog.append(buildApprovalCard(hero));
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) dismissApprovalDialog();
+  });
+  overlay.append(dialog);
+  document.body.append(overlay);
+  if (previousGrant !== hero.grantId) {
+    dialog.querySelector<HTMLButtonElement>(".btn-approve")?.focus();
   }
 }
 
@@ -961,9 +1093,7 @@ function openDotEnvModal(): void {
     }
 
     saveBtn.disabled = false;
-    const table = el("table", "audit-table");
-    table.style.width = "100%";
-    table.style.fontSize = "12px";
+    const table = el("table", "data-table");
 
     const thead = el("thead", "");
     const headerRow = el("tr", "");
@@ -996,8 +1126,6 @@ function openDotEnvModal(): void {
       const tdAlias = el("td", "");
       const aliasInp = document.createElement("input");
       aliasInp.className = "vault-input";
-      aliasInp.style.padding = "2px 6px";
-      aliasInp.style.fontSize = "11px";
       aliasInp.value = item.alias;
       aliasInp.addEventListener("input", () => {
         item.alias = aliasInp.value.trim();
@@ -1007,8 +1135,6 @@ function openDotEnvModal(): void {
       const tdScope = el("td", "");
       const scopeInp = document.createElement("input");
       scopeInp.className = "vault-input";
-      scopeInp.style.padding = "2px 6px";
-      scopeInp.style.fontSize = "11px";
       scopeInp.value = item.scope;
       scopeInp.addEventListener("input", () => {
         item.scope = scopeInp.value.trim();
@@ -1085,7 +1211,7 @@ function openDotEnvModal(): void {
 function renderVault(view: HTMLElement): void {
   const panel = el("section", "vault-panel");
   const headerRow = el("div", "vault-section-header");
-  headerRow.append(el("h1", "vault-title", "Agent credentials"));
+  headerRow.append(el("h2", "vault-title", "Agent credentials"));
 
   const actionGroup = el("div", "vault-header-actions");
   actionGroup.style.display = "flex";
@@ -1094,8 +1220,6 @@ function renderVault(view: HTMLElement): void {
 
   const importBtn = el("button", "action btn-import-dotenv", "Import .env") as HTMLButtonElement;
   importBtn.type = "button";
-  importBtn.style.padding = "5px 12px";
-  importBtn.style.fontSize = "12px";
   importBtn.addEventListener("click", () => {
     openDotEnvModal();
   });
@@ -1118,34 +1242,47 @@ function renderVault(view: HTMLElement): void {
     view.append(panel);
     return;
   }
-  const list = el("div", "vault-list");
+  const wrap = el("div", "data-table-wrap");
+  const table = el("table", "data-table");
+  const head = el("tr", "");
+  head.append(el("th", "", "Alias"), el("th", "", "Scopes"), el("th", "", "Site"), el("th", "", "Last used"));
+  const thead = el("thead", "");
+  thead.append(head);
+  const tbody = el("tbody", "");
   for (const card of deriveVaultCards(aliases, auditEvents, credentialMeta)) {
-    const row = el("button", "vault-row vault-row-btn") as HTMLButtonElement;
-    row.type = "button";
-    row.dataset["alias"] = card.alias;
-    row.setAttribute("aria-label", `Edit credential ${card.alias}`);
-    row.append(faviconNode(card.website, card.alias));
-    const main = el("div", "vault-row-main");
-    main.append(el("div", "vault-alias", card.alias));
-    const sub = el("div", "vault-row-sub");
-    if (card.scopes.length === 0) {
-      sub.append(el("span", "vault-muted", "no requests yet"));
-    }
-    for (const scope of card.scopes) {
-      sub.append(el("span", "chip vault-scope-chip", scope));
-    }
-    if (card.website !== "") {
-      sub.append(el("span", "vault-muted", card.website));
-    }
-    sub.append(el("span", "vault-muted", `Last used \u00B7 ${formatLastUsed(card.lastUsedTs, Date.now())}`));
-    main.append(sub);
-    row.append(main);
-    row.addEventListener("click", () => {
+    const scopes = card.scopes.length === 0 ? "No requests yet" : card.scopes.join(", ");
+    const site = card.website === "" ? "—" : card.website;
+    const last = formatLastUsed(card.lastUsedTs, Date.now());
+    const tr = el("tr", "is-clickable");
+    tr.tabIndex = 0;
+    tr.setAttribute("role", "button");
+    tr.setAttribute("aria-label", `Edit credential ${card.alias}`);
+    const aliasCell = el("td", "");
+    const aliasMain = el("div", "cell-with-mark");
+    aliasMain.append(faviconNode(card.website, card.alias));
+    const aliasText = el("span", "", card.alias);
+    aliasMain.append(aliasText);
+    aliasCell.append(aliasMain);
+    aliasCell.title = card.alias;
+    const scopeCell = cell(scopes);
+    const siteCell = cell(site);
+    const lastCell = cell(last);
+    tr.append(aliasCell, scopeCell, siteCell, lastCell);
+    const open = (): void => {
       openCredentialDetail(card);
+    };
+    tr.addEventListener("click", open);
+    tr.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
     });
-    list.append(row);
+    tbody.append(tr);
   }
-  panel.append(list);
+  table.append(thead, tbody);
+  wrap.append(table);
+  panel.append(wrap);
   view.append(panel);
 }
 
@@ -1167,7 +1304,7 @@ function renderAudit(view: HTMLElement): void {
   searchInput.id = "audit-filter";
   searchInput.className = "audit-search-input";
   searchInput.type = "text";
-  searchInput.placeholder = "Search requests by agent, alias, scope, outcome, or details (e.g. agent:cursor, outcome:denied)...";
+  searchInput.placeholder = "Filter by agent, alias, scope, or outcome";
   searchInput.value = auditFilter;
   searchInput.setAttribute("aria-label", "Search audit requests");
   searchRow.append(searchInput);
@@ -1298,7 +1435,7 @@ function renderAudit(view: HTMLElement): void {
   controls.append(filtersGrid);
   view.append(controls);
 
-  const list = el("div", "rows");
+  const list = el("div", "data-table-wrap");
   view.append(list);
 
   const paginationContainer = el("div", "pagination-wrap");
@@ -1328,49 +1465,50 @@ function renderAudit(view: HTMLElement): void {
     const paginated = paginate(filtered, auditPage, auditPageSize);
     auditPage = paginated.currentPage;
 
+    const table = el("table", "data-table");
+    const headRow = el("tr", "");
+    for (const label of ["When", "Caller", "Alias", "Scope", "Outcome", "Warden", ""]) {
+      headRow.append(el("th", label === "" ? "data-table-action" : "", label));
+    }
+    const thead = el("thead", "");
+    thead.append(headRow);
+    const tbody = el("tbody", "");
     for (const group of paginated.items) {
       const verdict = wardenVerdict(group);
       const expanded = expandedAuditIds.has(group.requestId);
-      const node = el("article", "row audit-row");
-      const summary = el("div", "audit-summary");
       const allowedText = group.allowedScope ?? "—";
       const scopeText =
         group.requestedScope !== "" && group.requestedScope !== allowedText
           ? `${group.requestedScope} → ${allowedText}`
           : allowedText || group.requestedScope;
-
-      const chainText = group.isLegacy
-        ? `Earlier activity · ${String(group.events.length)} ${group.events.length === 1 ? "event" : "events"}`
-        : `${group.agentId} · ${group.alias} · ${scopeText}`;
-      summary.append(el("div", "chain", chainText));
-      if (!group.isLegacy) {
-        const chips = el("div", "audit-chips");
-        chips.append(el("span", `chip outcome-chip outcome-${verdict.outcome}`, verdict.outcomeLabel));
-        const wardenClass =
-          verdict.risk !== null ? `chip warden-chip risk-${verdict.risk}` : "chip warden-chip is-policy";
-        chips.append(el("span", wardenClass, verdict.wardenLabel));
-        if (verdict.escalated) {
-          chips.append(el("span", "chip warden-chip is-escalated", "escalated"));
-        }
-        if (verdict.narrowed) {
-          chips.append(el("span", "chip warden-chip is-narrowed", "narrowed"));
-        }
-        summary.append(chips);
+      const tr = el("tr", "");
+      tr.append(cell(group.lastTs));
+      tr.append(cell(group.isLegacy ? "Earlier activity" : group.agentId));
+      tr.append(cell(group.isLegacy ? "—" : group.alias));
+      tr.append(cell(group.isLegacy ? `${String(group.events.length)} events` : scopeText));
+      const outcomeCell = el("td", "");
+      if (group.isLegacy) {
+        outcomeCell.textContent = "—";
+      } else {
+        const badgeClass =
+          verdict.outcome === "executed"
+            ? "status-badge is-ok"
+            : verdict.outcome === "denied" || verdict.outcome === "revoked"
+              ? "status-badge is-danger"
+              : verdict.outcome === "expired"
+                ? "status-badge is-warn"
+                : "status-badge";
+        outcomeCell.append(el("span", badgeClass, verdict.outcomeLabel));
+        outcomeCell.title = verdict.outcomeLabel;
       }
-      node.append(summary);
-      node.append(el("div", "when", group.lastTs));
-
-      const toggle = el(
-        "button",
-        "action audit-toggle",
-        group.isLegacy
-          ? expanded
-            ? "Hide details"
-            : "Show details"
-          : expanded
-            ? "Hide verification"
-            : "Show verification",
-      ) as HTMLButtonElement;
+      const wardenBits = group.isLegacy
+        ? ["—"]
+        : [verdict.wardenLabel, verdict.escalated ? "escalated" : "", verdict.narrowed ? "narrowed" : ""].filter(
+            (part) => part !== "",
+          );
+      tr.append(outcomeCell, cell(wardenBits.join(" · ")));
+      const action = el("td", "data-table-action");
+      const toggle = el("button", "text-action", expanded ? "Hide" : "Details") as HTMLButtonElement;
       toggle.type = "button";
       toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
       toggle.addEventListener("click", () => {
@@ -1381,7 +1519,9 @@ function renderAudit(view: HTMLElement): void {
         }
         renderList();
       });
-      node.append(toggle);
+      action.append(toggle);
+      tr.append(action);
+      tbody.append(tr);
 
       if (expanded) {
         const timeline = el("div", "audit-timeline");
@@ -1417,35 +1557,39 @@ function renderAudit(view: HTMLElement): void {
           timeline.append(step);
         }
         if (group.agentId !== "human") {
-          const blockAgentBtn = el("button", "action btn-deny", `Block ${group.agentId}`) as HTMLButtonElement;
+          const blockAgentBtn = el("button", "text-revoke", "Revoke") as HTMLButtonElement;
           blockAgentBtn.type = "button";
           blockAgentBtn.disabled = busy;
-          blockAgentBtn.style.marginTop = "10px";
           blockAgentBtn.addEventListener("click", () => {
             void runAction(
               () => window.openvault.revoke(group.agentId),
-              `Blocked ${group.agentId} — pending grants cancelled, all future requests denied.`,
+              `Revoked ${group.agentId} — pending grants cancelled, new requests denied.`,
             );
           });
           timeline.append(blockAgentBtn);
         }
-        node.append(timeline);
+        const detail = el("tr", "is-detail");
+        const detailCell = el("td", "") as HTMLTableCellElement;
+        detailCell.colSpan = 7;
+        detailCell.append(timeline);
+        detail.append(detailCell);
+        tbody.append(detail);
       }
-      list.append(node);
     }
+    table.append(thead, tbody);
+    list.append(table);
 
     // Pagination controls bar
     const paginationBar = el("div", "pagination-bar");
     const info = el(
       "div",
       "pagination-info",
-      `Showing ${String(paginated.startIndex)}–${String(paginated.endIndex)} of ${String(paginated.totalItems)} requests`,
+      `Showing ${String(paginated.startIndex)}-${String(paginated.endIndex)} of ${String(paginated.totalItems)} requests`,
     );
 
     const controlsGroup = el("div", "pagination-controls");
 
-    const prevBtn = el("button", "pagination-btn", "‹ Previous") as HTMLButtonElement;
-    prevBtn.type = "button";
+    const prevBtn = pagerButton("Previous", "prev");
     prevBtn.disabled = paginated.currentPage <= 1;
     prevBtn.addEventListener("click", () => {
       if (auditPage > 1) {
@@ -1460,8 +1604,7 @@ function renderAudit(view: HTMLElement): void {
       `Page ${String(paginated.currentPage)} of ${String(paginated.totalPages)}`,
     );
 
-    const nextBtn = el("button", "pagination-btn", "Next ›") as HTMLButtonElement;
-    nextBtn.type = "button";
+    const nextBtn = pagerButton("Next", "next");
     nextBtn.disabled = paginated.currentPage >= paginated.totalPages;
     nextBtn.addEventListener("click", () => {
       if (auditPage < paginated.totalPages) {
@@ -1541,13 +1684,82 @@ function renderAudit(view: HTMLElement): void {
     searchInput.setSelectionRange(start, end);
   }
 }
-function settingsSection(title: string, copy: string): HTMLElement {
+function settingsSection(title: string, copy: string, tab: SettingsTab): HTMLElement {
   const section = el("section", "settings-section");
+  section.dataset["settingsTab"] = tab;
   section.append(el("h2", "settings-title", title));
   if (copy !== "") {
     section.append(el("p", "settings-copy", copy));
   }
   return section;
+}
+
+function applySettingsTab(): void {
+  const body = document.querySelector("#settings-body");
+  if (body !== null) {
+    body.querySelectorAll<HTMLElement>("[data-settings-tab]").forEach((node) => {
+      node.hidden = node.dataset["settingsTab"] !== settingsTab;
+    });
+  }
+  document.querySelectorAll<HTMLButtonElement>(".settings-tab").forEach((btn) => {
+    const on = btn.dataset["settingsTab"] === settingsTab;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  const label = document.querySelector("#settings-tab-label");
+  if (label !== null) label.textContent = SETTINGS_TAB_LABEL[settingsTab];
+}
+
+function openSettings(tab?: SettingsTab): void {
+  if (tab !== undefined) settingsTab = tab;
+  settingsFocusOnOpen = !settingsOpen;
+  settingsOpen = true;
+  render();
+}
+
+function closeSettings(): void {
+  if (!settingsOpen) return;
+  const liveKey = document.querySelector<HTMLInputElement>("#warden-key-input");
+  if (liveKey !== null) settingsKeyDraft = liveKey.value;
+  settingsOpen = false;
+  render();
+}
+
+function syncChrome(): void {
+  const page = currentView === "settings" ? "policies" : currentView;
+  document.querySelectorAll<HTMLElement>(".nav-btn").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset["view"] === page);
+  });
+  document.querySelector("#open-settings")?.classList.toggle("is-active", settingsOpen && !vaultLocked);
+  const badge = document.querySelector<HTMLElement>("#approval-count");
+  const approvalBtn = document.querySelector<HTMLElement>(".nav-btn[data-view='approval']");
+  const waiting = approvals.length;
+  if (badge !== null) {
+    badge.textContent = waiting > 99 ? "99+" : String(waiting);
+    badge.hidden = waiting === 0;
+  }
+  if (approvalBtn !== null) {
+    approvalBtn.setAttribute("aria-label", waiting === 0 ? "Approval" : `Approval, ${String(waiting)} waiting`);
+  }
+}
+
+function paintSettingsModal(): void {
+  const modal = document.querySelector<HTMLElement>("#settings-modal");
+  const settingsBody = document.querySelector<HTMLElement>("#settings-body");
+  if (modal === null || settingsBody === null) return;
+  if (!settingsOpen || vaultLocked) {
+    modal.hidden = true;
+    settingsBody.replaceChildren();
+    return;
+  }
+  settingsBody.replaceChildren();
+  renderSettings(settingsBody);
+  applySettingsTab();
+  modal.hidden = false;
+  if (settingsFocusOnOpen) {
+    settingsFocusOnOpen = false;
+    document.querySelector<HTMLButtonElement>(".settings-tab.is-active")?.focus();
+  }
 }
 
 async function runSettingsAction(action: () => Promise<void>): Promise<void> {
@@ -1565,14 +1777,18 @@ async function runSettingsAction(action: () => Promise<void>): Promise<void> {
 }
 
 function renderSettings(view: HTMLElement): void {
-  view.append(el("h1", "", "Settings"));
-  view.append(el("p", "sub", "Choose who judges capability requests. Deterministic policy stays the floor: the warden can narrow or escalate, never widen."));
+  const settingsHeading = el("h1", "settings-page-title", "Settings");
+  settingsHeading.setAttribute("aria-hidden", "true");
+  view.append(settingsHeading);
+  const intro = el("p", "settings-copy", "Choose who judges capability requests. Deterministic policy stays the floor: the warden can narrow or escalate, never widen.");
+  intro.dataset["settingsTab"] = "warden";
+  view.append(intro);
   if (!wardenLoaded) {
     view.append(el("div", "empty", "Loading warden settings from vaultd\u2026"));
   }
 
   // 0. Interface Mode (Verbose vs Simple)
-  const modeSection = settingsSection("Interface mode", "Choose between a simplified, minimal UI and the full security-first interface.");
+  const modeSection = settingsSection("Interface mode", "Choose between a simplified, minimal UI and the full security-first interface.", "general");
   const modeGroup = el("div", "mode-toggle-group");
 
   const simpleCard = el("div", `mode-option-card ${uiMode === "simple" ? "is-selected" : ""}`);
@@ -1612,7 +1828,7 @@ function renderSettings(view: HTMLElement): void {
   view.append(modeSection);
 
   // 1. Provider
-  const providerSection = settingsSection("Warden provider", "");
+  const providerSection = settingsSection("Warden provider", "", "warden");
   const providerCopy: Record<WardenSettingsLike["provider"], string> = {
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
     ollama: "Ollama runs on this device. Request metadata stays on-device.",
@@ -1640,7 +1856,7 @@ function renderSettings(view: HTMLElement): void {
   view.append(providerSection);
 
   // 2. Model
-  const modelSection = settingsSection("Model", "");
+  const modelSection = settingsSection("Model", "", "warden");
   if (wardenDraft.provider === "none") {
     modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose Ollama or Meta API to enable a warden model."));
   } else {
@@ -1707,7 +1923,7 @@ function renderSettings(view: HTMLElement): void {
   view.append(modelSection);
 
   // 3. Effort
-  const effortSection = settingsSection("Effort", "");
+  const effortSection = settingsSection("Effort", "", "warden");
   for (const option of EFFORT_OPTIONS) {
     const label = el("label", "settings-radio");
     const radio = document.createElement("input");
@@ -1750,11 +1966,14 @@ function renderSettings(view: HTMLElement): void {
       doSave();
     }
   });
-  effortSection.append(saveBtn);
+  const saveRow = el("div", "settings-row");
+  saveRow.append(el("span", "settings-row-label", "Save warden settings"));
+  saveRow.append(saveBtn);
+  effortSection.append(saveRow);
   view.append(effortSection);
 
   // 4. Meta API key
-  const keySection = settingsSection("Meta API key", "The key is stored encrypted by vaultd and decrypted only inside the daemon at call time. It is never shown again after saving.");
+  const keySection = settingsSection("Meta API key", "The key is stored encrypted by vaultd and decrypted only inside the daemon at call time. It is never shown again after saving.", "warden");
   const statusLine = el("p", "settings-status");
   statusLine.id = "warden-key-status";
   statusLine.textContent = `Meta API key: ${wardenKeyStatusText(wardenKeyStatusState)}`;
@@ -1835,12 +2054,16 @@ function renderSettings(view: HTMLElement): void {
     }
   });
   keyBtns.append(saveKeyBtn, testBtn, deleteKeyBtn);
-  keySection.append(keyBtns);
+  const keyRow = el("div", "settings-row");
+  keyRow.append(el("span", "settings-row-label", "Key actions"));
+  keyRow.append(keyBtns);
+  keySection.append(keyRow);
   keySection.append(el("p", "settings-copy", "Test connection runs one metadata-only warden self-check through vaultd using the saved provider and model (save settings changes first to test them). It creates no grants and writes no audit entries."));
   view.append(keySection);
 
   if (settingsMessage !== null) {
     const msg = el("p", settingsMessage.ok ? "settings-message is-ok" : "settings-message is-error", settingsMessage.text);
+    msg.dataset["settingsTab"] = "warden";
     view.append(msg);
   }
 
@@ -1848,6 +2071,7 @@ function renderSettings(view: HTMLElement): void {
   const authSection = settingsSection(
     "Local authentication & security gates",
     "Additional layers of local protection (PIN, biometrics, auto-lock) to secure your workstation against unauthorized physical access. (All protection layers are off by default).",
+    "general",
   );
 
   const authStatusP = el(
@@ -2029,11 +2253,14 @@ function renderSettings(view: HTMLElement): void {
     authBtns.append(lockNowBtn);
   }
 
-  authSection.append(authBtns);
+  const authActionRow = el("div", "settings-row");
+  authActionRow.append(el("span", "settings-row-label", "Local PIN"));
+  authActionRow.append(authBtns);
+  authSection.append(authActionRow);
   view.append(authSection);
 
   // 5. Daemon (read-only)
-  const daemonSection = settingsSection("Daemon", "");
+  const daemonSection = settingsSection("Daemon", "", "daemon");
   const rows: readonly (readonly [string, string])[] = [
     ["Daemon URL", DAEMON_URL_DISPLAY],
     ["Vault path", VAULT_PATH_DISPLAY],
@@ -2052,6 +2279,7 @@ function renderSettings(view: HTMLElement): void {
   const agentSection = settingsSection(
     "Agent Integration & MCP",
     "Connect AI coding agents to MetaVault OSS via the Model Context Protocol (MCP) or built-in agent skills. All requests route to vaultd for policy enforcement and human approval.",
+    "daemon",
   );
 
   const tabsRow = el("div", "agent-tab-btns");
@@ -2212,23 +2440,24 @@ function renderSettings(view: HTMLElement): void {
   view.append(agentSection);
 
   // 6. Security defaults (read-only summary)
-  const policySection = settingsSection("Security defaults", "");
+  const policySection = settingsSection("Security defaults", "", "security");
   const ceilingCount = Object.keys(policiesData.ceilings).length;
   policySection.append(el("p", "settings-copy", `Deterministic policy is the floor and never moves: ${String(ceilingCount)} alias ceiling${ceilingCount === 1 ? "" : "s"} on record, ${String(policiesData.standingApprovals.length)} standing approval${policiesData.standingApprovals.length === 1 ? "" : "s"} in force. The warden may narrow or escalate a request, never widen it. Editing policy stays on the Policies view.`));
   const policiesBtn = el("button", "action settings-link", "Open Policies") as HTMLButtonElement;
   policiesBtn.type = "button";
   policiesBtn.addEventListener("click", () => {
+    settingsOpen = false;
     currentView = "policies";
-    document.querySelectorAll(".nav-btn").forEach((b) => {
-      b.classList.toggle("is-active", (b as HTMLElement).dataset["view"] === "policies");
-    });
     render();
   });
-  policySection.append(policiesBtn);
+  const policiesRow = el("div", "settings-row");
+  policiesRow.append(el("span", "settings-row-label", "Ceilings and standing approvals"));
+  policiesRow.append(policiesBtn);
+  policySection.append(policiesRow);
   view.append(policySection);
 
   // 7. Auto-updater & releases (#16)
-  const updateSection = settingsSection("Auto-updater & releases", "Keep MetaVault OSS secure with signed background updates directly from GitHub Releases.");
+  const updateSection = settingsSection("Auto-updater & releases", "Keep MetaVault OSS secure with signed background updates directly from GitHub Releases.", "general");
   const updateStatusRow = el("div", "settings-row");
   let statusText = `Current version: v${APP_VERSION_DISPLAY}`;
   let statusBadgeClass = "tag-ok";
@@ -2278,100 +2507,16 @@ function renderSettings(view: HTMLElement): void {
     updateBtns.append(installBtn);
   }
 
-  updateSection.append(updateBtns);
+  const updateActionRow = el("div", "settings-row");
+  updateActionRow.append(el("span", "settings-row-label", "Updates"));
+  updateActionRow.append(updateBtns);
+  updateSection.append(updateActionRow);
   view.append(updateSection);
 }
 
 function renderPolicies(view: HTMLElement): void {
   view.append(el("h1", "", "Policies"));
   view.append(el("p", "sub", "Deterministic ceilings are enforced inside vaultd policy; the marshal can only narrow them. Revoking an agent blocks its pending and future grants immediately."));
-
-  if (securityPosture !== null) {
-    const postureCard = el("article", "row policy-row posture-card");
-    const postureHeader = el("div", "policy-card-header");
-    postureHeader.append(el("span", "chain", "Security Posture"));
-    const gradeBadge = el("span", "chip", `Grade ${securityPosture.grade} · Score ${String(securityPosture.score)}/100`);
-    gradeBadge.style.fontWeight = "600";
-    if (securityPosture.score >= 80) {
-      gradeBadge.style.borderColor = "var(--teal)";
-      gradeBadge.style.color = "var(--teal)";
-    } else if (securityPosture.score >= 60) {
-      gradeBadge.style.borderColor = "var(--warn)";
-      gradeBadge.style.color = "var(--warn)";
-    } else {
-      gradeBadge.style.borderColor = "var(--danger)";
-      gradeBadge.style.color = "var(--danger)";
-    }
-    postureHeader.append(gradeBadge);
-    postureCard.append(postureHeader);
-
-    const summaryPara = el("p", "sub", securityPosture.summary);
-    summaryPara.style.margin = "8px 0 12px";
-    postureCard.append(summaryPara);
-
-    const checksChips = el("div", "policy-chips-group");
-    checksChips.append(el("span", "policy-group-label", "Controls:"));
-    for (const chk of securityPosture.checks) {
-      const mark = chk.passed ? "✓ " : "✕ ";
-      const chip = el("span", "chip", `${mark}${chk.name}`);
-      if (chk.passed) {
-        chip.style.opacity = "0.85";
-      } else {
-        chip.style.borderColor = "var(--warn)";
-      }
-      checksChips.append(chip);
-    }
-    postureCard.append(checksChips);
-
-    if (securityPosture.remediations.length > 0) {
-      const remContainer = el("div", "policy-caps");
-      remContainer.style.marginTop = "12px";
-      remContainer.style.display = "flex";
-      remContainer.style.flexDirection = "column";
-      remContainer.style.gap = "8px";
-
-      for (const rem of securityPosture.remediations) {
-        const remRow = el("div", "row");
-        remRow.style.padding = "8px 12px";
-        remRow.style.display = "flex";
-        remRow.style.justifyContent = "space-between";
-        remRow.style.alignItems = "center";
-
-        const textCol = el("div", "");
-        const remTitle = el("div", "chain", rem.title);
-        remTitle.style.fontSize = "13px";
-        const remDesc = el("div", "when", rem.alias ? `Applies to alias: ${rem.alias}` : `Target: ${rem.target ?? "System policy"}`);
-        textCol.append(remTitle, remDesc);
-
-        const fixBtn = el("button", "action", "Resolve") as HTMLButtonElement;
-        fixBtn.type = "button";
-        fixBtn.style.padding = "4px 12px";
-        fixBtn.addEventListener("click", () => {
-          if (rem.action === "enable-warden") {
-            currentView = "settings";
-            document.querySelectorAll(".nav-btn").forEach((b) => {
-              b.classList.toggle("is-active", (b as HTMLElement).dataset["view"] === "settings");
-            });
-            render();
-          } else if (rem.action === "rotate-stale") {
-            currentView = "vault";
-            document.querySelectorAll(".nav-btn").forEach((b) => {
-              b.classList.toggle("is-active", (b as HTMLElement).dataset["view"] === "vault");
-            });
-            render();
-          } else {
-            showBanner(`Inspect policy rules below to fix: ${rem.title}`);
-          }
-        });
-
-        remRow.append(textCol, fixBtn);
-        remContainer.append(remRow);
-      }
-      postureCard.append(remContainer);
-    }
-
-    view.append(postureCard);
-  }
 
   const rows = buildPolicyRows(auditEvents, policiesData);
   const ceilingEntries = Object.entries(policiesData.ceilings).sort(([a], [b]) =>
@@ -2382,69 +2527,137 @@ function renderPolicies(view: HTMLElement): void {
     return;
   }
   if (ceilingEntries.length > 0) {
-    const caps = el("div", "rows policy-caps");
-    const capsNode = el("article", "row");
-    capsNode.append(el("div", "chain", "Enforced ceilings (per alias)"));
-    const capChips = el("div", "policy-chips-group");
+    view.append(el("div", "data-table-caption", "Enforced ceilings"));
+    const wrap = el("div", "data-table-wrap");
+    const table = el("table", "data-table");
+    const head = el("tr", "");
+    head.append(el("th", "", "Alias"), el("th", "", "Ceiling"));
+    const thead = el("thead", "");
+    thead.append(head);
+    const tbody = el("tbody", "");
     for (const [alias, ceiling] of ceilingEntries) {
-      capChips.append(el("span", "chip", `${alias}: ${ceiling}`));
+      const tr = el("tr", "");
+      tr.append(cell(alias), cell(ceiling));
+      tbody.append(tr);
     }
-    capsNode.append(capChips);
-    capsNode.append(el("div", "when", "Ceilings are read from vaultd policy state, not inferred from observed requests."));
-    caps.append(capsNode);
-    view.append(caps);
+    table.append(thead, tbody);
+    wrap.append(table);
+    view.append(wrap);
   }
-  const list = el("div", "rows");
-  for (const row of rows) {
-    const node = el("article", "row policy-row");
-    const main = el("div", "policy-card-main");
-
-    // Header: agentId + meta horizontally distributed
-    const head = el("div", "policy-card-header");
-    head.append(el("span", "chain", row.agentId));
-    head.append(el("span", "policy-card-meta", `${String(row.requestCount)} requests · last seen ${formatLastUsed(row.lastSeenTs, Date.now())}`));
-    main.append(head);
-
-    // Horizontal chips group
-    const chipsGroup = el("div", "policy-chips-group");
-    chipsGroup.append(el("span", "policy-group-label", "Observed:"));
-    if (row.scopes.length === 0) {
-      chipsGroup.append(el("span", "chip", "none"));
-    } else {
-      for (const scope of row.scopes) {
-        chipsGroup.append(el("span", "chip", scope));
-      }
+  if (rows.length > 0) {
+    view.append(el("div", "data-table-caption", "Agents"));
+    const wrap = el("div", "data-table-wrap");
+    const table = el("table", "data-table");
+    const head = el("tr", "");
+    for (const label of ["Agent", "Requests", "Last seen", "Observed", "Ceilings", "Standing", ""]) {
+      head.append(el("th", label === "" ? "data-table-action" : "", label));
     }
-
-    if (row.ceilings.length > 0) {
-      chipsGroup.append(el("span", "policy-group-label", "Ceilings:"));
-      for (const entry of row.ceilings) {
-        chipsGroup.append(el("span", "chip", `${entry.alias}: ${entry.ceiling}`));
-      }
+    const thead = el("thead", "");
+    thead.append(head);
+    const tbody = el("tbody", "");
+    for (const row of rows) {
+      const observed = row.scopes.length === 0 ? "none" : row.scopes.join(", ");
+      const ceilings = row.ceilings.length === 0 ? "—" : row.ceilings.map((entry) => `${entry.alias}: ${entry.ceiling}`).join(", ");
+      const standing = row.standingApprovals.length === 0 ? "—" : row.standingApprovals.map((approval) => `${approval.alias}: ${approval.scope}`).join(", ");
+      const tr = el("tr", "");
+      tr.append(
+        cell(row.agentId),
+        cell(String(row.requestCount)),
+        cell(formatLastUsed(row.lastSeenTs, Date.now())),
+        cell(observed),
+        cell(ceilings),
+        cell(standing),
+      );
+      const action = el("td", "data-table-action");
+      const revokeBtn = el("button", "text-revoke", "Revoke") as HTMLButtonElement;
+      revokeBtn.type = "button";
+      revokeBtn.disabled = busy;
+      revokeBtn.addEventListener("click", () => {
+        void runAction(() => window.openvault.revoke(row.agentId), `Revoked ${row.agentId} — pending grants cancelled, new requests denied.`);
+      });
+      action.append(revokeBtn);
+      tr.append(action);
+      tbody.append(tr);
     }
-
-    if (row.standingApprovals.length > 0) {
-      chipsGroup.append(el("span", "policy-group-label", "Standing:"));
-      for (const approval of row.standingApprovals) {
-        chipsGroup.append(el("span", "chip", `${approval.alias}: ${approval.scope}`));
-      }
-    }
-    main.append(chipsGroup);
-    node.append(main);
-
-    const revokeBtn = el("button", "action btn-revoke", "Revoke / Block") as HTMLButtonElement;
-    revokeBtn.type = "button";
-    revokeBtn.disabled = busy;
-    revokeBtn.addEventListener("click", () => {
-      void runAction(() => window.openvault.revoke(row.agentId), `Revoked ${row.agentId} — pending grants cancelled, new requests denied.`);
-    });
-    node.append(revokeBtn);
-    list.append(node);
+    table.append(thead, tbody);
+    wrap.append(table);
+    view.append(wrap);
   }
-  view.append(list);
   const note = el("p", "fine", `Stages: ${(["requested", "marshal", "policy", "approved", "denied", "executed", "expired", "revoked", "credential-added", "credential-deleted"] as const).map(stageLabel).join(" · ")}`);
+  note.title = note.textContent;
   view.append(note);
 }
+function openView(next: Exclude<ViewName, "settings">): void {
+  const liveKey = document.querySelector<HTMLInputElement>("#warden-key-input");
+  if (liveKey !== null) settingsKeyDraft = liveKey.value;
+  if (next === "approval") approvalDialogDismissed = true;
+  currentView = next;
+  notice = null;
+  settingsOpen = false;
+  render();
+}
+
+function renderPosture(view: HTMLElement): void {
+  view.append(el("h1", "", "Posture"));
+  view.append(el("p", "sub", "What is in good shape, and the next thing you can do in the app."));
+  if (securityPosture === null) {
+    view.append(el("div", "empty", "Posture is not available until vaultd answers."));
+    return;
+  }
+  const grade = el("p", "posture-grade", `Grade ${securityPosture.grade} · ${String(securityPosture.score)}/100`);
+  grade.classList.add(securityPosture.score >= 80 ? "is-ok" : securityPosture.score >= 60 ? "is-warn" : "is-danger");
+  view.append(grade);
+  view.append(el("p", "sub", securityPosture.summary));
+
+  if (securityPosture.checks.length > 0) {
+    const wrap = el("div", "data-table-wrap");
+    const table = el("table", "data-table");
+    const head = el("tr", "");
+    head.append(el("th", "", "Control"), el("th", "", "Status"));
+    const thead = el("thead", "");
+    thead.append(head);
+    const tbody = el("tbody", "");
+    for (const check of securityPosture.checks) {
+      const tr = el("tr", "");
+      tr.append(cell(check.name));
+      const status = el("td", "");
+      status.append(el("span", check.passed ? "status-badge is-ok" : "status-badge is-warn", check.passed ? "Passed" : "Look"));
+      tr.append(status);
+      tbody.append(tr);
+    }
+    table.append(thead, tbody);
+    wrap.append(table);
+    view.append(wrap);
+  }
+
+  const prompts: { text: string; label: string; run: () => void }[] =
+    securityPosture.remediations.length > 0
+      ? securityPosture.remediations.map((rem) => ({
+          text: rem.alias !== undefined && rem.alias !== "" ? `${rem.title} (${rem.alias})` : rem.title,
+          label: rem.action === "enable-warden" ? "Open Warden" : rem.action === "rotate-stale" ? "Open Vault" : "Open Policies",
+          run: () => {
+            if (rem.action === "enable-warden") openSettings("warden");
+            else if (rem.action === "rotate-stale") openView("vault");
+            else openView("policies");
+          },
+        }))
+      : [
+          { text: "Review the ceilings agents are allowed to use.", label: "Open Policies", run: () => { openView("policies"); } },
+          { text: "Turn the warden on, or change the model.", label: "Open Warden", run: () => { openSettings("warden"); } },
+          { text: "Rotate a credential that has been sitting unused.", label: "Open Vault", run: () => { openView("vault"); } },
+        ];
+  view.append(el("div", "data-table-caption", "Do next"));
+  for (const prompt of prompts) {
+    const line = el("p", "posture-prompt");
+    line.append(document.createTextNode(prompt.text));
+    const link = el("button", "text-action", prompt.label) as HTMLButtonElement;
+    link.type = "button";
+    link.addEventListener("click", prompt.run);
+    line.append(link);
+    view.append(line);
+  }
+}
+
 function render(): void {
   const lockHeaderBtn = document.querySelector<HTMLButtonElement>("#lock-session-btn");
   if (lockHeaderBtn !== null) {
@@ -2459,10 +2672,19 @@ function render(): void {
     auditFilterSelectionStart = oldFilter.selectionStart;
     auditFilterSelectionEnd = oldFilter.selectionEnd;
   }
-  if (currentView === "settings") {
+  if (settingsOpen) {
     const liveKey = document.querySelector<HTMLInputElement>("#warden-key-input");
     if (liveKey !== null) settingsKeyDraft = liveKey.value;
   }
+  if (currentView === "settings") {
+    settingsOpen = true;
+    currentView = "policies";
+  }
+  if (vaultLocked) settingsOpen = false;
+  const page: Exclude<ViewName, "settings"> =
+    currentView === "vault" || currentView === "audit" || currentView === "policies" || currentView === "posture" ? currentView : "approval";
+  const title = document.querySelector("#view-title");
+  if (title !== null) title.textContent = vaultLocked ? "Locked" : VIEW_TITLE[page];
   view.replaceChildren();
   if (vaultLocked) {
     view.replaceChildren();
@@ -2474,9 +2696,8 @@ function render(): void {
     lockScreen.style.padding = "60px 20px";
     lockScreen.style.textAlign = "center";
 
-    const lockIcon = el("div", "lock-icon", "🔒");
-    lockIcon.style.fontSize = "48px";
-    lockIcon.style.marginBottom = "16px";
+    const lockIcon = el("div", "lock-icon");
+    lockIcon.append(lockSvg());
 
     const lockTitle = el("h2", "", "Vault Locked");
     const lockSub = el("p", "sub", "Session locked due to inactivity. Enter your PIN to resume.");
@@ -2550,22 +2771,34 @@ function render(): void {
       lockScreen.append(bioBtn);
     }
     view.append(lockScreen);
+    view.querySelectorAll("h1").forEach((node) => {
+      node.setAttribute("aria-hidden", "true");
+    });
+    paintSettingsModal();
+    paintApprovalDialog();
+    syncChrome();
     setTimeout(() => { pinInput.focus(); }, 50);
     return;
   }
 
   showBanner(notice);
-  if (currentView === "approval") {
+  if (page === "approval") {
     renderApproval(view);
-  } else if (currentView === "vault") {
+  } else if (page === "vault") {
     renderVault(view);
-  } else if (currentView === "audit") {
+  } else if (page === "audit") {
     renderAudit(view);
-  } else if (currentView === "settings") {
-    renderSettings(view);
+  } else if (page === "posture") {
+    renderPosture(view);
   } else {
     renderPolicies(view);
   }
+  view.querySelectorAll("h1").forEach((node) => {
+    node.setAttribute("aria-hidden", "true");
+  });
+  paintSettingsModal();
+  paintApprovalDialog();
+  syncChrome();
 }
 
 async function refresh(): Promise<void> {
@@ -2581,13 +2814,14 @@ async function refresh(): Promise<void> {
       window.openvault.getLocalAuthStatus().catch(() => null),
     ]);
     const nextApprovals = projectPendingResponse(pendingRaw);
-    const hasNewApproval = nextApprovals.some((a) => !knownGrantIds.has(a.grantId));
+    const incoming = sortApprovals(nextApprovals.filter((item) => !knownGrantIds.has(item.grantId)));
     knownGrantIds = new Set(nextApprovals.map((a) => a.grantId));
-    if (hasNewApproval && nextApprovals.length > 0) {
-      currentView = "approval";
-      document.querySelectorAll<HTMLElement>(".nav-btn").forEach((b) => {
-        b.classList.toggle("is-active", b.dataset["view"] === "approval");
-      });
+    if (incoming.length > 0) {
+      approvalDialogDismissed = false;
+      const soonest = incoming[0];
+      if (soonest !== undefined) {
+        selectedGrantId = soonest.grantId;
+      }
       window.openvault.bringToFront();
     }
     approvals = nextApprovals;
@@ -2663,6 +2897,7 @@ function start(): void {
     // the banner instead of silently leaving no modal.
     void runDeeplinkAddFlow(params, {
       switchToVault: () => {
+        settingsOpen = false;
         currentView = "vault";
         document.querySelectorAll<HTMLElement>(".nav-btn").forEach((b) => {
           b.classList.toggle("is-active", b.dataset["view"] === "vault");
@@ -2686,16 +2921,50 @@ function start(): void {
       showBanner(err instanceof Error ? err.message : "Could not open the add-credential dialog");
     });
   });
+  const versionNode = document.querySelector("#app-version");
+  if (versionNode !== null) versionNode.textContent = `v${APP_VERSION_DISPLAY}`;
+  const scroller = document.querySelector("#view");
+  scroller?.addEventListener("scroll", () => {
+    if (scroller instanceof HTMLElement) {
+      document.querySelector(".app-header")?.classList.toggle("is-scrolled", scroller.scrollTop > 8);
+    }
+  });
+  document.querySelector("#open-settings")?.addEventListener("click", () => {
+    openSettings();
+  });
+  document.querySelector("#settings-close")?.addEventListener("click", () => {
+    closeSettings();
+  });
+  document.querySelector("#settings-modal")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeSettings();
+  });
+  document.querySelectorAll<HTMLButtonElement>(".settings-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = button.dataset["settingsTab"];
+      if (next === "general" || next === "warden" || next === "daemon" || next === "security") {
+        settingsTab = next;
+        applySettingsTab();
+      }
+    });
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && credentialModal === null) {
+      if (document.querySelector("#approval-dialog") !== null) {
+        dismissApprovalDialog();
+        return;
+      }
+      if (settingsOpen) closeSettings();
+    }
+  });
   document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((button) => {
     button.addEventListener("click", () => {
       const next = button.dataset["view"];
-      if (next === "approval" || next === "vault" || next === "audit" || next === "policies" || next === "settings") {
-        currentView = next;
-        notice = null;
-        document.querySelectorAll(".nav-btn").forEach((b) => {
-          b.classList.toggle("is-active", b === button);
-        });
-        render();
+      if (next === "settings") {
+        openSettings();
+        return;
+      }
+      if (next === "approval" || next === "vault" || next === "audit" || next === "policies" || next === "posture") {
+        openView(next);
       }
     });
   });

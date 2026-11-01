@@ -79,6 +79,8 @@ function createWindow(): void {
   rendererReady = false;
   const isMinimizedStart = process.argv.includes("--minimized") || process.argv.includes("--hidden");
   const window = new BrowserWindow(buildWindowOptions(preloadPath));
+  window.setMenuBarVisibility(false);
+  window.removeMenu();
   mainWindow = window;
   window.once("ready-to-show", () => {
     if (!isMinimizedStart) {
@@ -170,6 +172,7 @@ if (!hasLock) {
     handleDeeplinkUrl(url);
   });
   void app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
     ipcMain.on("openvault:bring-to-front", () => {
       bringWindowToFront();

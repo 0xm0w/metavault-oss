@@ -5,7 +5,7 @@ It is a thin adapter over the vault daemon (`vaultd`, `127.0.0.1:7077`): it
 never sees secret values, validates tool inputs, forwards calls to the
 daemon, and returns the daemon result verbatim.
 
-Current version: `0.1.0-alpha.1` (reported as `serverInfo.version` in the
+Current version: `0.1.0` (reported as `serverInfo.version` in the
 MCP handshake; exported in code as `MCP_VERSION` from
 `packages/mcp/src/server.ts`).
 

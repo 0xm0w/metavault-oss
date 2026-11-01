@@ -83,7 +83,9 @@ security-invariant impact in the body.
 Pushing a tag matching `v*` runs `.github/workflows/release.yml` on
 Windows: it gates on lint/typecheck/test, builds the app, packages the
 NSIS installer with electron-builder, writes `SHA256SUMS`, and publishes
-a GitHub **prerelease** with the installer and checksums attached.
+a GitHub release with the installer and checksums attached. A tag whose
+name contains a hyphen (for example `v0.1.0-alpha.2`) is published as a
+prerelease. `v0.1.0` is a release.
 
 ## Manual repo-settings checklist (repo owner only)
 

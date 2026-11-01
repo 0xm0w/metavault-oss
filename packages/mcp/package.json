@@ -1,6 +1,6 @@
 {
   "name": "openvault-mcp",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "OpenVault MCP server — stdio adapter over vaultd. Holds no secrets.",

@@ -4,6 +4,29 @@ All notable changes to OpenVault are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] — 2026-11-01
+
+First public release. `v0.1.0-alpha.1` stays available as a prerelease.
+The Windows installer is still unsigned, and there is still no macOS build.
+
+### Added
+
+- Desktop shell. Vault is the home page. Approval is second and shows how
+  many requests are waiting. A new request opens an approval dialog on the
+  current page instead of navigating away.
+- Posture is its own page: grade, control table, and short next-step
+  prompts. Policies no longer contains that box.
+- Vault, Audit, and policy ceilings use a single-line data table. Revoke
+  is a red text action.
+- The caption row carries the view title, the marshal line, and the daemon
+  status. The application menu is removed. Settings stays at the bottom of
+  the sidebar.
+
+### Known limitations
+
+- The Windows installer is unsigned. SmartScreen will warn on first run.
+- No macOS build.
+
 ## [0.1.0-alpha.1] — 2026-10-31
 
 First public feature line. Alpha because the installer is unsigned, there

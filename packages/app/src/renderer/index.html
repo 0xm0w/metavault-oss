@@ -9,40 +9,83 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<header class="app-header">
-  <div class="brand">
-    <svg width="22" height="22" viewBox="0 0 512 512" fill="none" style="vertical-align: -3px; margin-right: 8px;">
-      <defs><mask id="hdr-mask" maskUnits="userSpaceOnUse">
-        <rect width="512" height="512" fill="#fff"/>
-        <circle cx="262" cy="246" r="27" fill="#000"/>
-        <path d="M262.0 203.0 L262.0 185.0 M292.4 215.6 L305.1 202.9 M305.0 246.0 L323.0 246.0 M292.4 276.4 L305.1 289.1 M262.0 289.0 L262.0 307.0 M231.6 276.4 L218.9 289.1 M219.0 246.0 L201.0 246.0 M231.6 215.6 L218.9 202.9" stroke="#000" stroke-width="12" stroke-linecap="round"/>
-      </mask></defs>
-      <rect x="100" y="70" width="320" height="336" rx="60" fill="none" stroke="#2dd4bf" stroke-width="32"/>
-      <rect x="140" y="406" width="56" height="30" rx="11" fill="#2dd4bf"/>
-      <rect x="324" y="406" width="56" height="30" rx="11" fill="#2dd4bf"/>
-      <path d="M146 152 V148 A32 32 0 0 1 178 116 H342 A32 32 0 0 1 374 148 V328 A32 32 0 0 1 342 360 H178 A32 32 0 0 1 146 328 V324" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round"/>
-      <rect x="76" y="160" width="46" height="62" rx="13" fill="#ffffff"/>
-      <rect x="76" y="254" width="46" height="62" rx="13" fill="#ffffff"/>
-      <circle cx="262" cy="246" r="80" fill="#ffffff" mask="url(#hdr-mask)"/>
-    </svg>
-    METAVAULT OSS
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">MetaVault</div>
+    <nav class="sidebar-nav" aria-label="Views">
+      <button type="button" class="side-link nav-btn is-active" data-view="vault">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 12H20.5M16.8 12v2.5M14 12v1.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>Vault</span>
+      </button>
+      <button type="button" class="side-link nav-btn" data-view="approval">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 5.2 6v5.2c0 4.1 2.7 7 6.8 8.6 4.1-1.6 6.8-4.5 6.8-8.6V6L12 3.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Approval</span>
+        <span id="approval-count" class="nav-count" hidden>0</span>
+      </button>
+      <button type="button" class="side-link nav-btn" data-view="audit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 3.5h6V6H9zM9 10.5h6M9 14h6M9 17.5h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Audit</span>
+      </button>
+      <button type="button" class="side-link nav-btn" data-view="policies">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M8 21h8M5 8h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7.2 8 5 13.2h4.4L7.2 8ZM16.8 8 14.6 13.2h4.4L16.8 8Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        <span>Policies</span>
+      </button>
+      <button type="button" class="side-link nav-btn" data-view="posture">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 5.2 6v5.2c0 4.1 2.7 7 6.8 8.6 4.1-1.6 6.8-4.5 6.8-8.6V6L12 3.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        <span>Posture</span>
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <span id="app-version" class="sidebar-version">v0.1.0</span>
+      <button type="button" id="open-settings" class="side-link" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7V20a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Settings</span>
+      </button>
+    </div>
+  </aside>
+  <div class="shell-main">
+    <header class="app-header">
+      <h1 id="view-title" class="view-title">Vault</h1>
+      <div class="header-right">
+        <button type="button" id="lock-session-btn" class="header-lock-btn" aria-label="Lock session now" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Lock
+        </button>
+        <span id="marshal-line" class="marshal-line">Marshal · Llama 3.2 3B · On-device</span>
+        <span id="daemon-status" class="daemon-status" title="vaultd connection">● connecting</span>
+      </div>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+    <main id="view" class="view"></main>
+    <footer class="app-footer">Agents never see your secrets. vaultd holds the keys; this window only approves.</footer>
   </div>
-  <div class="header-right">
-    <button type="button" id="lock-session-btn" class="header-lock-btn" title="Lock session now" hidden>🔒 Lock</button>
-    <span id="marshal-line" class="marshal-line">Marshal · Llama 3.2 3B · On-device</span>
-    <span id="daemon-status" class="daemon-status" title="vaultd connection">● connecting</span>
+</div>
+<div id="settings-modal" class="settings-overlay" hidden>
+  <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-heading">
+    <div class="settings-tabs">
+      <div class="settings-tabs-head">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7V20a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span id="settings-heading">Settings</span>
+      </div>
+      <div class="settings-tabs-list" role="tablist" aria-label="Settings">
+        <button type="button" class="settings-tab is-active" role="tab" data-settings-tab="general" aria-selected="true">General</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="warden" aria-selected="false">Warden</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="daemon" aria-selected="false">Daemon</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="security" aria-selected="false">Security</button>
+      </div>
+      <div class="settings-tabs-foot">MetaVault OSS</div>
+    </div>
+    <div class="settings-pane">
+      <div class="settings-pane-head">
+        <h2 id="settings-tab-label">General</h2>
+        <button type="button" id="settings-close" class="icon-btn settings-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div id="settings-body" class="settings-body"></div>
+    </div>
   </div>
-</header>
-<nav class="app-nav" aria-label="Views">
-  <button type="button" data-view="approval" class="nav-btn is-active">Approval</button>
-  <button type="button" data-view="vault" class="nav-btn">Vault</button>
-  <button type="button" data-view="audit" class="nav-btn">Audit</button>
-  <button type="button" data-view="policies" class="nav-btn">Policies</button>
-  <button type="button" data-view="settings" class="nav-btn">Settings</button>
-</nav>
-<div id="banner" class="banner" hidden></div>
-<main id="view" class="view"></main>
-<footer class="app-footer">Agents never see your secrets. vaultd holds the keys; this window only approves.</footer>
+</div>
 <script type="module" src="./main.js"></script>
 </body>
 </html>
