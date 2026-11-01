@@ -284,7 +284,7 @@
   <section id="download" class="mb-landing-anchor" style="margin-bottom:64px">
     <div class="mb-final mb-reveal">
       <span class="caption-mono-sm" style="color:var(--muted-foreground);letter-spacing:2px;display:block;margin-bottom:12px">Get the vault</span>
-      <h2 class="mb-section-title" style="max-width:640px;margin:0 auto 24px">Download it. Point an IDE at it.</h2>
+      <h2 class="mb-section-title" style="max-width:720px;margin:0 auto 24px"><span class="mb-sr">Download it. Point an IDE at it.</span><span aria-hidden="true">Download it. Point <span class="mb-ide" id="ide-slot"><span class="mb-ide-word" id="ide-word">an IDE</span></span> at it.</span></h2>
       <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-bottom:36px">
         <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1">Download for Windows</a>
         <a class="mb-btn-secondary" href="https://github.com/0xm0w/openvault">View source</a>
@@ -515,6 +515,16 @@
     } else fallback();
   });
 
+  var ides = ["an IDE", "Claude Code", "Codex", "Antigravity"];
+  var ideSlot = document.getElementById("ide-slot");
+  var ideWord = document.getElementById("ide-word");
+  var ideIndex = 0;
+  function fitIde() {
+    if (!reduce) ideSlot.style.width = ideWord.offsetWidth + "px";
+  }
+  fitIde();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitIde);
+
   showIngest(0);
   showMcp(0);
   paintCadence();
@@ -524,6 +534,18 @@
     setInterval(function () { ingestIndex = (ingestIndex + 1) % ingest.length; showIngest(ingestIndex); }, 4500);
     setInterval(function () { mcpIndex = (mcpIndex + 1) % mcp.length; showMcp(mcpIndex); }, 5000);
     setInterval(function () { cadenceIndex = (cadenceIndex + 1) % gates.length; paintCadence(); }, 2200);
+    setInterval(function () {
+      ideWord.classList.add("is-leaving");
+      setTimeout(function () {
+        ideIndex = (ideIndex + 1) % ides.length;
+        ideWord.textContent = ides[ideIndex];
+        ideWord.classList.remove("is-leaving");
+        ideWord.classList.add("is-entering");
+        fitIde();
+        void ideWord.offsetWidth;
+        ideWord.classList.remove("is-entering");
+      }, 320);
+    }, 2400);
   }
   if ("IntersectionObserver" in window && !reduce) {
     var observer = new IntersectionObserver(function (entries) {
