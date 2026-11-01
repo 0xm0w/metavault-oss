@@ -25,6 +25,7 @@ export type ConnectorPresets = Readonly<Record<string, string>>;
 export const DEFAULT_CONNECTOR_PRESETS: ConnectorPresets = {
   stripe: "https://api.stripe.com/v1/charges",
   github: "https://api.github.com/user/repos",
+  cloudflare: "https://api.cloudflare.com/client/v4/user/tokens/verify",
 };
 
 const failed = (message: string): ConnectorFailed => new ConnectorFailed({ message });

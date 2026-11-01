@@ -5,4 +5,6 @@ packages/**/*.js
 release/
 *.db
 openvault.token
+openvault.key
+*.key
 packages/app/package-lock.json

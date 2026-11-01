@@ -107,3 +107,18 @@ footer { padding: 48px 0 56px; }
 .stat { border: 1px solid var(--hairline); border-radius: 8px; padding: 20px; background: var(--canvas-card); }
 .stat b { font-size: 30px; font-weight: 600; letter-spacing: -1px; color: var(--ink); display: block; }
 .stat span { font-size: 13px; color: var(--mute); }
+
+/* Research & Formal Verification styles */
+.proof-box { background: var(--canvas-card); border: 1px solid var(--hairline); border-left: 3px solid var(--accent); border-radius: 6px; padding: 20px 24px; margin: 20px 0 28px; }
+.proof-box .tag { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 8px; }
+.proof-box h3 { font-size: 18px; margin-bottom: 10px; color: var(--ink); }
+.theorem-pill { display: inline-block; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1px; padding: 2px 8px; border-radius: 4px; background: var(--canvas-soft); border: 1px solid var(--hairline); color: var(--accent-soft); margin-right: 6px; }
+.table-formal { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13px; }
+.table-formal th, .table-formal td { padding: 12px 14px; border: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+.table-formal th { background: var(--canvas-soft); font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--mute); }
+.qa-box { background: var(--canvas-soft); border: 1px solid var(--canvas-mid); border-radius: 8px; padding: 28px; margin: 32px 0; }
+.qa-box .q-title { font-size: 24px; font-weight: 600; color: var(--ink); letter-spacing: -0.5px; margin-bottom: 14px; }
+.qa-box .a-verdict { display: flex; align-items: center; gap: 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 6px; margin-bottom: 18px; }
+.verdict-no { background: rgba(45, 212, 191, 0.1); color: var(--accent); border: 1px solid rgba(45, 212, 191, 0.3); }
+.verdict-brokered { background: rgba(99, 102, 241, 0.1); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
+
