@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
@@ -82,8 +83,17 @@ function createWindow(): void {
   window.once("ready-to-show", () => {
     if (!isMinimizedStart) {
       window.show();
+      window.focus();
     }
   });
+  if (!isMinimizedStart) {
+    setTimeout(() => {
+      if (mainWindow === window && !window.isVisible()) {
+        window.show();
+        window.focus();
+      }
+    }, 1000);
+  }
   window.on("close", (event) => {
     if (shouldHideOnClose(isQuitting)) {
       event.preventDefault();
@@ -107,11 +117,14 @@ function createWindow(): void {
 }
 
 function createTray(): void {
-  // 1x1 navy pixel; a branded icon ships with the installer packaging.
-  const icon = nativeImage.createFromDataURL(
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-  );
-  tray = new Tray(icon);
+  const iconPath = join(here, "renderer", process.platform === "win32" ? "icon.ico" : "tray.png");
+  const icon = existsSync(iconPath)
+    ? nativeImage.createFromPath(iconPath)
+    : nativeImage.createFromDataURL(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      );
+  try {
+    tray = new Tray(icon);
   tray.setToolTip("MetaVault OSS");
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -129,6 +142,9 @@ function createTray(): void {
   tray.on("click", () => {
     showWindow();
   });
+  } catch (err) {
+    console.warn("Failed to create tray icon:", err);
+  }
 }
 
 const coldStartDeeplink = findOpenVaultUrl(process.argv.slice(1));

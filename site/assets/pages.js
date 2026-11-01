@@ -46,7 +46,7 @@
       document.body.appendChild(area);
       area.select();
       var ok = false;
-      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
       area.remove();
       done(ok);
     };
