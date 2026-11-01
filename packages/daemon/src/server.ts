@@ -300,7 +300,7 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     const patch: {
-      provider?: "none" | "ollama" | "meta-api";
+      provider?: "none" | "ollama" | "meta-api" | "builtin";
       model?: string;
       effort?: "fast" | "standard" | "deep";
       metaApiBaseUrl?: string;

@@ -75,7 +75,9 @@ public class WinDesktopLauncher {
 }
 "@
 
-Add-Type -TypeDefinition $code
+if (-not ([System.Management.Automation.PSTypeName]'WinDesktopLauncher').Type) {
+    Add-Type -TypeDefinition $code
+}
 
 $openvaultRoot = "C:\Users\Mowreez.DESKTOP-D1GHS6J\openvault"
 $exePath = Join-Path $openvaultRoot "packages\app\release\win-unpacked\MetaVault OSS.exe"

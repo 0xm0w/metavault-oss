@@ -47,7 +47,7 @@ export const EnrollmentRequestSchema = Schema.Struct({
 export const EnrollmentIdSchema = Schema.Struct({ enrollmentId: Schema.String });
 
 export const WardenSettingsPatchSchema = Schema.Struct({
-  provider: Schema.optional(Schema.Literal("none", "ollama", "meta-api")),
+  provider: Schema.optional(Schema.Literal("none", "ollama", "meta-api", "builtin")),
   model: Schema.optional(Schema.String),
   effort: Schema.optional(Schema.Literal("fast", "standard", "deep")),
   metaApiBaseUrl: Schema.optional(Schema.String),
