@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background: Deep Void Squircle -->
+  <rect width="512" height="512" rx="112" fill="#0a0a0a" stroke="#212327" stroke-width="4"/>
+
+  <!-- Subtle Vault Outer Dial Rim -->
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#1a1c20" stroke-width="6"/>
+
+  <!-- The 3 Spokes of the Safe Turn-Handle, morphing into Meta's Infinity Curve -->
+  <!-- Spoke 1: Vertical Up -->
+  <path d="M 256 256 L 256 120" stroke="#212327" stroke-width="14" stroke-linecap="round"/>
+  <!-- Spoke 2: Bottom-Right 120 deg -->
+  <path d="M 256 256 L 373.8 324" stroke="#212327" stroke-width="14" stroke-linecap="round"/>
+  <!-- Spoke 3: Bottom-Left 240 deg -->
+  <path d="M 256 256 L 138.2 324" stroke="#212327" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- The Continuous Meta Loop woven into the 3-Way Turn Key Handle -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Fluid Meta-style infinity path intersecting the wheel -->
+    <!-- Left Loop (Smooth Organic Curve) -->
+    <path d="M 256 256 
+             C 210 160 140 150 140 220 
+             C 140 290 210 320 256 256 
+             C 302 192 372 222 372 292 
+             C 372 362 302 352 256 256 Z" 
+          stroke="#2dd4bf" stroke-width="26" />
+    
+    <!-- Outer Spoke Grips (The Vault Wheel Handles) -->
+    <circle cx="256" cy="110" r="18" fill="#0a0a0a" stroke="#2dd4bf" stroke-width="10"/>
+    <circle cx="382" cy="328" r="18" fill="#0a0a0a" stroke="#2dd4bf" stroke-width="10"/>
+    <circle cx="130" cy="328" r="18" fill="#0a0a0a" stroke="#2dd4bf" stroke-width="10"/>
+  </g>
+
+  <!-- Heavy Vault Center Hub / Rotor Lock Core -->
+  <circle cx="256" cy="256" r="38" fill="#141618" stroke="#212327" stroke-width="6"/>
+  <circle cx="256" cy="256" r="18" fill="#2dd4bf"/>
+</svg>
