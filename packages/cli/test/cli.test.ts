@@ -191,7 +191,7 @@ describe("openvault CLI (in-process daemon wire)", () => {
     expect(code).toBe(0);
     const text = cap.out();
     expect(text).toContain("marshal");
-    expect(text).toContain("llama3.2:3b");
+    expect(text).toContain("llama3.2:1b");
     expect(text).toContain("ok");
     expect(text).not.toContain(CANARY);
     expect(cap.err()).not.toContain(CANARY);
