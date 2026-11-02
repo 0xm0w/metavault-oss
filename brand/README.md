@@ -84,5 +84,5 @@ Change the numbers in `TIERS` (mark) or the lockup ratios in `build()`, then run
 python scripts/build_brand.py
 ```
 
-Requirements: Python 3.10+, Pillow, numpy, fontTools. The original teal-vault set
-(`site/brand/**`) is untouched.
+Requirements: Python 3.10+, Pillow, numpy, fontTools. The deployed set lives at
+`site/brand/**` and is kept in sync with this directory.
