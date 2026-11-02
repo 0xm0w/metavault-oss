@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { metavaultEnv } from "../../core/src/env.js";
+import { metavaultEnv } from "./env.js";
 
 // Daemon HTTP client for the Electron MAIN process. The daemon token lives
 // only here in main: it is resolved from the environment or the token file

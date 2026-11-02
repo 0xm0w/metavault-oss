@@ -119,7 +119,7 @@ describe("main-process daemon whitelist", () => {
     const clientSource = readFileSync(join(appRoot, "src", "daemon-client.ts"), "utf8");
     expect(clientSource).toContain("metavaultEnv");
     expect(clientSource).toContain("http://127.0.0.1:7077");
-    expect(clientSource).toContain("core/src/env.js");
+    expect(clientSource).toContain("./env.js");
     expect(clientSource).toContain("openvault.token");
     expect(clientSource).toContain("x-openvault-token");
     expect(clientSource).not.toContain("electron");
