@@ -238,6 +238,8 @@ function updateMarshalLine(): void {
       line.textContent = "Marshal \u00B7 Off \u00B7 Policy only";
     } else if (wardenDraft.provider === "meta-api") {
       line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Meta API (cloud)`;
+    } else if (wardenDraft.provider === "bft") {
+      line.textContent = "Marshal · Meta Family of AIs · Tri-Warden BFT Quorum";
     } else if (wardenDraft.provider === "builtin") {
       line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Built-in (WebGPU)`;
     } else {
@@ -1905,6 +1907,7 @@ function renderSettings(view: HTMLElement): void {
   // 1. Provider
   const providerSection = settingsSection("Warden provider", "", "warden");
   const providerCopy: Record<WardenSettingsLike["provider"], string> = {
+    bft: "Tri-Warden BFT Quorum: Meta Family of AIs (Chief Justice) + Microsoft Phi Silica (Hardware NPU) + Google Gemini Nano (Browser Companion). Byzantine fault-tolerant security.",
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
     ollama: "Ollama runs on this device. Request metadata stays on-device.",
     "meta-api": "Meta API (cloud) sends request metadata \u2014 agent, alias, scope and reason, never secrets \u2014 off-device to Meta's API for judgement. Secrets never leave vaultd.",
@@ -1936,6 +1939,48 @@ function renderSettings(view: HTMLElement): void {
   const modelSection = settingsSection("Model", "", "warden");
   if (wardenDraft.provider === "none") {
     modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose Built-in AI, Ollama, or Meta API to enable a warden model."));
+    } else if (wardenDraft.provider === "bft") {
+    const card = el("div", "bft-card");
+    const head = el("div", "bft-head");
+    const info = el("div", "");
+    info.append(el("div", "bft-title", "Tri-Warden Multi-Model BFT Quorum"));
+    info.append(el("div", "bft-desc", "Byzantine fault-tolerant consensus across 3 independent AI architectures. Meta sets the policy ceiling, while Microsoft and Google co-audit every execution."));
+    head.append(info);
+    head.append(el("span", "status-badge is-ok", "\u25CF BFT Active"));
+    card.append(head);
+
+    const pillars = el("div", "bft-pillars");
+
+    // Pillar 1: Meta Family of AIs
+    const metaPillar = el("div", "bft-pillar-item");
+    metaPillar.append(createMetaLogo());
+    const metaDetails = el("div", "bft-pillar-details");
+    metaDetails.append(el("div", "bft-pillar-title", "Meta Family of AIs (Chief Justice)"));
+    metaDetails.append(el("div", "bft-pillar-sub", "Meta API Llama 3.3 70B \u00B7 On-device Llama 3.2 1B WebGPU Fallback"));
+    metaPillar.append(metaDetails);
+    metaPillar.append(el("span", "status-badge is-ok", "Primary"));
+
+    // Pillar 2: Microsoft Phi Silica
+    const msftPillar = el("div", "bft-pillar-item");
+    msftPillar.append(createMicrosoftLogo());
+    const msftDetails = el("div", "bft-pillar-details");
+    msftDetails.append(el("div", "bft-pillar-title", "Microsoft Phi Silica"));
+    msftDetails.append(el("div", "bft-pillar-sub", "Hardware Co-Auditor \u00B7 Windows 11 Copilot+ DirectML NPU"));
+    msftPillar.append(msftDetails);
+    msftPillar.append(el("span", "status-badge", "Hardware NPU"));
+
+    // Pillar 3: Google Gemini Nano
+    const googlePillar = el("div", "bft-pillar-item");
+    googlePillar.append(createGoogleLogo());
+    const googleDetails = el("div", "bft-pillar-details");
+    googleDetails.append(el("div", "bft-pillar-title", "Google Gemini Nano"));
+    googleDetails.append(el("div", "bft-pillar-sub", "Browser Co-Auditor \u00B7 Chrome Extension Companion Bridge"));
+    googlePillar.append(googleDetails);
+    googlePillar.append(el("span", "status-badge", "Browser Eye"));
+
+    pillars.append(metaPillar, msftPillar, googlePillar);
+    card.append(pillars);
+    modelSection.append(card);
   } else if (wardenDraft.provider === "builtin") {
     const card = el("div", "builtin-ai-card");
     const head = el("div", "builtin-ai-head");
@@ -3261,3 +3306,22 @@ function start(): void {
 }
 
 start();
+function createMetaLogo(): HTMLElement {
+  const container = el("span", "bft-logo-wrapper");
+  container.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" aria-label="Meta"><path fill="#0668E1" d="M16.99 6.06c-1.89 0-3.52.9-4.99 2.56C10.53 6.96 8.9 6.06 7.01 6.06 3.64 6.06 1 8.87 1 12.44c0 3.54 2.59 6.27 5.92 6.27 1.94 0 3.64-.95 5.08-2.67 1.44 1.72 3.14 2.67 5.08 2.67 3.33 0 5.92-2.73 5.92-6.27 0-3.57-2.64-6.38-6.01-6.38zm0 10.28c-1.42 0-2.67-.84-3.8-2.57 1.09-1.68 2.29-2.52 3.8-2.52 1.94 0 3.48 1.48 3.48 3.54 0 2.07-1.54 3.55-3.48 3.55zm-9.98 0c-1.94 0-3.48-1.48-3.48-3.55 0-2.06 1.54-3.54 3.48-3.54 1.51 0 2.71.84 3.8 2.52-1.13 1.73-2.38 2.57-3.8 2.57z"/></svg>';
+  return container;
+}
+
+function createMicrosoftLogo(): HTMLElement {
+  const container = el("span", "bft-logo-wrapper");
+  container.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Microsoft"><rect x="2" y="2" width="9" height="9" fill="#F25022"/><rect x="13" y="2" width="9" height="9" fill="#7FBA00"/><rect x="2" y="13" width="9" height="9" fill="#00A4EF"/><rect x="13" y="13" width="9" height="9" fill="#FFB900"/></svg>';
+  return container;
+}
+
+function createGoogleLogo(): HTMLElement {
+  const container = el("span", "bft-logo-wrapper");
+  container.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Google"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>';
+  return container;
+}
+
+

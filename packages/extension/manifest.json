@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "MetaVault — AI Credential Vault",
+  "version": "0.1.0",
+  "description": "Local-first credential firewall & BFT approver for AI coding agents. Powered by Meta Llama & Google Gemini Nano.",
+  "action": {
+    "default_title": "MetaVault Approver & Vault",
+    "default_popup": "popup.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:7077/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  }
+}

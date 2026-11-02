@@ -110,7 +110,7 @@ export interface DeeplinkAddParams {
   readonly enrollmentId: string;
 }
 
-export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin";
+export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin" | "bft";
 export type WardenEffort = "fast" | "standard" | "deep";
 
 export interface WardenSettingsLike {

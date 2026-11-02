@@ -1077,7 +1077,7 @@ export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
 export const VAULT_PATH_DISPLAY = "openvault.db (in vaultd's working directory; OPENVAULT_DB_PATH can override it)";
 export const APP_VERSION_DISPLAY = "0.1.0";
 
-const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api", "builtin"];
+const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api", "builtin", "bft"];
 const WARDEN_EFFORTS_LIST: readonly WardenEffort[] = ["fast", "standard", "deep"];
 
 export function projectWardenSettings(raw: unknown): WardenSettingsLike | null {
@@ -1157,6 +1157,11 @@ export function projectWardenTestResult(raw: unknown): WardenTestResultLike | nu
 }
 
 export function wardenTestMessage(result: WardenTestResultLike): WardenTestResult {
+  if (result.provider === "bft") {
+    return result.ok
+      ? { ok: true, message: `BFT Quorum OK — Meta Family of AIs + Co-Wardens verified in ${String(Math.round(result.latencyMs))} ms.` }
+      : { ok: false, message: `BFT Quorum check failed — ${result.detail}` };
+  }
   if (result.provider === "none" || result.detail === "policy-only") {
     return { ok: result.ok, message: "Policy-only mode: no warden provider to test \u2014 deterministic policy is deciding requests." };
   }

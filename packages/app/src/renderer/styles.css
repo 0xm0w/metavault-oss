@@ -1524,3 +1524,79 @@ body.is-simple-mode .verbose-note {
   .settings-tabs-foot { display: none; }
   .marshal-line { display: none; }
 }
+
+/* Tri-Warden Multi-Model BFT Quorum Component */
+.bft-card {
+  border: 1px solid var(--border);
+  background: #ffffff;
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bft-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.bft-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bft-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-top: 3px;
+}
+
+.bft-pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.bft-pillar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.bft-logo-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.bft-pillar-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bft-pillar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bft-pillar-sub {
+  font-size: 11px;
+  color: var(--muted);
+}

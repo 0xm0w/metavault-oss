@@ -23,7 +23,7 @@ export const AgentSecuritySettingsPatchSchema = Schema.Struct({
   verifyCallerProcess: Schema.optional(Schema.Boolean),
 });
 
-export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin";
+export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin" | "bft";
 
 export interface WardenSettings {
   readonly provider: WardenProvider;
@@ -42,7 +42,7 @@ export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
 export const DEFAULT_BUILTIN_MODEL = "llama3.2:1b";
 
 export const WardenSettingsSchema = Schema.Struct({
-  provider: Schema.Literal("none", "ollama", "meta-api", "builtin"),
+  provider: Schema.Literal("none", "ollama", "meta-api", "builtin", "bft"),
   model: Schema.String,
   effort: Schema.Literal("fast", "standard", "deep"),
   metaApiBaseUrl: Schema.String,

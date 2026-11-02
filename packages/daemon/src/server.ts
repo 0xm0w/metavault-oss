@@ -337,7 +337,7 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     const patch: {
-      provider?: "none" | "ollama" | "meta-api" | "builtin";
+      provider?: "none" | "ollama" | "meta-api" | "builtin" | "bft";
       model?: string;
       effort?: "fast" | "standard" | "deep";
       metaApiBaseUrl?: string;

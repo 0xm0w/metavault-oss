@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MetaVault Approver</title>
+  <style>
+    :root {
+      --bg: #FAF9F6;
+      --surface: #FFFFFF;
+      --ink: #201A17;
+      --muted: #8A8174;
+      --border: #E6DDD0;
+      --primary: #201A17;
+      --ok: #0F766E;
+      --danger: #DC2626;
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .title {
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .badge {
+      background: var(--primary);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .status-indicator {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .status-indicator.is-connected {
+      color: var(--ok);
+      font-weight: 500;
+    }
+    .wardens-banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 14px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .wardens-title {
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+    .approval-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .approval-title {
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .approval-agent {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .approval-reason {
+      font-size: 12px;
+      font-style: italic;
+      color: var(--ink);
+    }
+    .btn-approve {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      align-self: flex-start;
+      margin-top: 4px;
+    }
+    .empty-state {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 30px 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">MetaVault Approver</div>
+    <div id="pending-count" class="badge">0</div>
+  </div>
+
+  <div id="status-indicator" class="status-indicator">Checking connection...</div>
+
+  <div class="wardens-banner">
+    <div class="wardens-title">Tri-Warden BFT Security Active</div>
+    <div>• Meta Llama (Chief Justice)</div>
+    <div>• Microsoft Phi Silica (Hardware NPU)</div>
+    <div>• Google Gemini Nano (Browser Eye)</div>
+  </div>
+
+  <div id="pending-list">
+    <div class="empty-state">Loading pending requests...</div>
+  </div>
+
+  <script type="module" src="src/sidepanel.js"></script>
+</body>
+</html>

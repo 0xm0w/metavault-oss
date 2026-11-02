@@ -27,9 +27,13 @@ export STRIPE_SECRET_KEY="sk_test_12345\\nwith_newline"
 DATABASE_URL='postgresql://user:pass@localhost:5432/mydb'
 EMPTY_STRING=""
 SINGLE_WORD='simple'
+ESCAPED_QUOTE="hello \\"world\\""
+MULTILINE_SINGLE='line1
+line2
+line3'
 `;
     const entries = parseDotEnv(raw);
-    expect(entries).toHaveLength(4);
+    expect(entries).toHaveLength(6);
     expect(entries[0]).toEqual({
       key: "STRIPE_SECRET_KEY",
       value: "sk_test_12345\nwith_newline",
@@ -40,6 +44,8 @@ SINGLE_WORD='simple'
     });
     expect(entries[2]).toEqual({ key: "EMPTY_STRING", value: "" });
     expect(entries[3]).toEqual({ key: "SINGLE_WORD", value: "simple" });
+    expect(entries[4]?.value).toBe('hello "world"');
+    expect(entries[5]?.value).toBe("line1\nline2\nline3");
   });
 
   it("infers aliases and least-privilege scopes for known providers", () => {

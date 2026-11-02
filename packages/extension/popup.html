@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MetaVault</title>
+  <style>
+    body {
+      width: 260px;
+      margin: 0;
+      padding: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #FAF9F6;
+      color: #201A17;
+    }
+    .btn {
+      width: 100%;
+      background: #201A17;
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">MetaVault OSS</div>
+  <div style="font-size: 11px; color: #8A8174; margin-bottom: 12px;">Tri-Warden BFT Security Bridge</div>
+  <button id="open-sidepanel" class="btn">Open Approver Side Panel</button>
+  <script>
+    document.getElementById("open-sidepanel")?.addEventListener("click", () => {
+      if (chrome?.sidePanel?.open) {
+        chrome.windows.getCurrent((w) => {
+          if (w.id) chrome.sidePanel.open({ windowId: w.id });
+        });
+      }
+    });
+  </script>
+</body>
+</html>
