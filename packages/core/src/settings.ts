@@ -33,8 +33,8 @@ export interface WardenSettings {
 }
 
 export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
-  provider: "ollama",
-  model: "llama3.2:3b",
+  provider: "builtin",
+  model: "llama3.2:1b",
   effort: "standard",
   metaApiBaseUrl: "https://api.llama.com/v1",
 };

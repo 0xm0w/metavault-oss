@@ -33,6 +33,8 @@ import {
   OLLAMA_MODEL_OPTIONS,
   buildWardenPatch,
   isWardenFormComplete,
+  META_API_MODEL_OPTIONS,
+  isKnownMetaApiModel,
   projectWardenKeyStatus,
   projectWardenSettings,
   wardenKeyStatusText,
@@ -811,8 +813,8 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
 describe("warden settings form state (Task 6)", () => {
   it("mirrors daemon defaults and the OLLAMA_MODELS catalogue with tier labels", () => {
     expect(DEFAULT_WARDEN_SETTINGS).toEqual({
-      provider: "ollama",
-      model: "llama3.2:3b",
+      provider: "builtin",
+      model: "llama3.2:1b",
       effort: "standard",
       metaApiBaseUrl: "https://api.llama.com/v1",
     });
@@ -1185,6 +1187,16 @@ describe("projectLocalAuthStatus (#19)", () => {
 
       // Not available when master switch is disabled
       expect(canLockSessionNow({ ...baseAuth, enabled: false })).toBe(false);
+    });
+  });
+
+  describe("Meta API Models", () => {
+    it("recognizes known Meta AI models and allows custom model IDs", () => {
+      expect(META_API_MODEL_OPTIONS.length).toBeGreaterThan(0);
+      expect(isKnownMetaApiModel("llama-3.3-70b-instruct")).toBe(true);
+      expect(isKnownMetaApiModel("llama-3.1-405b-instruct")).toBe(true);
+      expect(isKnownMetaApiModel("llama-3.1-8b-instruct")).toBe(true);
+      expect(isKnownMetaApiModel("custom-fine-tuned-meta-model")).toBe(false);
     });
   });
 });

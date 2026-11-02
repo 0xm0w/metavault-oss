@@ -1600,3 +1600,58 @@ body.is-simple-mode .verbose-note {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* Hardware Capacity & Profile Recommendation */
+.capacity-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.capacity-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.capacity-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.capacity-details {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.capacity-specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.capacity-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--ink);
+}
+
+.capacity-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}

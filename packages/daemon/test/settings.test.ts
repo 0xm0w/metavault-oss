@@ -40,8 +40,8 @@ async function makeService(brain: Layer.Layer<Brain> = BrainLowRisk): Promise<Va
 }
 
 const DEFAULTS = {
-  provider: "ollama",
-  model: "llama3.2:3b",
+  provider: "builtin",
+  model: "llama3.2:1b",
   effort: "standard",
   metaApiBaseUrl: "https://api.llama.com/v1",
 };
@@ -351,8 +351,8 @@ describe("warden settings routes", () => {
     expect(Object.keys(res.body as object).sort()).toEqual(["detail", "latencyMs", "model", "ok", "provider"]);
     const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
     expect(body.ok).toBe(true);
-    expect(body.provider).toBe("ollama");
-    expect(body.model).toBe("llama3.2:3b");
+    expect(body.provider).toBe("builtin");
+    expect(body.model).toBe("llama3.2:1b");
     expect(typeof body.latencyMs).toBe("number");
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(body.detail).toBe("ok");
@@ -373,7 +373,7 @@ describe("warden settings routes", () => {
     expect(res.status).toBe(200);
     const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
     expect(body.ok).toBe(false);
-    expect(body.provider).toBe("ollama");
+    expect(body.provider).toBe("builtin");
     expect(body.detail).toBe("warden unavailable");
     expect(JSON.stringify(res.body)).not.toContain("canary");
     expect(JSON.stringify(res.body)).not.toContain("provider exploded");

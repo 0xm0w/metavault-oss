@@ -226,8 +226,9 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
         <article class="pg-card"><span class="n">High</span><h3>llama3.1:8b</h3><p class="pg-note">Same metadata. Stronger judgement. Still no key in the prompt.</p></article>
         <article class="pg-card"><span class="n">Maximum-local</span><h3>llama3.3:70b</h3><p class="pg-note">A large local GPU. Nothing about the request leaves the machine.</p></article>
         <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Metadata only, to the API you configure. The key stays in the daemon.</p></article>
+        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta BFT</h3><p class="pg-note">Byzantine fault-tolerant consensus: Meta API (cloud) plus on-device Llama co-audit. Cross-verification with offline fallback.</p></article>
       </div>
-      <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes and keeps the narrower scope if they disagree. Why the floor holds is on the <a href="../research/">research page</a>.</p>
+      <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes; if they disagree it keeps the narrower scope, raises risk to the higher of the two, and requires your approval. Why the floor holds is on the <a href="../research/">research page</a>.</p>
     </div>
   </section>
 

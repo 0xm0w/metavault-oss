@@ -1036,8 +1036,8 @@ export async function runDeeplinkAddFlow(
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_WARDEN_SETTINGS: WardenSettingsLike = {
-  provider: "ollama",
-  model: "llama3.2:3b",
+  provider: "builtin",
+  model: "llama3.2:1b",
   effort: "standard",
   metaApiBaseUrl: "https://api.llama.com/v1",
 };
@@ -1054,6 +1054,25 @@ export const OLLAMA_MODEL_OPTIONS: readonly OllamaModelOption[] = [
   { id: "llama3.3:70b", tier: "Maximum-local", label: "Llama 3.3 70B \u2014 Maximum-local" },
 ];
 
+export interface MetaApiModelOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+export const META_API_MODEL_OPTIONS: readonly MetaApiModelOption[] = [
+  { id: "llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct (Recommended / Default)" },
+  { id: "llama-3.1-405b-instruct", label: "Llama 3.1 405B Instruct (Premier Frontier)" },
+  { id: "llama-3.1-70b-instruct", label: "Llama 3.1 70B Instruct" },
+  { id: "llama-3.1-8b-instruct", label: "Llama 3.1 8B Instruct (Fast & Lightweight)" },
+  { id: "llama-3.2-3b-instruct", label: "Llama 3.2 3B Instruct (Edge Cloud)" },
+  { id: "llama-3.2-1b-instruct", label: "Llama 3.2 1B Instruct (Ultra-Light)" },
+  { id: "llama-guard-3-8b", label: "Llama Guard 3 8B (Safety Guardrail)" },
+];
+
+export function isKnownMetaApiModel(model: string): boolean {
+  return META_API_MODEL_OPTIONS.some((option) => option.id === model);
+}
+
 export interface EffortOption {
   readonly id: WardenEffort;
   readonly label: string;
@@ -1067,9 +1086,10 @@ export const EFFORT_OPTIONS: readonly EffortOption[] = [
 ];
 
 export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
-  { id: "builtin", label: "Built-in AI (On-Device WebGPU)" },
-  { id: "ollama", label: "Local \u2014 Ollama" },
-  { id: "meta-api", label: "Meta API (cloud)" },
+  { id: "bft", label: "Meta BFT Consensus (Cloud API + Local Fallback)" },
+  { id: "meta-api", label: "Meta API (Cloud) — Lightweight / Zero-Download" },
+  { id: "builtin", label: "Built-in AI (WebGPU) — On-Device Private" },
+  { id: "ollama", label: "Local — Ollama (Self-Hosted)" },
   { id: "none", label: "None (policy only)" },
 ];
 
@@ -1125,7 +1145,7 @@ export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPa
 export function isWardenFormComplete(settings: WardenSettingsLike): boolean {
   if (settings.provider === "none") return true;
   if (settings.model.trim() === "") return false;
-  if (settings.provider === "meta-api" && settings.metaApiBaseUrl.trim() === "") return false;
+  if ((settings.provider === "meta-api" || settings.provider === "bft") && settings.metaApiBaseUrl.trim() === "") return false;
   return true;
 }
 

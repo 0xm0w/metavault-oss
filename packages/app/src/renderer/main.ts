@@ -32,6 +32,8 @@ import {
   WARDEN_PROVIDERS,
   buildWardenPatch,
   isKnownOllamaModel,
+  META_API_MODEL_OPTIONS,
+  isKnownMetaApiModel,
   isWardenFormComplete,
   projectWardenKeyStatus,
   projectWardenSettings,
@@ -239,7 +241,7 @@ function updateMarshalLine(): void {
     } else if (wardenDraft.provider === "meta-api") {
       line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Meta API (cloud)`;
     } else if (wardenDraft.provider === "bft") {
-      line.textContent = "Marshal · Meta Family of AIs · Tri-Warden BFT Quorum";
+      line.textContent = "Marshal · Meta Family of AIs · Dual-Warden BFT (Cloud + Local)";
     } else if (wardenDraft.provider === "builtin") {
       line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Built-in (WebGPU)`;
     } else {
@@ -1904,14 +1906,86 @@ function renderSettings(view: HTMLElement): void {
   modeSection.append(modeGroup);
   view.append(modeSection);
 
+  // Hardware Capacity Check Banner
+  interface HardwareCapacityProfile {
+    readonly hasWebGpu: boolean;
+    readonly cpuCores: number;
+    readonly recommendedProvider: WardenSettingsLike["provider"];
+    readonly tierBadge: string;
+    readonly recommendationCopy: string;
+  }
+
+  function detectCapacityProfile(): HardwareCapacityProfile {
+    const hasWebGpu = typeof navigator !== "undefined" && "gpu" in navigator && (navigator as { gpu?: unknown }).gpu !== undefined;
+    const cpuCores = typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number"
+      ? navigator.hardwareConcurrency
+      : 4;
+
+    if (!hasWebGpu || cpuCores < 4) {
+      return {
+        hasWebGpu,
+        cpuCores,
+        recommendedProvider: "meta-api",
+        tierBadge: "Recommended: Meta API",
+        recommendationCopy:
+          "Limited local GPU acceleration detected. Meta API (Cloud) is recommended: zero download footprint, zero VRAM overhead, instant 70B parameter reasoning.",
+      };
+    }
+
+    return {
+      hasWebGpu,
+      cpuCores,
+      recommendedProvider: "bft",
+      tierBadge: "Recommended: Meta BFT",
+      recommendationCopy:
+        "Hardware acceleration detected. Meta BFT Consensus is recommended: cloud 70B intelligence cross-verified with on-device Llama 3.2 1B (WebGPU) for offline resilience.",
+    };
+  }
+
+  const profile = detectCapacityProfile();
+  const capacityCard = el("div", "capacity-card");
+  capacityCard.dataset["settingsTab"] = "warden";
+
+  const capHead = el("div", "capacity-head");
+  const capTitle = el("div", "capacity-title");
+  capTitle.textContent = "Hardware Capacity & Profile Recommendation";
+  capHead.append(capTitle);
+  capHead.append(el("span", profile.hasWebGpu ? "status-badge is-ok" : "status-badge", profile.tierBadge));
+  capacityCard.append(capHead);
+
+  const capDesc = el("div", "capacity-details", profile.recommendationCopy);
+  capacityCard.append(capDesc);
+
+  const capSpecs = el("div", "capacity-specs");
+  capSpecs.append(el("span", "capacity-pill", `WebGPU: ${profile.hasWebGpu ? "Available" : "Not detected"}`));
+  capSpecs.append(el("span", "capacity-pill", `CPU: ${String(profile.cpuCores)} cores`));
+  capacityCard.append(capSpecs);
+
+  if (wardenDraft.provider !== profile.recommendedProvider) {
+    const capActions = el("div", "capacity-actions");
+    const applyBtn = el("button", "action btn-approve", `Switch to Recommended (${profile.recommendedProvider === "bft" ? "Meta BFT" : "Meta API"})`) as HTMLButtonElement;
+    applyBtn.type = "button";
+    applyBtn.addEventListener("click", () => {
+      const nextModel = profile.recommendedProvider === "builtin" ? "llama3.2:1b" : "llama-3.3-70b-instruct";
+      wardenDraft = { ...wardenDraft, provider: profile.recommendedProvider, model: nextModel };
+      wardenDirty = true;
+      settingsMessage = null;
+      render();
+    });
+    capActions.append(applyBtn);
+    capacityCard.append(capActions);
+  }
+
+  view.append(capacityCard);
+
   // 1. Provider
   const providerSection = settingsSection("Warden provider", "", "warden");
   const providerCopy: Record<WardenSettingsLike["provider"], string> = {
-    bft: "Tri-Warden BFT Quorum: Meta Family of AIs (Chief Justice) + Microsoft Phi Silica (Hardware NPU) + Google Gemini Nano (Browser Companion). Byzantine fault-tolerant security.",
+    bft: "Meta BFT Consensus: Dual-warden quorum combining Meta API (Cloud 70B) + Local Llama (WebGPU 1B) for Byzantine fault tolerance, cross-verification, and offline fallback.",
+    "meta-api": "Meta API (Cloud): Lightweight cloud inference (Llama 3.3 70B). Zero model download, 0 VRAM required, instant evaluation. Recommended for all machines.",
+    builtin: "Built-in AI (WebGPU): Local WebGPU acceleration (Llama 3.2 1B INT4). 100% private on-device execution with automatic offline fallback.",
+    ollama: "Local — Ollama runs on this device. Request metadata stays on-device.",
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
-    ollama: "Ollama runs on this device. Request metadata stays on-device.",
-    "meta-api": "Meta API (cloud) sends request metadata \u2014 agent, alias, scope and reason, never secrets \u2014 off-device to Meta's API for judgement. Secrets never leave vaultd.",
-    builtin: "Local WebGPU acceleration (Llama 3.2 1B INT4). 100% private, runs directly on your GPU without Ollama installed.",
   };
   for (const provider of WARDEN_PROVIDERS) {
     const label = el("label", "settings-radio");
@@ -1943,44 +2017,97 @@ function renderSettings(view: HTMLElement): void {
     const card = el("div", "bft-card");
     const head = el("div", "bft-head");
     const info = el("div", "");
-    info.append(el("div", "bft-title", "Tri-Warden Multi-Model BFT Quorum"));
-    info.append(el("div", "bft-desc", "Byzantine fault-tolerant consensus across 3 independent AI architectures. Meta sets the policy ceiling, while Microsoft and Google co-audit every execution."));
+    info.append(el("div", "bft-title", "Meta Dual-Warden BFT Consensus"));
+    info.append(el("div", "bft-desc", "Byzantine fault-tolerant consensus across Meta's cloud and local AI architectures. Meta API provides 70B parameter reasoning, while on-device Llama 3.2 co-audits and provides instant offline resilience."));
     head.append(info);
     head.append(el("span", "status-badge is-ok", "\u25CF BFT Active"));
     card.append(head);
 
     const pillars = el("div", "bft-pillars");
 
-    // Pillar 1: Meta Family of AIs
+    // Pillar 1: Meta API (Cloud Chief Justice)
+    const activeCloudModel = wardenDraft.model && wardenDraft.model !== "llama3.2:1b" ? wardenDraft.model : "llama-3.3-70b-instruct";
     const metaPillar = el("div", "bft-pillar-item");
     metaPillar.append(createMetaLogo());
     const metaDetails = el("div", "bft-pillar-details");
-    metaDetails.append(el("div", "bft-pillar-title", "Meta Family of AIs (Chief Justice)"));
-    metaDetails.append(el("div", "bft-pillar-sub", "Meta API Llama 3.3 70B \u00B7 On-device Llama 3.2 1B WebGPU Fallback"));
+    metaDetails.append(el("div", "bft-pillar-title", `Meta API Cloud Warden: ${activeCloudModel}`));
+    metaDetails.append(el("div", "bft-pillar-sub", "Cloud High-Capacity Reasoning \u00B7 Primary Policy Evaluator"));
     metaPillar.append(metaDetails);
-    metaPillar.append(el("span", "status-badge is-ok", "Primary"));
+    metaPillar.append(el("span", "status-badge is-ok", "Cloud Primary"));
 
-    // Pillar 2: Microsoft Phi Silica
-    const msftPillar = el("div", "bft-pillar-item");
-    msftPillar.append(createMicrosoftLogo());
-    const msftDetails = el("div", "bft-pillar-details");
-    msftDetails.append(el("div", "bft-pillar-title", "Microsoft Phi Silica"));
-    msftDetails.append(el("div", "bft-pillar-sub", "Hardware Co-Auditor \u00B7 Windows 11 Copilot+ DirectML NPU"));
-    msftPillar.append(msftDetails);
-    msftPillar.append(el("span", "status-badge", "Hardware NPU"));
+    // Pillar 2: Meta Local Fallback (On-Device Co-Auditor)
+    const localPillar = el("div", "bft-pillar-item");
+    localPillar.append(createMetaLogo());
+    const localDetails = el("div", "bft-pillar-details");
+    localDetails.append(el("div", "bft-pillar-title", "Meta Llama 3.2 1B (INT4 WebGPU)"));
+    localDetails.append(el("div", "bft-pillar-sub", "On-Device Zero-Egress Fallback \u00B7 Offline & Divergence Guard"));
+    localPillar.append(localDetails);
+    localPillar.append(el("span", "status-badge is-ok", "Local Fallback"));
 
-    // Pillar 3: Google Gemini Nano
-    const googlePillar = el("div", "bft-pillar-item");
-    googlePillar.append(createGoogleLogo());
-    const googleDetails = el("div", "bft-pillar-details");
-    googleDetails.append(el("div", "bft-pillar-title", "Google Gemini Nano"));
-    googleDetails.append(el("div", "bft-pillar-sub", "Browser Co-Auditor \u00B7 Chrome Extension Companion Bridge"));
-    googlePillar.append(googleDetails);
-    googlePillar.append(el("span", "status-badge", "Browser Eye"));
-
-    pillars.append(metaPillar, msftPillar, googlePillar);
+    pillars.append(metaPillar, localPillar);
     card.append(pillars);
     modelSection.append(card);
+
+    // Cloud Warden Model Selector & Custom Free-Text Input
+    const configHeading = el("p", "settings-copy", "Choose or type ANY Meta AI model for your Cloud Warden:");
+    modelSection.append(configHeading);
+
+    const selectLabel = el("label", "vault-field");
+    selectLabel.append(el("span", "vault-field-label", "Meta API cloud model"));
+    const select = document.createElement("select");
+    select.className = "vault-input";
+    select.id = "warden-meta-model-select";
+    for (const option of META_API_MODEL_OPTIONS) {
+      const opt = document.createElement("option");
+      opt.value = option.id;
+      opt.textContent = option.label;
+      select.append(opt);
+    }
+    if (!isKnownMetaApiModel(activeCloudModel)) {
+      const custom = document.createElement("option");
+      custom.value = activeCloudModel;
+      custom.textContent = `${activeCloudModel} \u2014 Custom`;
+      select.append(custom);
+    }
+    select.value = activeCloudModel;
+    select.addEventListener("change", () => {
+      wardenDraft = { ...wardenDraft, model: select.value };
+      wardenDirty = true;
+      render();
+    });
+    selectLabel.append(select);
+    modelSection.append(selectLabel);
+
+    const modelLabel = el("label", "vault-field");
+    modelLabel.append(el("span", "vault-field-label", "Custom Meta API model id (free text)"));
+    const modelInput = document.createElement("input");
+    modelInput.className = "vault-input";
+    modelInput.id = "warden-model-input";
+    modelInput.type = "text";
+    modelInput.value = activeCloudModel;
+    modelInput.placeholder = "llama-3.3-70b-instruct";
+    modelInput.autocomplete = "off";
+    modelInput.addEventListener("input", () => {
+      wardenDraft = { ...wardenDraft, model: modelInput.value };
+      wardenDirty = true;
+    });
+    modelLabel.append(modelInput);
+    modelSection.append(modelLabel);
+
+    const baseLabel = el("label", "vault-field");
+    baseLabel.append(el("span", "vault-field-label", "Meta API base URL"));
+    const baseInput = document.createElement("input");
+    baseInput.className = "vault-input";
+    baseInput.id = "warden-base-url-input";
+    baseInput.type = "text";
+    baseInput.value = wardenDraft.metaApiBaseUrl;
+    baseInput.autocomplete = "off";
+    baseInput.addEventListener("input", () => {
+      wardenDraft = { ...wardenDraft, metaApiBaseUrl: baseInput.value };
+      wardenDirty = true;
+    });
+    baseLabel.append(baseInput);
+    modelSection.append(baseLabel);
   } else if (wardenDraft.provider === "builtin") {
     const card = el("div", "builtin-ai-card");
     const head = el("div", "builtin-ai-head");
@@ -3312,16 +3439,5 @@ function createMetaLogo(): HTMLElement {
   return container;
 }
 
-function createMicrosoftLogo(): HTMLElement {
-  const container = el("span", "bft-logo-wrapper");
-  container.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Microsoft"><rect x="2" y="2" width="9" height="9" fill="#F25022"/><rect x="13" y="2" width="9" height="9" fill="#7FBA00"/><rect x="2" y="13" width="9" height="9" fill="#00A4EF"/><rect x="13" y="13" width="9" height="9" fill="#FFB900"/></svg>';
-  return container;
-}
-
-function createGoogleLogo(): HTMLElement {
-  const container = el("span", "bft-logo-wrapper");
-  container.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Google"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>';
-  return container;
-}
 
 

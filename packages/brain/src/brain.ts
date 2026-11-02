@@ -42,26 +42,6 @@ export {
   type BuiltinModelInfo,
 } from "./builtin.js";
 export {
-  DEFAULT_PHI_SILICA_MODEL,
-  PHI_SILICA_INFO,
-  getPhiSilicaHandler,
-  isPhiSilicaAvailable,
-  requestPhiSilicaDecision,
-  setPhiSilicaHandler,
-  type PhiSilicaInferenceHandler,
-  type PhiSilicaModelInfo,
-} from "./phi-silica.js";
-export {
-  DEFAULT_GEMINI_NANO_MODEL,
-  GEMINI_NANO_INFO,
-  getGeminiNanoHandler,
-  isGeminiNanoAvailable,
-  requestGeminiNanoDecision,
-  setGeminiNanoHandler,
-  type GeminiNanoInferenceHandler,
-  type GeminiNanoModelInfo,
-} from "./gemini-nano.js";
-export {
   assessBftQuorum,
   type BftConsensusDecision,
   type BftExecutionOptions,

@@ -4,8 +4,6 @@ import {
   assessBftQuorum,
   assessFromSettings,
   setBuiltinInferenceHandler,
-  setGeminiNanoHandler,
-  setPhiSilicaHandler,
 } from "../src/brain.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 import type { WardenSettings } from "../../core/src/settings.js";
@@ -22,19 +20,15 @@ const testRequest: CapabilityRequest = {
 const historySummary = { requests24h: 3, denials24h: 0 };
 const policyDigest = "stripe ceiling=charges.read";
 
-describe("Tri-Warden BFT Consensus Engine", () => {
+describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     setBuiltinInferenceHandler(null);
-    setPhiSilicaHandler(null);
-    setGeminiNanoHandler(null);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     setBuiltinInferenceHandler(null);
-    setPhiSilicaHandler(null);
-    setGeminiNanoHandler(null);
   });
 
   it("fails with MarshalUnavailable when no wardens are available", async () => {
@@ -60,7 +54,7 @@ describe("Tri-Warden BFT Consensus Engine", () => {
 
     expect(decision.risk).toBe("low");
     expect(decision.recommendedScope).toBe("charges.read");
-    expect(decision.explanation).toContain("Meta Family of AIs");
+    expect(decision.explanation).toContain("Local Co-Auditor (Llama 3.2 1B On-Device Fallback)");
   });
 
   it("uses Meta API when valid key is provided in BFT options", async () => {
@@ -97,77 +91,136 @@ describe("Tri-Warden BFT Consensus Engine", () => {
 
     expect(decision.risk).toBe("low");
     expect(decision.recommendedScope).toBe("charges.read");
-    expect(decision.explanation).toContain("Chief Warden (Meta API)");
+    expect(decision.explanation).toContain("Chief Warden (Meta API");
   });
 
-  it("achieves unanimous 3/3 BFT quorum across Meta, Microsoft, and Google", async () => {
-    const metaDecision: MarshalDecision = {
-      risk: "low",
-      recommendedScope: "charges.read",
-      requireApproval: false,
-      explanation: "Meta verified charges.read",
-    };
-    const msftDecision: MarshalDecision = {
-      risk: "low",
-      recommendedScope: "charges.read",
-      requireApproval: false,
-      explanation: "Microsoft Phi Silica NPU verified charges.read",
-    };
-    const googleDecision: MarshalDecision = {
-      risk: "low",
-      recommendedScope: "charges.read",
-      requireApproval: false,
-      explanation: "Google Gemini Nano tab context confirmed charges.read",
-    };
+  it("supports any custom Meta AI model for the Cloud Warden", async () => {
+    const metaResponseJson = JSON.stringify({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              risk: "low",
+              recommendedScope: "charges.read",
+              requireApproval: false,
+              explanation: "Custom Meta 405B verified",
+            }),
+          },
+        },
+      ],
+    });
 
-    setBuiltinInferenceHandler(() => Effect.succeed(metaDecision));
-    setPhiSilicaHandler(() => Effect.succeed(msftDecision));
-    setGeminiNanoHandler(() => Effect.succeed(googleDecision));
+    vi.spyOn(globalThis, "fetch").mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(metaResponseJson, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
 
     const decision = await Effect.runPromise(
-      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null }),
+      assessBftQuorum(testRequest, historySummary, policyDigest, {
+        metaApiKey: "test-meta-key-12345",
+        metaModel: "llama-3.1-405b-instruct",
+      }),
+    );
+
+    expect(decision.explanation).toContain("Chief Warden (Meta API: llama-3.1-405b-instruct)");
+  });
+
+  it("achieves unanimous 2/2 BFT quorum across Meta API and Local Llama", async () => {
+    const localDecision: MarshalDecision = {
+      risk: "low",
+      recommendedScope: "charges.read",
+      requireApproval: false,
+      explanation: "Local Llama verified charges.read",
+    };
+
+    const metaResponseJson = JSON.stringify({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              risk: "low",
+              recommendedScope: "charges.read",
+              requireApproval: false,
+              explanation: "Meta API verified charges.read",
+            }),
+          },
+        },
+      ],
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(metaResponseJson, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    setBuiltinInferenceHandler(() => Effect.succeed(localDecision));
+
+    const decision = await Effect.runPromise(
+      assessBftQuorum(testRequest, historySummary, policyDigest, {
+        metaApiKey: "test-meta-key-12345",
+      }),
     );
 
     expect(decision.risk).toBe("low");
     expect(decision.recommendedScope).toBe("charges.read");
     expect(decision.requireApproval).toBe(false);
-    expect(decision.explanation).toContain("[BFT Quorum 3/3 Unanimous]");
-    expect(decision.explanation).toContain("Meta Family of AIs");
-    expect(decision.explanation).toContain("Microsoft Phi Silica");
-    expect(decision.explanation).toContain("Google Gemini Nano");
+    expect(decision.explanation).toContain("[Meta BFT Quorum 2/2 Unanimous]");
   });
 
   it("escalates risk and clamps scope when divergence is detected", async () => {
-    const metaDecision: MarshalDecision = {
-      risk: "low",
-      recommendedScope: "charges.read",
-      requireApproval: false,
-      explanation: "Meta deemed low risk",
-    };
-    const msftDecision: MarshalDecision = {
+    const localDecision: MarshalDecision = {
       risk: "high",
       recommendedScope: "charges.read",
       requireApproval: true,
-      explanation: "Suspicious parameter pattern detected on NPU",
-    };
-    const googleDecision: MarshalDecision = {
-      risk: "low",
-      recommendedScope: "charges.read",
-      requireApproval: false,
-      explanation: "Tab context matches",
+      explanation: "Local Llama detected anomaly",
     };
 
-    setBuiltinInferenceHandler(() => Effect.succeed(metaDecision));
-    setPhiSilicaHandler(() => Effect.succeed(msftDecision));
-    setGeminiNanoHandler(() => Effect.succeed(googleDecision));
+    const metaResponseJson = JSON.stringify({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              risk: "low",
+              recommendedScope: "charges.read",
+              requireApproval: false,
+              explanation: "Meta API low risk",
+            }),
+          },
+        },
+      ],
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(metaResponseJson, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    setBuiltinInferenceHandler(() => Effect.succeed(localDecision));
 
     const decision = await Effect.runPromise(
-      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null }),
+      assessBftQuorum(testRequest, historySummary, policyDigest, {
+        metaApiKey: "test-meta-key-12345",
+      }),
     );
 
     expect(decision.risk).toBe("high");
     expect(decision.requireApproval).toBe(true);
-    expect(decision.explanation).toContain("[BFT Consensus Divergence]");
+    expect(decision.explanation).toContain("[Meta BFT Consensus Divergence]");
   });
 
   it("integrates seamlessly into assessFromSettings when provider='bft'", async () => {
@@ -182,17 +235,16 @@ describe("Tri-Warden BFT Consensus Engine", () => {
       risk: "low",
       recommendedScope: "charges.read",
       requireApproval: false,
-      explanation: "BFT verified",
+      explanation: "Local Llama verified",
     };
 
     setBuiltinInferenceHandler(() => Effect.succeed(mockDecision));
-    setPhiSilicaHandler(() => Effect.succeed(mockDecision));
 
     const decision = await Effect.runPromise(
       assessFromSettings(settings, () => Effect.succeed(null), testRequest, historySummary, policyDigest),
     );
 
     expect(decision.recommendedScope).toBe("charges.read");
-    expect(decision.explanation).toContain("BFT");
+    expect(decision.explanation).toContain("Local Co-Auditor");
   });
 });

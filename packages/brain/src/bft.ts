@@ -3,9 +3,7 @@ import { Effect } from "effect";
 import { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 import { requestBuiltinDecision } from "./builtin.js";
-import { requestGeminiNanoDecision, isGeminiNanoAvailable } from "./gemini-nano.js";
 import { requestMetaApiDecision } from "./meta-api.js";
-import { requestPhiSilicaDecision, isPhiSilicaAvailable } from "./phi-silica.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 import { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
 
@@ -31,10 +29,11 @@ export interface BftExecutionOptions {
 }
 
 /**
- * Assesses a capability request using the Tri-Warden BFT Consensus Engine:
- * 1. Meta Family of AIs (Chief Warden) — Meta API with automatic Llama 3.2 1B fallback
- * 2. Microsoft Phi Silica (Hardware Co-Auditor) — Windows NPU
- * 3. Google Gemini Nano (Browser Co-Auditor) — Chrome Prompt API
+ * Assesses a capability request using the Meta BFT Consensus Engine:
+ * 1. Meta API (Cloud Chief Justice) — Llama 3.3 70B Instruct
+ * 2. Meta Local Fallback (On-Device Co-Auditor) — Llama 3.2 1B INT4 WebGPU
+ *
+ * Byzantine fault-tolerant consensus between cloud and local edge models.
  */
 export function assessBftQuorum(
   req: CapabilityRequest,
@@ -48,15 +47,14 @@ export function assessBftQuorum(
   return Effect.gen(function* () {
     const verdicts: BftWardenVerdict[] = [];
 
-    // 1. Chief Warden: Meta Family of AIs
-    // First try Meta API if configured; if unavailable, fallback to local Llama 3.2 1B (builtin)
-    let metaVerdict: MarshalDecision | null = null;
+    // 1. Primary Cloud Warden: Meta API (Any Meta AI model)
+    const cloudModel = options.metaModel && options.metaModel.trim() !== "" ? options.metaModel.trim() : "llama-3.3-70b-instruct";
     const metaKey = options.metaApiKey?.trim();
     if (metaKey !== undefined && metaKey !== "") {
       const metaApiResult = yield* Effect.either(
         requestMetaApiDecision(
           {
-            model: options.metaModel ?? "llama-3.3-70b-instruct",
+            model: cloudModel,
             baseUrl: options.metaApiBaseUrl ?? "https://api.llama.com/v1",
             apiKey: metaKey,
             prompt,
@@ -65,58 +63,26 @@ export function assessBftQuorum(
         ).pipe(Effect.provide(FetchHttpClient.layer)),
       );
       if (metaApiResult._tag === "Right") {
-        metaVerdict = enforceScopeSafety(metaApiResult.right, req.requestedScope, req.reason);
+        const metaVerdict = enforceScopeSafety(metaApiResult.right, req.requestedScope, req.reason);
         verdicts.push({
           name: "Meta Family of AIs",
-          role: "Chief Warden (Meta API)",
+          role: `Chief Warden (Meta API: ${cloudModel})`,
           decision: metaVerdict,
         });
       }
     }
 
-    if (metaVerdict === null) {
-      // Fallback to on-device Meta Llama 3.2 1B
-      const builtinResult = yield* Effect.either(
-        requestBuiltinDecision("llama3.2:1b", prompt, timeoutMs),
-      );
-      if (builtinResult._tag === "Right") {
-        metaVerdict = enforceScopeSafety(builtinResult.right, req.requestedScope, req.reason);
-        verdicts.push({
-          name: "Meta Family of AIs",
-          role: "Chief Warden (Llama 3.2 1B Offline Fallback)",
-          decision: metaVerdict,
-        });
-      }
-    }
-
-    // 2. Co-Auditor 1: Microsoft Phi Silica (NPU)
-    if (isPhiSilicaAvailable()) {
-      const phiResult = yield* Effect.either(
-        requestPhiSilicaDecision(prompt, timeoutMs),
-      );
-      if (phiResult._tag === "Right") {
-        const phiVerdict = enforceScopeSafety(phiResult.right, req.requestedScope, req.reason);
-        verdicts.push({
-          name: "Microsoft Phi Silica",
-          role: "Hardware Co-Auditor (Windows NPU)",
-          decision: phiVerdict,
-        });
-      }
-    }
-
-    // 3. Co-Auditor 2: Google Gemini Nano (Chrome Prompt API)
-    if (isGeminiNanoAvailable()) {
-      const geminiResult = yield* Effect.either(
-        requestGeminiNanoDecision(prompt, timeoutMs),
-      );
-      if (geminiResult._tag === "Right") {
-        const geminiVerdict = enforceScopeSafety(geminiResult.right, req.requestedScope, req.reason);
-        verdicts.push({
-          name: "Google Gemini Nano",
-          role: "Browser Co-Auditor (Chrome Built-in AI)",
-          decision: geminiVerdict,
-        });
-      }
+    // 2. Local Fallback / Edge Co-Auditor: Meta Llama 3.2 1B (WebGPU)
+    const builtinResult = yield* Effect.either(
+      requestBuiltinDecision("llama3.2:1b", prompt, timeoutMs),
+    );
+    if (builtinResult._tag === "Right") {
+      const builtinVerdict = enforceScopeSafety(builtinResult.right, req.requestedScope, req.reason);
+      verdicts.push({
+        name: "Meta Family of AIs",
+        role: "Local Co-Auditor (Llama 3.2 1B On-Device Fallback)",
+        decision: builtinVerdict,
+      });
     }
 
     // If no wardens returned a decision, fail with MarshalUnavailable
@@ -124,24 +90,24 @@ export function assessBftQuorum(
       return yield* Effect.fail(
         new MarshalUnavailable({
           message:
-            "MarshalUnavailable: No BFT wardens available (Meta API/Llama offline, Phi Silica not registered, Gemini Nano not connected)",
+            "MarshalUnavailable: No BFT wardens available (Meta API unreachable and local Llama offline)",
         }),
       );
     }
 
-    // If only 1 warden participated, return its verdict
+    // If only 1 warden participated (e.g. offline fallback or no local WebGPU), return its verdict
     if (verdicts.length === 1) {
       const single = verdicts[0];
-    if (single === undefined) {
-      return yield* Effect.fail(new MarshalUnavailable({ message: "No verdicts" }));
-    }
+      if (single === undefined) {
+        return yield* Effect.fail(new MarshalUnavailable({ message: "No verdicts" }));
+      }
       return {
         ...single.decision,
         explanation: `[${single.name} · ${single.role}] ${single.decision.explanation}`,
       };
     }
 
-    // Multi-Warden Quorum Synthesis
+    // Dual-Warden BFT Quorum Synthesis
     // A) Risk: Escalates to highest risk reported by any participating warden
     let highestRisk: MarshalDecision["risk"] = "low";
     for (const v of verdicts) {
@@ -159,7 +125,7 @@ export function assessBftQuorum(
     // C) Approval: If ANY warden requests approval, enforce approval
     const requireApproval = verdicts.some((v) => v.decision.requireApproval);
 
-    // D) Detect divergence
+    // D) Detect consensus vs divergence
     const firstVerdict = verdicts[0];
     const isUnanimous =
       firstVerdict !== undefined &&
@@ -168,14 +134,14 @@ export function assessBftQuorum(
       verdicts.every((v) => v.decision.requireApproval === firstVerdict.decision.requireApproval);
 
     const breakdown = verdicts
-      .map((v) => `${v.name}: ${v.decision.recommendedScope} (${v.decision.risk})`)
+      .map((v) => `${v.role}: ${v.decision.recommendedScope} (${v.decision.risk})`)
       .join(" · ");
 
     let explanation: string;
     if (isUnanimous) {
-      explanation = `[BFT Quorum ${String(verdicts.length)}/${String(verdicts.length)} Unanimous] ${breakdown}. Intent verified across multi-model consensus.`;
+      explanation = `[Meta BFT Quorum ${String(verdicts.length)}/${String(verdicts.length)} Unanimous] ${breakdown}. Cross-verified across Cloud & Local Llama.`;
     } else {
-      explanation = `[BFT Consensus Divergence] ${breakdown}. Clamped to narrowest scope '${finalScope}' and escalated risk to '${highestRisk}'.`;
+      explanation = `[Meta BFT Consensus Divergence] ${breakdown}. Clamped to narrowest scope '${finalScope}' and escalated risk to '${highestRisk}'.`;
     }
 
     return enforceScopeSafety(

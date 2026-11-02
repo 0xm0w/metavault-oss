@@ -115,17 +115,17 @@ The desktop app's **Settings** page chooses who judges capability requests. Dete
 - **Meta API key:** paste once and Save; the field clears and is never repopulated. Status shows only `Not configured` or `Configured ••••last4`. The key is stored as an ordinary encrypted credential (alias `warden-meta-api`) and decrypted only inside the daemon at call time. **Test connection** runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.
 - **Daemon / Security defaults:** read-only daemon URL, vault path and version, plus a policy-floor summary with a jump to Policies. Settings apply on the next request — no daemon restart needed. All settings routes require the daemon token; agents cannot read or change them.
 
-### Security levels (warden tiers)
+### Security levels (warden tiers & hardware profiles)
 
-These are exactly the tiers the daemon and Settings use (`OLLAMA_MODELS` in [packages/brain/src/ollama.ts](packages/brain/src/ollama.ts), plus the Meta API provider). Higher tiers buy judgement, not permission:
+These are the tiers supported by the daemon and Settings UI. Higher tiers buy independent judgment and multi-model consensus, not permission:
 
-| Tier | Warden | Runs |
+| Tier | Mode & Warden Architecture | Hardware Profile & Requirements |
 |---|---|---|
-| Policy only | provider `none` — no model | anywhere |
-| Medium | `llama3.2:3b` (Ollama) | on-device, 8 GB GPU (default) |
-| High | `llama3.1:8b` (Ollama) | on-device |
-| Maximum-local | `llama3.3:70b` (Ollama) | on-device, large GPU |
-| Meta API (cloud) | any Meta API model id | Meta API, metadata only |
+| **Meta BFT Consensus** | **Dual-Warden (Cloud API + Local Fallback)** | Multi-tier consensus. Meta API (llama-3.3-70b-instruct) as primary cloud warden cross-verifying with on-device Meta Llama 3.2 1B (WebGPU) with automatic offline resilience. |
+| **Meta API (Cloud)** | **Lightweight / Universal** (llama-3.3-70b-instruct) | Any machine (0 MB download, 0 VRAM overhead). Instant setup, pure cloud speed. Hackathon MVP default. |
+| **Built-in AI (WebGPU)** | **On-Device Private** (llama3.2:1b INT4) | Modern PC with WebGPU (Direct3D 12 / Vulkan, ~680 MB edge model). 100% private on-device execution. |
+| Self-Hosted | llama3.2:3b / llama3.1:8b (Ollama) | Local Ollama instance, 8 GB+ GPU. |
+| Policy Only | Provider one | Deterministic policy rules alone; all non-trivial operations escalate to human. |
 
 ## End-to-end agent flows (real screenshots)
 

@@ -40,6 +40,26 @@ export function storeMasterKey(key: Buffer): boolean {
     }
   }
 
+  if (process.platform === "win32") {
+    try {
+      const script = [
+        "$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]",
+        "$base64 = ($input | Out-String).Trim()",
+        "$vault = New-Object Windows.Security.Credentials.PasswordVault",
+        "try { $existing = $vault.Retrieve('openvault','master-key'); $vault.Remove($existing) } catch { }",
+        "$cred = New-Object Windows.Security.Credentials.PasswordCredential('openvault','master-key',$base64)",
+        "$vault.Add($cred)",
+      ].join("\n");
+      execFileSync("powershell", ["-NoProfile", "-Command", script], {
+        input: base64,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   return false;
 }
 
@@ -58,6 +78,24 @@ export function retrieveMasterKey(): Buffer | null {
         ["lookup", "service", "openvault", "account", "master-key"],
         { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
       ).trim();
+    } else if (process.platform === "win32") {
+      const script = [
+        "$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]",
+        "$vault = New-Object Windows.Security.Credentials.PasswordVault",
+        "try {",
+        "  $cred = $vault.Retrieve('openvault','master-key')",
+        "  $cred.RetrievePassword()",
+        "  Write-Output $cred.Password",
+        "} catch { }",
+      ].join("\n");
+      try {
+        raw = execFileSync("powershell", ["-NoProfile", "-Command", script], {
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+      } catch {
+        return null;
+      }
     } else {
       return null;
     }
@@ -85,6 +123,17 @@ export function deleteMasterKey(): boolean {
         ["clear", "service", "openvault", "account", "master-key"],
         { stdio: ["pipe", "pipe", "pipe"] },
       );
+      return true;
+    }
+    if (process.platform === "win32") {
+      const script = [
+        "$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]",
+        "$vault = New-Object Windows.Security.Credentials.PasswordVault",
+        "try { $cred = $vault.Retrieve('openvault','master-key'); $vault.Remove($cred) } catch { }",
+      ].join("\n");
+      execFileSync("powershell", ["-NoProfile", "-Command", script], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
       return true;
     }
     return false;
