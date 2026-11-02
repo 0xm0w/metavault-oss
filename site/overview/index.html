@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>MetaVault OSS — Agents never see your secrets · metahackathon.whativedone.xyz</title>
+<meta name="description" content="MetaVault OSS is the local vault for coding agents. They ask for a capability. You approve. The key never enters the chat. Built by the Keythings security team.">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/brand/site.webmanifest">
+<meta name="theme-color" content="#8629ff">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/landing.css">
+</head>
+<body>
+<div class="mb-landing">
+<nav class="mb-landing-nav">
+  <div class="mb-nav-container">
+    <a class="mb-logo" href="/overview/">METAVAULT OSS</a>
+    <div class="mb-nav-desktop-links">
+      <a class="caption-mono-sm" href="/docs/">Docs</a>
+      <a class="caption-mono-sm" href="/architecture/">Architecture</a>
+      <a class="caption-mono-sm" href="/research/">Research</a>
+      <a class="caption-mono-sm" href="/">Hackathon</a>
+      <a class="mb-btn-nav" href="#download">Download</a>
+    </div>
+    <button class="mb-nav-hamburger-btn" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+  <div class="mb-nav-mobile-menu" id="mobile-menu" hidden>
+    <a class="mb-mobile-menu-item" href="/docs/">Docs</a>
+    <a class="mb-mobile-menu-item" href="/architecture/">Architecture</a>
+    <a class="mb-mobile-menu-item" href="/research/">Research</a>
+    <a class="mb-mobile-menu-item" href="/">Hackathon</a>
+    <a class="mb-btn-nav" href="#download" style="margin-top:8px;align-self:flex-start">Download</a>
+  </div>
+</nav>
+
+<div class="mb-wrap">
+  <header class="mb-hero">
+    <div class="mb-pill x-hero-enter-1">
+      <span class="mb-pill-tag">OSS</span>
+      <span class="caption-mono-sm" style="color:var(--muted-foreground);font-size:12px;letter-spacing:0.4px;text-transform:none">By Keythings · Securing Keys Since 2025</span>
+    </div>
+    <h1 class="mb-hero-title x-hero-enter-2">Your agent asked for Stripe.<br>You pasted the live key.</h1>
+    <p class="mb-hero-sub x-hero-enter-3">MetaVault keeps the key on this machine. The agent asks for a capability, a local model scores it, you approve, and the secret never enters the chat.</p>
+    <div class="mb-hero-actions x-hero-enter-4">
+      <a class="mb-btn-primary" href="#download">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg>
+        <span>Download for Windows</span>
+      </a>
+      <a class="mb-btn-secondary" href="/docs/" target="_blank" rel="noopener">
+        <span>Read the docs</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;opacity:0.75"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
+      <a class="mb-btn-tertiary" href="https://github.com/0xm0w/openvault" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        <span>View on GitHub</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;opacity:0.75"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
+    </div>
+    <span class="caption-mono-sm mb-hero-note x-hero-enter-5">Apache-2.0 · No account · No telemetry · From former crypto wallet bug bounty hunters</span>
+  </header>
+
+  <section id="bento" class="mb-section mb-landing-anchor">
+    <div class="mb-bento-grid">
+      <article class="mb-bento-card mb-bento-col-4 mb-reveal">
+        <div>
+          <div class="mb-bento-head" style="margin-bottom:16px">
+            <span class="caption-mono-sm" style="color:var(--muted-foreground)">01 // The request</span>
+            <span class="pulse-radar-dot" aria-hidden="true"></span>
+          </div>
+          <div class="mb-stack" id="ingest">
+            <div class="mb-bubble right chat-enter-1" data-ingest="event"></div>
+            <div class="mb-bubble chat-enter-2">
+              <div class="caption-mono-sm" style="color:var(--accent-sunset-soft);font-size:10px;margin-bottom:2px" data-ingest="from"></div>
+              <div data-ingest="subject"></div>
+            </div>
+            <div class="mb-bubble right dim chat-enter-3" data-ingest="reply"></div>
+          </div>
+        </div>
+        <div class="mb-bento-foot">
+          <span>The agent asks. You answer.</span>
+          <a href="#preview">Explore</a>
+        </div>
+      </article>
+
+      <article class="mb-bento-card mb-bento-col-5 mb-reveal">
+        <div>
+          <div class="mb-bento-head" style="margin-bottom:16px">
+            <div class="mb-lights">
+              <i class="r"></i><i class="y"></i><i class="g"></i>
+              <span class="caption-mono-sm" style="letter-spacing:0.4px;text-transform:none">openvault / mcp</span>
+            </div>
+            <span class="mb-chip">Five tools</span>
+          </div>
+          <div class="mb-code" id="mcp">
+            <div class="dim code-enter-1" data-mcp="comment"></div>
+            <div class="code-enter-2" data-mcp="call"></div>
+            <div class="dim code-enter-3" data-mcp="thinking"></div>
+            <div class="acc code-enter-4"><span data-mcp="tool"></span> <span class="mb-badge" data-mcp="badge"></span></div>
+            <div class="ok code-enter-5"><span data-mcp="result"></span><span class="terminal-cursor" aria-hidden="true">_</span></div>
+          </div>
+        </div>
+        <div class="mb-bento-foot">
+          <span>One snippet, any IDE</span>
+          <a href="/docs/#mcp">Explore</a>
+        </div>
+      </article>
+
+      <article class="mb-bento-card mb-bento-col-3 mb-reveal">
+        <div>
+          <div class="mb-bento-head" style="margin-bottom:16px">
+            <span class="caption-mono-sm" style="color:var(--muted-foreground)">Gates</span>
+            <span class="mb-chip ok">5 steps</span>
+          </div>
+          <div id="cadence" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+        <div class="mb-bento-foot">
+          <span>Policy, then you</span>
+          <a href="#preview">Explore</a>
+        </div>
+      </article>
+
+      <article class="mb-bento-card mb-bento-col-7 mb-reveal">
+        <div>
+          <div class="mb-bento-head" style="margin-bottom:16px">
+            <span class="caption-mono-sm" style="color:var(--muted-foreground)">02 // What leaks</span>
+            <span class="mb-chip ink">Zero keys</span>
+          </div>
+          <div class="mb-split">
+            <article class="dim">
+              <div class="caption-mono-sm" style="color:var(--red);font-size:10px;margin-bottom:4px">Pasted into the chat</div>
+              <div style="color:var(--muted-foreground);margin-bottom:6px">The key sits in the transcript, the tool log, and tomorrow's rotation.</div>
+              <div class="caption-mono-sm" style="color:var(--red);font-size:10px">Something to steal</div>
+            </article>
+            <article>
+              <div class="caption-mono-sm" style="color:var(--green);font-size:10px;margin-bottom:4px">Asked as a capability</div>
+              <div style="margin-bottom:6px">The agent receives the tool result. The key stayed inside vaultd for that one call.</div>
+              <div class="caption-mono-sm" style="color:var(--green);font-size:10px">Nothing to leak</div>
+            </article>
+          </div>
+        </div>
+        <div class="mb-bento-foot">
+          <span>The secret is not a message</span>
+          <a href="/research/">Explore</a>
+        </div>
+      </article>
+
+      <article class="mb-bento-card mb-bento-col-5 mb-reveal">
+        <div>
+          <div class="mb-bento-head" style="margin-bottom:16px">
+            <span class="caption-mono-sm" style="color:var(--muted-foreground)">03 // The floor</span>
+            <span class="mb-chip ok">Fail closed</span>
+          </div>
+          <div class="mb-guard">
+            <div class="mb-ring" aria-hidden="true">READ</div>
+            <div>
+              <div style="font-size:13px;font-weight:500">A write under a read ceiling dies first</div>
+              <p>Policy denies it before the model is asked. The warden can narrow a scope or force you to look. It cannot widen one, and it never sees the key.</p>
+            </div>
+          </div>
+        </div>
+        <div class="mb-bento-foot">
+          <span>Secure with the model off</span>
+          <a href="/docs/#levels">Explore</a>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="preview" class="mb-section mb-landing-anchor">
+    <div class="mb-reveal" style="text-align:center;margin-bottom:36px">
+      <span class="caption-mono-sm mb-section-kicker">04 // Interactive preview</span>
+      <h2 class="mb-section-title">A request, from the paste to the result.</h2>
+      <p class="mb-section-lead">Pick a step. The buttons are a simulation. Nothing is stored, and no key is real.</p>
+    </div>
+    <div class="mb-window mb-reveal" id="sim-window">
+      <div class="mb-window-bar">
+        <div class="mb-lights">
+          <i class="r"></i><i class="y"></i><i class="g"></i>
+          <span class="caption-mono-sm" style="letter-spacing:0.2px;text-transform:none">openvault / approval</span>
+        </div>
+        <div class="mb-mode" role="group" aria-label="Preview size">
+          <button type="button" data-mode="desktop" aria-pressed="true">Desktop</button>
+          <button type="button" data-mode="phone" aria-pressed="false">Phone</button>
+        </div>
+      </div>
+      <div class="mb-mobile-tabs" id="sim-tabs-mobile" role="tablist" aria-label="Request steps"></div>
+      <div class="mb-window-body">
+        <div class="mb-sidebar mb-desktop-sidebar">
+          <div>
+            <div class="caption-mono-sm" style="color:var(--muted-foreground);padding:6px 8px;font-size:10px">Request path</div>
+            <div id="sim-tabs" role="tablist" aria-label="Request steps"></div>
+          </div>
+          <div style="padding:14px 4px 4px;display:flex;justify-content:space-between;border-top:1px solid var(--border-subtle);margin-top:12px">
+            <span class="caption-mono-sm" style="color:var(--muted-foreground);font-size:10px">Simulation</span>
+            <span class="caption-mono-sm" style="color:var(--green);font-size:10px">Local only</span>
+          </div>
+        </div>
+        <div class="mb-canvas">
+          <div class="mb-device" id="phone-chrome">
+            <div class="notch" aria-hidden="true"></div>
+            <div class="mb-panel" id="sim-panel">
+            <div data-panel="1">
+              <h3>Store the key once</h3>
+              <p>You type it in the app. The field clears. The agent learns the alias and the ceiling, never the value.</p>
+              <form id="store-form">
+                <label class="mb-field">Alias<input value="stripe" readonly></label>
+                <label class="mb-field">Ceiling<input value="charges.read" readonly></label>
+                <label class="mb-field">Secret<input id="secret" type="password" autocomplete="off" value="sk-live-demo-not-a-real-key"></label>
+                <button class="mb-btn-primary" id="store-btn" type="submit">Save to vault</button>
+              </form>
+              <p id="store-note" class="mb-status" hidden>Stored. The field is empty, and it stays empty.</p>
+            </div>
+            <div data-panel="2" hidden>
+              <h3>The agent asks for a capability</h3>
+              <p>Cursor calls the MCP tool. There is no secret field on the call.</p>
+              <div class="mb-code"><span class="soft">request_capability</span>({ alias: "stripe", scope: "charges.read", reason: "list failed charges" })</div>
+            </div>
+            <div data-panel="3" hidden>
+              <h3>The warden scores metadata</h3>
+              <p>Llama 3.2 1B (Edge / WebGPU DirectML) on this machine. Faster &amp; lighter. The prompt is the agent, the alias, the scope, and the reason.</p>
+              <div class="mb-status">Risk LOW. Recommended scope charges.read. Approval required. A read of failed charges, inside the ceiling.</div>
+            </div>
+            <div data-panel="4" hidden>
+              <h3>You decide</h3>
+              <p>Writes always ask. A standing approval is only for a read the warden called low.</p>
+              <div class="mb-choices">
+                <button class="mb-choice" type="button" data-decision="once">Approve once</button>
+                <button class="mb-choice" type="button" data-decision="deny">Deny</button>
+                <button class="mb-choice" type="button" data-decision="always">Always allow</button>
+              </div>
+              <div class="mb-status" id="decision-copy" aria-live="polite">Waiting on you. No call has run.</div>
+            </div>
+            <div data-panel="5" hidden>
+              <h3>The agent receives a result</h3>
+              <p id="result-lead">The key is not in this payload.</p>
+              <div class="mb-status" id="result-copy">{ "status": "awaiting-approval" }</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <section id="oss" class="mb-section mb-landing-anchor" style="padding:64px 0">
+    <div class="mb-reveal" style="text-align:center;margin-bottom:36px">
+      <span class="caption-mono-sm mb-section-kicker">Open source, not a plan</span>
+      <h2 class="mb-section-title">The license is the price.</h2>
+      <p class="mb-section-lead">Apache-2.0. The vault, the warden, the MCP server, and the audit log ship together. There is no tier to upgrade into.</p>
+    </div>
+    <div class="mb-price-grid">
+      <article class="mb-price mb-reveal">
+        <div class="mb-price-top">
+          <span class="caption-mono" style="font-size:13px">The license</span>
+          <span class="mb-chip ok">Apache-2.0</span>
+        </div>
+        <div class="mb-price-amt">$0 <span>/ forever</span></div>
+        <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 24px">Fork it, read it, run it without an account.</p>
+        <ul>
+          <li><span>—</span> Vault, warden, MCP, and the desktop app</li>
+          <li><span>—</span> No account and no telemetry</li>
+          <li><span>—</span> Keys encrypted at rest, master key in the OS keychain</li>
+          <li><span>—</span> The canary test fails the build if a secret leaks</li>
+          <li><span>—</span> Docs, architecture, and the research report are in the repo</li>
+        </ul>
+        <a class="mb-btn-secondary" href="https://github.com/0xm0w/openvault/blob/main/LICENSE">Read the license</a>
+      </article>
+      <article class="mb-price featured mb-reveal">
+        <div class="mb-price-top">
+          <span class="caption-mono" style="font-size:13px;color:var(--accent-sunset-soft)">Your machine</span>
+          <span class="mb-chip">Windows first</span>
+        </div>
+        <div class="mb-price-amt">Local <span>/ 127.0.0.1</span></div>
+        <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 24px">The daemon binds to localhost. The warden defaults to a model you run.</p>
+        <ul>
+          <li><span>—</span> Windows installer, or build from the source</li>
+          <li><span>—</span> Default warden Llama 3.2 1B (Edge / WebGPU DirectML)</li>
+          <li><span>—</span> Larger local models, or an opt-in Meta API model</li>
+          <li><span>—</span> Human approval stays in the app. An agent that tries to approve itself gets 401</li>
+          <li><span>—</span> Air-gap is a packaging choice. The vault already refuses every other network</li>
+        </ul>
+        <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe">Download for Windows</a>
+      </article>
+    </div>
+  </section>
+
+  <!-- GitHub Development Timeline Section -->
+  <section id="timeline" class="mb-section mb-landing-anchor" style="padding:48px 0 64px">
+    <div class="mb-reveal" style="text-align:center;margin-bottom:36px">
+      <span class="caption-mono-sm mb-section-kicker">05 // Real GitHub Timeline</span>
+      <h2 class="mb-section-title">From Wallet Security to Agentic Vaults</h2>
+      <p class="mb-section-lead">Verified shipping milestones across our repositories since 2025.</p>
+    </div>
+
+    <div class="mb-timeline-wrap mb-reveal">
+      <!-- 2025 -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2025 · Pre-fable &amp; Pre-opus 5 era</span>
+            <span class="mb-chip ok">Production Verified</span>
+          </div>
+          <h3 class="mb-timeline-title">Crypto Wallet Security Audits &amp; Keythings Wallet</h3>
+          <p class="mb-timeline-desc">Work history in crypto wallet bug bounty hunting and protocol vulnerability research. Engineered Keythings Wallet — securing daily non-custodial transactions in production with 0 security incidents.</p>
+        </div>
+      </div>
+
+      <!-- 2025-2026 Consumer Tools -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2025–2026 · Ecosystem Shipping</span>
+            <span class="mb-chip ok">Active Portfolio</span>
+          </div>
+          <h3 class="mb-timeline-title">Shipped Other Consumer Tools</h3>
+          <p class="mb-timeline-desc">Built and shipped consumer products across trading bots, finance tools, social networks, and games (goodrecmovies, Purrbook, ChessGods, GalaxyUI) hosted on <a href="https://whativedone.xyz" class="buzz" target="_blank" rel="noopener">whativedone.xyz</a>.</p>
+        </div>
+      </div>
+
+      <!-- 2026-10-31 -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2026-10-31 · Genesis MVP</span>
+            <span class="mb-chip">Genesis</span>
+          </div>
+          <h3 class="mb-timeline-title">MetaVault OSS MVP: Local Llama Marshal &amp; 5-Tool MCP</h3>
+          <p class="mb-timeline-desc">Architected the local AES-256-GCM vault daemon (<code>vaultd</code>), deterministic policy ceiling, Model Context Protocol server, secret canary test sweep, and Electron approval shell.</p>
+        </div>
+      </div>
+
+      <!-- 2026-11-02 ACTIVE SPRINT -->
+      <div class="mb-timeline-item is-active">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date" style="font-weight:700">2026-11-02 · Current Sprint</span>
+            <span class="neon-rainbow-badge"><span class="neon-rainbow-text">Active Hackathon Sprint</span></span>
+          </div>
+          <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Local Llama Marshal &amp; 5-Tool MCP</h3>
+          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Standardized on on-device Llama 3.2 1B (Edge / WebGPU DirectML) with hardened adversarial prompt defenses, caller process quarantine, and empirical 100% defense.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="download" class="mb-landing-anchor" style="margin-bottom:64px">
+    <div class="mb-final mb-reveal">
+      <span class="caption-mono-sm" style="color:var(--muted-foreground);letter-spacing:2px;display:block;margin-bottom:12px">Get the vault</span>
+      <h2 class="mb-section-title" style="max-width:720px;margin:0 auto 24px"><span class="mb-sr">Download it. Point an IDE at it.</span><span aria-hidden="true">Download it. Point <span class="mb-ide" id="ide-slot"><span class="mb-ide-word" id="ide-word">an IDE</span></span> at it.</span></h2>
+      <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-bottom:36px">
+        <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg>
+          <span>Download for Windows</span>
+        </a>
+        <a class="mb-btn-secondary" href="https://github.com/0xm0w/openvault" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          <span>View source</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;opacity:0.75"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+        <a class="mb-btn-tertiary" href="/docs/#mcp" target="_blank" rel="noopener">
+          <span>IDE setup</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;opacity:0.75"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+      </div>
+      <div class="mb-snippet">
+        <pre id="mcp-snippet">{
+  "mcpServers": {
+    "openvault": {
+      "command": "node",
+      "args": ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "env": { "OPENVAULT_AGENT_ID": "cursor", "OPENVAULT_IDE": "Cursor" }
+    }
+  }
+}</pre>
+        <button type="button" id="copy-mcp">Copy</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="mb-foot">
+    <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
+    <nav>
+      <a href="/overview/">Overview</a>
+      <a href="/docs/">Docs</a>
+      <a href="/architecture/">Architecture</a>
+      <a href="/research/">Research</a>
+      <a href="/">Hackathon</a>
+      <a href="https://keythings.xyz" target="_blank" rel="noopener">Keythings</a>
+      <a href="https://whativedone.xyz" target="_blank" rel="noopener">whativedone.xyz</a>
+      <a href="https://github.com/0xm0w/openvault">GitHub</a>
+    </nav>
+  </footer>
+</div>
+</div>
+<script>
+(function () {
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var ingest = [
+    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · Llama 3.2 1B (WebGPU)", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
+    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · Llama 3.2 1B (WebGPU)", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
+    { event: "claude-code asks for github · repos.read", from: "WARDEN · Llama 3.2 1B (WebGPU)", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
+    { event: "keythings-wallet asks for vaultd · sign_intent", from: "KEYTHINGS · est. 2025", subject: "Local non-custodial cryptographic intent. Key stays unexposed.", reply: "Daemon · 200 OK" },
+    { event: "codex asks for stripe · charges.write", from: "POLICY", subject: "Denied. A write under a read ceiling never reaches the model.", reply: "Agent · 403, and no key" }
+  ];
+  var mcp = [
+    { comment: "// the only call that does work", call: 'request_capability("stripe", "charges.read", reason)', thinking: "> policy ceiling, then the warden", tool: "• human approval", badge: "REQUIRED", result: "> awaiting you" },
+    { comment: "// what the agent is allowed to learn", call: "list_aliases()", thinking: "> aliases and ceilings only", tool: "• no secret field", badge: "EMPTY", result: "> stripe · charges.read" },
+    { comment: "// an agent cannot approve itself", call: "POST /approve  (no daemon token)", thinking: "> that route belongs to the app", tool: "• daemon", badge: "401", result: "> denied" }
+  ];
+  var gates = [
+    { n: "1", title: "Store", when: "Once" },
+    { n: "2", title: "Request", when: "MCP" },
+    { n: "3", title: "Warden", when: "Local" },
+    { n: "4", title: "Approve", when: "You" },
+    { n: "5", title: "Result", when: "One call" }
+  ];
+  var steps = [
+    { id: "1", kicker: "01 // Store", title: "Store the key once", sub: "You type it. The field clears." },
+    { id: "2", kicker: "02 // Request", title: "Ask for a capability", sub: "Alias, scope, reason. No secret." },
+    { id: "3", kicker: "03 // Warden", title: "Score the request", sub: "Metadata only. Never the key." },
+    { id: "4", kicker: "04 // Approve", title: "You decide", sub: "Once, deny, or always for a read." },
+    { id: "5", kicker: "05 // Result", title: "Return the result", sub: "The grant dies with the call." }
+  ];
+  var results = {
+    pending: '{ "status": "awaiting-approval" }',
+    once: '{ "status": "executed", "result": { "failed_charges": 3 } }\n// grant expired. key absent.',
+    deny: '{ "status": "denied" }\n// no call. key stayed in the vault.',
+    always: '{ "status": "executed", "standing": "charges.read" }\n// writes still ask. key absent.'
+  };
+  var leads = {
+    pending: "Nothing has run yet.",
+    once: "Approved once. The daemon injected the key for that call and returned only the result.",
+    deny: "Denied. The agent got the denial. The key stayed in the vault.",
+    always: "Standing approval for this read. A write still comes back to you."
+  };
+
+  function text(sel, value) {
+    var node = document.querySelector(sel);
+    if (node) node.textContent = value;
+  }
+  function replay(root) {
+    root.querySelectorAll("[class*='enter']").forEach(function (node) {
+      node.style.animation = "none";
+      void node.offsetWidth;
+      node.style.animation = "";
+    });
+  }
+  function showIngest(i) {
+    var row = ingest[i];
+    text("[data-ingest='event']", row.event);
+    text("[data-ingest='from']", row.from);
+    text("[data-ingest='subject']", row.subject);
+    text("[data-ingest='reply']", row.reply);
+    replay(document.getElementById("ingest"));
+  }
+  function showMcp(i) {
+    var row = mcp[i];
+    text("[data-mcp='comment']", row.comment);
+    text("[data-mcp='call']", row.call);
+    text("[data-mcp='thinking']", row.thinking);
+    text("[data-mcp='tool']", row.tool);
+    text("[data-mcp='badge']", row.badge);
+    text("[data-mcp='result']", row.result);
+    replay(document.getElementById("mcp"));
+  }
+  var cadence = document.getElementById("cadence");
+  var cadenceIndex = 0;
+  function paintCadence() {
+    cadence.replaceChildren();
+    gates.forEach(function (gate, index) {
+      var row = document.createElement("div");
+      row.className = "cadence-item" + (index === cadenceIndex ? " is-active" : "");
+      var name = document.createElement("span");
+      name.textContent = gate.n + ". " + gate.title;
+      var when = document.createElement("span");
+      when.style.fontFamily = "var(--font-mono)";
+      when.style.fontSize = "10px";
+      when.style.color = index === cadenceIndex ? "var(--accent-sunset)" : "var(--muted-foreground)";
+      when.textContent = gate.when;
+      row.append(name, when);
+      cadence.append(row);
+    });
+  }
+
+  function selectStep(id) {
+    document.querySelectorAll("[data-panel]").forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-panel") !== id;
+    });
+    document.querySelectorAll("[data-step]").forEach(function (tab) {
+      var on = tab.getAttribute("data-step") === id;
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+    });
+  }
+  function makeTab(step, mobile) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "tab");
+    button.setAttribute("data-step", step.id);
+    button.setAttribute("aria-selected", step.id === "1" ? "true" : "false");
+    if (mobile) {
+      button.textContent = step.kicker;
+    } else {
+      button.className = "mb-step";
+      button.innerHTML = '<div class="mb-step-meta"><span>' + step.kicker + '</span></div><b></b><small></small>';
+      button.querySelector("b").textContent = step.title;
+      button.querySelector("small").textContent = step.sub;
+    }
+    button.addEventListener("click", function () { selectStep(step.id); });
+    return button;
+  }
+  var tabList = document.getElementById("sim-tabs");
+  var mobileTabs = document.getElementById("sim-tabs-mobile");
+  steps.forEach(function (step) {
+    tabList.append(makeTab(step, false));
+    mobileTabs.append(makeTab(step, true));
+  });
+
+  var decisionCopy = document.getElementById("decision-copy");
+  var resultCopy = document.getElementById("result-copy");
+  var resultLead = document.getElementById("result-lead");
+  document.querySelectorAll("[data-decision]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var next = button.getAttribute("data-decision");
+      document.querySelectorAll("[data-decision]").forEach(function (other) {
+        other.setAttribute("aria-pressed", other === button ? "true" : "false");
+      });
+      decisionCopy.textContent = leads[next];
+      resultCopy.textContent = results[next];
+      resultLead.textContent = leads[next];
+      selectStep("5");
+    });
+  });
+
+  document.getElementById("store-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var secret = document.getElementById("secret");
+    secret.value = "";
+    secret.placeholder = "Empty. It stays empty.";
+    document.getElementById("store-btn").textContent = "Stored";
+    document.getElementById("store-btn").disabled = true;
+    document.getElementById("store-note").hidden = false;
+  });
+
+  document.querySelectorAll("[data-mode]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var phone = button.getAttribute("data-mode") === "phone";
+      document.getElementById("sim-window").classList.toggle("is-phone", phone);
+      document.querySelectorAll("[data-mode]").forEach(function (other) {
+        other.setAttribute("aria-pressed", other === button ? "true" : "false");
+      });
+    });
+  });
+
+  var menuButton = document.querySelector(".mb-nav-hamburger-btn");
+  var menu = document.getElementById("mobile-menu");
+  menuButton.addEventListener("click", function () {
+    var open = menu.hasAttribute("hidden");
+    menu.toggleAttribute("hidden", !open);
+    menuButton.setAttribute("aria-expanded", open ? "true" : "false");
+    menuButton.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  });
+  menu.querySelectorAll("a").forEach(function (link) {
+    link.addEventListener("click", function () {
+      menu.hidden = true;
+      menuButton.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  document.getElementById("copy-mcp").addEventListener("click", function () {
+    var button = this;
+    var value = document.getElementById("mcp-snippet").textContent;
+    var done = function (ok) {
+      button.textContent = ok ? "Copied" : "Copy failed";
+      setTimeout(function () { button.textContent = "Copy"; }, 1600);
+    };
+    var fallback = function () {
+      var area = document.createElement("textarea");
+      area.value = value;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.left = "-9999px";
+      document.body.appendChild(area);
+      area.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      area.remove();
+      done(ok);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(function () { done(true); }).catch(fallback);
+    } else fallback();
+  });
+
+  var ides = ["an IDE", "Meta Muse", "Claude Code", "Codex", "Antigravity"];
+  var ideSlot = document.getElementById("ide-slot");
+  var ideWord = document.getElementById("ide-word");
+  var ideIndex = 0;
+  function fitIde() {
+    if (!reduce) ideSlot.style.width = ideWord.offsetWidth + "px";
+  }
+  fitIde();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitIde);
+
+  showIngest(0);
+  showMcp(0);
+  paintCadence();
+  if (!reduce) {
+    var ingestIndex = 0;
+    var mcpIndex = 0;
+    setInterval(function () { ingestIndex = (ingestIndex + 1) % ingest.length; showIngest(ingestIndex); }, 4500);
+    setInterval(function () { mcpIndex = (mcpIndex + 1) % mcp.length; showMcp(mcpIndex); }, 5000);
+    setInterval(function () { cadenceIndex = (cadenceIndex + 1) % gates.length; paintCadence(); }, 2200);
+    setInterval(function () {
+      ideWord.classList.add("is-leaving");
+      setTimeout(function () {
+        ideIndex = (ideIndex + 1) % ides.length;
+        ideWord.textContent = ides[ideIndex];
+        ideWord.classList.remove("is-leaving");
+        ideWord.classList.add("is-entering");
+        fitIde();
+        void ideWord.offsetWidth;
+        ideWord.classList.remove("is-entering");
+      }, 320);
+    }, 2400);
+  }
+  if ("IntersectionObserver" in window && !reduce) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) { entry.target.classList.add("is-visible"); observer.unobserve(entry.target); }
+      });
+    }, { threshold: 0.08 });
+    document.querySelectorAll(".mb-reveal").forEach(function (el) { observer.observe(el); });
+  } else {
+    document.querySelectorAll(".mb-reveal").forEach(function (el) { el.classList.add("is-visible"); });
+  }
+})();
+</script>
+</body>
+</html>
