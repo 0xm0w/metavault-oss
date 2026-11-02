@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
 import { DAEMON_CALL_CHANNEL, callDaemon } from "./daemon-client.js";
-import { DEEPLINK_CHANNEL, findOpenVaultUrl, parseOpenVaultUrl, type DeeplinkAddParams } from "./deeplink.js";
+import { DEEPLINK_CHANNEL, findVaultDeeplink, parseVaultDeeplink, type DeeplinkAddParams } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 import { initAutoUpdater } from "./updater.js";
 import { registerBuiltinAiIpc } from "./builtin-ai-ipc.js";
@@ -49,7 +49,7 @@ function routeDeeplink(params: DeeplinkAddParams): void {
 }
 
 function handleDeeplinkUrl(raw: unknown): void {
-  const parsed = parseOpenVaultUrl(raw);
+  const parsed = parseVaultDeeplink(raw);
   if (parsed !== null) {
     routeDeeplink(parsed);
   }
@@ -152,7 +152,7 @@ function createTray(): void {
   }
 }
 
-const coldStartDeeplink = findOpenVaultUrl(process.argv.slice(1));
+const coldStartDeeplink = findVaultDeeplink(process.argv.slice(1));
 if (coldStartDeeplink !== null) {
   pendingDeeplink = coldStartDeeplink;
 }
@@ -162,7 +162,7 @@ if (!hasLock) {
   app.quit();
 } else {
   app.on("second-instance", (_event, argv) => {
-    const linked = findOpenVaultUrl(argv);
+    const linked = findVaultDeeplink(argv);
     if (linked !== null) {
       routeDeeplink(linked);
     } else {

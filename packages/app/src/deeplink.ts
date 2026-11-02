@@ -36,7 +36,7 @@ function capped(value: string | null, max: number): string | null {
   return trimmed;
 }
 
-export function parseOpenVaultUrl(raw: unknown): DeeplinkAddParams | null {
+export function parseVaultDeeplink(raw: unknown): DeeplinkAddParams | null {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_URL_LENGTH) {
     return null;
   }
@@ -77,9 +77,9 @@ export function parseOpenVaultUrl(raw: unknown): DeeplinkAddParams | null {
   return { alias, scope, website, enrollmentId };
 }
 
-export function findOpenVaultUrl(argv: readonly unknown[]): DeeplinkAddParams | null {
+export function findVaultDeeplink(argv: readonly unknown[]): DeeplinkAddParams | null {
   for (const arg of argv) {
-    const parsed = parseOpenVaultUrl(arg);
+    const parsed = parseVaultDeeplink(arg);
     if (parsed !== null) {
       return parsed;
     }

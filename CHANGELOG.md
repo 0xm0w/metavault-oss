@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to OpenVault are documented here. The format follows
+All notable changes to MetaVault OSS are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -46,7 +46,7 @@ contract may still change before `0.1.0`.
 
 ### Added
 
-- MCP server packaged as a deployable IDE component (`openvault-mcp` bin,
+- MCP server packaged as a deployable IDE component (`metavault-mcp` bin,
   `MCP_VERSION = "0.1.0-alpha.1"`) with copy-paste host configs for Claude
   Code, Cursor, VS Code, Codex and OpenCode in `docs/MCP.md`. The server
   exposes exactly five tools: `request_capability`, `list_aliases`,

@@ -11,7 +11,7 @@ import {
   VaultService,
   type VaultServiceService,
 } from "../../daemon/src/service.js";
-import { createOpenVaultMcpServer, MCP_VERSION, type DaemonFetch } from "../src/server.js";
+import { createMetavaultMcpServer, MCP_VERSION, type DaemonFetch } from "../src/server.js";
 
 const SECRET = "sk-test-canary-mcp-0001";
 
@@ -76,7 +76,7 @@ beforeAll(async () => {
     ),
   );
 
-  const server = createOpenVaultMcpServer({
+  const server = createMetavaultMcpServer({
     daemonUrl: "http://127.0.0.1:7077",
     agentId: "cursor",
     ide: "Cursor",
@@ -193,7 +193,7 @@ describe("OpenVault MCP server (in-process client)", () => {
   });
 
   it("reports a daemon outage as an MCP error without secrets", async () => {
-    const downServer = createOpenVaultMcpServer({
+    const downServer = createMetavaultMcpServer({
       daemonUrl: "http://127.0.0.1:7077",
       fetchFn: () => Promise.reject(new Error("connect ECONNREFUSED")),
     });

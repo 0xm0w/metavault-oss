@@ -27,20 +27,20 @@ Hosts then launch:
 node dist/packages/mcp/src/server.js
 ```
 
-or the packaged bin `openvault-mcp` declared in `packages/mcp/package.json`
-(`bin: openvault-mcp`, built by that package's `build` script).
+or the packaged bin `metavault-mcp` declared in `packages/mcp/package.json`
+(`bin: metavault-mcp`, built by that package's `build` script).
 
 Environment consumed by the server:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENVAULT_DAEMON_URL` | `http://127.0.0.1:7077` | Daemon HTTP API base URL |
-| `OPENVAULT_AGENT_ID` | `mcp-agent` | Agent identity presented to the daemon (set per IDE) |
-| `OPENVAULT_IDE` | `mcp` | IDE label presented to the daemon |
-| `OPENVAULT_AGENT_TOKEN` | *(none)* | Secret enrollment bearer token proving agent identity to prevent spoofing |
+| `METAVAULT_DAEMON_URL` | `http://127.0.0.1:7077` | Daemon HTTP API base URL |
+| `METAVAULT_AGENT_ID` | `mcp-agent` | Agent identity presented to the daemon (set per IDE) |
+| `METAVAULT_IDE` | `mcp` | IDE label presented to the daemon |
+| `METAVAULT_AGENT_TOKEN` | *(none)* | Secret enrollment bearer token proving agent identity to prevent spoofing |
 
-Replace `C:/path/to/openvault` below with your checkout path. Keep the
-per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
+Replace `C:/path/to/metavault-oss` below with your checkout path. Keep the
+per-IDE `METAVAULT_AGENT_ID` values: audit and revoke are keyed by them.
 
 ## Claude Code
 
@@ -49,14 +49,14 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
 ```json
 {
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["C:/path/to/openvault/dist/packages/mcp/src/server.js"],
+      "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "OPENVAULT_AGENT_ID": "claude-code",
-        "OPENVAULT_AGENT_TOKEN": "ov_agent_claude_xxxxxxxx",
-        "OPENVAULT_IDE": "Claude Code"
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "claude-code",
+        "METAVAULT_AGENT_TOKEN": "ov_agent_claude_xxxxxxxx",
+        "METAVAULT_IDE": "Claude Code"
       }
     }
   }
@@ -70,14 +70,14 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
 ```json
 {
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["C:/path/to/openvault/dist/packages/mcp/src/server.js"],
+      "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "OPENVAULT_AGENT_ID": "cursor",
-        "OPENVAULT_AGENT_TOKEN": "ov_agent_cursor_xxxxxxxx",
-        "OPENVAULT_IDE": "Cursor"
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "cursor",
+        "METAVAULT_AGENT_TOKEN": "ov_agent_cursor_xxxxxxxx",
+        "METAVAULT_IDE": "Cursor"
       }
     }
   }
@@ -92,15 +92,15 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
 ```json
 {
   "servers": {
-    "openvault": {
+    "metavault": {
       "type": "stdio",
       "command": "node",
-      "args": ["C:/path/to/openvault/dist/packages/mcp/src/server.js"],
+      "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "OPENVAULT_AGENT_ID": "vscode",
-        "OPENVAULT_AGENT_TOKEN": "ov_agent_vscode_xxxxxxxx",
-        "OPENVAULT_IDE": "VS Code"
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "vscode",
+        "METAVAULT_AGENT_TOKEN": "ov_agent_vscode_xxxxxxxx",
+        "METAVAULT_IDE": "VS Code"
       }
     }
   }
@@ -112,14 +112,14 @@ per-IDE `OPENVAULT_AGENT_ID` values: audit and revoke are keyed by them.
 `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.openvault]
+[mcp_servers.metavault]
 command = "node"
-args = ["C:/path/to/openvault/dist/packages/mcp/src/server.js"]
+args = ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"]
 
-[mcp_servers.openvault.env]
-OPENVAULT_DAEMON_URL = "http://127.0.0.1:7077"
-OPENVAULT_AGENT_ID = "codex"
-OPENVAULT_IDE = "Codex"
+[mcp_servers.metavault.env]
+METAVAULT_DAEMON_URL = "http://127.0.0.1:7077"
+METAVAULT_AGENT_ID = "codex"
+METAVAULT_IDE = "Codex"
 ```
 
 ## OpenCode
@@ -130,14 +130,14 @@ OPENVAULT_IDE = "Codex"
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "openvault": {
+    "metavault": {
       "type": "local",
-      "command": ["node", "C:/path/to/openvault/dist/packages/mcp/src/server.js"],
+      "command": ["node", "C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "enabled": true,
       "environment": {
-        "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "OPENVAULT_AGENT_ID": "opencode",
-        "OPENVAULT_IDE": "OpenCode"
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "opencode",
+        "METAVAULT_IDE": "OpenCode"
       }
     }
   }

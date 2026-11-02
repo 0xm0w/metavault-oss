@@ -1,15 +1,15 @@
-# OpenVault — Handover (2026-10-31)
+# MetaVault OSS — Handover (2026-10-31, repo renamed from openvault)
 
 Read this first when resuming. Repo: `C:\Users\Mowreez.DESKTOP-D1GHS6J\openvault`
-Private remote: `https://github.com/0xm0w/openvault`
+Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/openvault; old URL redirects)
 
 ## Where things stand
 
-- Branch `main` pushed and merged via PR #1 (https://github.com/0xm0w/openvault/pull/1).
+- Branch `main` pushed and merged via PR #1 (https://github.com/0xm0w/metavault-oss/pull/1).
 - Working tree clean. `main` is up to date with `origin/main`.
 - CI/CD verified green on GitHub Actions:
-  - CI: https://github.com/0xm0w/openvault/actions/runs/41223410981 (Windows + Ubuntu exit 0)
-  - CodeQL: https://github.com/0xm0w/openvault/actions/runs/41223410962 (exit 0)
+  - CI: https://github.com/0xm0w/metavault-oss/actions/runs/41223410981 (Windows + Ubuntu exit 0)
+  - CodeQL: https://github.com/0xm0w/metavault-oss/actions/runs/41223410962 (exit 0)
 - Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-openvault-hardening-release.md`
 - SDD ledger (task-by-task record, deferred minors, rulings):
   `.superpowers/sdd/2026-10-31-openvault-hardening-release/progress.md`
@@ -52,7 +52,7 @@ Private remote: `https://github.com/0xm0w/openvault`
 - **Must-fix #3 (version test surface)**: Added fifth surface `packages/mcp/package.json` to `test/version.test.ts`.
 - **Low (phantom Policies rows)**: Updated `derivePolicies` in `packages/app/src/renderer/model.ts` to skip administrative/lifecycle events (`settings-changed`, `enrollment-created`, `enrollment-completed`). Regression test added in `packages/app/test/model.test.ts`.
 - **Full gates & rebuild**: 271 tests passing, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
-- **Release v0.1.0-alpha.1 published**: Tag `v0.1.0-alpha.1` pushed. GitHub Release created at https://github.com/0xm0w/openvault/releases/tag/v0.1.0-alpha.1 with NSIS installer and SHA256SUMS attached. Site and README links updated and redeployed.
+- **Release v0.1.0-alpha.1 published**: Tag `v0.1.0-alpha.1` pushed. GitHub Release created at https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0-alpha.1 with NSIS installer and SHA256SUMS attached. Site and README links updated and redeployed.
 
 ## Remaining tasks (in order)
 

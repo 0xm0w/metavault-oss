@@ -1,4 +1,4 @@
-# OpenVault MCP server
+# MetaVault OSS MCP server
 
 Thin MCP adapter over the `vaultd` HTTP API. It never sees secrets: it
 validates tool inputs with the shared Effect Schemas from
@@ -16,8 +16,8 @@ npx tsc -p tsconfig.json --outDir dist   # once, from the repo root
 node dist/packages/mcp/src/server.js     # stdio MCP server
 ```
 
-Environment: `OPENVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`),
-`OPENVAULT_AGENT_ID` (default `mcp-agent`), `OPENVAULT_IDE` (default `mcp`).
+Environment: `METAVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`),
+`METAVAULT_AGENT_ID` (default `mcp-agent`), `METAVAULT_IDE` (default `mcp`).
 
 ## IDE config snippet
 
@@ -26,13 +26,13 @@ Paste into the IDE's MCP config (adjust the path and identity per IDE):
 ```json
 {
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["C:/path/to/openvault/dist/packages/mcp/src/server.js"],
+      "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "OPENVAULT_AGENT_ID": "cursor-agent",
-        "OPENVAULT_IDE": "Cursor"
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "cursor-agent",
+        "METAVAULT_IDE": "Cursor"
       }
     }
   }

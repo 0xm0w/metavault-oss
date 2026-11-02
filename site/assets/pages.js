@@ -160,7 +160,7 @@
     if (/^\s*\[[^\]\n]+\]\s*$/m.test(text)) return "toml";
     var head = text.replace(/^\s+/, "");
     if (head.charAt(0) === "{" || head.charAt(0) === "[") return "json";
-    if (/^\s*(git|cd|npm|npx|node|openvault|ollama|docker|curl|ssh)\b/m.test(text)) return "shell";
+    if (/^\s*(git|cd|npm|npx|node|metavault|ollama|docker|curl|ssh)\b/m.test(text)) return "shell";
     return "log";
   }
   function paintCode(pre, lang) {

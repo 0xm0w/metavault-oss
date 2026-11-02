@@ -7,7 +7,7 @@ import { Brain } from "../../packages/brain/src/brain.js";
 import { Connector } from "../../packages/core/src/connector.js";
 import { VaultStoreTest } from "../../packages/core/src/storage.js";
 import type { MarshalDecision } from "../../packages/core/src/types.js";
-import { createOpenVaultMcpServer, type DaemonFetch } from "../../packages/mcp/src/server.js";
+import { createMetavaultMcpServer, type DaemonFetch } from "../../packages/mcp/src/server.js";
 import { createVaultHttpServer, handleVaultRequest } from "../../packages/daemon/src/server.js";
 import {
   makeVaultServiceLive,
@@ -310,7 +310,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
         });
       };
 
-      const mcpServer = createOpenVaultMcpServer({
+      const mcpServer = createMetavaultMcpServer({
         daemonUrl: daemon.base,
         agentId: "fuzz-agent",
         ide: "Cursor",

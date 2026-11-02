@@ -23,15 +23,15 @@ describe("macOS Platform Support & Keychain Integration (#21)", () => {
   });
 
   it("provides valid launchd daemon plist with standard KeepAlive and logging paths", () => {
-    const plistPath = join(repoRoot, "packages", "daemon", "launchd", "dev.openvault.vaultd.plist");
+    const plistPath = join(repoRoot, "packages", "daemon", "launchd", "dev.metavault.vaultd.plist");
     expect(existsSync(plistPath)).toBe(true);
 
     const content = readFileSync(plistPath, "utf8");
-    expect(content).toContain("<string>dev.openvault.vaultd</string>");
+    expect(content).toContain("<string>dev.metavault.vaultd</string>");
     expect(content).toContain("<key>RunAtLoad</key>");
     expect(content).toContain("<true/>");
     expect(content).toContain("<key>KeepAlive</key>");
-    expect(content).toContain("openvault-vaultd.log");
+    expect(content).toContain("metavault-vaultd.log");
     expect(content).toContain("7077");
   });
 

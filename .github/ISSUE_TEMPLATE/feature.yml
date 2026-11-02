@@ -1,12 +1,12 @@
 name: Feature request
-description: Suggest a new capability or improvement for OpenVault
+description: Suggest a new capability or improvement for MetaVault OSS
 title: "[Feature]: "
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the suggestion. OpenVault is local-first: no cloud
+        Thanks for the suggestion. MetaVault OSS is local-first: no cloud
         accounts, sync, or telemetry. Please keep proposals inside that
         guarantee, and never paste real secrets.
   - type: textarea
@@ -20,7 +20,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What should OpenVault do instead?
+      description: What should MetaVault OSS do instead?
     validations:
       required: true
   - type: dropdown

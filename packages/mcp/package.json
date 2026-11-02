@@ -6,7 +6,7 @@
   "description": "MetaVault OSS MCP server — stdio adapter over vaultd. Holds no secrets.",
   "main": "../../dist/packages/mcp/src/server.js",
   "bin": {
-    "openvault-mcp": "../../dist/packages/mcp/src/server.js"
+    "metavault-mcp": "../../dist/packages/mcp/src/server.js"
   },
   "scripts": {
     "build": "tsc -p ../../tsconfig.json --outDir ../../dist"

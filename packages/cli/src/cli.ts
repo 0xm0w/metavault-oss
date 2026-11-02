@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { DEFAULT_MARSHAL_MODEL } from "../../brain/src/ollama.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
+import { metavaultEnv } from "../../core/src/env.js";
 import { parseDotEnvWithInference } from "../../core/src/dotenv.js";
 import { retrieveMasterKey, storeMasterKey } from "../../core/src/keychain.js";
 import { MarshalUnavailable, StorageError } from "../../core/src/errors.js";
@@ -96,7 +97,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: openvault <init|add <alias> --scope <s>|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|model pull>\n";
+  "usage: metavault <init|add <alias> --scope <s>|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|model pull>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -109,7 +110,7 @@ function resolveDaemonToken(deps: CliDeps): string | undefined {
   if (deps.daemonToken !== undefined && deps.daemonToken !== "") {
     return deps.daemonToken;
   }
-  const fromEnv = process.env["OPENVAULT_DAEMON_TOKEN"];
+  const fromEnv = metavaultEnv("DAEMON_TOKEN");
   if (fromEnv !== undefined && fromEnv !== "") {
     return fromEnv;
   }
@@ -140,10 +141,10 @@ function resolveIo(deps: CliDeps): ResolvedIo {
     err,
     fetchFn: deps.fetchFn ?? fetch,
     daemonUrl: trimTrailingSlashes(
-      deps.daemonUrl ?? process.env["OPENVAULT_DAEMON_URL"] ?? "http://127.0.0.1:7077",
+      deps.daemonUrl ?? metavaultEnv("DAEMON_URL") ?? "http://127.0.0.1:7077",
     ),
     ollamaBase: trimTrailingSlashes(
-      deps.ollamaUrl ?? process.env["OPENVAULT_OLLAMA_URL"] ?? "http://localhost:11434",
+      deps.ollamaUrl ?? metavaultEnv("OLLAMA_URL") ?? "http://localhost:11434",
     ),
     daemonToken: resolveDaemonToken(deps),
     readSecret:
@@ -154,7 +155,7 @@ function resolveIo(deps: CliDeps): ResolvedIo {
 }
 
 function resolveDbPath(deps: CliDeps): string {
-  return deps.dbPath ?? process.env["OPENVAULT_DB_PATH"] ?? join(process.cwd(), "openvault.db");
+  return deps.dbPath ?? metavaultEnv("DB_PATH") ?? join(process.cwd(), "openvault.db");
 }
 
 // Hidden secret prompt built on node:readline. The prompt itself goes to
@@ -196,7 +197,7 @@ export function readSecretHidden(
 }
 
 function envMasterKey(): Buffer | null {
-  const fromEnv = process.env["OPENVAULT_MASTER_KEY"];
+  const fromEnv = metavaultEnv("MASTER_KEY");
   if (fromEnv === undefined || fromEnv === "") {
     return null;
   }

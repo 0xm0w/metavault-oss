@@ -60,13 +60,13 @@
           <span class="n">Windows</span>
           <h3>The installer</h3>
           <p class="pg-note">No account. No telemetry. The vault stays on this machine.</p>
-          <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg><span>Download for Windows</span></a>
+          <a class="mb-btn-primary" href="https://github.com/0xm0w/metavault-oss/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg><span>Download for Windows</span></a>
         </article>
         <article class="pg-card">
           <span class="n">From source</span>
           <h3>Clone and build</h3>
-          <pre class="pg-codeblock" data-lang="shell">git clone https://github.com/0xm0w/openvault
-cd openvault
+          <pre class="pg-codeblock" data-lang="shell">git clone https://github.com/0xm0w/metavault-oss
+cd metavault-oss
 npm install
 npx tsc -p tsconfig.json --outDir dist</pre>
         </article>
@@ -87,7 +87,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key goes to the OS keychain, not a file you can paste.</p></article>
         <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Detects the GPU and loads Llama 3.2 1B (Edge / WebGPU DirectML). Skip this and policy still holds the ceiling.</p></article>
-        <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>openvault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
+        <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>metavault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
       </div>
     </div>
   </section>
@@ -96,7 +96,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">03 · MCP</span>
       <h2>One snippet per IDE</h2>
-      <p class="pg-lead" style="margin:0 0 16px">Replace <code>&lt;openvault&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
+      <p class="pg-lead" style="margin:0 0 16px">Replace <code>&lt;metavault-oss&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
       <div data-tabs>
         <div class="pg-tablist" role="tablist" aria-label="IDE setup">
           <button type="button" data-tab="muse" aria-selected="false">Meta Muse</button>
@@ -109,12 +109,12 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         <div data-panel="muse" hidden>
           <div class="pg-snippet"><pre id="snip-muse" data-lang="json">{
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_AGENT_ID": "muse",
-        "OPENVAULT_IDE": "Meta Muse"
+        "METAVAULT_AGENT_ID": "muse",
+        "METAVAULT_IDE": "Meta Muse"
       }
     }
   }
@@ -123,12 +123,12 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         <div data-panel="cursor">
           <div class="pg-snippet"><pre id="snip-cursor" data-lang="json">{
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_AGENT_ID": "cursor",
-        "OPENVAULT_IDE": "Cursor"
+        "METAVAULT_AGENT_ID": "cursor",
+        "METAVAULT_IDE": "Cursor"
       }
     }
   }
@@ -137,12 +137,12 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         <div data-panel="claude" hidden>
           <div class="pg-snippet"><pre id="snip-claude" data-lang="json">{
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_AGENT_ID": "claude-code",
-        "OPENVAULT_IDE": "Claude Code"
+        "METAVAULT_AGENT_ID": "claude-code",
+        "METAVAULT_IDE": "Claude Code"
       }
     }
   }
@@ -152,36 +152,36 @@ npx tsc -p tsconfig.json --outDir dist</pre>
           <p class="pg-note">VS Code uses <code>servers</code>, not <code>mcpServers</code>.</p>
           <div class="pg-snippet"><pre id="snip-vscode" data-lang="json">{
   "servers": {
-    "openvault": {
+    "metavault": {
       "type": "stdio",
       "command": "node",
-      "args": ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_AGENT_ID": "vscode",
-        "OPENVAULT_IDE": "VS Code"
+        "METAVAULT_AGENT_ID": "vscode",
+        "METAVAULT_IDE": "VS Code"
       }
     }
   }
 }</pre><button type="button" data-copy="snip-vscode">Copy</button></div>
         </div>
         <div data-panel="codex" hidden>
-          <div class="pg-snippet"><pre id="snip-codex" data-lang="toml">[mcp_servers.openvault]
+          <div class="pg-snippet"><pre id="snip-codex" data-lang="toml">[mcp_servers.metavault]
 command = "node"
-args = ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"]
+args = ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"]
 
-[mcp_servers.openvault.env]
-OPENVAULT_AGENT_ID = "codex"
-OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</button></div>
+[mcp_servers.metavault.env]
+METAVAULT_AGENT_ID = "codex"
+METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</button></div>
         </div>
         <div data-panel="opencode" hidden>
           <div class="pg-snippet"><pre id="snip-opencode" data-lang="json">{
   "mcp": {
-    "openvault": {
+    "metavault": {
       "type": "local",
-      "command": ["node", "&lt;openvault&gt;/dist/packages/mcp/src/server.js"],
+      "command": ["node", "&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "environment": {
-        "OPENVAULT_AGENT_ID": "opencode",
-        "OPENVAULT_IDE": "OpenCode"
+        "METAVAULT_AGENT_ID": "opencode",
+        "METAVAULT_IDE": "OpenCode"
       }
     }
   }
@@ -216,7 +216,7 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
           <figcaption>The agent asks to enroll. You type the secret. The field does not come back.</figcaption>
         </figure>
         <figure class="pg-shot" data-panel="approve" hidden>
-          <img src="../assets/shots/approval-dialog.png" alt="Approval view with risk, scope, and Approve once, Deny, Always allow">
+          <img src="../assets/shots/approval-dialog.png" alt="Approval view with risk, scope, and Approve once, Deny, Block agent; Always allow for low-risk reads">
           <figcaption>Approve once, deny, or always allow a low read. Writes always ask.</figcaption>
         </figure>
         <figure class="pg-shot" data-panel="audit" hidden>
@@ -294,7 +294,7 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       <a href="/architecture/">Architecture</a>
       <a href="/research/">Research</a>
       <a href="/">Hackathon</a>
-      <a href="https://github.com/0xm0w/openvault">GitHub</a>
+      <a href="https://github.com/0xm0w/metavault-oss">GitHub</a>
     </nav>
       </footer>
     </div>

@@ -1,12 +1,12 @@
 ---
 name: add-secret-to-vault
-description: Ask the human to add a credential to OpenVault via a deeplink when you need a secret you do not have. Only the human ever types the secret.
+description: Ask the human to add a credential to MetaVault OSS via a deeplink when you need a secret you do not have. Only the human ever types the secret.
 ---
 
 # Add a secret to the vault
 
 Use this when you need a credential (API key, token, password) that is not
-already in OpenVault — for example `list_aliases` does not contain the alias
+already in MetaVault OSS — for example `list_aliases` does not contain the alias
 you need, or `request_capability` was denied with `unknown-alias`.
 
 ## Workflow
@@ -18,7 +18,7 @@ you need, or `request_capability` was denied with `unknown-alias`.
    Creating an enrollment grants nothing — it only pre-fills a form.
 
 2. **Present the deeplink to the user.** Show the exact deeplink to the
-   human and ask them to open it. The link opens the OpenVault app's
+   human and ask them to open it. The link opens the MetaVault OSS app's
    *Add credential* dialog with alias, scope, and website already filled.
    Tell the user: only they type the secret, and the secret never passes
    through you or this conversation. Do not ask the user to paste the
@@ -33,7 +33,7 @@ you need, or `request_capability` was denied with `unknown-alias`.
 4. **Test the credential.** On `completed`, call `request_capability` for
    the alias/scope you need with a clear reason and observe the result:
    `executed` (it worked), `awaiting-approval` (tell the user a grant is
-   waiting for their approval in OpenVault), or `denied` (report the
+   waiting for their approval in MetaVault OSS), or `denied` (report the
    reason). The test result — not the save alone — is the proof.
 
 5. **Report the outcome to the user.** Say which alias/scope was added

@@ -1,4 +1,4 @@
-# Contributing to OpenVault
+# Contributing to MetaVault OSS
 
 Thanks for helping build the wallet for agents.
 

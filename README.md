@@ -22,7 +22,7 @@ context, an audit row, or the desktop UI.
 
 ### Windows Installer (v0.1.0)
 
-Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/openvault/releases/tag/v0.1.0). The installer is unsigned. A Windows Store (MSIX) build is also available for a Windows-verified install path — see `docs/MICROSOFT_STORE.md`.
+Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned. A Windows Store (MSIX) build is also available for a Windows-verified install path — see `docs/MICROSOFT_STORE.md`.
 
 To build the installer locally from source:
 
@@ -35,8 +35,8 @@ npx electron-builder --win
 ### From source (works today)
 
 ```powershell
-git clone <this repo> openvault
-cd openvault
+git clone <this repo> metavault-oss
+cd metavault-oss
 npm install
 npm test            # full suite (268/268 at Task 10 verification)
 ```
@@ -46,8 +46,16 @@ npm test            # full suite (268/268 at Task 10 verification)
 1. **Install Ollama** (the marshal's runtime): <https://ollama.com/download>.
    Nothing leaves your machine in the default configuration.
 2. **Create the vault.** This generates a master key (shown once — store it
-   in your OS keychain or set `OPENVAULT_MASTER_KEY` to its base64 form) and
+   in your OS keychain or set `METAVAULT_MASTER_KEY` to its base64 form) and
    creates the encrypted store:
+
+   > Environment variables were renamed `OPENVAULT_*` → `METAVAULT_*` in the
+   > rebrand. The legacy `OPENVAULT_*` names still work everywhere; the new
+   > names win when both are set. The daemon's wire header
+   > (`x-openvault-token`), token file (`openvault.token`), default vault
+   > filename (`openvault.db`), OS keychain entry and `openvault://` deeplink
+   > scheme are intentionally unchanged so existing vaults and IDE configs
+   > keep working.
 
    ```powershell
    node dist/packages/cli/src/cli.js init
@@ -75,7 +83,7 @@ npm test            # full suite (268/268 at Task 10 verification)
 5. **Start the daemon** (binds to `127.0.0.1:7077` only):
 
    ```powershell
-   $env:OPENVAULT_MASTER_KEY = "<base64 32-byte key from init>"
+   $env:METAVAULT_MASTER_KEY = "<base64 32-byte key from init>"
    node dist/packages/daemon/src/server.js
    ```
 6. **(Optional) Start the desktop app** for approval prompts — see
@@ -85,19 +93,19 @@ npm test            # full suite (268/268 at Task 10 verification)
 
 ## Install via MCP (one snippet per IDE)
 
-Build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, VS Code, Codex and OpenCode** — each with its own `OPENVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `openvault-mcp` bin from `packages/mcp/package.json`); the server reads `OPENVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `OPENVAULT_AGENT_ID` and `OPENVAULT_IDE`.
+Build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, VS Code, Codex and OpenCode** — each with its own `METAVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `metavault-mcp` bin from `packages/mcp/package.json`); the server reads `METAVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `METAVAULT_AGENT_ID` and `METAVAULT_IDE`.
 Example (Cursor shape; other hosts differ only in wrapping — see [docs/MCP.md](docs/MCP.md)):
 
 ```json
 {
   "mcpServers": {
-    "openvault": {
+    "metavault": {
       "command": "node",
-      "args": ["C:/path/to/openvault/dist/packages/mcp/src/server.js"],
+      "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "env": {
-        "OPENVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "OPENVAULT_AGENT_ID": "cursor-agent",
-        "OPENVAULT_IDE": "Cursor"
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "cursor-agent",
+        "METAVAULT_IDE": "Cursor"
       }
     }
   }
@@ -135,7 +143,7 @@ Captured from the real running app against a real daemon, seeded with a fake tes
 
    ![Prefilled enrollment modal](docs/verification/enroll-flow.png)
 
-2. **Agent requests a capability.** `request_capability` → policy check, then the warden scores metadata only → the Approval view shows agent, scope, reason, risk and the warden explanation with **Approve once / Deny / Always allow** (Always allow is standing approval: read-only, low-risk only — writes always ask) → vaultd injects the credential into that one call and returns only the result.
+2. **Agent requests a capability.** `request_capability` → policy check, then the warden scores metadata only → the Approval view shows agent, scope, reason, risk and the warden explanation with **Approve once / Deny / Block agent** — plus **Always allow** only when the request is low-risk, read-only and from a verified agent (standing approval; the daemon re-checks the same rule, and writes always ask) → vaultd injects the credential into that one call and returns only the result.
 
    ![Approval dialog](docs/verification/approval-dialog.png)
 
@@ -176,7 +184,7 @@ The wallet/marshal framing is literal:
   memory during one connector call, where the credential is injected as a
   header on the outbound request ([packages/connectors/src/http.ts](packages/connectors/src/http.ts)).
   At rest they are AES-256-GCM ciphertext under a master key from
-  `OPENVAULT_MASTER_KEY` or the OS keychain. Grants are consumed exactly
+  `METAVAULT_MASTER_KEY` or the OS keychain. Grants are consumed exactly
   once; revoke cancels pending grants and blocks future ones for that agent
   or alias immediately.
 

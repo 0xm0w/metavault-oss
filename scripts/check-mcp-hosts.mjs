@@ -17,7 +17,7 @@ import { VaultStore, VaultStoreLive } from "../dist/packages/core/src/storage.js
 import { encryptSecret } from "../dist/packages/core/src/crypto.js";
 
 const SECRET = "sk-test-MCPHOST-0000000000000000";
-const dir = mkdtempSync(join(tmpdir(), "openvault-mcp-"));
+const dir = mkdtempSync(join(tmpdir(), "metavault-mcp-"));
 const dbPath = join(dir, "vault.db");
 const masterKey = randomBytes(32);
 
@@ -47,9 +47,9 @@ for (const host of ["vscode", "claude-code"]) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["dist/packages/mcp/src/server.js"],
-    env: { ...process.env, OPENVAULT_DAEMON_URL: daemonUrl, OPENVAULT_AGENT_ID: host, OPENVAULT_IDE: host },
+    env: { ...process.env, METAVAULT_DAEMON_URL: daemonUrl, METAVAULT_AGENT_ID: host, METAVAULT_IDE: host },
   });
-  const client = new Client({ name: `openvault-check-${host}`, version: "0.0.0" });
+  const client = new Client({ name: `metavault-check-${host}`, version: "0.0.0" });
   const t = performance.now();
   await client.connect(transport);
   const listed = await client.listTools();

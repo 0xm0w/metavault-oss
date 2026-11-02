@@ -18,7 +18,7 @@ import {
   projectPoliciesResponse,
 } from "../packages/app/src/renderer/model.js";
 import {
-  createOpenVaultMcpServer,
+  createMetavaultMcpServer,
   type DaemonFetch,
 } from "../packages/mcp/src/server.js";
 
@@ -138,7 +138,7 @@ describe("canary: the stored secret appears on no observable surface", () => {
         headers: { "content-type": "application/json" },
       });
     };
-    const server = createOpenVaultMcpServer({
+    const server = createMetavaultMcpServer({
       daemonUrl: "http://127.0.0.1:7077",
       agentId: "cursor",
       ide: "Cursor",

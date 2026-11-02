@@ -1,4 +1,4 @@
-# OpenVault desktop app (Electron, Direction B)
+# MetaVault OSS desktop app (Electron, Direction B)
 
 A tray-resident Electron shell over `vaultd`. The daemon holds the keys;
 this window only shows requests and collects decisions. The renderer is
@@ -15,7 +15,7 @@ renderer rebuilds every payload from whitelisted fields before rendering.
   `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`.
 - `src/preload.ts` — context bridge exposing only the daemon API calls
   (`request/approve/deny/approveAlways/revoke/aliases/audit/pending`)
-  against `http://127.0.0.1:7077` (`OPENVAULT_DAEMON_URL` overrides).
+  against `http://127.0.0.1:7077` (`METAVAULT_DAEMON_URL` overrides).
 - `src/renderer/` — plain TypeScript UI (no `effect`/`@effect/*` imports;
   enforced by ESLint `no-restricted-imports`). Approval hero first, then
   Vault home, Audit, Policies. Direction B tokens in `model.ts`/`styles.css`.
@@ -33,8 +33,8 @@ carries no `grantId`), so two additive endpoints were added:
 ## Run (manual gate — pending, see task-9 report)
 
 ```powershell
-# 1. Start vaultd (separate terminal; needs OPENVAULT_MASTER_KEY or keychain)
-$env:OPENVAULT_MASTER_KEY = "<base64 32 bytes>"
+# 1. Start vaultd (separate terminal; needs METAVAULT_MASTER_KEY or keychain)
+$env:METAVAULT_MASTER_KEY = "<base64 32 bytes>"
 node --experimental-strip-types packages/daemon/src/server.ts  # or the compiled daemon entry
 
 # 2. Build the app (CommonJS preload.cjs + renderer assets staged into dist)

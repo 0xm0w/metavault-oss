@@ -10,6 +10,7 @@ import { Connector } from "../../core/src/connector.js";
 import { DEFAULT_AGENT_SECURITY_SETTINGS, WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, type AgentSecuritySettings } from "../../core/src/settings.js";
 import { inspectProcess } from "./process-inspector.js";
 import { decryptSecret } from "../../core/src/crypto.js";
+import { metavaultEnv } from "../../core/src/env.js";
 import { retrieveMasterKey } from "../../core/src/keychain.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
@@ -168,7 +169,7 @@ export function daemonTokenFilePath(dbPath: string): string {
 }
 
 export function resolveDaemonToken(dbPath: string): string {
-  const fromEnv = process.env["OPENVAULT_DAEMON_TOKEN"];
+  const fromEnv = metavaultEnv("DAEMON_TOKEN");
   if (fromEnv !== undefined && fromEnv !== "") {
     return fromEnv;
   }
@@ -710,7 +711,7 @@ export function createVaultHttpServer(
 }
 
 export function resolveDaemonMasterKey(): Buffer {
-  const fromEnv = process.env["OPENVAULT_MASTER_KEY"];
+  const fromEnv = metavaultEnv("MASTER_KEY");
   if (fromEnv !== undefined && fromEnv !== "") {
     const decoded = Buffer.from(fromEnv, "base64");
     if (decoded.length !== 32) {
@@ -741,7 +742,7 @@ export interface VaultDaemonOptions {
 
 export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promise<Server> {
   const masterKey = options.masterKey ?? resolveDaemonMasterKey();
-  const port = options.port ?? Number(process.env["OPENVAULT_PORT"] ?? "7077");
+  const port = options.port ?? Number(metavaultEnv("PORT") ?? "7077");
   const dbPath = options.dbPath ?? join(process.cwd(), "openvault.db");
   const daemonToken = options.daemonToken ?? resolveDaemonToken(dbPath);
   // The real connector layer (Task 6): approved grants execute against the

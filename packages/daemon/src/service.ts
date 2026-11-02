@@ -3,6 +3,7 @@ import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from
 import { Brain, DEFAULT_MARSHAL_MODEL } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
+import { metavaultEnv } from "../../core/src/env.js";
 import {
   ConnectorFailed,
   GrantExpired,
@@ -91,8 +92,8 @@ export interface WardenTestResult {
 }
 
 export const WARDEN_SELFCHECK_REQUEST: CapabilityRequest = {
-  agentId: "openvault-selfcheck",
-  ide: "OpenVault",
+  agentId: "metavault-selfcheck",
+  ide: "MetaVault OSS",
   tool: "selfcheck",
   alias: "selfcheck",
   requestedScope: "selfcheck.read",
@@ -220,11 +221,11 @@ function resolveMasterKey(options: VaultServiceOptions): Buffer {
     }
     return options.masterKey;
   }
-  const fromEnv = process.env["OPENVAULT_MASTER_KEY"];
+  const fromEnv = metavaultEnv("MASTER_KEY");
   if (fromEnv !== undefined && fromEnv !== "") {
     const decoded = Buffer.from(fromEnv, "base64");
     if (decoded.length !== 32) {
-      throw new Error("OPENVAULT_MASTER_KEY must be base64-encoded 32 bytes");
+      throw new Error("METAVAULT_MASTER_KEY (or legacy OPENVAULT_MASTER_KEY) must be base64-encoded 32 bytes");
     }
     return decoded;
   }
