@@ -6,106 +6,107 @@
 <title>Docs — MetaVault OSS</title>
 <meta name="description" content="Install MetaVault OSS, point an IDE at it, and approve a capability. The key stays on this machine.">
 <meta name="theme-color" content="#8629ff">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="manifest" href="/brand/site.webmanifest">
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="manifest" href="../brand/site.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="/assets/landing.css">
-<link rel="stylesheet" href="/assets/pages.css">
+<link rel="stylesheet" href="../assets/landing.css">
+<link rel="stylesheet" href="../assets/pages.css">
 </head>
 <body>
-<div class="mb-landing">
+<div class="mb-landing hack-deck">
 <nav class="mb-landing-nav">
   <div class="mb-nav-container">
-    <a class="mb-logo" href="/">METAVAULT OSS</a>
+    <a class="mb-logo" href="../">METAVAULT OSS</a>
     <div class="mb-nav-desktop-links">
-      <a class="caption-mono-sm is-active" href="/docs/">Docs</a>
-      <a class="caption-mono-sm" href="/architecture/">Architecture</a>
-      <a class="caption-mono-sm" href="/research/">Research</a>
-      <a class="caption-mono-sm" href="/hackathon/">Hackathon</a>
-      <a class="mb-btn-nav" href="/#download">Download</a>
+      <a class="caption-mono-sm is-active" href="./">Docs</a>
+      <a class="caption-mono-sm" href="../architecture/">Architecture</a>
+      <a class="caption-mono-sm" href="../research/">Research</a>
+      <a class="caption-mono-sm" href="../hackathon/">Hackathon</a>
+      <a class="mb-btn-nav" href="../#download">Download</a>
     </div>
     <button class="mb-nav-hamburger-btn" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
   </div>
   <div class="mb-nav-mobile-menu" id="mobile-menu" hidden>
-    <a class="mb-mobile-menu-item is-active" href="/docs/">Docs</a>
-    <a class="mb-mobile-menu-item" href="/architecture/">Architecture</a>
-    <a class="mb-mobile-menu-item" href="/research/">Research</a>
-    <a class="mb-mobile-menu-item" href="/hackathon/">Hackathon</a>
-    <a class="mb-btn-nav" href="/#download">Download</a>
+    <a class="mb-mobile-menu-item is-active" href="./">Docs</a>
+    <a class="mb-mobile-menu-item" href="../architecture/">Architecture</a>
+    <a class="mb-mobile-menu-item" href="../research/">Research</a>
+    <a class="mb-mobile-menu-item" href="../hackathon/">Hackathon</a>
+    <a class="mb-btn-nav" href="../#download">Download</a>
   </div>
 </nav>
 
-<div class="mb-wrap">
-  <header class="pg-hero">
-    <span class="caption-mono-sm pg-kicker">Docs</span>
-    <h1>Point an IDE at the vault. Leave the key here.</h1>
-    <p class="pg-lead">Windows first. One <span class="buzz">MCP</span> snippet. You approve. The agent receives a result, never the secret.</p>
-  </header>
-  <nav class="pg-jump" aria-label="On this page">
-    <a href="#install">Install</a>
-    <a href="#mcp">IDEs</a>
-    <a href="#flows">In the app</a>
-    <a href="#levels">Warden</a>
-    <a href="#logs">Logs</a>
-  </nav>
+<div class="hack-scroller" id="hack-scroller">
 
-  <section class="pg-section" id="install">
-    <span class="caption-mono-sm pg-kicker">01</span>
-    <h2>Install</h2>
-    <div class="pg-grid">
-      <article class="pg-card">
-        <span class="n">Windows</span>
-        <h3>The installer</h3>
-        <p class="pg-note">No account. No telemetry. The vault stays on this machine.</p>
-        <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe">Download for Windows</a>
-      </article>
-      <article class="pg-card">
-        <span class="n">From source</span>
-        <h3>Clone and build</h3>
-        <pre class="pg-note" style="font-family:var(--font-mono);white-space:pre-wrap">git clone https://github.com/0xm0w/openvault
+  <header class="hack-slide" id="overview" data-label="Overview">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker neon-rainbow-text">Docs</span>
+      <h1>Point an IDE at the vault. Leave the key here.</h1>
+      <p class="pg-lead">Windows first. One <span class="buzz">MCP</span> snippet. You approve. The agent receives a result, never the secret.</p>
+    </div>
+  </header>
+
+  <section class="hack-slide" id="install" data-label="Install">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">01</span>
+      <h2>Install</h2>
+      <div class="pg-grid">
+        <article class="pg-card">
+          <span class="n">Windows</span>
+          <h3>The installer</h3>
+          <p class="pg-note">No account. No telemetry. The vault stays on this machine.</p>
+          <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe">Download for Windows</a>
+        </article>
+        <article class="pg-card">
+          <span class="n">From source</span>
+          <h3>Clone and build</h3>
+          <pre class="pg-note" style="font-family:var(--font-mono);white-space:pre-wrap">git clone https://github.com/0xm0w/openvault
 cd openvault
 npm install
 npx tsc -p tsconfig.json --outDir dist</pre>
-      </article>
-      <article class="pg-card">
-        <span class="n">Local model</span>
-        <h3>Ollama, if you want a warden</h3>
-        <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Llama 3.2 1B (Edge / WebGPU DirectML)</span>, about 1.3 GB.</p>
-        <a class="mb-btn-secondary" href="https://ollama.com">Get Ollama</a>
-      </article>
-    </div>
-  </section>
-
-  <section class="pg-section" id="firstrun">
-    <span class="caption-mono-sm pg-kicker">02</span>
-    <h2>Three commands, then the app</h2>
-    <div class="pg-grid">
-      <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key goes to the OS keychain, not a file you can paste.</p></article>
-      <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Detects the GPU and loads Llama 3.2 1B (Edge / WebGPU DirectML). Skip this and policy still holds the ceiling.</p></article>
-      <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>openvault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
-    </div>
-  </section>
-
-  <section class="pg-section" id="mcp">
-    <span class="caption-mono-sm pg-kicker">03 · MCP</span>
-    <h2>One snippet per IDE</h2>
-    <p class="pg-lead" style="margin:0 0 16px">Replace <code>&lt;openvault&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
-    <div data-tabs>
-      <div class="pg-tablist" role="tablist" aria-label="IDE setup">
-        <button type="button" data-tab="cursor" aria-selected="true">Cursor</button>
-        <button type="button" data-tab="claude" aria-selected="false">Claude Code</button>
-        <button type="button" data-tab="vscode" aria-selected="false">VS Code</button>
-        <button type="button" data-tab="codex" aria-selected="false">Codex</button>
-        <button type="button" data-tab="opencode" aria-selected="false">OpenCode</button>
+        </article>
+        <article class="pg-card">
+          <span class="n">Local model</span>
+          <h3>Ollama, if you want a warden</h3>
+          <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Llama 3.2 1B (Edge / WebGPU DirectML)</span>, about 1.3 GB.</p>
+          <a class="mb-btn-secondary" href="https://ollama.com">Get Ollama</a>
+        </article>
       </div>
-      <div data-panel="cursor">
-        <div class="pg-snippet"><pre id="snip-cursor">{
+    </div>
+  </section>
+
+  <section class="hack-slide" id="firstrun" data-label="First run">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">02</span>
+      <h2>Three commands, then the app</h2>
+      <div class="pg-grid">
+        <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key goes to the OS keychain, not a file you can paste.</p></article>
+        <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Detects the GPU and loads Llama 3.2 1B (Edge / WebGPU DirectML). Skip this and policy still holds the ceiling.</p></article>
+        <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>openvault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="hack-slide" id="mcp" data-label="IDEs">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">03 · MCP</span>
+      <h2>One snippet per IDE</h2>
+      <p class="pg-lead" style="margin:0 0 16px">Replace <code>&lt;openvault&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
+      <div data-tabs>
+        <div class="pg-tablist" role="tablist" aria-label="IDE setup">
+          <button type="button" data-tab="cursor" aria-selected="true">Cursor</button>
+          <button type="button" data-tab="claude" aria-selected="false">Claude Code</button>
+          <button type="button" data-tab="vscode" aria-selected="false">VS Code</button>
+          <button type="button" data-tab="codex" aria-selected="false">Codex</button>
+          <button type="button" data-tab="opencode" aria-selected="false">OpenCode</button>
+        </div>
+        <div data-panel="cursor">
+          <div class="pg-snippet"><pre id="snip-cursor">{
   "mcpServers": {
     "openvault": {
       "command": "node",
@@ -117,9 +118,9 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     }
   }
 }</pre><button type="button" data-copy="snip-cursor">Copy</button></div>
-      </div>
-      <div data-panel="claude" hidden>
-        <div class="pg-snippet"><pre id="snip-claude">{
+        </div>
+        <div data-panel="claude" hidden>
+          <div class="pg-snippet"><pre id="snip-claude">{
   "mcpServers": {
     "openvault": {
       "command": "node",
@@ -131,10 +132,10 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     }
   }
 }</pre><button type="button" data-copy="snip-claude">Copy</button></div>
-      </div>
-      <div data-panel="vscode" hidden>
-        <p class="pg-note">VS Code uses <code>servers</code>, not <code>mcpServers</code>.</p>
-        <div class="pg-snippet"><pre id="snip-vscode">{
+        </div>
+        <div data-panel="vscode" hidden>
+          <p class="pg-note">VS Code uses <code>servers</code>, not <code>mcpServers</code>.</p>
+          <div class="pg-snippet"><pre id="snip-vscode">{
   "servers": {
     "openvault": {
       "type": "stdio",
@@ -147,18 +148,18 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     }
   }
 }</pre><button type="button" data-copy="snip-vscode">Copy</button></div>
-      </div>
-      <div data-panel="codex" hidden>
-        <div class="pg-snippet"><pre id="snip-codex">[mcp_servers.openvault]
+        </div>
+        <div data-panel="codex" hidden>
+          <div class="pg-snippet"><pre id="snip-codex">[mcp_servers.openvault]
 command = "node"
 args = ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"]
 
 [mcp_servers.openvault.env]
 OPENVAULT_AGENT_ID = "codex"
 OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</button></div>
-      </div>
-      <div data-panel="opencode" hidden>
-        <div class="pg-snippet"><pre id="snip-opencode">{
+        </div>
+        <div data-panel="opencode" hidden>
+          <div class="pg-snippet"><pre id="snip-opencode">{
   "mcp": {
     "openvault": {
       "type": "local",
@@ -170,107 +171,138 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     }
   }
 }</pre><button type="button" data-copy="snip-opencode">Copy</button></div>
+        </div>
+      </div>
+      <div class="pg-row">
+        <span class="pg-pill">request_capability</span>
+        <span class="pg-pill">list_aliases</span>
+        <span class="pg-pill">request_enrollment</span>
+        <span class="pg-pill">enrollment_status</span>
+        <span class="pg-pill">revoke</span>
+      </div>
+      <p class="pg-note" style="margin-top:14px">Five tools. There is no approve tool. An agent that calls the approve route itself gets <span class="buzz">401</span>.</p>
+    </div>
+  </section>
+
+  <section class="hack-slide" id="flows" data-label="App">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">04</span>
+      <h2>What you see in the app</h2>
+      <p class="pg-note">Real screenshots. The credential in them is a test value.</p>
+      <div data-tabs>
+        <div class="pg-tablist" role="tablist" aria-label="App screens">
+          <button type="button" data-tab="enroll" aria-selected="true">Store</button>
+          <button type="button" data-tab="approve" aria-selected="false">Approve</button>
+          <button type="button" data-tab="audit" aria-selected="false">Audit</button>
+          <button type="button" data-tab="settings" aria-selected="false">Settings</button>
+        </div>
+        <figure class="pg-shot" data-panel="enroll">
+          <img src="../assets/shots/enroll-flow.png" alt="Add credential modal, prefilled alias and scope, secret field empty">
+          <figcaption>The agent asks to enroll. You type the secret. The field does not come back.</figcaption>
+        </figure>
+        <figure class="pg-shot" data-panel="approve" hidden>
+          <img src="../assets/shots/approval-dialog.png" alt="Approval view with risk, scope, and Approve once, Deny, Always allow">
+          <figcaption>Approve once, deny, or always allow a low read. Writes always ask.</figcaption>
+        </figure>
+        <figure class="pg-shot" data-panel="audit" hidden>
+          <img src="../assets/shots/audit-verdict.png" alt="Audit timeline for one request, from requested through executed">
+          <figcaption>One row per request. The model is named. The key is not.</figcaption>
+        </figure>
+        <figure class="pg-shot" data-panel="settings" hidden>
+          <img src="../assets/shots/settings.png" alt="Settings with warden provider, model, and effort">
+          <figcaption>Provider, model, and effort change who judges. They do not move the policy floor.</figcaption>
+        </figure>
       </div>
     </div>
-    <div class="pg-row">
-      <span class="pg-pill">request_capability</span>
-      <span class="pg-pill">list_aliases</span>
-      <span class="pg-pill">request_enrollment</span>
-      <span class="pg-pill">enrollment_status</span>
-      <span class="pg-pill">revoke</span>
-    </div>
-    <p class="pg-note" style="margin-top:14px">Five tools. There is no approve tool. An agent that calls the approve route itself gets <span class="buzz">401</span>.</p>
   </section>
 
-  <section class="pg-section" id="flows">
-    <span class="caption-mono-sm pg-kicker">04</span>
-    <h2>What you see in the app</h2>
-    <p class="pg-note">Real screenshots. The credential in them is a test value.</p>
-    <div data-tabs>
-      <div class="pg-tablist" role="tablist" aria-label="App screens">
-        <button type="button" data-tab="enroll" aria-selected="true">Store</button>
-        <button type="button" data-tab="approve" aria-selected="false">Approve</button>
-        <button type="button" data-tab="audit" aria-selected="false">Audit</button>
-        <button type="button" data-tab="settings" aria-selected="false">Settings</button>
+  <section class="hack-slide" id="levels" data-label="Warden">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">05 · Warden</span>
+      <h2>A stronger model is not a stronger permission.</h2>
+      <div class="pg-grid">
+        <article class="pg-card"><span class="n">Policy only</span><h3>None</h3><p class="pg-note">Ceilings, expiry, and your approval. Works with the model switched off.</p></article>
+        <article class="pg-card"><span class="n">Edge · default</span><h3>Llama 3.2 1B</h3><p class="pg-note">Edge / WebGPU DirectML on this machine. Risk, a recommended scope, one line of why.</p></article>
+        <article class="pg-card"><span class="n">High</span><h3>llama3.1:8b</h3><p class="pg-note">Same metadata. Stronger judgement. Still no key in the prompt.</p></article>
+        <article class="pg-card"><span class="n">Maximum-local</span><h3>llama3.3:70b</h3><p class="pg-note">A large local GPU. Nothing about the request leaves the machine.</p></article>
+        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Metadata only, to the API you configure. The key stays in the daemon.</p></article>
       </div>
-      <figure class="pg-shot" data-panel="enroll">
-        <img src="/assets/shots/enroll-flow.png" alt="Add credential modal, prefilled alias and scope, secret field empty">
-        <figcaption>The agent asks to enroll. You type the secret. The field does not come back.</figcaption>
-      </figure>
-      <figure class="pg-shot" data-panel="approve" hidden>
-        <img src="/assets/shots/approval-dialog.png" alt="Approval view with risk, scope, and Approve once, Deny, Always allow">
-        <figcaption>Approve once, deny, or always allow a low read. Writes always ask.</figcaption>
-      </figure>
-      <figure class="pg-shot" data-panel="audit" hidden>
-        <img src="/assets/shots/audit-verdict.png" alt="Audit timeline for one request, from requested through executed">
-        <figcaption>One row per request. The model is named. The key is not.</figcaption>
-      </figure>
-      <figure class="pg-shot" data-panel="settings" hidden>
-        <img src="/assets/shots/settings.png" alt="Settings with warden provider, model, and effort">
-        <figcaption>Provider, model, and effort change who judges. They do not move the policy floor.</figcaption>
-      </figure>
+      <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes and keeps the narrower scope if they disagree. Why the floor holds is on the <a href="../research/">research page</a>.</p>
     </div>
   </section>
 
-  <section class="pg-section" id="levels">
-    <span class="caption-mono-sm pg-kicker">05 · Warden</span>
-    <h2>A stronger model is not a stronger permission.</h2>
-    <div class="pg-grid">
-      <article class="pg-card"><span class="n">Policy only</span><h3>None</h3><p class="pg-note">Ceilings, expiry, and your approval. Works with the model switched off.</p></article>
-      <article class="pg-card"><span class="n">Edge · default</span><h3>Llama 3.2 1B</h3><p class="pg-note">Edge / WebGPU DirectML on this machine. Risk, a recommended scope, one line of why.</p></article>
-      <article class="pg-card"><span class="n">High</span><h3>llama3.1:8b</h3><p class="pg-note">Same metadata. Stronger judgement. Still no key in the prompt.</p></article>
-      <article class="pg-card"><span class="n">Maximum-local</span><h3>llama3.3:70b</h3><p class="pg-note">A large local GPU. Nothing about the request leaves the machine.</p></article>
-      <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Metadata only, to the API you configure. The key stays in the daemon.</p></article>
-    </div>
-    <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes and keeps the narrower scope if they disagree. Why the floor holds is on the <a href="/research/#tiers">research page</a>.</p>
-  </section>
-
-  <section class="pg-section" id="tripwire">
-    <span class="caption-mono-sm pg-kicker">06</span>
-    <h2>Every grant dies</h2>
-    <div class="pg-grid">
-      <article class="pg-card"><span class="n">After use</span><h3>One call</h3><p class="pg-note">The grant expires when that call returns.</p></article>
-      <article class="pg-card"><span class="n">After TTL</span><h3>60 seconds</h3><p class="pg-note">A pending approval that you ignore is gone.</p></article>
-      <article class="pg-card"><span class="n">On revoke</span><h3>One click</h3><p class="pg-note">App, CLI, or the MCP <code>revoke</code> tool. Pending and future grants for that agent stop.</p></article>
+  <section class="hack-slide" id="tripwire" data-label="Grants">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">06</span>
+      <h2>Every grant dies</h2>
+      <div class="pg-grid">
+        <article class="pg-card"><span class="n">After use</span><h3>One call</h3><p class="pg-note">The grant expires when that call returns.</p></article>
+        <article class="pg-card"><span class="n">After TTL</span><h3>60 seconds</h3><p class="pg-note">A pending approval that you ignore is gone.</p></article>
+        <article class="pg-card"><span class="n">On revoke</span><h3>One click</h3><p class="pg-note">App, CLI, or the MCP <code>revoke</code> tool. Pending and future grants for that agent stop.</p></article>
+      </div>
     </div>
   </section>
 
-  <section class="pg-section" id="logs">
-    <span class="caption-mono-sm pg-kicker">07</span>
-    <h2>The log shows the decision, not the key</h2>
-    <div class="pg-grid-2">
-      <article class="pg-card">
-        <span class="n">Always logged</span>
-        <p>Who asked, which IDE, the scope, the warden line, your decision, execution, expiry, revocation.</p>
-      </article>
-      <article class="pg-card">
-        <span class="n">Never logged</span>
-        <p>No key, fragment, or hash. Same ban on MCP responses and the settings screen. The check is the <a href="/research/#q2-proofs">27-surface canary</a>.</p>
-      </article>
+  <section class="hack-slide" id="logs" data-label="Logs">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">07</span>
+      <h2>The log shows the decision, not the key</h2>
+      <div class="pg-grid-2">
+        <article class="pg-card">
+          <span class="n">Always logged</span>
+          <p>Who asked, which IDE, the scope, the warden line, your decision, execution, expiry, revocation.</p>
+        </article>
+        <article class="pg-card">
+          <span class="n">Never logged</span>
+          <p>No key, fragment, or hash. Same ban on MCP responses and the settings screen. The check is the <a href="../research/#q2-proofs">27-surface canary</a>.</p>
+        </article>
+      </div>
     </div>
   </section>
 
-  <section class="pg-section" id="policies">
-    <span class="caption-mono-sm pg-kicker">08 · Policy floor</span>
-    <h2>The ceiling is the law</h2>
-    <div class="pg-card">
-      <p><code>stripe → charges.read</code> means a write never runs, even if a model recommends it. Always-allow is only for a low, read-only repeat. Those standing approvals live in memory and clear on restart.</p>
-      <p class="pg-note" style="margin:0">Apache-2.0. Windows is the supported platform today. macOS packaging is parked.</p>
+  <section class="hack-slide" id="policies" data-label="Policy">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">08 · Policy floor</span>
+      <h2>The ceiling is the law</h2>
+      <div class="pg-card">
+        <p><code>stripe → charges.read</code> means a write never runs, even if a model recommends it. Always-allow is only for a low, read-only repeat. Those standing approvals live in memory and clear on restart.</p>
+        <p class="pg-note" style="margin:0">Apache-2.0. Windows is the supported platform today. macOS packaging is parked.</p>
+      </div>
+      <footer class="mb-foot pg-foot-gap">
+        <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
+        <nav>
+          <a href="../">Home</a>
+          <a href="../architecture/">Architecture</a>
+          <a href="../research/">Research</a>
+          <a href="../hackathon/">Hackathon</a>
+          <a href="https://github.com/0xm0w/openvault">GitHub</a>
+        </nav>
+      </footer>
     </div>
   </section>
 
-  <footer class="mb-foot pg-foot-gap">
-    <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/architecture/">Architecture</a>
-      <a href="/research/">Research</a>
-      <a href="/hackathon/">Hackathon</a>
-      <a href="https://github.com/0xm0w/openvault">GitHub</a>
-    </nav>
-  </footer>
+</div>
+
+<nav class="hack-dots" id="hack-dots" aria-label="Slides">
+  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 9, Overview"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 9, Install"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 9, First run"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 9, IDEs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 9, App"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 9, Warden"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 9, Grants"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 9, Logs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 9, Policy"><span></span></button>
+</nav>
+<div class="hack-chevrons">
+  <button type="button" class="hack-chevron" id="hack-up" aria-label="Previous slide" disabled>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 14l6-6 6 6"/></svg>
+  </button>
+  <button type="button" class="hack-chevron" id="hack-down" aria-label="Next slide">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 10l6 6 6-6"/></svg>
+  </button>
 </div>
 </div>
-<script src="/assets/pages.js"></script>
+<script src="../assets/pages.js"></script>
 </body>
 </html>
