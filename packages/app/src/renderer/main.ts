@@ -2301,7 +2301,7 @@ function renderSettings(view: HTMLElement): void {
   view.append(effortSection);
 
   // 4. Meta API key
-  const keySection = settingsSection("Meta API key", "The key is stored encrypted by vaultd and decrypted only inside the daemon at call time. It is never shown again after saving.", "warden");
+  const keySection = settingsSection("Meta API key", "The key is stored encrypted and decrypted in daemon memory at call time. It is never shown again after saving.", "warden");
   const statusLine = el("p", "settings-status");
   statusLine.id = "warden-key-status";
   statusLine.textContent = `Meta API key: ${wardenKeyStatusText(wardenKeyStatusState)}`;

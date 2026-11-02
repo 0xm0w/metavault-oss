@@ -68,6 +68,11 @@
   color: var(--accent);
   text-transform: uppercase;
 }
+/* Install cards: pin CTAs to the card foot so uneven copy stays aligned. */
+#install .pg-grid .pg-card { display: flex; flex-direction: column; gap: 12px; }
+#install .pg-grid .pg-card > * { margin-top: 0; margin-bottom: 0; }
+#install .pg-grid .pg-card .mb-btn-primary,
+#install .pg-grid .pg-card .mb-btn-secondary { margin-top: auto; align-self: flex-start; }
 .pg-split { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; align-items: center; }
 .pg-note { color: var(--muted-foreground); font-size: 14px; }
 
@@ -101,6 +106,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  text-align: left;
 }
 .pg-snippet pre {
   margin: 12px 0;
@@ -122,6 +128,22 @@
   cursor: pointer;
   padding: 12px;
   flex-shrink: 0;
+}
+.pg-snippet pre { min-width: 0; flex: 1; }
+
+/* Code well for bare pre blocks inside cards. Pairs with data-lang highlighting. */
+.pg-codeblock {
+  background: var(--muted);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
 }
 
 .pg-shot {
@@ -306,7 +328,6 @@ body:has(.hack-deck) {
   margin: 12px 0 0;
   text-align: left;
 }
-.hack-slide .hack-keythings { margin-top: 16px; }
 .hack-slide .mb-foot {
   margin-top: 18px;
   padding: 8px 0 0;
@@ -323,8 +344,10 @@ body:has(.hack-deck) {
   display: flex;
   flex-direction: column;
   align-items: center;
+  pointer-events: none;
 }
 .hack-dot {
+  pointer-events: auto;
   width: 36px;
   height: 28px;
   padding: 0;
@@ -390,9 +413,9 @@ body:has(.hack-deck) {
   .hack-slide {
     padding:
       calc(68px + env(safe-area-inset-top))
-      calc(58px + env(safe-area-inset-right))
-      calc(20px + env(safe-area-inset-bottom))
-      calc(16px + env(safe-area-inset-left));
+      calc(20px + env(safe-area-inset-right))
+      calc(96px + env(safe-area-inset-bottom))
+      calc(20px + env(safe-area-inset-left));
   }
   .hack-slide .pg-grid,
   .hack-slide .pg-grid-2 { grid-template-columns: 1fr; gap: 8px; }
@@ -400,9 +423,9 @@ body:has(.hack-deck) {
   .hack-slide h1,
   .hack-slide h2 { font-size: clamp(32px, 9vw, 44px); }
   .hack-slide .mb-foot { margin-top: 8px; gap: 6px; }
-  .hack-slide .hack-keythings { margin-top: 10px; }
   .hack-slide .pg-row { margin-top: 10px; }
-  .hack-dots { right: max(6px, env(safe-area-inset-right)); }
+  .hack-dots { right: max(2px, env(safe-area-inset-right)); }
+  .hack-dot { width: 28px; height: 28px; }
   .hack-chevrons {
     left: auto;
     right: max(8px, env(safe-area-inset-right));
@@ -410,6 +433,7 @@ body:has(.hack-deck) {
     transform: none;
     flex-direction: column;
   }
+  .hack-chevron { width: 40px; height: 40px; }
 }
 @media (max-height: 760px) {
   .hack-slide .pg-card { padding: 12px 14px; }
@@ -627,7 +651,7 @@ body:has(.hack-deck) {
 .pg-table tr:last-child td {
   border-bottom: none;
 }
-.pg-table .pass-badge {
+.pass-badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 9999px;
@@ -690,6 +714,7 @@ body:has(.hack-deck) {
   word-break: break-word;
   line-height: 1.4;
   margin: 0;
+  text-align: left;
 }
 
 

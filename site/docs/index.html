@@ -60,12 +60,12 @@
           <span class="n">Windows</span>
           <h3>The installer</h3>
           <p class="pg-note">No account. No telemetry. The vault stays on this machine.</p>
-          <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe">Download for Windows</a>
+          <a class="mb-btn-primary" href="https://github.com/0xm0w/openvault/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg><span>Download for Windows</span></a>
         </article>
         <article class="pg-card">
           <span class="n">From source</span>
           <h3>Clone and build</h3>
-          <pre class="pg-note" style="font-family:var(--font-mono);white-space:pre-wrap">git clone https://github.com/0xm0w/openvault
+          <pre class="pg-codeblock" data-lang="shell">git clone https://github.com/0xm0w/openvault
 cd openvault
 npm install
 npx tsc -p tsconfig.json --outDir dist</pre>
@@ -74,7 +74,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
           <span class="n">Local model</span>
           <h3>Ollama, if you want a warden</h3>
           <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Llama 3.2 1B (Edge / WebGPU DirectML)</span>, about 1.3 GB.</p>
-          <a class="mb-btn-secondary" href="https://ollama.com">Get Ollama</a>
+          <a class="mb-btn-secondary" href="https://ollama.com"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Get Ollama</span></a>
         </article>
       </div>
     </div>
@@ -107,7 +107,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
           <button type="button" data-tab="opencode" aria-selected="false">OpenCode</button>
         </div>
         <div data-panel="muse" hidden>
-          <div class="pg-snippet"><pre id="snip-muse">{
+          <div class="pg-snippet"><pre id="snip-muse" data-lang="json">{
   "mcpServers": {
     "openvault": {
       "command": "node",
@@ -121,7 +121,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
 }</pre><button type="button" data-copy="snip-muse">Copy</button></div>
         </div>
         <div data-panel="cursor">
-          <div class="pg-snippet"><pre id="snip-cursor">{
+          <div class="pg-snippet"><pre id="snip-cursor" data-lang="json">{
   "mcpServers": {
     "openvault": {
       "command": "node",
@@ -135,7 +135,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
 }</pre><button type="button" data-copy="snip-cursor">Copy</button></div>
         </div>
         <div data-panel="claude" hidden>
-          <div class="pg-snippet"><pre id="snip-claude">{
+          <div class="pg-snippet"><pre id="snip-claude" data-lang="json">{
   "mcpServers": {
     "openvault": {
       "command": "node",
@@ -150,7 +150,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         </div>
         <div data-panel="vscode" hidden>
           <p class="pg-note">VS Code uses <code>servers</code>, not <code>mcpServers</code>.</p>
-          <div class="pg-snippet"><pre id="snip-vscode">{
+          <div class="pg-snippet"><pre id="snip-vscode" data-lang="json">{
   "servers": {
     "openvault": {
       "type": "stdio",
@@ -165,7 +165,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
 }</pre><button type="button" data-copy="snip-vscode">Copy</button></div>
         </div>
         <div data-panel="codex" hidden>
-          <div class="pg-snippet"><pre id="snip-codex">[mcp_servers.openvault]
+          <div class="pg-snippet"><pre id="snip-codex" data-lang="toml">[mcp_servers.openvault]
 command = "node"
 args = ["&lt;openvault&gt;/dist/packages/mcp/src/server.js"]
 
@@ -174,7 +174,7 @@ OPENVAULT_AGENT_ID = "codex"
 OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</button></div>
         </div>
         <div data-panel="opencode" hidden>
-          <div class="pg-snippet"><pre id="snip-opencode">{
+          <div class="pg-snippet"><pre id="snip-opencode" data-lang="json">{
   "mcp": {
     "openvault": {
       "type": "local",
@@ -266,11 +266,11 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       <div class="pg-grid-2">
         <article class="pg-card">
           <span class="n">Always logged</span>
-          <p>Who asked, which IDE, the scope, the warden line, your decision, execution, expiry, revocation.</p>
+          <p class="pg-note">Who asked, which IDE, the scope, the warden line, your decision, execution, expiry, revocation.</p>
         </article>
         <article class="pg-card">
           <span class="n">Never logged</span>
-          <p>No key, fragment, or hash. Same ban on MCP responses and the settings screen. The check is the <a href="../research/#q2-proofs">27-surface canary</a>.</p>
+          <p class="pg-note">No key, fragment, or hash. Same ban on MCP responses and the settings screen. The check is the <a href="../research/#q2-proofs">27-surface canary</a>.</p>
         </article>
       </div>
     </div>
@@ -280,10 +280,12 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">08 · Policy floor</span>
       <h2>The ceiling is the law</h2>
-      <div class="pg-card">
-        <p><code>stripe → charges.read</code> means a write never runs, even if a model recommends it. Always-allow is only for a low, read-only repeat. Those standing approvals live in memory and clear on restart.</p>
-        <p class="pg-note" style="margin:0">Apache-2.0. Windows is the supported platform today. macOS packaging is parked.</p>
+      <div class="pg-grid">
+        <article class="pg-card"><span class="n">Ceiling</span><h3>A write never runs</h3><p class="pg-note"><code>stripe → charges.read</code> means a write never runs, even if a model recommends it.</p></article>
+        <article class="pg-card"><span class="n">Standing</span><h3>Always-allow is narrow</h3><p class="pg-note">Always-allow is only for a low, read-only repeat.</p></article>
+        <article class="pg-card"><span class="n">Memory</span><h3>Clears on restart</h3><p class="pg-note">Those standing approvals live in memory and clear on restart.</p></article>
       </div>
+      <p class="pg-note" style="margin-top:14px">Apache-2.0. Windows is the supported platform today. macOS packaging is parked.</p>
       <footer class="mb-foot pg-foot-gap">
         <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
         <nav>

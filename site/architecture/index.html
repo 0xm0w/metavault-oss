@@ -64,7 +64,7 @@
         <article class="pg-card">
           <span class="n">vaultd</span>
           <h3>The dumb vault</h3>
-          <p class="pg-note"><span class="buzz">AES-256-GCM</span>, OS keychain, the <span class="buzz">policy floor</span>, single-use grants, and the one place a key is decrypted.</p>
+          <p class="pg-note"><span class="buzz">AES-256-GCM</span>, OS keychain, the <span class="buzz">policy floor</span>, single-use grants. Keys are decrypted here for one call — never persisted, never logged.</p>
         </article>
         <article class="pg-card">
           <span class="n">Edges</span>
@@ -106,7 +106,7 @@
       <h2>These do not depend on the model</h2>
       <div class="pg-grid">
         <article class="pg-card"><h3>No secret in the transcript</h3><p class="pg-note">MCP, HTTP, logs, the UI, and the model prompt. A canary covers <a href="../research/#q2-proofs">27 surfaces</a> and fails the build on a hit.</p></article>
-        <article class="pg-card"><h3>Plaintext has one room</h3><p class="pg-note">Inside vaultd, for that one connector call.</p></article>
+        <article class="pg-card"><h3>Plaintext stays in memory</h3><p class="pg-note">Decrypted at call time for one grant. The app never writes it to disk and never logs it.</p></article>
         <article class="pg-card"><h3>Narrow, never widen</h3><p class="pg-note">The warden can shrink a scope. It cannot step past the alias ceiling.</p></article>
         <article class="pg-card"><h3>Grants expire</h3><p class="pg-note">After the call, after the TTL, or the moment you revoke.</p></article>
         <article class="pg-card"><h3>Localhost only</h3><p class="pg-note">The daemon does not listen on the network. Human routes want the daemon token.</p></article>

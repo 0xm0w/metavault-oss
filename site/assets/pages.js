@@ -82,6 +82,98 @@
     });
   });
 
+  var CODE_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
+  function escapeCode(value) {
+    return value.replace(/[&<>]/g, function (ch) { return CODE_ESCAPES[ch]; });
+  }
+  function spanCode(cls, value) {
+    return '<span class="' + cls + '">' + escapeCode(value) + "</span>";
+  }
+  function highlightJson(src) {
+    var re = /("(?:[^"\\\n]|\\.)*")|(\/\/[^\n]*)|\b(true|false|null)\b|(-?\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?)|([{}[\],:])/g;
+    var out = "";
+    var last = 0;
+    var m;
+    while ((m = re.exec(src))) {
+      out += escapeCode(src.slice(last, m.index));
+      if (m[1]) {
+        var isKey = /^\s*:/.test(src.slice(re.lastIndex));
+        out += spanCode(isKey ? "tok-key" : "tok-str", m[1]);
+      } else if (m[2]) out += spanCode("tok-com", m[2]);
+      else if (m[3]) out += spanCode("tok-bool", m[3]);
+      else if (m[4]) out += spanCode("tok-num", m[4]);
+      else out += spanCode("tok-punc", m[5]);
+      last = re.lastIndex;
+    }
+    return out + escapeCode(src.slice(last));
+  }
+  function highlightToml(src) {
+    var re = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(\[[^\]\n]*\])|\b(true|false)\b|(-?\d[\d_]*(?:\.\d+)?)|^([A-Za-z0-9_.-]+)(?=\s*=)|([=\[\],])/gm;
+    var out = "";
+    var last = 0;
+    var m;
+    while ((m = re.exec(src))) {
+      out += escapeCode(src.slice(last, m.index));
+      if (m[1]) out += spanCode("tok-com", m[1]);
+      else if (m[2]) out += spanCode("tok-str", m[2]);
+      else if (m[3]) out += spanCode("tok-sec", m[3]);
+      else if (m[4]) out += spanCode("tok-bool", m[4]);
+      else if (m[5]) out += spanCode("tok-num", m[5]);
+      else if (m[6]) out += spanCode("tok-key", m[6]);
+      else out += spanCode("tok-punc", m[7]);
+      last = re.lastIndex;
+    }
+    return out + escapeCode(src.slice(last));
+  }
+  function highlightShell(src) {
+    var re = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(-{1,2}[A-Za-z0-9][A-Za-z0-9_-]*)|^([^\s#][^\s]*)|([^\s#]+)/gm;
+    var out = "";
+    var last = 0;
+    var m;
+    while ((m = re.exec(src))) {
+      out += escapeCode(src.slice(last, m.index));
+      if (m[1]) out += spanCode("tok-com", m[1]);
+      else if (m[2]) out += spanCode("tok-str", m[2]);
+      else if (m[3]) out += spanCode("tok-flag", m[3]);
+      else if (m[4]) out += spanCode("tok-cmd", m[4]);
+      else out += spanCode("tok-arg", m[5]);
+      last = re.lastIndex;
+    }
+    return out + escapeCode(src.slice(last));
+  }
+  function highlightLog(src) {
+    var re = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\b([A-Za-z_][\w.-]*)(=)|\b(true|false|TRUE|FALSE|BLOCKED|ACCEPTED|MANDATORY)\b|\b(\d[\d_]*)\b/g;
+    var out = "";
+    var last = 0;
+    var m;
+    while ((m = re.exec(src))) {
+      out += escapeCode(src.slice(last, m.index));
+      if (m[1]) out += spanCode("tok-str", m[1]);
+      else if (m[2]) out += spanCode("tok-key", m[2]) + spanCode("tok-punc", m[3]);
+      else if (m[4]) out += spanCode("tok-bool", m[4]);
+      else out += spanCode("tok-num", m[5]);
+      last = re.lastIndex;
+    }
+    return out + escapeCode(src.slice(last));
+  }
+  function guessLang(text) {
+    if (/^\s*\[[^\]\n]+\]\s*$/m.test(text)) return "toml";
+    var head = text.replace(/^\s+/, "");
+    if (head.charAt(0) === "{" || head.charAt(0) === "[") return "json";
+    if (/^\s*(git|cd|npm|npx|node|openvault|ollama|docker|curl|ssh)\b/m.test(text)) return "shell";
+    return "log";
+  }
+  function paintCode(pre, lang) {
+    var painters = { json: highlightJson, toml: highlightToml, shell: highlightShell, log: highlightLog };
+    var paint = painters[lang] || highlightLog;
+    pre.innerHTML = paint(pre.textContent);
+    pre.setAttribute("data-highlighted", "true");
+  }
+  document.querySelectorAll(".pg-snippet pre, .pg-trace-code, .pg-codeblock").forEach(function (pre) {
+    if (pre.hasAttribute("data-highlighted")) return;
+    paintCode(pre, pre.getAttribute("data-lang") || guessLang(pre.textContent));
+  });
+
   var cases = {
     read: {
       ask: "cursor-agent asks for stripe · charges.read. The reason is a list of failed charges.",
@@ -111,6 +203,7 @@
       ask.textContent = cases[id].ask;
       gate.textContent = cases[id].gate;
       out.textContent = cases[id].out;
+      paintCode(out, out.getAttribute("data-lang") || "json");
     }
     sim.querySelectorAll("[data-case]").forEach(function (tab) {
       tab.addEventListener("click", function () { show(tab.getAttribute("data-case")); });
