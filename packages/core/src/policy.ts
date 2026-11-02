@@ -168,6 +168,9 @@ export function evaluatePolicy(
     requireApproval = false;
   } else if (decision.risk !== "low") {
     requireApproval = true;
+  } else if (req.verified === false) {
+    // Defense-in-depth: Unverified callers (no valid agent token) must never auto-execute.
+    requireApproval = true;
   } else {
     requireApproval = decision.requireApproval;
   }

@@ -70,6 +70,7 @@ public class WinDesktopLauncher {
             int err = Marshal.GetLastWin32Error();
             throw new System.ComponentModel.Win32Exception(err);
         }
+
         return pi.dwProcessId;
     }
 }
@@ -84,3 +85,4 @@ $exePath = Join-Path $openvaultRoot "packages\app\release\win-unpacked\MetaVault
 
 $launchedPid = [WinDesktopLauncher]::LaunchOnDefaultDesktop($exePath, "`"$exePath`"", $openvaultRoot)
 Write-Output "Successfully launched MetaVault OSS on WinSta0\Default with PID: $launchedPid"
+Wait-Process -Id $launchedPid
