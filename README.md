@@ -16,6 +16,8 @@ context, an audit row, or the desktop UI.
 > model is discretion within bounds. See [Brain eval](#brain-eval) for the
 > measured evidence and [Security model](#security-model) for the invariants.
 
+> **Meta Hackathon (Indie Track)**: Live interactive deck at [metahackathon.whativedone.xyz](https://metahackathon.whativedone.xyz). Engineered by the security team behind [Keythings](https://keythings.xyz) (securing on-chain keys since 2025). Built by former crypto wallet bug bounty hunters.
+
 ## Install
 
 ### Windows Installer (v0.1.0)

@@ -4,6 +4,17 @@ All notable changes to OpenVault are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-hackathon.sprint] — 2026-11-02
+
+Meta Hackathon (Indie Track) release sprint.
+
+### Added
+
+- Meta Hackathon portal & interactive snap deck live at `metahackathon.whativedone.xyz`.
+- Trust & pedigree bridge linking to Keythings (`keythings.xyz`), creators of Keeta Wallet OSS (securing cryptographic keys and non-custodial transactions since 2025).
+- Live carousel and real GitHub shipping timeline showcasing the security researcher heritage.
+- Hardened adversarial prompt defenses, unverified caller quarantine, and empirical 100% defense benchmark against live Llama 3.2 3B (#55).
+
 ## [0.1.0] — 2026-11-01
 
 First public release. `v0.1.0-alpha.1` stays available as a prerelease.

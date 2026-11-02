@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>MetaVault OSS — Agents never see your secrets</title>
-<meta name="description" content="MetaVault OSS is the local vault for coding agents. They ask for a capability. You approve. The key never enters the chat.">
+<title>MetaVault OSS — Agents never see your secrets · metahackathon.whativedone.xyz</title>
+<meta name="description" content="MetaVault OSS is the local vault for coding agents. They ask for a capability. You approve. The key never enters the chat. Built by the Keythings security team.">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -24,6 +24,8 @@
       <a class="caption-mono-sm" href="#bento">Platform</a>
       <a class="caption-mono-sm" href="#preview">Preview</a>
       <a class="caption-mono-sm" href="#oss">Open source</a>
+      <a class="caption-mono-sm" href="#timeline">Timeline</a>
+      <a class="caption-mono-sm" href="/hackathon/">Hackathon</a>
       <a class="caption-mono-sm" href="/docs/">Docs</a>
       <a class="mb-btn-nav" href="#download">Download</a>
     </div>
@@ -35,6 +37,8 @@
     <a class="mb-mobile-menu-item" href="#bento">Platform</a>
     <a class="mb-mobile-menu-item" href="#preview">Preview</a>
     <a class="mb-mobile-menu-item" href="#oss">Open source</a>
+    <a class="mb-mobile-menu-item" href="#timeline">Timeline</a>
+    <a class="mb-mobile-menu-item" href="/hackathon/">Hackathon</a>
     <a class="mb-mobile-menu-item" href="/docs/">Docs</a>
     <a class="mb-btn-nav" href="#download" style="margin-top:8px;align-self:flex-start">Download</a>
   </div>
@@ -44,7 +48,7 @@
   <header class="mb-hero">
     <div class="mb-pill x-hero-enter-1">
       <span class="mb-pill-tag">OSS</span>
-      <span class="caption-mono-sm" style="color:var(--muted-foreground);font-size:12px;letter-spacing:0.4px;text-transform:none">Local vault for every coding IDE</span>
+      <span class="caption-mono-sm" style="color:var(--muted-foreground);font-size:12px;letter-spacing:0.4px;text-transform:none">By Keythings · Securing Keys Since 2025</span>
     </div>
     <h1 class="mb-hero-title x-hero-enter-2">Your agent asked for Stripe.<br>You pasted the live key.</h1>
     <p class="mb-hero-sub x-hero-enter-3">MetaVault keeps the key on this machine. The agent asks for a capability, a local model scores it, you approve, and the secret never enters the chat.</p>
@@ -53,7 +57,7 @@
       <a class="mb-btn-secondary" href="/docs/">Read the docs</a>
       <a class="mb-btn-tertiary" href="https://github.com/0xm0w/openvault">View on GitHub</a>
     </div>
-    <span class="caption-mono-sm mb-hero-note x-hero-enter-5">Apache-2.0 · No account · No telemetry</span>
+    <span class="caption-mono-sm mb-hero-note x-hero-enter-5">Apache-2.0 · No account · No telemetry · From former crypto wallet bug bounty hunters</span>
   </header>
 
   <section id="bento" class="mb-section mb-landing-anchor">
@@ -239,8 +243,8 @@
     </div>
   </section>
 
-  <section class="mb-section" style="padding:64px 0">
-    <div id="oss" class="mb-landing-anchor mb-reveal" style="text-align:center;margin-bottom:36px">
+  <section id="oss" class="mb-section mb-landing-anchor" style="padding:64px 0">
+    <div class="mb-reveal" style="text-align:center;margin-bottom:36px">
       <span class="caption-mono-sm mb-section-kicker">Open source, not a plan</span>
       <h2 class="mb-section-title">The license is the price.</h2>
       <p class="mb-section-lead">Apache-2.0. The vault, the warden, the MCP server, and the audit log ship together. There is no tier to upgrade into.</p>
@@ -281,6 +285,69 @@
     </div>
   </section>
 
+  <!-- GitHub Development Timeline Section -->
+  <section id="timeline" class="mb-section mb-landing-anchor" style="padding:48px 0 64px">
+    <div class="mb-reveal" style="text-align:center;margin-bottom:36px">
+      <span class="caption-mono-sm mb-section-kicker">05 // Real GitHub Timeline</span>
+      <h2 class="mb-section-title">From Wallet Security to Agentic Vaults</h2>
+      <p class="mb-section-lead">Verified shipping milestones across our repositories since 2025.</p>
+    </div>
+
+    <div class="mb-timeline-wrap mb-reveal">
+      <!-- 2025 -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2025 · Pre-fable & Pre-opus 5 era</span>
+            <span class="mb-chip ok">Production Verified</span>
+          </div>
+          <h3 class="mb-timeline-title">Crypto Wallet Security Audits & Keeta Wallet OSS</h3>
+          <p class="mb-timeline-desc">Work history in crypto wallet bug bounty hunting and protocol vulnerability research. Engineered and maintained Keeta Wallet OSS for Keeta Network — securing daily non-custodial transactions in production with 0 security incidents.</p>
+        </div>
+      </div>
+
+      <!-- 2026-10-31 -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2026-10-31 · Genesis MVP</span>
+            <span class="mb-chip">Genesis</span>
+          </div>
+          <h3 class="mb-timeline-title">OpenVault MVP: Local Llama Marshal & 5-Tool MCP</h3>
+          <p class="mb-timeline-desc">Architected the local AES-256-GCM vault daemon (<code>vaultd</code>), deterministic policy ceiling, Model Context Protocol server, secret canary test sweep, and Electron approval shell.</p>
+        </div>
+      </div>
+
+      <!-- 2026-11-01 -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2026-11-01 · Public Release</span>
+            <span class="mb-chip ok">v0.1.0 Released</span>
+          </div>
+          <h3 class="mb-timeline-title">MetaVault OSS Rebrand & In-App WebGPU Built-in AI</h3>
+          <p class="mb-timeline-desc">Shipped Windows installer, multi-host IDE support (Cursor, Claude Code, VS Code, Codex), WebGPU ONNX in-app AI engine, and OWASP LLM Top 10 empirical verification benchmark.</p>
+        </div>
+      </div>
+
+      <!-- 2026-11-02 ACTIVE SPRINT -->
+      <div class="mb-timeline-item is-active">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date" style="font-weight:700">2026-11-02 · Current Sprint</span>
+            <span class="neon-rainbow-badge"><span class="neon-rainbow-text">Active Hackathon Sprint</span></span>
+          </div>
+          <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Meta Hackathon Kickoff & Live Defense Hardening</h3>
+          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Hardened adversarial prompt defenses, caller process quarantine, and empirical 100% defense against live Llama 3.2 3B.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="download" class="mb-landing-anchor" style="margin-bottom:64px">
     <div class="mb-final mb-reveal">
       <span class="caption-mono-sm" style="color:var(--muted-foreground);letter-spacing:2px;display:block;margin-bottom:12px">Get the vault</span>
@@ -312,6 +379,8 @@
       <a href="/architecture/">Architecture</a>
       <a href="/research/">Research</a>
       <a href="/hackathon/">Hackathon</a>
+      <a href="https://keythings.xyz" target="_blank" rel="noopener">Keythings</a>
+      <a href="https://whativedone.xyz" target="_blank" rel="noopener">whativedone.xyz</a>
       <a href="https://github.com/0xm0w/openvault">GitHub</a>
     </nav>
   </footer>
@@ -321,8 +390,10 @@
 (function () {
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var ingest = [
+    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · llama3.2:3b", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
     { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · llama3.2:3b", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
     { event: "claude-code asks for github · repos.read", from: "WARDEN · llama3.2:3b", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
+    { event: "keetawallet asks for vaultd · sign_intent", from: "KEYTHINGS · est. 2025", subject: "Local non-custodial cryptographic intent. Key stays unexposed.", reply: "Daemon · 200 OK" },
     { event: "codex asks for stripe · charges.write", from: "POLICY", subject: "Denied. A write under a read ceiling never reaches the model.", reply: "Agent · 403, and no key" }
   ];
   var mcp = [
