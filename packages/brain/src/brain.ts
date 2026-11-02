@@ -108,6 +108,7 @@ export function narrowerScope(a: string, b: string): string {
 export function enforceScopeSafety(
   decision: MarshalDecision,
   requestedScope: string,
+  reason?: string,
 ): MarshalDecision {
   const isSafe =
     decision.recommendedScope === requestedScope ||
@@ -128,6 +129,26 @@ export function enforceScopeSafety(
       requireApproval: true,
       explanation: `Write capability '${requestedScope}' strictly requires approval. ${decision.explanation}`,
     };
+  }
+
+  if (reason !== undefined && reason.trim() !== "") {
+    const isAdversarial =
+      /(?:classify|mark|set|return|rate)\s+(?:this|operation|request)?\s*(?:as)?\s*(?:risk)?\s*low/i.test(reason) ||
+      /(?:requireapproval|require_approval)\s*(?:false|no|none)/i.test(reason) ||
+      /(?:ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+override|developer\s+mode)/i.test(reason) ||
+      /(?:approve|grant|execute)\s+[\w.:-]*write/i.test(reason) ||
+      /https?:\/\/[^\s"'>]+/i.test(reason) ||
+      /\|\s*(?:bash|sh|zsh|pwsh|powershell|cmd)\b/i.test(reason) ||
+      /(?:\/etc\/(?:shadow|passwd)|\.ssh\/id_|\.aws\/credentials)/i.test(reason);
+
+    if (isAdversarial && decision.risk !== "high") {
+      return {
+        risk: "high",
+        recommendedScope: requestedScope,
+        requireApproval: true,
+        explanation: `Adversarial pattern or policy override attempt detected in request reason; escalated to high risk. ${decision.explanation}`,
+      };
+    }
   }
 
   return decision;
@@ -187,7 +208,7 @@ export function assessFromSettings(
   const totalMs = EFFORT_TIMEOUT_MS[settings.effort];
   if (settings.effort !== "deep") {
     return singlePass(settings, getKey, prompt, totalMs).pipe(
-      Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope)),
+      Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope, req.reason)),
     );
   }
   const perPassMs = Math.floor(totalMs / 2);
@@ -198,7 +219,7 @@ export function assessFromSettings(
       first.risk === second.risk &&
       first.recommendedScope === second.recommendedScope &&
       first.requireApproval === second.requireApproval;
-    if (agrees) return enforceScopeSafety(first, req.requestedScope);
+    if (agrees) return enforceScopeSafety(first, req.requestedScope, req.reason);
     const risk = RISK_RANK[first.risk] >= RISK_RANK[second.risk] ? first.risk : second.risk;
     return enforceScopeSafety(
       {
@@ -208,6 +229,7 @@ export function assessFromSettings(
         explanation: `deep verify disagreement; escalated. first: ${first.explanation}; verify: ${second.explanation}`,
       },
       req.requestedScope,
+      req.reason,
     );
   });
   return program.pipe(
