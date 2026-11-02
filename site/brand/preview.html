@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MetaVault OSS - brand icon contact sheet</title>
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<style>
+  :root { color-scheme: dark; --ink:#0c0c0e; --accent:#8250fc; --paper:#fbfbfd; --night:#0f0d17; --line:#212327; --mute:#7d8187; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0a; color: #dadbdf; font-family: Inter, -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; padding: 48px; max-width: 1240px; margin: 0 auto; }
+  h1 { color: #fff; font-weight: 600; letter-spacing: -.02em; font-size: 24px; margin-bottom: 6px; }
+  .eyebrow { font-family: "Geist Mono", Consolas, monospace; font-size: 11px; letter-spacing: .12em; color: var(--accent); text-transform: uppercase; margin-bottom: 32px; }
+  h2 { color: #fff; font-size: 14px; font-weight: 600; margin: 44px 0 6px; }
+  .sub { color: var(--mute); font-size: 12.5px; margin-bottom: 14px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: end; }
+  .card { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .cell { display: grid; place-items: center; border-radius: 14px; overflow: hidden; }
+  .light { background: var(--paper); }
+  .dark { background: var(--night); }
+  .checker { background-image: linear-gradient(45deg,#1d1c22 25%,transparent 25%),linear-gradient(-45deg,#1d1c22 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1d1c22 75%),linear-gradient(-45deg,transparent 75%,#1d1c22 75%); background-size: 16px 16px; background-position: 0 0,0 8px,8px -8px,-8px 0; background-color:#101014; }
+  .cap { font-size: 11px; color: var(--mute); font-family: Consolas, monospace; }
+  .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .hero .cell { height: 340px; border-radius: 20px; }
+  .box { width: 148px; height: 148px; }
+  .pix img { image-rendering: pixelated; }
+  .swatches { display: flex; gap: 14px; flex-wrap: wrap; }
+  .chip { width: 140px; height: 78px; border-radius: 10px; display: grid; place-items: end start; padding: 8px; font-family: Consolas, monospace; font-size: 11px; color: rgba(0,0,0,.75); }
+  .chip.darkchip { color: rgba(255,255,255,.85); }
+  .usage { color: var(--mute); font-size: 13px; line-height: 1.65; max-width: 720px; }
+  .usage li { margin-left: 18px; }
+  code { font-family: Consolas, monospace; color: #a1a1aa; }
+  table { border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+  td { border-bottom: 1px solid var(--line); padding: 6px 16px 6px 0; color: #a1a1aa; font-family: Consolas, monospace; }
+  td:first-child { color: #dadbdf; }
+  .tiers td { font-family: inherit; }
+</style>
+</head>
+<body>
+  <h1>MetaVault OSS &mdash; brand iconography</h1>
+  <div class="eyebrow">v0.3 / clean-room rebuild &mdash; parametric vault, new AI chip, five optical size tiers, one geometry source</div>
+
+  <div class="hero">
+    <div class="cell light"><img src="mark.svg" width="300" height="300" alt="MetaVault mark"></div>
+    <div class="cell dark"><img src="mark-inverse.svg" width="300" height="300" alt="MetaVault mark, inverse"></div>
+  </div>
+
+  <h2>Optical size tiers</h2>
+  <p class="sub">Same silhouette, re-drawn per size band. Small tiers are authored on their own pixel grid so every edge lands on a pixel.</p>
+  <div class="grid">
+    <div class="card"><div class="cell light" style="padding:8px"><img src="src/tiers.png" width="680" height="136" alt="tiers"></div>
+      <span class="cap">full &ge;96 &middot; mid 40&ndash;95 &middot; small 28&ndash;39 (32-grid) &middot; tiny 20&ndash;27 (24-grid) &middot; micro &lt;20 (16-grid)</span></div>
+  </div>
+
+  <h2>Master mark &mdash; size ladder on paper</h2>
+  <div class="grid">
+    <div class="card"><div class="cell light box"><img src="mark.svg" width="148" height="148"></div><span class="cap">SVG</span></div>
+    <div class="card"><div class="cell light box"><img src="icons/favicon-128.png" width="128" height="128"></div><span class="cap">128</span></div>
+    <div class="card"><div class="cell light" style="width:80px;height:80px"><img src="icons/favicon-64.png" width="64"></div><span class="cap">64</span></div>
+    <div class="card"><div class="cell light" style="width:64px;height:64px"><img src="icons/favicon-48.png" width="48"></div><span class="cap">48</span></div>
+    <div class="card"><div class="cell light" style="width:48px;height:48px"><img src="icons/favicon-32.png" width="32"></div><span class="cap">32</span></div>
+    <div class="card"><div class="cell light" style="width:40px;height:40px"><img src="icons/favicon.ico" width="24" height="24"></div><span class="cap">24 (ico)</span></div>
+    <div class="card"><div class="cell light" style="width:32px;height:32px"><img src="icons/favicon-16.png" width="16"></div><span class="cap">16</span></div>
+  </div>
+
+  <h2>Pixel check &mdash; 16 / 32 / 48 at 6&times;</h2>
+  <div class="grid pix">
+    <div class="card"><div class="cell light"><img src="icons/favicon-16.png" width="96" height="96"></div><span class="cap">16 micro</span></div>
+    <div class="card"><div class="cell light"><img src="icons/favicon-32.png" width="192" height="192"></div><span class="cap">32 small</span></div>
+    <div class="card"><div class="cell light"><img src="icons/favicon-48.png" width="288" height="288"></div><span class="cap">48 mid</span></div>
+  </div>
+
+  <h2>On dark canvas <code>#0f0d17</code></h2>
+  <p class="sub">Use <code>mark-inverse.svg</code> (snow ink) on dark surfaces; the ink mark is for light surfaces only.</p>
+  <div class="grid">
+    <div class="card"><div class="cell dark box"><img src="mark-inverse.svg" width="148" height="148"></div><span class="cap">mark-inverse.svg</span></div>
+    <div class="card"><div class="cell dark box"><img src="icons/mark-white.png" width="120" height="120"></div><span class="cap">mark-white (mono)</span></div>
+    <div class="card"><div class="cell light box"><img src="icons/mark-black.png" width="120" height="120"></div><span class="cap">mark-black (mono)</span></div>
+    <div class="card"><div class="cell dark" style="width:48px;height:48px"><img src="app/tray.png" width="32" height="32"></div><span class="cap">tray (dark taskbar)</span></div>
+    <div class="card"><div class="cell light" style="width:48px;height:48px"><img src="app/tray-light.png" width="32" height="32"></div><span class="cap">tray-light</span></div>
+  </div>
+
+  <h2>Favicon, touch &amp; PWA</h2>
+  <div class="grid">
+    <div class="card"><div class="cell checker" style="width:96px;height:96px"><img src="icons/favicon.svg" width="64" height="64"></div><span class="cap">favicon.svg (paper tile)</span></div>
+    <div class="card"><div class="cell checker" style="width:148px;height:148px"><img src="icons/apple-touch-icon.png" width="128" height="128" style="border-radius:28px"></div><span class="cap">apple-touch 180 (iOS mask)</span></div>
+    <div class="card"><div class="cell checker" style="width:148px;height:148px"><img src="icons/maskable-512.png" width="128" height="128" style="border-radius:50%"></div><span class="cap">maskable-512 (circle mask)</span></div>
+    <div class="card"><div class="cell checker" style="width:148px;height:148px"><img src="icons/icon-192.png" width="128" height="128" style="border-radius:24px"></div><span class="cap">PWA icon 192</span></div>
+  </div>
+
+  <h2>Desktop app (Electron)</h2>
+  <p class="sub">Paper squircle so the ink never disappears on a dark dock or taskbar. &le;32 px keeps the pixel-grid tier at full bleed.</p>
+  <div class="grid">
+    <div class="card"><div class="cell checker box"><img src="app/icon-1024.png" width="128" height="128"></div><span class="cap">icon-1024</span></div>
+    <div class="card"><div class="cell checker" style="width:96px;height:96px"><img src="app/icon-64.png" width="64" height="64"></div><span class="cap">icon-64</span></div>
+    <div class="card"><div class="cell checker" style="width:56px;height:56px"><img src="app/icon-32.png" width="32" height="32"></div><span class="cap">icon-32</span></div>
+    <div class="card"><div class="cell checker" style="width:40px;height:40px"><img src="app/mac.iconset/icon_16x16.png" width="16" height="16"></div><span class="cap">16</span></div>
+  </div>
+
+  <h2>Lockups</h2>
+  <div class="grid">
+    <div class="card"><div class="cell light" style="padding:20px 26px"><img src="logo-horizontal.svg" height="72"></div><span class="cap">logo-horizontal.svg</span></div>
+    <div class="card"><div class="cell dark" style="padding:20px 26px"><img src="logo-horizontal-dark.png" height="72"></div><span class="cap">logo-horizontal-dark.png</span></div>
+    <div class="card"><div class="cell light" style="padding:20px 26px"><img src="wordmark.svg" height="40"></div><span class="cap">wordmark.svg (Inter 640, outlined)</span></div>
+  </div>
+
+  <h2>Palette</h2>
+  <div class="swatches">
+    <div class="chip darkchip" style="background:#0c0c0e;border:1px solid #26262b">ink #0c0c0e</div>
+    <div class="chip darkchip" style="background:#8250fc">accent #8250fc</div>
+    <div class="chip" style="background:#fbfbfd">paper #fbfbfd</div>
+    <div class="chip" style="background:#f4f4f6">snow #f4f4f6</div>
+    <div class="chip darkchip" style="background:#0f0d17;border:1px solid #26262b">night #0f0d17</div>
+  </div>
+
+  <h2>Anatomy</h2>
+  <ul class="usage">
+    <li><b>Vault body</b> &mdash; rounded frame (368&times;352u, r88) on two feet; the open interior is the "window" into the vault.</li>
+    <li><b>Hinges</b> &mdash; two accent capsules that cut through the frame with a clear gap, so they survive in mono and at small sizes.</li>
+    <li><b>AI chip</b> &mdash; square die with 3 pins a side, pin-1 marker, and a geometric <b>AI</b> monogram knocked out of the die (no font dependency).</li>
+    <li>Edit the numbers in <code>TIERS</code> inside <code>scripts/build_brand.py</code>, then run <code>python scripts/build_brand.py</code>. Every file below is regenerated.</li>
+  </ul>
+
+  <h2>File index</h2>
+  <table>
+    <tr><td>mark.svg</td><td>master mark, ink on transparent (512u viewBox)</td></tr>
+    <tr><td>mark-inverse.svg</td><td>master mark, snow ink for dark surfaces</td></tr>
+    <tr><td>icons/favicon-{16..256}.png</td><td>transparent favicon rung (tier picked per size)</td></tr>
+    <tr><td>icons/favicon.ico</td><td>16+24+32+48 ICO bundle</td></tr>
+    <tr><td>icons/favicon.svg</td><td>paper rounded-square favicon</td></tr>
+    <tr><td>icons/icon-192/512.png</td><td>PWA icons (opaque paper)</td></tr>
+    <tr><td>icons/maskable-512.png</td><td>PWA maskable (content inside 80% safe circle)</td></tr>
+    <tr><td>icons/apple-touch-icon.png</td><td>iOS home screen (180, opaque)</td></tr>
+    <tr><td>icons/mark-white/-black.png</td><td>mono silhouettes</td></tr>
+    <tr><td>app/icon-{1024..32}.png</td><td>Electron build set (paper squircle)</td></tr>
+    <tr><td>app/app-icon.ico</td><td>Windows app icon (16..256)</td></tr>
+    <tr><td>app/mac.iconset/*</td><td>macOS bundle source</td></tr>
+    <tr><td>app/tray{,-light}{,@2x}.png</td><td>Electron tray silhouettes</td></tr>
+    <tr><td>logo-horizontal.{svg,png}, -dark.png</td><td>mark + wordmark lockups</td></tr>
+    <tr><td>wordmark.{svg,png}</td><td>standalone wordmark (outlined Inter)</td></tr>
+    <tr><td>src/tiers.png</td><td>optical tier QA strip</td></tr>
+  </table>
+</body>
+</html>
