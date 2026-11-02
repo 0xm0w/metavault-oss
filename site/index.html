@@ -218,7 +218,7 @@
             </div>
             <div data-panel="3" hidden>
               <h3>The warden scores metadata</h3>
-              <p>llama3.2:3b on this machine. The prompt is the agent, the alias, the scope, and the reason.</p>
+              <p>llama3.2:1b on this machine (1B parameter — faster and lighter). The prompt is the agent, the alias, the scope, and the reason.</p>
               <div class="mb-status">Risk LOW. Recommended scope charges.read. Approval required. A read of failed charges, inside the ceiling.</div>
             </div>
             <div data-panel="4" hidden>
@@ -275,7 +275,7 @@
         <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 24px">The daemon binds to localhost. The warden defaults to a model you run.</p>
         <ul>
           <li><span>—</span> Windows installer, or build from the source</li>
-          <li><span>—</span> Default warden llama3.2:3b through Ollama</li>
+          <li><span>—</span> Default warden llama3.2:1b (1B parameter Llama — faster & lighter)</li>
           <li><span>—</span> Larger local models, or an opt-in Meta API model</li>
           <li><span>—</span> Human approval stays in the app. An agent that tries to approve itself gets 401</li>
           <li><span>—</span> Air-gap is a packaging choice. The vault already refuses every other network</li>
@@ -299,11 +299,24 @@
         <div class="mb-timeline-dot"></div>
         <div class="mb-timeline-card">
           <div class="mb-timeline-header">
-            <span class="mb-timeline-date">2025 · Pre-fable & Pre-opus 5 era</span>
+            <span class="mb-timeline-date">2025 · Pre-fable &amp; Pre-opus 5 era</span>
             <span class="mb-chip ok">Production Verified</span>
           </div>
-          <h3 class="mb-timeline-title">Crypto Wallet Security Audits & Keeta Wallet OSS</h3>
-          <p class="mb-timeline-desc">Work history in crypto wallet bug bounty hunting and protocol vulnerability research. Engineered and maintained Keeta Wallet OSS for Keeta Network — securing daily non-custodial transactions in production with 0 security incidents.</p>
+          <h3 class="mb-timeline-title">Crypto Wallet Security Audits &amp; Keythings Wallet</h3>
+          <p class="mb-timeline-desc">Work history in crypto wallet bug bounty hunting and protocol vulnerability research. Engineered Keythings Wallet — securing daily non-custodial transactions in production with 0 security incidents.</p>
+        </div>
+      </div>
+
+      <!-- 2025-2026 Consumer Tools -->
+      <div class="mb-timeline-item">
+        <div class="mb-timeline-dot"></div>
+        <div class="mb-timeline-card">
+          <div class="mb-timeline-header">
+            <span class="mb-timeline-date">2025–2026 · Ecosystem Shipping</span>
+            <span class="mb-chip ok">Active Portfolio</span>
+          </div>
+          <h3 class="mb-timeline-title">Shipped Other Consumer Tools</h3>
+          <p class="mb-timeline-desc">Built and shipped consumer products across trading bots, finance tools, social networks, and games (goodrecmovies, Purrbook, ChessGods, GalaxyUI) hosted on <a href="https://whativedone.xyz" class="buzz" target="_blank" rel="noopener">whativedone.xyz</a>.</p>
         </div>
       </div>
 
@@ -315,21 +328,8 @@
             <span class="mb-timeline-date">2026-10-31 · Genesis MVP</span>
             <span class="mb-chip">Genesis</span>
           </div>
-          <h3 class="mb-timeline-title">OpenVault MVP: Local Llama Marshal & 5-Tool MCP</h3>
+          <h3 class="mb-timeline-title">MetaVault OSS MVP: Local Llama Marshal &amp; 5-Tool MCP</h3>
           <p class="mb-timeline-desc">Architected the local AES-256-GCM vault daemon (<code>vaultd</code>), deterministic policy ceiling, Model Context Protocol server, secret canary test sweep, and Electron approval shell.</p>
-        </div>
-      </div>
-
-      <!-- 2026-11-01 -->
-      <div class="mb-timeline-item">
-        <div class="mb-timeline-dot"></div>
-        <div class="mb-timeline-card">
-          <div class="mb-timeline-header">
-            <span class="mb-timeline-date">2026-11-01 · Public Release</span>
-            <span class="mb-chip ok">v0.1.0 Released</span>
-          </div>
-          <h3 class="mb-timeline-title">MetaVault OSS Rebrand & In-App WebGPU Built-in AI</h3>
-          <p class="mb-timeline-desc">Shipped Windows installer, multi-host IDE support (Cursor, Claude Code, VS Code, Codex), WebGPU ONNX in-app AI engine, and OWASP LLM Top 10 empirical verification benchmark.</p>
         </div>
       </div>
 
@@ -341,8 +341,8 @@
             <span class="mb-timeline-date" style="font-weight:700">2026-11-02 · Current Sprint</span>
             <span class="neon-rainbow-badge"><span class="neon-rainbow-text">Active Hackathon Sprint</span></span>
           </div>
-          <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Meta Hackathon Kickoff & Live Defense Hardening</h3>
-          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Hardened adversarial prompt defenses, caller process quarantine, and empirical 100% defense against live Llama 3.2 3B.</p>
+          <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Local Llama Marshal &amp; 5-Tool MCP</h3>
+          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Standardized on on-device 1B parameter Llama (faster and lighter) with hardened adversarial prompt defenses, caller process quarantine, and empirical 100% defense.</p>
         </div>
       </div>
     </div>
@@ -390,10 +390,10 @@
 (function () {
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var ingest = [
-    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · llama3.2:3b", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
-    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · llama3.2:3b", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
-    { event: "claude-code asks for github · repos.read", from: "WARDEN · llama3.2:3b", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
-    { event: "keetawallet asks for vaultd · sign_intent", from: "KEYTHINGS · est. 2025", subject: "Local non-custodial cryptographic intent. Key stays unexposed.", reply: "Daemon · 200 OK" },
+    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · llama3.2:1b", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
+    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · llama3.2:1b", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
+    { event: "claude-code asks for github · repos.read", from: "WARDEN · llama3.2:1b", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
+    { event: "keythings-wallet asks for vaultd · sign_intent", from: "KEYTHINGS · est. 2025", subject: "Local non-custodial cryptographic intent. Key stays unexposed.", reply: "Daemon · 200 OK" },
     { event: "codex asks for stripe · charges.write", from: "POLICY", subject: "Denied. A write under a read ceiling never reaches the model.", reply: "Agent · 403, and no key" }
   ];
   var mcp = [
