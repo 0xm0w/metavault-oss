@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "metahackathon-vault",
+  "compatibility_date": "2026-10-31",
+  "workers_dev": true,
+  "assets": { "directory": "./site", "not_found_handling": "404-page" },
+  "routes": [
+    {
+      "pattern": "metahackathon.whativedone.xyz/*",
+      "zone_name": "whativedone.xyz"
+    }
+  ]
+}
