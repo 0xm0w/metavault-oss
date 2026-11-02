@@ -76,7 +76,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <article class="pg-card">
         <span class="n">Local model</span>
         <h3>Ollama, if you want a warden</h3>
-        <p class="pg-note">The vault is already safe with the model off. Ollama adds judgement. Default model: <span class="buzz">llama3.2:1b</span> (faster &amp; lighter), about 1.3 GB.</p>
+        <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Llama 3.2 1B (Edge / WebGPU DirectML)</span>, about 1.3 GB.</p>
         <a class="mb-btn-secondary" href="https://ollama.com">Get Ollama</a>
       </article>
     </div>
@@ -87,7 +87,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     <h2>Three commands, then the app</h2>
     <div class="pg-grid">
       <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key goes to the OS keychain, not a file you can paste.</p></article>
-      <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Detects the GPU and pulls llama3.2:1b. Skip this and policy still holds the ceiling.</p></article>
+      <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Detects the GPU and loads Llama 3.2 1B (Edge / WebGPU DirectML). Skip this and policy still holds the ceiling.</p></article>
       <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>openvault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
     </div>
   </section>
@@ -217,7 +217,7 @@ OPENVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <h2>A stronger model is not a stronger permission.</h2>
     <div class="pg-grid">
       <article class="pg-card"><span class="n">Policy only</span><h3>None</h3><p class="pg-note">Ceilings, expiry, and your approval. Works with the model switched off.</p></article>
-      <article class="pg-card"><span class="n">Light · default</span><h3>llama3.2:1b</h3><p class="pg-note">Faster &amp; lighter on this machine. Risk, a recommended scope, one line of why.</p></article>
+      <article class="pg-card"><span class="n">Edge · default</span><h3>Llama 3.2 1B</h3><p class="pg-note">Edge / WebGPU DirectML on this machine. Risk, a recommended scope, one line of why.</p></article>
       <article class="pg-card"><span class="n">High</span><h3>llama3.1:8b</h3><p class="pg-note">Same metadata. Stronger judgement. Still no key in the prompt.</p></article>
       <article class="pg-card"><span class="n">Maximum-local</span><h3>llama3.3:70b</h3><p class="pg-note">A large local GPU. Nothing about the request leaves the machine.</p></article>
       <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Metadata only, to the API you configure. The key stays in the daemon.</p></article>

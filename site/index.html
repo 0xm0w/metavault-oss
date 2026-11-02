@@ -218,7 +218,7 @@
             </div>
             <div data-panel="3" hidden>
               <h3>The warden scores metadata</h3>
-              <p>llama3.2:1b on this machine (1B parameter — faster and lighter). The prompt is the agent, the alias, the scope, and the reason.</p>
+              <p>Llama 3.2 1B (Edge / WebGPU DirectML) on this machine. Faster &amp; lighter. The prompt is the agent, the alias, the scope, and the reason.</p>
               <div class="mb-status">Risk LOW. Recommended scope charges.read. Approval required. A read of failed charges, inside the ceiling.</div>
             </div>
             <div data-panel="4" hidden>
@@ -275,7 +275,7 @@
         <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 24px">The daemon binds to localhost. The warden defaults to a model you run.</p>
         <ul>
           <li><span>—</span> Windows installer, or build from the source</li>
-          <li><span>—</span> Default warden llama3.2:1b (1B parameter Llama — faster & lighter)</li>
+          <li><span>—</span> Default warden Llama 3.2 1B (Edge / WebGPU DirectML)</li>
           <li><span>—</span> Larger local models, or an opt-in Meta API model</li>
           <li><span>—</span> Human approval stays in the app. An agent that tries to approve itself gets 401</li>
           <li><span>—</span> Air-gap is a packaging choice. The vault already refuses every other network</li>
@@ -342,7 +342,7 @@
             <span class="neon-rainbow-badge"><span class="neon-rainbow-text">Active Hackathon Sprint</span></span>
           </div>
           <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Local Llama Marshal &amp; 5-Tool MCP</h3>
-          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Standardized on on-device 1B parameter Llama (faster and lighter) with hardened adversarial prompt defenses, caller process quarantine, and empirical 100% defense.</p>
+          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Standardized on on-device Llama 3.2 1B (Edge / WebGPU DirectML) with hardened adversarial prompt defenses, caller process quarantine, and empirical 100% defense.</p>
         </div>
       </div>
     </div>
@@ -390,9 +390,9 @@
 (function () {
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var ingest = [
-    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · llama3.2:1b", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
-    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · llama3.2:1b", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
-    { event: "claude-code asks for github · repos.read", from: "WARDEN · llama3.2:1b", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
+    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · Llama 3.2 1B (WebGPU)", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
+    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · Llama 3.2 1B (WebGPU)", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
+    { event: "claude-code asks for github · repos.read", from: "WARDEN · Llama 3.2 1B (WebGPU)", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
     { event: "keythings-wallet asks for vaultd · sign_intent", from: "KEYTHINGS · est. 2025", subject: "Local non-custodial cryptographic intent. Key stays unexposed.", reply: "Daemon · 200 OK" },
     { event: "codex asks for stripe · charges.write", from: "POLICY", subject: "Denied. A write under a read ceiling never reaches the model.", reply: "Agent · 403, and no key" }
   ];
