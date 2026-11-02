@@ -239,6 +239,18 @@ a.mb-btn-nav {
 .mb-code .soft { color: var(--accent-sunset-soft); }
 .mb-code .acc { color: var(--accent-sunset); }
 .mb-code .ok { color: var(--green); }
+
+/* Syntax tokens shared by every code block. Light-theme legible on white and muted. */
+.tok-key { color: var(--accent-sunset-soft); }
+.tok-str { color: #15803d; }
+.tok-num { color: #b45309; }
+.tok-bool { color: #dc2626; }
+.tok-com { color: #71717a; }
+.tok-punc { color: var(--muted-foreground); }
+.tok-cmd { color: var(--accent-sunset-soft); font-weight: 600; }
+.tok-arg { color: var(--foreground); }
+.tok-flag { color: #0e7490; }
+.tok-sec { color: #b45309; font-weight: 600; }
 .mb-badge {
   color: var(--foreground);
   background: var(--card);

@@ -48,16 +48,16 @@
       <h1>Stop pasting live keys into coding agents.</h1>
       <p class="pg-lead">One local vault. Agents in Meta Muse, Cursor, Claude Code, Codex, and VS Code ask for a <span class="buzz">capability</span>. An on-device Llama 3.2 1B (Edge / WebGPU DirectML) scores the request. You approve. The secret never enters the chat.</p>
       <div class="pg-row">
-        <a class="mb-btn-primary" href="/#download">Download for Windows</a>
-        <a class="mb-btn-secondary" href="/research/">The proofs</a>
-        <a class="mb-btn-tertiary" href="https://github.com/0xm0w/openvault">Apache-2.0</a>
+        <a class="mb-btn-primary" href="/#download"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg><span>Download for Windows</span></a>
+        <a class="mb-btn-secondary" href="/research/"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>The proofs</span></a>
+        <a class="mb-btn-tertiary" href="https://github.com/0xm0w/openvault"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg><span>Apache-2.0</span></a>
       </div>
     </div>
   </header>
 
-  <section class="hack-slide" id="problem" data-label="The mess">
+  <section class="hack-slide" id="problem" data-label="The problem">
     <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">The mess</span>
+      <span class="caption-mono-sm pg-kicker">The problem</span>
       <h2>The key is already in a transcript</h2>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">Paste</span><h3>It outlives the chat</h3><p class="pg-note">A key in a prompt is in a log, a sync, and someone else's retention window.</p></article>
@@ -67,14 +67,14 @@
     </div>
   </section>
 
-  <section class="hack-slide" id="product" data-label="The product">
+  <section class="hack-slide" id="product" data-label="The solution">
     <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">The product</span>
+      <span class="caption-mono-sm pg-kicker">The solution</span>
       <h2>Broker the call. Do not hand over the key.</h2>
       <div class="pg-grid">
-        <article class="pg-card"><span class="n">Vault</span><h3>Deliberately dumb</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. Master key in the OS keychain. Hard ceilings. Secure with no model at all.</p></article>
+        <article class="pg-card"><span class="n">Vault</span><h3>Local and deliberately dumb</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. Master key in the vault you own. Hard ceilings. Secure even with no model at all.</p></article>
         <article class="pg-card"><span class="n">Warden</span><h3>A Meta model on guard</h3><p class="pg-note">Default <span class="buzz">Llama 3.2 1B (Edge / WebGPU DirectML)</span> on this machine. It sees the request, never the key.</p></article>
-        <article class="pg-card"><span class="n">Tripwire</span><h3>The grant dies</h3><p class="pg-note">After the call, after 60 seconds, or on one revoke. Standing approval is a low read only.</p></article>
+        <article class="pg-card"><span class="n">Tripwire</span><h3>The grant expires</h3><p class="pg-note">After the call, after 60 seconds, or on one revoke. Standing approval is a low read only.</p></article>
       </div>
     </div>
   </section>
@@ -93,7 +93,7 @@
         <article class="pg-card">
           <p id="pitch-ask"></p>
           <p class="pg-kicker caption-mono-sm" id="pitch-gate"></p>
-          <pre id="pitch-out"></pre>
+          <pre id="pitch-out" class="pg-codeblock" data-lang="json"></pre>
         </article>
       </div>
     </div>
@@ -106,11 +106,11 @@
       <div class="pg-grid-2">
         <article class="pg-card">
           <h3>What it is allowed to see</h3>
-          <p>Agent, IDE, alias, scope, reason. That is the whole prompt.</p>
+          <p class="pg-note">Agent, IDE, alias, scope, reason. That is the whole prompt.</p>
         </article>
         <article class="pg-card">
           <h3>What it is not allowed to change</h3>
-          <p>The <span class="buzz">policy floor</span>. A write under a read ceiling is dead before the model runs.</p>
+          <p class="pg-note">The <span class="buzz">policy floor</span>. A write under a read ceiling is dead before the model runs.</p>
         </article>
       </div>
       <div class="pg-row">
@@ -131,12 +131,10 @@
       <div class="pg-grid">
         <article class="pg-card"><span class="n">0 / 27</span><h3>Canary leaks</h3><p class="pg-note">Twenty-seven surfaces. The build fails if the secret shows up. <a href="/research/#q2-proofs">The sweep</a>.</p></article>
         <article class="pg-card"><span class="n">5 tools</span><h3>MCP, and no approve</h3><p class="pg-note">The agent can ask, list aliases, enroll, check status, and revoke. <a href="/docs/#mcp">The snippet</a>.</p></article>
-        <article class="pg-card"><span class="n">Local</span><h3>127.0.0.1</h3><p class="pg-note">The daemon does not leave the machine. <a href="/architecture/#flow">The path</a>.</p></article>
         <article class="pg-card"><span class="n">90%</span><h3>Muse Wonder 1.0</h3><p class="pg-note">90% of the code was written by frontier model Muse Wonder 1.0.</p></article>
         <article class="pg-card"><span class="n">100%</span><h3>Zero-Escalation</h3><p class="pg-note">Verified defense across all OWASP LLM Top 10 vectors. <a href="/research/#scorecards">The matrix</a>.</p></article>
-        <article class="pg-card"><span class="n">DNA</span><h3>Keythings Heritage</h3><p class="pg-note">Built by former crypto wallet bug bounty hunters. Securing keys on-chain since 2025.</p></article>
+        <article class="pg-card"><span class="n">DNA</span><h3>Crypto security heritage</h3><p class="pg-note">Built by former crypto wallet bug bounty hunters. Securing keys on-chain since 2025.</p></article>
       </div>
-      <p class="pg-note hack-keythings">From the team behind <a href="https://keythings.xyz" target="_blank" rel="noopener">Keythings</a> (creators of <a href="https://keythings.xyz" target="_blank" rel="noopener">Keythings Wallet</a>). 90% authored with frontier model Muse Wonder 1.0. Same rule as a wallet: the key is used, and it is not displayed.</p>
       <div class="pg-row">
         <a class="mb-btn-primary" href="/research/">Check our Research</a>
         <a class="mb-btn-secondary" href="https://github.com/0xm0w/openvault">View source</a>
@@ -158,8 +156,8 @@
 
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
   <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 6, The pitch"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 6, The mess"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 6, The product"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 6, The problem"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 6, The solution"><span></span></button>
   <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 6, Try the gate"><span></span></button>
   <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 6, Why a Meta model"><span></span></button>
   <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 6, Proofs"><span></span></button>
