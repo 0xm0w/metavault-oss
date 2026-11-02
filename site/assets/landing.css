@@ -119,8 +119,9 @@ a.mb-btn-nav {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   text-decoration: none;
-  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
 }
 .mb-btn-primary, .mb-btn-orange {
   background: var(--primary);
@@ -130,8 +131,9 @@ a.mb-btn-nav {
 .mb-btn-primary:hover, .mb-btn-orange:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .mb-btn-primary:active, .mb-btn-secondary:active, .mb-btn-tertiary:active, .mb-btn-orange:active { transform: scale(0.97); }
 .mb-btn-secondary { background: var(--card); color: var(--foreground); box-shadow: 0 0 0 1px var(--pink-deep); }
-.mb-btn-secondary:hover, .mb-btn-tertiary:hover { background: var(--pink-soft); color: var(--foreground); }
-.mb-btn-tertiary { background: var(--card); color: var(--muted-foreground); box-shadow: 0 0 0 1px var(--pink); }
+.mb-btn-secondary:hover { background: var(--pink-soft); color: var(--foreground); }
+.mb-btn-tertiary { background: var(--card); color: var(--foreground); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12); }
+.mb-btn-tertiary:hover { background: #f8fafc; color: var(--foreground); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.22); }
 .mb-btn-primary:disabled { opacity: 0.55; cursor: default; transform: none; }
 
 .mb-hero { padding: 72px 0 56px; text-align: center; }
