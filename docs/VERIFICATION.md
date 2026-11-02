@@ -145,7 +145,7 @@ deferred, per the plan.
 Gates for this task (run in-session): `npm run test` — **268 passed**
 (33 files); `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
-Site redeploy: `npx -y wrangler pages deploy site --project-name openvault --branch main --commit-dirty=true`. Deployment and route
+Site redeploy: `npx -y wrangler deploy --config wrangler.worker.jsonc` (the `metahackathon-vault` Worker serves `metahackathon.whativedone.xyz`; the `openvault` Pages project is a preview mirror only). Deployment and route
 checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) are
 recorded in the Task 10 report
 (`.superpowers/sdd/2026-10-31-openvault-hardening-release/task-10-report.md`).
