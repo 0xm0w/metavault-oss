@@ -709,7 +709,7 @@ function openCredentialDetail(card: { alias: string; website: string; scopes: re
   if (ceiling !== undefined) {
     scopeInput.value = ceiling;
   }
-  const secretInput = makeField("Password", "password", "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "");
+  const secretInput = makeField("Value", "password", "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "");
   const websiteInput = makeField("Website", "text", "cloudflare.com", card.website);
 
   const warning = el("p", "vault-warning", "Your agent can read it on its computer.");
@@ -2663,10 +2663,10 @@ function renderSettings(view: HTMLElement): void {
             command: "node",
             args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
             env: {
-              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
-              OPENVAULT_AGENT_ID: "claude-code",
-              OPENVAULT_AGENT_TOKEN: findAgentToken("claude-code"),
-              OPENVAULT_IDE: "Claude Code",
+              METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              METAVAULT_AGENT_ID: "claude-code",
+              METAVAULT_AGENT_TOKEN: findAgentToken("claude-code"),
+              METAVAULT_IDE: "Claude Code",
             },
           },
         },
@@ -2683,10 +2683,10 @@ function renderSettings(view: HTMLElement): void {
             command: "node",
             args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
             env: {
-              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
-              OPENVAULT_AGENT_ID: "cursor",
-              OPENVAULT_AGENT_TOKEN: findAgentToken("cursor"),
-              OPENVAULT_IDE: "Cursor",
+              METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              METAVAULT_AGENT_ID: "cursor",
+              METAVAULT_AGENT_TOKEN: findAgentToken("cursor"),
+              METAVAULT_IDE: "Cursor",
             },
           },
         },
@@ -2704,10 +2704,10 @@ function renderSettings(view: HTMLElement): void {
             command: "node",
             args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
             env: {
-              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
-              OPENVAULT_AGENT_ID: "vscode",
-              OPENVAULT_AGENT_TOKEN: findAgentToken("vscode"),
-              OPENVAULT_IDE: "VS Code",
+              METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              METAVAULT_AGENT_ID: "vscode",
+              METAVAULT_AGENT_TOKEN: findAgentToken("vscode"),
+              METAVAULT_IDE: "VS Code",
             },
           },
         },
@@ -2723,10 +2723,10 @@ function renderSettings(view: HTMLElement): void {
       "args = [\"<path-to-repo>/dist/packages/mcp/src/server.js\"]",
       "",
       "[mcp_servers.metavault.env]",
-      "OPENVAULT_DAEMON_URL = \"http://127.0.0.1:7077\"",
-      "OPENVAULT_AGENT_ID = \"codex\"",
-      `OPENVAULT_AGENT_TOKEN = \"${findAgentToken("codex")}\"`,
-      "OPENVAULT_IDE = \"Codex\"",
+      "METAVAULT_DAEMON_URL = \"http://127.0.0.1:7077\"",
+      "METAVAULT_AGENT_ID = \"codex\"",
+      `METAVAULT_AGENT_TOKEN = \"${findAgentToken("codex")}\"`,
+      "METAVAULT_IDE = \"Codex\"",
     ].join("\n");
   } else if (activeAgentTab === "opencode") {
     configPath = "opencode.json";
@@ -2739,9 +2739,9 @@ function renderSettings(view: HTMLElement): void {
             command: ["node", "<path-to-repo>/dist/packages/mcp/src/server.js"],
             enabled: true,
             environment: {
-              OPENVAULT_DAEMON_URL: "http://127.0.0.1:7077",
-              OPENVAULT_AGENT_ID: "opencode",
-              OPENVAULT_IDE: "OpenCode",
+              METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              METAVAULT_AGENT_ID: "opencode",
+              METAVAULT_IDE: "OpenCode",
             },
           },
         },

@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>dev.openvault.vaultd</string>
+    <string>dev.metavault.vaultd</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/node</string>
-        <string>/usr/local/share/openvault/packages/daemon/dist/server.js</string>
+        <string>/usr/local/share/metavault/packages/daemon/dist/server.js</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -19,9 +19,9 @@
         <true/>
     </dict>
     <key>StandardOutPath</key>
-    <string>/tmp/openvault-vaultd.log</string>
+    <string>/tmp/metavault-vaultd.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/openvault-vaultd.err</string>
+    <string>/tmp/metavault-vaultd.err</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PORT</key>

@@ -80,9 +80,9 @@ if (-not ([System.Management.Automation.PSTypeName]'WinDesktopLauncher').Type) {
     Add-Type -TypeDefinition $code
 }
 
-$openvaultRoot = "C:\Users\Mowreez.DESKTOP-D1GHS6J\openvault"
-$exePath = Join-Path $openvaultRoot "packages\app\release\win-unpacked\MetaVault OSS.exe"
+$metavaultRoot = "C:\Users\Mowreez.DESKTOP-D1GHS6J\openvault"
+$exePath = Join-Path $metavaultRoot "packages\app\release\win-unpacked\MetaVault OSS.exe"
 
-$launchedPid = [WinDesktopLauncher]::LaunchOnDefaultDesktop($exePath, "`"$exePath`"", $openvaultRoot)
+$launchedPid = [WinDesktopLauncher]::LaunchOnDefaultDesktop($exePath, "`"$exePath`"", $metavaultRoot)
 Write-Output "Successfully launched MetaVault OSS on WinSta0\Default with PID: $launchedPid"
 Wait-Process -Id $launchedPid

@@ -386,7 +386,7 @@ function pct(value: number): string {
 
 export function formatReport(report: EvalReport, mode: string, model: string): string {
   const lines: string[] = [
-    `OpenVault brain eval — mode=${mode} model=${model}`,
+    `MetaVault OSS brain eval — mode=${mode} model=${model}`,
     "",
     "scenario                       class                  risk  approval  safe",
   ];

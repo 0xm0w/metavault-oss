@@ -56,7 +56,7 @@
     "publish": {
       "provider": "github",
       "owner": "0xm0w",
-      "repo": "openvault"
+      "repo": "metavault-oss"
     },
     "mac": {
       "target": [

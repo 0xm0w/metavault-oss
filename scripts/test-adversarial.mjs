@@ -12,7 +12,7 @@ const FakeConnector = Layer.succeed(Connector, {
 
 async function run() {
   console.log("================================================================================");
-  console.log("   METAVAULT / OPENVAULT ADVERSARIAL & SECURITY AUDIT SUITE");
+  console.log("   METAVAULT ADVERSARIAL & SECURITY AUDIT SUITE");
   console.log("   Testing: Spoofing Attacks + Mix of Benign & Sheep's Clothing Attacks");
   console.log("   AI Model Under Test: Llama 3.2 3B (Ollama Local Marshal)");
   console.log("================================================================================\n");

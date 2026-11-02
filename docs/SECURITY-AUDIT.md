@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0.0  
 **Status:** Certified & Verified  
-**Issue Reference:** [#27](https://github.com/0xm0w/openvault/issues/27)  
+**Issue Reference:** [#27](https://github.com/0xm0w/metavault-oss/issues/27)  
 
 ---
 

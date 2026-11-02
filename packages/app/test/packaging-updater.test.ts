@@ -81,6 +81,6 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
     expect(pkg.build.nsis.include).toBe("scripts/installer.nsh");
     expect(pkg.build.publish.provider).toBe("github");
     expect(pkg.build.publish.owner).toBe("0xm0w");
-    expect(pkg.build.publish.repo).toBe("openvault");
+    expect(pkg.build.publish.repo).toBe("metavault-oss");
   });
 });

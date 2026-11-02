@@ -9,12 +9,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
+import { metavaultEnv } from "../../core/src/env.js";
 
 export const MCP_VERSION: string = "0.1.0";
 
 export type DaemonFetch = typeof fetch;
 
-export interface OpenVaultMcpOptions {
+export interface MetavaultMcpOptions {
   readonly daemonUrl?: string;
   readonly agentId?: string;
   readonly agentToken?: string;
@@ -71,7 +72,7 @@ const TOOLS: readonly Tool[] = [
   {
     name: "request_enrollment",
     description:
-      "Ask the human to add a credential you do not have. Creates a pending enrollment and returns a deeplink (openvault://add?...) that opens the OpenVault app with alias/scope/website prefilled — only the human types the secret. Show the deeplink to the user, then poll enrollment_status. Never returns secret values.",
+      "Ask the human to add a credential you do not have. Creates a pending enrollment and returns a deeplink (openvault://add?...) that opens the MetaVault OSS app with alias/scope/website prefilled — only the human types the secret. Show the deeplink to the user, then poll enrollment_status. Never returns secret values.",
     inputSchema: toolInputSchema(RequestEnrollmentToolSchema),
   },
   {
@@ -111,15 +112,15 @@ async function decode<A, I>(schema: Schema.Schema<A, I>, value: unknown): Promis
 // Low-level Server (not McpServer): tool inputs are validated with Effect
 // Schema, not the SDK's Zod dialect — the SDK's own "advanced use case".
 // eslint-disable-next-line @typescript-eslint/no-deprecated
-export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Server {
+export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Server {
   const daemonUrl = (
     options.daemonUrl ??
-    process.env["OPENVAULT_DAEMON_URL"] ??
+    metavaultEnv("DAEMON_URL") ??
     "http://127.0.0.1:7077"
   ).replace(/\/+$/, "");
-  const agentId = options.agentId ?? process.env["OPENVAULT_AGENT_ID"] ?? "mcp-agent";
-  const agentToken = options.agentToken ?? process.env["OPENVAULT_AGENT_TOKEN"];
-  const ide = options.ide ?? process.env["OPENVAULT_IDE"] ?? "mcp";
+  const agentId = options.agentId ?? metavaultEnv("AGENT_ID") ?? "mcp-agent";
+  const agentToken = options.agentToken ?? metavaultEnv("AGENT_TOKEN");
+  const ide = options.ide ?? metavaultEnv("IDE") ?? "mcp";
   const defaultTool = options.defaultTool ?? "http";
   const fetchFn: DaemonFetch = options.fetchFn ?? fetch;
 
@@ -142,13 +143,13 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch {
-      return errorResult("openvault daemon unreachable");
+      return errorResult("metavault daemon unreachable");
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(await response.text()) as unknown;
     } catch {
-      return errorResult("openvault daemon returned a non-JSON response");
+      return errorResult("metavault daemon returned a non-JSON response");
     }
     return verbatimResult(parsed, response.ok);
   };
@@ -198,7 +199,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
     const parsed: unknown = JSON.parse(textOfResult(result)) as unknown;
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>;
-      const enriched = { ...record, instruction: "Show this deeplink to the user and ask them to open it, paste the secret in OpenVault, and save. Then poll enrollment_status until completed, then test the credential with request_capability and report the outcome." };
+      const enriched = { ...record, instruction: "Show this deeplink to the user and ask them to open it, paste the secret in MetaVault OSS, and save. Then poll enrollment_status until completed, then test the credential with request_capability and report the outcome." };
       return verbatimResult(enriched, true);
     }
     return result;
@@ -220,7 +221,7 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
 
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const server = new Server(
-    { name: "openvault", version: MCP_VERSION },
+    { name: "metavault", version: MCP_VERSION },
     { capabilities: { tools: {} } },
   );
 
@@ -252,19 +253,19 @@ export function createOpenVaultMcpServer(options: OpenVaultMcpOptions = {}): Ser
   return server;
 }
 
-export async function startOpenVaultMcpServer(
-  options: OpenVaultMcpOptions = {},
+export async function startMetavaultMcpServer(
+  options: MetavaultMcpOptions = {},
   // eslint-disable-next-line @typescript-eslint/no-deprecated
 ): Promise<Server> {
-  const server = createOpenVaultMcpServer(options);
+  const server = createMetavaultMcpServer(options);
   await server.connect(new StdioServerTransport());
   return server;
 }
 
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
-  startOpenVaultMcpServer().catch(() => {
-    process.stderr.write("failed to start openvault MCP server\n");
+  startMetavaultMcpServer().catch(() => {
+    process.stderr.write("failed to start metavault MCP server\n");
     process.exitCode = 1;
   });
 }

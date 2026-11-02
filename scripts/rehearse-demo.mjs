@@ -23,7 +23,7 @@ function step(name, ms, ok, detail) {
 }
 const now = () => performance.now();
 
-const dir = mkdtempSync(join(tmpdir(), "openvault-rehearse-"));
+const dir = mkdtempSync(join(tmpdir(), "metavault-rehearse-"));
 const dbPath = join(dir, "vault.db");
 const masterKey = randomBytes(32);
 

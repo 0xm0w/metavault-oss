@@ -77,8 +77,8 @@ Ollama marshal, seeds one ciphertext credential, then asserts:
 ## Two-host MCP gate (`scripts/check-mcp-hosts.mjs`)
 
 Two independent MCP stdio processes, configured the way VS Code and
-Claude Code hosts configure MCP servers (`OPENVAULT_AGENT_ID` /
-`OPENVAULT_IDE` per host), connected to one daemon. Both listed aliases
+Claude Code hosts configure MCP servers (`METAVAULT_AGENT_ID` /
+`METAVAULT_IDE` per host), connected to one daemon. Both listed aliases
 and requested a capability; neither transcript contained the secret.
 This is the protocol-level equivalent of pasting the snippet into two
 IDEs; both IDEs are present on this machine and use this exact transport.
@@ -101,7 +101,7 @@ client moved to the main process behind a whitelisted IPC channel).
 
 ## Installer
 
-`OpenVault-0.1.0-win-x64.exe` (NSIS, 115.6 MB) builds cleanly and is
+`MetaVault OSS-0.1.0-win-x64.exe` (NSIS, 115.6 MB) builds cleanly and is
 unsigned (no certificate in this environment). The macOS DMG config is
 declared but building it requires a Mac; it is the one remaining
 packaging item, along with code signing.
@@ -157,7 +157,7 @@ release workflow remains unproven until its first `v*` run).
 
 | Item | Value |
 |---|---|
-| Installer | `OpenVault-0.1.0-alpha.1-win-x64.exe` (NSIS, x64, unsigned) |
+| Installer | `MetaVault OSS-0.1.0-alpha.1-win-x64.exe` (NSIS, x64, unsigned) |
 | Size | 121,250,505 bytes (115.6 MB) |
 | SHA256 | `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a` |
 | Built with | `cd packages/app && npm run build && npx electron-builder --win --publish never` (locked root devDependency `electron-builder@26.18.0`, Electron 45.2.1) |
@@ -170,14 +170,14 @@ renderer `APP_VERSION_DISPLAY` = `0.1.0-alpha.1`);
 `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
 GitHub Actions CI / CodeQL verification on `main`:
-- **CI run** (Windows + Ubuntu): https://github.com/0xm0w/openvault/actions/runs/41223410981 — **PASS** (exit 0).
-- **CodeQL run**: https://github.com/0xm0w/openvault/actions/runs/41223410962 — **PASS** (exit 0).
+- **CI run** (Windows + Ubuntu): https://github.com/0xm0w/metavault-oss/actions/runs/41223410981 — **PASS** (exit 0).
+- **CodeQL run**: https://github.com/0xm0w/metavault-oss/actions/runs/41223410962 — **PASS** (exit 0).
 
 Smoke: the NSIS installer itself was **not** run (install requires
 interactive per-user install steps); instead the packaged app was
-launched from `packages/app/release/win-unpacked/OpenVault.exe` with an
+launched from `packages/app/release/win-unpacked/MetaVault OSS.exe` with an
 isolated `--user-data-dir`. It stayed alive with a window titled
-“OpenVault” (main + 3 child processes) and was then stopped. Renderer
+“MetaVault OSS” (main + 3 child processes) and was then stopped. Renderer
 daemon calls returned 401/404 during the smoke because the isolated
 profile holds no daemon token — expected without a configured daemon,
 and recorded here rather than hidden. A first launch against the

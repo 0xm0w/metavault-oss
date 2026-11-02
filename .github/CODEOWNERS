@@ -1,4 +1,4 @@
-# Default owner for everything. OpenVault is security-sensitive:
+# Default owner for everything. MetaVault OSS is security-sensitive:
 # vault, daemon, and policy changes always need owner review.
 * @0xm0w
 

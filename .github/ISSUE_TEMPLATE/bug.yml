@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in OpenVault
+description: Report a reproducible problem in MetaVault OSS
 title: "[Bug]: "
 labels: [bug]
 body:
@@ -52,11 +52,11 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: OS, Node version, OpenVault version or commit, install method.
+      description: OS, Node version, MetaVault OSS version or commit, install method.
       placeholder: |
         OS: Windows 11
         Node: 22.x
-        OpenVault: v0.1.0-alpha.1 / commit …
+        MetaVault OSS: v0.1.0-alpha.1 / commit …
     validations:
       required: true
   - type: textarea

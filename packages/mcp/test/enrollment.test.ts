@@ -1,13 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
-import { createOpenVaultMcpServer, type DaemonFetch } from "../src/server.js";
+import { createMetavaultMcpServer, type DaemonFetch } from "../src/server.js";
 
 interface ToolResult { readonly isError?: boolean; readonly content?: readonly { readonly type: string; readonly text?: string }[]; readonly structuredContent?: Record<string, unknown>; }
 const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? "").join("\n");
 
 async function makeClient(fetchFn: DaemonFetch): Promise<Client> {
-  const server = createOpenVaultMcpServer({ daemonUrl: "http://127.0.0.1:7077", fetchFn });
+  const server = createMetavaultMcpServer({ daemonUrl: "http://127.0.0.1:7077", fetchFn });
   const client = new Client({ name: "enroll-test", version: "0.0.1" });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);

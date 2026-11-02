@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { metavaultEnv } from "../../core/src/env.js";
 
 // Daemon HTTP client for the Electron MAIN process. The daemon token lives
 // only here in main: it is resolved from the environment or the token file
@@ -70,7 +71,7 @@ export function validateDaemonCall(input: unknown): DaemonCallRequest {
   const path = record["path"];
   if (!isAllowedDaemonCall(method, path)) {
     throw new Error(
-      `OpenVault daemon call rejected: ${String(method)} ${String(path)} is not allowed`,
+      `MetaVault daemon call rejected: ${String(method)} ${String(path)} is not allowed`,
     );
   }
   const validated: { method: DaemonMethod; path: string; body?: unknown } = {
@@ -84,7 +85,7 @@ export function validateDaemonCall(input: unknown): DaemonCallRequest {
 }
 
 const daemonBase = (
-  process.env["OPENVAULT_DAEMON_URL"] ?? "http://127.0.0.1:7077"
+  metavaultEnv("DAEMON_URL") ?? "http://127.0.0.1:7077"
 ).replace(/\/+$/, "");
 
 // Daemon token for the human-decision routes: OPENVAULT_DAEMON_TOKEN, else
@@ -96,13 +97,13 @@ function daemonToken(): string | undefined {
   if (cachedDaemonToken !== undefined) {
     return cachedDaemonToken;
   }
-  const fromEnv = process.env["OPENVAULT_DAEMON_TOKEN"];
+  const fromEnv = metavaultEnv("DAEMON_TOKEN");
   if (fromEnv !== undefined && fromEnv !== "") {
     cachedDaemonToken = fromEnv;
     return cachedDaemonToken;
   }
   try {
-    const dbPath = process.env["OPENVAULT_DB_PATH"] ?? join(process.cwd(), "openvault.db");
+    const dbPath = metavaultEnv("DB_PATH") ?? join(process.cwd(), "openvault.db");
     const text = readFileSync(join(dirname(dbPath), "openvault.token"), "utf8").trim();
     if (text !== "") {
       cachedDaemonToken = text;

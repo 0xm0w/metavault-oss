@@ -357,7 +357,7 @@ describe("warden settings routes", () => {
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(body.detail).toBe("ok");
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ agentId: "openvault-selfcheck", alias: "selfcheck", requestedScope: "selfcheck.read", reason: "warden connection test" });
+    expect(seen[0]).toMatchObject({ agentId: "metavault-selfcheck", alias: "selfcheck", requestedScope: "selfcheck.read", reason: "warden connection test" });
     const auditAfter = await Effect.runPromise(service.listAudit());
     expect(auditAfter).toHaveLength(auditBefore.length);
     expect(await Effect.runPromise(service.listPendingApprovals())).toHaveLength(0);

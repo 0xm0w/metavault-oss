@@ -10,7 +10,7 @@ import { Effect, Layer } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Brain } from "../../packages/brain/src/brain.js";
 import { Connector } from "../../packages/core/src/connector.js";
-import { parseOpenVaultUrl } from "../../packages/app/src/deeplink.js";
+import { parseVaultDeeplink } from "../../packages/app/src/deeplink.js";
 import { startVaultDaemon } from "../../packages/daemon/src/server.js";
 
 // MCP <-> daemon e2e (Task 7): a real vaultd HTTP server on an ephemeral
@@ -130,7 +130,7 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
         expect(typeof enrollmentId).toBe("string");
         expect(typeof deeplink).toBe("string");
         expect(deeplink as string).not.toContain(SECRET);
-        expect(parseOpenVaultUrl(deeplink as string)).toEqual({
+        expect(parseVaultDeeplink(deeplink as string)).toEqual({
           alias: "github",
           scope: "repos.read",
           website: "github.com",

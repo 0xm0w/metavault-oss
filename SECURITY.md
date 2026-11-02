@@ -17,7 +17,7 @@ Report privately to the maintainers with:
 
 ## Agent Identity & Anti-Spoofing Architecture
 
-OpenVault implements multi-tiered, defense-in-depth protections to prevent agent identity spoofing, approval phishing, and token hijacking:
+MetaVault OSS implements multi-tiered, defense-in-depth protections to prevent agent identity spoofing, approval phishing, and token hijacking:
 
 1. **Authoritative Cryptographic Enrollment Tokens**:
    - Registered agents (Cursor, Claude Code, VS Code, Codex) receive persistent bearer tokens (`ov_agent_<id>_<hex32>`).

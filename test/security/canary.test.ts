@@ -21,9 +21,9 @@ import {
   projectWardenSettings,
   projectWardenTestResult,
 } from "../../packages/app/src/renderer/model.js";
-import { parseOpenVaultUrl } from "../../packages/app/src/deeplink.js";
+import { parseVaultDeeplink } from "../../packages/app/src/deeplink.js";
 import { validateDaemonCall } from "../../packages/app/src/daemon-client.js";
-import { createOpenVaultMcpServer, type DaemonFetch } from "../../packages/mcp/src/server.js";
+import { createMetavaultMcpServer, type DaemonFetch } from "../../packages/mcp/src/server.js";
 
 // Extended canary sweep (Task 7): one unique fake secret is stored as a
 // credential AND as the warden Meta API key. Every surface named in the
@@ -75,7 +75,7 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
     assertNoCanary("built deeplink", link);
     const url = new URL(link);
     expect([...url.searchParams.keys()].sort()).toEqual(["alias", "enrollment", "scope", "website"]);
-    const parsed = parseOpenVaultUrl(link);
+    const parsed = parseVaultDeeplink(link);
     expect(parsed).toEqual({ alias: "github", scope: "repos.read", website: "github.com", enrollmentId: "enr-1" });
     assertNoCanary("parsed deeplink params", parsed);
   });
@@ -140,7 +140,7 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
         headers: { "content-type": "application/json" },
       });
     };
-    const server = createOpenVaultMcpServer({
+    const server = createMetavaultMcpServer({
       daemonUrl: "http://127.0.0.1:7077",
       agentId: "cursor",
       ide: "Cursor",
@@ -161,7 +161,7 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
     expect(typeof deeplink).toBe("string");
     const enrollmentId = enroll.structuredContent?.["enrollmentId"];
     expect(typeof enrollmentId).toBe("string");
-    const parsedDeeplink = parseOpenVaultUrl(deeplink);
+    const parsedDeeplink = parseVaultDeeplink(deeplink);
 
     // Human seeds the enrolled credential (token-guarded), completing enrollment.
     const seeded = await handleVaultRequest(
