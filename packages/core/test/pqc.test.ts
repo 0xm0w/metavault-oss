@@ -84,4 +84,11 @@ describe("Post-Quantum Cryptography Hybrid ML-KEM-768 + X25519 (#27)", () => {
       /Invalid PQC envelope/,
     );
   });
+
+  it("rejects envelopes with the right shape but empty parts", () => {
+    const recipient = generateHybridKeyPair();
+    expect(() => unsealWithHybridKEM(recipient.secretKey, `${PQC_ENVELOPE_MAGIC}.....`)).toThrow(
+      /Malformed PQC envelope parts/,
+    );
+  });
 });

@@ -123,4 +123,15 @@ CUSTOM_API_SECRET=supersecret
       },
     ]);
   });
+
+  it("skips malformed lines without a key instead of failing", () => {
+    const entries = parseDotEnv("NOT_A_PAIR\n=missing-key\nOK=1");
+    expect(entries).toEqual([{ key: "OK", value: "1" }]);
+  });
+
+  it("supports multiline double-quoted values", () => {
+    const entries = parseDotEnv('MULTI="one\ntwo"');
+    expect(entries).toEqual([{ key: "MULTI", value: "one\ntwo" }]);
+  });
+
 });

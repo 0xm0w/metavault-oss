@@ -20,6 +20,7 @@ describe("Local Authentication & Biometric Gates (#19)", () => {
     expect(verifyPin("123456", salt, hashed)).toBe(true);
     expect(verifyPin("654321", salt, hashed)).toBe(false);
     expect(verifyPin("", salt, hashed)).toBe(false);
+    expect(verifyPin("123456", salt, "abcd")).toBe(false);
   });
 
   it("guarantees all local protection layers are strictly OFF by default", () => {

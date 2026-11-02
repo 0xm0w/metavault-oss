@@ -77,4 +77,14 @@ describe("grant registry", () => {
       expect(yield* registry.markDenied("missing")).toBe(false);
     }),
   );
+
+  it.effect("markExpired is a no-op for missing or already-consumed grants", () =>
+    Effect.gen(function* () {
+      const registry = yield* makeGrantRegistry();
+      expect(yield* registry.markExpired("missing")).toBe(false);
+      yield* registry.register(createGrant("g1", req, "charges.read", 1_000, 60_000));
+      yield* registry.consumeForExecution("g1", 2_000);
+      expect(yield* registry.markExpired("g1")).toBe(false);
+    }),
+  );
 });
