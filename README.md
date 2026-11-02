@@ -143,7 +143,7 @@ Captured from the real running app against a real daemon, seeded with a fake tes
 
    ![Prefilled enrollment modal](docs/verification/enroll-flow.png)
 
-2. **Agent requests a capability.** `request_capability` → policy check, then the warden scores metadata only → the Approval view shows agent, scope, reason, risk and the warden explanation with **Approve once / Deny / Always allow** (Always allow is standing approval: read-only, low-risk only — writes always ask) → vaultd injects the credential into that one call and returns only the result.
+2. **Agent requests a capability.** `request_capability` → policy check, then the warden scores metadata only → the Approval view shows agent, scope, reason, risk and the warden explanation with **Approve once / Deny / Block agent** — plus **Always allow** only when the request is low-risk, read-only and from a verified agent (standing approval; the daemon re-checks the same rule, and writes always ask) → vaultd injects the credential into that one call and returns only the result.
 
    ![Approval dialog](docs/verification/approval-dialog.png)
 

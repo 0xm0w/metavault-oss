@@ -127,10 +127,10 @@ in no rendered view before saving each shot.
 
 | Screenshot | What it proves |
 |---|---|
-| `docs/verification/approval-dialog.png` | Pending request with agent/scope/reason, LOW RISK marshal assessment + explanation, expiry, and **Approve once / Deny / Always allow** buttons |
-| `docs/verification/audit-verdict.png` | Audit view with one executed request expanded: Requested → Marshal → Policy → Approved → Executed, with explanation, recommended scope, `1ms` latency, decision sources and model `llama3.2:3b` |
+| `docs/verification/approval-dialog.png` | Pending request with agent/scope/reason, policy-only MEDIUM RISK assessment (no local AI) + explanation, expiry, and **Approve once / Deny / Block agent** buttons (**Always allow** appears only for low-risk read-only verified requests) |
+| `docs/verification/audit-verdict.png` | Audit view with one request expanded: Requested → Policy (approval-required) timeline in policy-only mode |
 | `docs/verification/enroll-flow.png` | Deeplink-prefilled Add-credential modal (`github` / `repos.read` / `github.com`), secret field empty |
-| `docs/verification/settings.png` | Settings page (refreshed): warden provider radios, Ollama model catalogue, effort — key field empty |
+| `docs/verification/settings.png` | Settings modal, Warden tab: hardware recommendation, warden provider radios (policy-only selected) |
 
 The same four images are wired into the site docs page
 (`site/docs/index.html`, served at `/docs/` under
