@@ -539,7 +539,7 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
 
   const nameInput = makeField("Name", "text", "Stripe", "off");
   const scopeInput = makeField("Scope", "text", "charges.read", "off");
-  const secretInput = makeField("Secret", "password", "Secret value", "new-password");
+  const secretInput = makeField("Value", "password", "Credential value", "new-password");
   const websiteInput = makeField("Website", "text", "cloudflare.com", "off");
   if (prefill !== undefined) {
     nameInput.value = prefill.alias;
@@ -1174,7 +1174,7 @@ function openDotEnvModal(): void {
     const thKey = el("th", "", "Variable");
     const thAlias = el("th", "", "Inferred Alias");
     const thScope = el("th", "", "Ceiling Scope");
-    const thSecret = el("th", "", "Secret");
+    const thSecret = el("th", "", "Value");
     headerRow.append(thCheck, thKey, thAlias, thScope, thSecret);
     thead.append(headerRow);
     table.append(thead);
