@@ -87,4 +87,11 @@ describe("evaluatePolicy", () => {
     const d = { risk: "low" as const, recommendedScope: "charges.write", requireApproval: false, explanation: "x" };
     expect(evaluatePolicy({ ...req, requestedScope: "charges.write" }, d, c2, 0).requireApproval).toBe(true);
   });
+
+  it("demotes a marshal-recommended write to the requested read on the same resource", () => {
+    const c2 = { ...cfg, ceilings: { stripe: "charges.write" } };
+    const d = { risk: "low" as const, recommendedScope: "charges.write", requireApproval: false, explanation: "x" };
+    const result = evaluatePolicy(req, d, c2, 0);
+    expect(result.allowedScope).toBe("charges.read");
+  });
 });

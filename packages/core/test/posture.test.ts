@@ -78,4 +78,29 @@ describe("Security Posture Scoring Engine (#20)", () => {
     const fixTypes = posture.remediations.map((r) => r.action);
     expect(fixTypes).toContain("enable-warden");
   });
+
+  it("flags credentials idle for over 30 days with a rotate remediation", () => {
+    const staleEvents: AuditEvent[] = [
+      {
+        ts: "2026-09-01T12:00:00.000Z",
+        agentId: "cursor",
+        alias: "stripe",
+        scope: "charges.read",
+        stage: "executed",
+        detail: "ok",
+      },
+    ];
+    const posture = calculateSecurityPosture({
+      credentials: [{ alias: "stripe", scopeCeiling: "charges.read", website: "" }],
+      standingApprovals: [],
+      auditEvents: staleEvents,
+      wardenProvider: "ollama",
+      nowMs: now,
+    });
+
+    const issueIds = posture.issues.map((i) => i.id);
+    expect(issueIds).toContain("stale-credential");
+    const fixTypes = posture.remediations.map((r) => r.action);
+    expect(fixTypes).toContain("rotate-stale");
+  });
 });

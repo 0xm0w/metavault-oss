@@ -142,6 +142,11 @@ describe("vault storage", () => {
     expect(wrongKey).not.toEqual(key);
     expect(() => decryptSecret(wrongKey, blob)).toThrow();
   });
+  it("rejects blobs that are not shaped like ciphertext", () => {
+    expect(() => decryptSecret(key, "not-a-blob")).toThrow("Invalid ciphertext blob");
+    expect(() => decryptSecret(key, "only.two")).toThrow("Invalid ciphertext blob");
+  });
+
   it("rejects decryption when the ciphertext segment is tampered with", () => {
     const blob = encryptSecret(key, "top-secret");
     const parts = blob.split(".");
