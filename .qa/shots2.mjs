@@ -28,7 +28,7 @@ const dcall = (method, path, body) => fetch(base+path, { method, headers: { "con
 await dcall("PATCH","/settings/warden",{provider:"none"});
 const r1 = await dcall("POST","/request",{agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"List recent charges for the weekly report"});
 await dcall("POST","/approve",{grantId:r1.grantId});
-const r2 = await dcall("POST","/request",{agentId:"claude-code",ide:"Claude Code",tool:"http",alias:"openai",requestedScope:"responses.read",reason:"Summarize the latest support tickets with the saved OpenAI credential"});
+await dcall("POST","/request",{agentId:"claude-code",ide:"Claude Code",tool:"http",alias:"openai",requestedScope:"responses.read",reason:"Summarize the latest support tickets with the saved OpenAI credential"});
 
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
