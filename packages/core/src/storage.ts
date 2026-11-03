@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { chmodSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync } from "node:fs";
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
@@ -290,10 +291,18 @@ function makeStore(db: Database.Database): VaultStoreService {
     // A consistent SQLite snapshot precedes any destructive schema change.
     // Local backup retains the old credential data and must stay private.
     if (db.name !== ":memory:") {
-      const backup = `${db.name}.before-agent-hash-${Date.now().toString()}-${Math.random().toString(16).slice(2)}.bak`;
+      const backupDir = `${db.name}.before-agent-hash-${Date.now().toString()}-${Math.random().toString(16).slice(2)}`;
+      mkdirSync(backupDir, {mode:0o700});
+      if (process.platform === "win32") {
+        const identity = execFileSync("whoami.exe", [], {encoding:"utf8"}).trim();
+        // Restrict inheritance BEFORE writing any raw credential data.
+        execFileSync("icacls.exe", [backupDir, "/inheritance:r", "/grant:r", `${identity}:(OI)(CI)(F)`, "SYSTEM:(OI)(CI)(F)"], {stdio:"pipe"});
+      }
+      const backup = `${backupDir}/vault.db.bak`;
       db.prepare("VACUUM INTO ?").run(backup);
-      chmodSync(backup, 0o600);
+      if (process.platform !== "win32") chmodSync(backup, 0o600);
     }
+    db.pragma("wal_checkpoint(TRUNCATE)");
     db.exec("PRAGMA secure_delete=ON");
     db.transaction(() => {
       const rows = db.prepare("SELECT * FROM agents").all() as AgentRow[];
@@ -304,6 +313,7 @@ function makeStore(db: Database.Database): VaultStoreService {
     })();
     // Remove freed legacy plaintext pages (SQLite secure_delete + compaction).
     db.exec("PRAGMA secure_delete=ON; VACUUM");
+    db.pragma("wal_checkpoint(TRUNCATE)");
   }
   const seedAgent = db.prepare("INSERT OR IGNORE INTO agents (id,name,token_hash,token_prefix,created_at,revoked) VALUES (?,?,NULL,'',?,1)");
   for (const [id, name] of [["cursor", "Cursor"], ["claude-code", "Claude Code"], ["vscode", "VS Code"], ["codex", "Codex"], ["opencode", "OpenCode"]]) seedAgent.run(id, name, new Date().toISOString());

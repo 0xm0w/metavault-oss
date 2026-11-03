@@ -774,7 +774,7 @@ export async function handleVaultRequest(
       ...(clientPid !== undefined ? { clientPid } : {}),
       ...(clientProcess !== undefined ? { clientProcess } : {}),
     };
-    return run(service.requestCapability(request));
+    return run(service.requestCapability(request, token?.trim()));
   }
   if (method === "POST" && path === "/approve") {
     const decoded = await decode(GrantIdSchema, body ?? {});

@@ -218,6 +218,7 @@ export interface VaultServiceService {
   readonly setupVault: (passphrase: string) => Effect.Effect<SetupResult | "not-supported", StorageError>;
   readonly requestCapability: (
     req: CapabilityRequest,
+    agentToken?: string,
   ) => Effect.Effect<CapabilityResult, StorageError>;
   readonly approve: (
     grantId: string,
@@ -787,9 +788,13 @@ export function makeVaultServiceLive(
             catch: () => new StorageError({ message: "vault setup failed", operation: "setup" }),
           }),
 
-        requestCapability: (req) =>
+        requestCapability: (req, agentToken) =>
           Effect.gen(function* () {
             const epoch = agentEpoch.get(req.agentId) ?? 0;
+            if (agentToken !== undefined) {
+              const current = yield* store.getAgentByToken(agentToken);
+              if (current === undefined || current.revoked || current.id !== req.agentId) return { status: "denied", reason: "agent-credentials-changed" } as const;
+            }
             const now = yield* Clock.currentTimeMillis;
             const storedCredential = yield* store.getCredential(req.alias);
             const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;

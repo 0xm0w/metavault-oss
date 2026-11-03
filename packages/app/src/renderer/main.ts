@@ -2590,6 +2590,8 @@ function renderSettings(view: HTMLElement): void {
       const minted = projectAgentsResponse([raw])[0];
       if (minted === undefined || minted.token === "") throw new Error("No token returned");
       newAgentTokens.set(id, minted.token);
+      const listed = await window.metavault.agents();
+      agentsData = projectAgentsResponse(listed);
 
       settingsMessage = { text: "Token generated. Copy the config now; it cannot be shown again after this app closes.", ok: true };
     }); };
@@ -2605,7 +2607,7 @@ function renderSettings(view: HTMLElement): void {
     revoke.type = "button"; revoke.disabled = settingsBusy || agent.revoked;
     revoke.addEventListener("click", () => {
       if (!window.confirm(`Revoke ${agent.name}? Its token, pending requests and standing approvals will stop working.`)) return;
-      const action = () => { void runSettingsAction(async () => { await window.metavault.revokeAgent(agent.id); newAgentTokens.delete(agent.id); }); };
+      const action = () => { void runSettingsAction(async () => { await window.metavault.revokeAgent(agent.id); newAgentTokens.delete(agent.id); agentsData = projectAgentsResponse(await window.metavault.agents()); }); };
       if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to revoke agent", action); else action();
     });
     row.append(generate, revoke); management.append(row);

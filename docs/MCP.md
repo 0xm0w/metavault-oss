@@ -193,3 +193,13 @@ CLI: `metavault agents list`, `metavault agents add <id> --name <name> --out <ne
 never stdout. Keep that file private (the Windows profile ACL applies), install
 the token in the host config, then remove the file. Do not put it in chat or
 source control. Existing files are not overwritten.
+
+Migration backups are stored next to the DB in a `before-agent-hash` directory.
+The directory is private before the snapshot is written: POSIX owner-only or a
+Windows ACL granting only the current user and SYSTEM. Keep it while checking
+the upgrade. Restoring an old app requires stopping the app/daemon and restoring
+the old DB snapshot as a unit, not opening the new schema with an old binary.
+Tokens created after the snapshot will not exist in that rollback, and tokens
+rotated since it may become valid again. Revoke/rotate affected credentials after
+rollback. Delete the backup after validating recovery if you do not need it.
+Neither SQLite compaction nor deletion is a promise of forensic disk erasure.
