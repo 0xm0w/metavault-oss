@@ -72,8 +72,8 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         </article>
         <article class="pg-card">
           <span class="n">Local model</span>
-          <h3>Ollama, if you want a warden</h3>
-          <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Muse Glimmer 30B (Q4_K_M via Ollama)</span>.</p>
+          <h3>Your own endpoint, if you want one</h3>
+          <p class="pg-note">The default warden is <span class="buzz">Muse Spark via the Meta API</span>; nothing to download. To keep request metadata on your hardware, point Settings at an Ollama or OpenAI-compatible server you run. We recommend a Meta open model such as Muse Glimmer.</p>
           <a class="mb-btn-secondary" href="https://ollama.com"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Get Ollama</span></a>
         </article>
       </div>
@@ -86,7 +86,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <h2>Three commands, then the app</h2>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key is wrapped with your passphrase (scrypt by default) and the daemon starts locked. Run <code>metavault unlock</code>; it auto-locks after 15 idle minutes.</p></article>
-        <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Pulls Muse Glimmer 30B (Q4_K_M) through Ollama. Skip this and policy still holds the ceiling.</p></article>
+        <article class="pg-card"><span class="n">2 · Settings</span><h3>Optional warden</h3><p class="pg-note">Add a Meta API key for Muse Spark, or set your own local endpoint. Skip this and policy still holds the ceiling; anything that needs judgement comes to you.</p></article>
         <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>metavault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
       </div>
     </div>
@@ -238,9 +238,9 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       <p class="pg-sub">The policy floor holds <strong>whatever</strong> the model does: ceilings, expiry and your approval still apply with the warden off, down, or <em>wrong</em>.</p>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">Tier 0</span><h3>Policy only</h3><p class="pg-note">Rules and ceilings. No model.</p></article>
-        <article class="pg-card"><span class="n">Tier 1 · on-device</span><h3>Muse Glimmer · Ollama</h3><p class="pg-note">Meta's open-weight model on your machine. Nothing leaves it.</p></article>
-        <article class="pg-card"><span class="n">Tier 2 · opt-in</span><h3>Muse Spark · Meta API</h3><p class="pg-note">Metadata only. The key stays in the daemon.</p></article>
-        <article class="pg-card"><span class="n">Tier 3 · opt-in</span><h3>BFT quorum</h3><p class="pg-note">Spark + Glimmer. The stricter verdict wins.</p></article>
+        <article class="pg-card"><span class="n">Tier 1 · default</span><h3>Muse Spark · Meta API</h3><p class="pg-note">Metadata only. The key stays in the daemon.</p></article>
+        <article class="pg-card"><span class="n">Tier 2 · bring your own</span><h3>Your local endpoint</h3><p class="pg-note">Ollama or OpenAI-compatible, on hardware you run. Muse Glimmer recommended. Metadata goes only to your URL.</p></article>
+        <article class="pg-card"><span class="n">Tier 3 · opt-in</span><h3>BFT quorum</h3><p class="pg-note">Spark + your endpoint. The stricter verdict wins.</p></article>
       </div>
       <p class="pg-tiny" style="margin-top:14px"><strong>Effort:</strong> Fast, Standard or Deep. Deep runs two passes; if they disagree, the narrower scope and higher risk win and you approve. Why the floor holds: <a href="../architecture/">architecture</a>.</p>
     </div>
@@ -311,7 +311,7 @@ cost = ((prompt - cached) * IN
         + completion * OUT) / 1_000_000</pre></div>
         <div class="pg-stack">
           <div class="pg-big">$0.0052–0.0053 <small>Muse Spark · per gated request</small></div>
-          <div class="pg-big">$0 <small>rules or local Ollama · no API fees</small></div>
+          <div class="pg-big">$0 <small>rules or your own endpoint · no API fees</small></div>
           <p class="pg-tiny" style="margin:0">1,505–1,537 tokens per request, mostly output, from each response's <code>usage</code>. <a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>. Always ask has no gate latency: <em>it waits on you.</em></p>
         </div>
       </div>

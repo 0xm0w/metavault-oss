@@ -203,10 +203,10 @@ export function BrainFromSettings(
   });
 }
 
-export function BrainOllamaLive(model: string = DEFAULT_MARSHAL_MODEL): Layer.Layer<Brain> {
+export function BrainOllamaLive(model: string = DEFAULT_MARSHAL_MODEL, baseUrl?: string): Layer.Layer<Brain> {
   return Layer.succeed(Brain, {
     assess: (req, historySummary, policyDigest) =>
-      requestOllamaDecision(model, buildMarshalPrompt(req, historySummary, policyDigest)).pipe(
+      requestOllamaDecision(model, buildMarshalPrompt(req, historySummary, policyDigest), undefined, baseUrl).pipe(
         Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope)),
         Effect.provide(FetchHttpClient.layer),
       ),

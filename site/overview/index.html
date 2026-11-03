@@ -224,7 +224,7 @@
             </div>
             <div data-panel="3" hidden>
               <h3>The warden scores metadata</h3>
-              <p>Muse Glimmer 30B (Q4_K_M via Ollama) on this machine. The prompt is the agent, the alias, the scope, and the reason.</p>
+              <p>Muse Spark 1.3 via the Meta API by default, or the model on your own local endpoint. The prompt is the agent, the alias, the scope, and the reason.</p>
               <div class="mb-status">Risk LOW. Recommended scope charges.read. Approval required. A read of failed charges, inside the ceiling.</div>
             </div>
             <div data-panel="4" hidden>
@@ -278,11 +278,11 @@
           <span class="mb-chip">Windows first</span>
         </div>
         <div class="mb-price-amt">Local <span>/ 127.0.0.1</span></div>
-        <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 24px">The daemon binds to localhost. The warden defaults to a model you run.</p>
+        <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 24px">The daemon binds to localhost. The warden defaults to Muse Spark via the Meta API.</p>
         <ul>
           <li><span>—</span> Windows installer, or build from the source</li>
-          <li><span>—</span> Default warden Muse Glimmer 30B (Q4_K_M via Ollama)</li>
-          <li><span>—</span> Larger local models, or an opt-in Meta API model</li>
+          <li><span>—</span> Default warden Muse Spark 1.3 via the Meta API</li>
+          <li><span>—</span> Or bring your own local endpoint (Ollama or OpenAI-compatible); Muse Glimmer recommended</li>
           <li><span>—</span> Human approval stays in the app. An agent that tries to approve itself gets 401</li>
           <li><span>—</span> Air-gap is a packaging choice. The vault already refuses every other network</li>
         </ul>
@@ -407,9 +407,9 @@
 (function () {
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var ingest = [
-    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · Muse Glimmer 30B", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
-    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · Muse Glimmer 30B", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
-    { event: "claude-code asks for github · repos.read", from: "WARDEN · Muse Glimmer 30B", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
+    { event: "metahackathon asks for stripe · charges.read", from: "WARDEN · Muse Spark 1.3", subject: "Risk LOW. Verified Meta Hackathon sprint by Keythings. Zero key leaks.", reply: "You · Approve once" },
+    { event: "cursor-agent asks for stripe · charges.read", from: "WARDEN · Muse Spark 1.3", subject: "Risk LOW. A read of failed charges, inside the ceiling.", reply: "You · Approve once" },
+    { event: "claude-code asks for github · repos.read", from: "WARDEN · Muse Spark 1.3", subject: "Risk LOW. Read the README. Standing approval is allowed.", reply: "You · Always allow" },
     { event: "keythings-wallet asks for vaultd · sign_intent", from: "KEYTHINGS · est. 2025", subject: "Local non-custodial cryptographic intent. Key stays unexposed.", reply: "Daemon · 200 OK" },
     { event: "codex asks for stripe · charges.write", from: "POLICY", subject: "Denied. A write under a read ceiling never reaches the model.", reply: "Agent · 403, and no key" }
   ];

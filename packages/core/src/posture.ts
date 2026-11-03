@@ -74,7 +74,7 @@ export function calculateSecurityPosture(input: PostureInput): SecurityPostureRe
     });
     remediations.push({
       id: "rem-enable-warden",
-      title: "Enable On-Device Muse Glimmer Warden",
+      title: "Enable a warden (Muse Spark via the Meta API, or your local endpoint)",
       action: "enable-warden",
     });
   }

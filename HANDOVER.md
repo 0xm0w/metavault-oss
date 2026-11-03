@@ -7,7 +7,7 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 
 > **2026-11-03, branch `feat/cards-hardening` (pushed, no PR):** payment-card
 > credentials, passphrase-wrapped master key with auto-lock, configurable
-> warden model (`METAVAULT_WARDEN_MODEL`, default unchanged), optional
+> warden model (`METAVAULT_WARDEN_MODEL`, since removed in 0.1.0-alpha), optional
 > UD-IQ3_XXS quant in the eval scripts, and a fixed eval memory measurement.
 > The ps1 scripts are parse-checked only; no Windows run and no IQ3_XXS
 > numbers yet. The app has no passphrase unlock screen yet (use
@@ -42,10 +42,11 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
   Key stored encrypted as credential `warden-meta-api`, only `last4` ever shown,
   routes token-guarded (`GET/PATCH /settings/warden`, `PUT/DELETE/GET /settings/warden/key`,
   real self-check `POST /settings/warden/test`).
-- **Warden providers**: Ollama / built-in on-device (default `muse-glimmer:30b`, Meta
-  Muse Glimmer 30B Q4_K_M, #70) + Meta API (`https://api.meta.ai/v1/chat/completions`,
+- **Warden providers**: Meta API, the default (`https://api.meta.ai/v1/chat/completions`,
   default `muse-spark-1.3`, per https://dev.meta.ai/docs/models, cited in
-  `packages/brain/src/meta-api.ts`). Effort: fast 1 pass, standard 1 pass, deep 2 passes
+  `packages/brain/src/meta-api.ts`) + bring-your-own local endpoint (Ollama or
+  OpenAI-compatible base URL and model name; Muse Glimmer recommended; MetaVault
+  downloads no model) + BFT (both) + none. Effort: fast 1 pass, standard 1 pass, deep 2 passes
   (disagreement escalates, keeps narrower scope); timeouts cloud 10/30/60 s, local 60/120/240 s.
 - **Audit page**: every request grouped by `requestId` with warden verdict timeline
   (risk, recommended scope, decision source, latency, explanation). No secrets in audit.

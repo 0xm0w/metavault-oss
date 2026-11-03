@@ -236,8 +236,9 @@ The same four images are wired into the site docs page
 site docs and README gained an MCP install section (five hosts, five
 tools), a Settings/warden section, and a security-levels table aligned
 with the Task 3 tiers (at the time: `none`, three local sizes, and Meta
-API cloud; effort Fast 10s / Standard 30s / Deep 60s). Since #70 the only
-local model is `muse-glimmer:30b` and local timeouts are 60 / 120 / 240 s. Semantic data-flow charting stays
+API cloud; effort Fast 10s / Standard 30s / Deep 60s). Since 2026-11-03 MetaVault
+ships and downloads no model: the default is Muse Spark via the Meta API, a local model is the
+user's own endpoint (Muse Glimmer recommended), and local timeouts are 60 / 120 / 240 s. Semantic data-flow charting stays
 deferred, per the plan.
 
 Gates for this task (run in-session, 2026-10-31; historical): `npm run test` — **268 passed**

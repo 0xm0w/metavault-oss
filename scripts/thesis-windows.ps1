@@ -134,7 +134,7 @@ if (-not $api) {
   for ($i = 0; $i -lt 60 -and -not $api; $i++) { Start-Sleep -Milliseconds 500; $api = Test-OllamaApi }
   if (-not $api) { Fail "ollama serve did not come up within 30 s" }
 }
-$env:METAVAULT_OLLAMA_URL = $OllamaUrl
+$env:METAVAULT_EVAL_OLLAMA_URL = $OllamaUrl
 
 Say "pull:     ollama pull $Model"
 & ollama pull $Model

@@ -4,6 +4,29 @@ All notable changes to MetaVault OSS are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-alpha] - Unreleased (draft release only)
+
+### Breaking
+
+- **No bundled or downloaded model.** MetaVault no longer ships, bundles or downloads a local model. The built-in engine, the Settings model download, `metavault model pull`, `METAVAULT_WARDEN_MODEL` and `METAVAULT_OLLAMA_URL` are removed.
+- **Default warden is Muse Spark (`muse-spark-1.3`) via the Meta API.** New vaults start on `meta-api`. Without a Meta API key the warden is unavailable and every request that needs judgement fails closed to you.
+- Saved settings with provider `ollama` or `builtin` migrate to `local`. A row that had no explicit endpoint migrates with an empty base URL, so it fails closed until you set one.
+
+### Added
+
+- **Bring-your-own local endpoint** in Settings (provider `local`): API style (Ollama `POST {base}/api/chat`, or OpenAI-compatible `POST {base}/chat/completions`), base URL and model name. Placeholder and docs recommend a Meta open model such as Muse Glimmer (`muse-glimmer:30b`). The daemon rejects base URLs that are not `http`/`https` or that carry a username or password (`400`).
+- BFT uses Muse Spark plus your local endpoint when one is set.
+- Tests: no reachable warden fails closed to the human (no Meta key, empty local endpoint, unreachable local port, BFT with neither), with no request to `api.meta.ai` when no key is set.
+
+### Changed
+
+- Site, docs page, README, design doc and security audit no longer mention an 18 GB download, lazy loading, or RAM/VRAM requirements. Requirement copy describes the app only.
+- Marshal status line defaults to `Marshal · muse-spark-1.3 · Meta API`.
+
+### Removed
+
+- `packages/app/src/model-downloader.ts`, `model-resolver.ts`, `builtin-ai-ipc.ts`, `packages/brain/src/builtin.ts`, the hardware-capacity card and the built-in download UI.
+
 ## [Unreleased]
 
 ### Breaking
