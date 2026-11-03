@@ -13,6 +13,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `METAVAULT_WARDEN_MODEL` makes the default warden model configurable. The shipped default stays `muse-glimmer:30b`.
 - Optional `hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS` (13,130,658,848 bytes) in the model lists, `-Quant` and `-Compare` in `scripts/eval-windows.ps1` and `scripts/thesis-windows.ps1`. Not benchmarked yet.
 
+- `run-thesis.ts --provider openai-compat|meta-api`: OpenAI-compatible warden for comparison runs (polite pacing, 429/5xx retry with `Retry-After`, quota refusal aborts the run, per-call `usage` tokens, dollars per gated request from published prices, `--budget-usd` cap, default $0.50). `meta-api` reads `META_API_KEY` and defaults to `muse-spark-1.3` at `https://api.meta.ai/v1`.
+- Docs Warden slide reworked into tiers (policy only, Muse Glimmer quants, Muse Spark via Meta API, BFT quorum) with measured-only charts for high-risk recall, false-alarm rate, and latency and cost; unmeasured tiers show as pending.
+
 ### Changed
 
 - `METAVAULT_MASTER_KEY` is ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1`. The dev plaintext key in `scripts/run-daemon.mjs` needs `METAVAULT_DEV_PLAINTEXT_KEY=1`.

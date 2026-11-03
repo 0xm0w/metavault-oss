@@ -11,6 +11,8 @@ import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js
 import { assessFromSettings } from "../src/brain.js";
 import type { HistorySummary } from "../src/prompt.js";
 import { assessByRules, stricterDecision } from "../src/rules.js";
+import { DEFAULT_META_API_BASE_URL, DEFAULT_META_API_MODEL } from "../src/meta-api.js";
+import { openAICompatWarden, type CostSummary, type OpenAICompatRun, type Pricing } from "./openai-compat.js";
 
 // Research benchmark: does the model warden catch high-risk agent requests
 // that a strong rules-only engine misses, and at what false-positive and
@@ -318,24 +320,79 @@ function gitCommit(): string {
   }
 }
 
+// Published Meta Model API prices for muse-spark-1.3, Standard mode, read
+// 2026-11-03 from META_PRICING.url. Update both together if Meta changes them.
+export const META_PRICING: Pricing = {
+  inputPerMTok: 1.25,
+  outputPerMTok: 4.25,
+  cachedInputPerMTok: 0.15,
+  url: "https://dev.meta.ai/docs/pricing-rate-limits",
+};
+
+export type Provider = "ollama" | "openai-compat" | "meta-api";
+
+export function formatCostReport(s: CostSummary): string[] {
+  const usd = (v: number | null): string => (v === null ? "n/a" : `$${v.toFixed(6)}`);
+  return [
+    "cost (per gated request = one capability request sent to the warden, retries included):",
+    `  pricing: in $${String(s.pricing.inputPerMTok)}/1M  out $${String(s.pricing.outputPerMTok)}/1M${
+      s.pricing.cachedInputPerMTok === undefined ? "" : `  cached-in $${String(s.pricing.cachedInputPerMTok)}/1M`
+    }  source ${s.pricing.url}`,
+    `  gated requests ${String(s.gatedRequests)}  ok ${String(s.succeeded)}  failed ${String(s.failed)}  with usage ${String(
+      s.requestsWithUsage,
+    )}`,
+    `  tokens: prompt ${String(s.promptTokens)}  completion ${String(s.completionTokens)}  total ${String(s.totalTokens)}  per gated request ${
+      s.tokensPerGatedRequest === null ? "n/a" : s.tokensPerGatedRequest.toFixed(1)
+    }`,
+    `  dollars: total ${usd(s.costUsd)}  per gated request ${usd(s.dollarsPerGatedRequest)}  budget cap $${s.budgetUsd.toFixed(2)}`,
+    `  aborted: ${s.abortedReason ?? "no"}`,
+  ];
+}
+
 export async function main(argv: readonly string[]): Promise<number> {
   let mode: "oracle" | "rules-only" | "live" = "rules-only";
-  let model = "muse-glimmer:30b";
+  let provider: Provider = "ollama";
+  let model: string | undefined;
   let effort: WardenSettings["effort"] = "standard";
   let set = "heldout";
   let repeats = 1;
   let outDir: string | undefined;
+  let baseUrl: string | undefined;
+  let apiKeyEnv: string | undefined;
+  let priceIn: number | undefined;
+  let priceOut: number | undefined;
+  let priceCached: number | undefined;
+  let pricingUrl: string | undefined;
+  let budgetUsd = 0.5;
+  let minIntervalMs = 1500;
+  let maxOutputTokens = 2048;
+  let jsonMode = true;
+  const numArg = (v: string | undefined): number | undefined => {
+    const n = v === undefined ? Number.NaN : Number.parseFloat(v);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = argv[i + 1];
     if (arg === "--oracle") mode = "oracle";
     else if (arg === "--rules-only") mode = "rules-only";
     else if (arg === "--live") mode = "live";
+    else if (arg === "--provider" && (next === "ollama" || next === "openai-compat" || next === "meta-api")) { provider = next; i += 1; }
     else if (arg === "--model" && next !== undefined) { model = next; i += 1; }
     else if (arg === "--effort" && (next === "fast" || next === "standard" || next === "deep")) { effort = next; i += 1; }
     else if (arg === "--set" && next !== undefined) { set = next; i += 1; }
     else if (arg === "--repeats" && next !== undefined) { repeats = Math.max(1, Number.parseInt(next, 10) || 1); i += 1; }
     else if (arg === "--out" && next !== undefined) { outDir = next; i += 1; }
+    else if (arg === "--base-url" && next !== undefined) { baseUrl = next; i += 1; }
+    else if (arg === "--api-key-env" && next !== undefined) { apiKeyEnv = next; i += 1; }
+    else if (arg === "--price-in" && numArg(next) !== undefined) { priceIn = numArg(next); i += 1; }
+    else if (arg === "--price-out" && numArg(next) !== undefined) { priceOut = numArg(next); i += 1; }
+    else if (arg === "--price-cached" && numArg(next) !== undefined) { priceCached = numArg(next); i += 1; }
+    else if (arg === "--pricing-url" && next !== undefined) { pricingUrl = next; i += 1; }
+    else if (arg === "--budget-usd" && numArg(next) !== undefined) { budgetUsd = numArg(next) ?? budgetUsd; i += 1; }
+    else if (arg === "--min-interval-ms" && numArg(next) !== undefined) { minIntervalMs = numArg(next) ?? minIntervalMs; i += 1; }
+    else if (arg === "--max-tokens" && numArg(next) !== undefined) { maxOutputTokens = Math.max(1, Math.floor(numArg(next) ?? maxOutputTokens)); i += 1; }
+    else if (arg === "--no-json-mode") jsonMode = false;
     else {
       process.stderr.write(`unknown argument: ${arg ?? ""}\n`);
       return 2;
@@ -343,40 +400,100 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const cases = parseThesisCases(JSON.parse(readFileSync(join(evalDir(), `${set}.json`), "utf8")) as unknown);
   const unavailable: WardenFn = () => Promise.resolve(null);
-  const warden: WardenFn =
-    mode === "oracle"
-      ? oracleWarden
-      : mode === "live"
-        ? liveWarden({ provider: "ollama", model, effort, metaApiBaseUrl: "https://api.meta.ai/v1" })
-        : unavailable;
+  let remote: OpenAICompatRun | undefined;
+  let wardenLine: string;
+  let warden: WardenFn;
+  if (mode === "oracle") {
+    warden = oracleWarden;
+    wardenLine = "warden: ORACLE (ground-truth labels). Harness check only, not evidence about any model.";
+  } else if (mode === "rules-only") {
+    warden = unavailable;
+    wardenLine = "warden: not run (rules-only mode). warden and rules+warden rows show the no-warden fallback (null -> human).";
+  } else if (provider === "ollama") {
+    model ??= "muse-glimmer:30b";
+    warden = liveWarden({ provider: "ollama", model, effort, metaApiBaseUrl: DEFAULT_META_API_BASE_URL });
+    wardenLine = `warden: ollama ${model}, effort=${effort} (assessFromSettings + enforceScopeSafety)`;
+  } else {
+    const isMeta = provider === "meta-api";
+    model ??= isMeta ? DEFAULT_META_API_MODEL : undefined;
+    baseUrl ??= isMeta ? DEFAULT_META_API_BASE_URL : undefined;
+    apiKeyEnv ??= isMeta ? "META_API_KEY" : "OPENCODE_API_KEY";
+    if (isMeta && model === DEFAULT_META_API_MODEL) {
+      priceIn ??= META_PRICING.inputPerMTok;
+      priceOut ??= META_PRICING.outputPerMTok;
+      priceCached ??= META_PRICING.cachedInputPerMTok;
+      pricingUrl ??= META_PRICING.url;
+    }
+    if (model === undefined || baseUrl === undefined) {
+      process.stderr.write(`--provider ${provider} needs --model and --base-url\n`);
+      return 2;
+    }
+    if (priceIn === undefined || priceOut === undefined || pricingUrl === undefined) {
+      process.stderr.write("refusing to run without published prices: pass --price-in, --price-out (USD per 1M tokens) and --pricing-url\n");
+      return 2;
+    }
+    const apiKey = process.env[apiKeyEnv];
+    if (apiKey === undefined || apiKey.trim() === "") {
+      process.stderr.write(`${apiKeyEnv} is not set; not running (pending a key)\n`);
+      return 3;
+    }
+    remote = openAICompatWarden({
+      baseUrl,
+      model,
+      apiKey: apiKey.trim(),
+      pricing: {
+        inputPerMTok: priceIn,
+        outputPerMTok: priceOut,
+        ...(priceCached === undefined ? {} : { cachedInputPerMTok: priceCached }),
+        url: pricingUrl,
+      },
+      budgetUsd,
+      minIntervalMs,
+      maxOutputTokens,
+      jsonMode,
+    });
+    warden = remote.warden;
+    wardenLine = `warden: ${provider} ${model} at ${baseUrl} (key from $${apiKeyEnv}, never logged), single pass, buildMarshalPrompt + parseMarshalDecision + enforceScopeSafety, max_tokens=${String(
+      maxOutputTokens,
+    )}, json_mode=${String(jsonMode)}, min interval ${String(minIntervalMs)} ms`;
+  }
+  const live: boolean = mode === "live";
   const started = new Date();
-  const outcomes = await runThesis(cases, warden, mode === "live" ? repeats : 1, (line) => {
-    if (mode === "live") process.stderr.write(`${line}\n`);
+  const outcomes = await runThesis(cases, warden, live ? repeats : 1, (line) => {
+    if (live) process.stderr.write(`${line}\n`);
   });
   const summaries = summarize(cases, outcomes);
   const cpu = cpus()[0]?.model ?? "unknown cpu";
   const header = [
     `MetaVault OSS thesis benchmark - mode=${mode} set=${set} cases=${String(cases.length)} repeats=${String(
-      mode === "live" ? repeats : 1,
+      live ? repeats : 1,
     )}`,
-    mode === "live"
-      ? `warden: ollama ${model}, effort=${effort} (assessFromSettings + enforceScopeSafety)`
-      : mode === "oracle"
-        ? "warden: ORACLE (ground-truth labels). Harness check only, not evidence about any model."
-        : "warden: not run (rules-only mode). warden and rules+warden rows show the no-warden fallback (null -> human).",
+    wardenLine,
     `commit ${gitCommit()}  node ${process.version}  ${platform()} ${release()}  ${cpu}  ${(totalmem() / 2 ** 30).toFixed(
       0,
     )} GiB RAM`,
     `started ${started.toISOString()}  finished ${new Date().toISOString()}`,
   ];
-  const report = formatThesisReport(header, cases, outcomes, summaries);
+  const cost = remote?.summary();
+  let report = formatThesisReport(header, cases, outcomes, summaries);
+  if (cost !== undefined) report += `\n${formatCostReport(cost).join("\n")}\n`;
   process.stdout.write(report);
   if (outDir !== undefined) {
     mkdirSync(outDir, { recursive: true });
     const stamp = started.toISOString().replace(/[:.]/g, "-");
-    const base = join(outDir, `thesis-${mode}-${set}${mode === "live" ? `-${model.replace(/[^\w.-]+/g, "_")}` : ""}-${stamp}`);
+    const safeModel = (model ?? "").replace(/[^\w.-]+/g, "_");
+    const name =
+      !live
+        ? `thesis-${mode}-${set}`
+        : provider === "ollama"
+          ? `thesis-live-${set}-${safeModel}`
+          : `thesis-${safeModel}-${set}`;
+    const base = join(outDir, `${name}-${stamp}`);
     writeFileSync(`${base}.txt`, report);
-    writeFileSync(`${base}.json`, `${JSON.stringify({ header, summaries, outcomes }, null, 1)}\n`);
+    writeFileSync(
+      `${base}.json`,
+      `${JSON.stringify({ header, summaries, outcomes, ...(remote === undefined ? {} : { cost, calls: remote.calls }) }, null, 1)}\n`,
+    );
     process.stderr.write(`wrote ${base}.txt and .json\n`);
   }
   return 0;

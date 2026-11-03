@@ -234,14 +234,71 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
   <section class="hack-slide" id="levels" data-label="Warden">
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden</span>
-      <h2>A stronger model is not a stronger permission.</h2>
+      <h2>A stronger model means stronger security.</h2>
+      <p class="pg-note" style="margin-bottom:14px">The deterministic policy floor holds whatever the model is: ceilings, expiry, and your approval still apply with the warden off, down, or wrong.</p>
       <div class="pg-grid">
-        <article class="pg-card"><span class="n">Policy only</span><h3>None</h3><p class="pg-note">Ceilings, expiry, and your approval. Works with the model switched off.</p></article>
-        <article class="pg-card"><span class="n">On-device · default</span><h3>Muse Glimmer 30B</h3><p class="pg-note">Meta's open-weight model, Q4_K_M via Ollama on this machine (~18 GB). Risk, a recommended scope, one line of why. Nothing about the request leaves the machine.</p></article>
-        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Muse Spark by default. Metadata only, to the API you configure. The key stays in the daemon.</p></article>
-        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta BFT</h3><p class="pg-note">Two-warden quorum: Muse Spark (Meta API) plus on-device Muse Glimmer. The stricter verdict wins; if one is unavailable the other decides alone.</p></article>
+        <article class="pg-card"><span class="n">Tier 0</span><h3>Policy only</h3><p class="pg-note">Rules and ceilings, no model. Works with the warden switched off.</p></article>
+        <article class="pg-card"><span class="n">Tier 1 · on-device</span><h3>Muse Glimmer quants</h3><p class="pg-note">Meta's open-weight model, run locally via Ollama (Q4_K_M by default). Nothing about the request leaves the machine.</p></article>
+        <article class="pg-card"><span class="n">Tier 2 · opt-in</span><h3>Muse Spark · Meta API</h3><p class="pg-note">Metadata only, to the Meta API. The key stays in the daemon.</p></article>
+        <article class="pg-card"><span class="n">Tier 3 · opt-in</span><h3>BFT quorum</h3><p class="pg-note">Muse Spark plus on-device Muse Glimmer. The stricter verdict wins; if one is unavailable the other decides alone.</p></article>
       </div>
       <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes; if they disagree it keeps the narrower scope, raises risk to the higher of the two, and requires your approval. Why the floor holds is on the <a href="../architecture/">architecture page</a>.</p>
+    </div>
+  </section>
+
+  <section class="hack-slide" id="warden-recall" data-label="Recall">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">05 · Warden · high-risk recall</span>
+      <h2>How many risky reads reach you</h2>
+      <div class="pg-chart" role="img" aria-label="High-risk read recall: always-ask 28 of 28, rules 12 of 28, model tiers pending">
+        <div class="pg-bar-row"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer quants · local (Windows)</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">run pending</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Spark · Meta API</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">needs META_API_KEY</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">after both above</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">blocked: quota (429)</span></div>
+      </div>
+      <p class="pg-note">Policy floor: 4/4 for both measured arms.</p>
+      <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Box run, commit <code>342f39f</code>. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>. Empty bars are not zero; they have not been measured yet.</p>
+    </div>
+  </section>
+
+  <section class="hack-slide" id="warden-fpr" data-label="False alarms">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">05 · Warden · false-alarm rate</span>
+      <h2>How often a safe read bothers you</h2>
+      <div class="pg-chart" role="img" aria-label="False-alarm rate on benign reads: always-ask 28 of 28, rules 9 of 28, model tiers pending">
+        <div class="pg-bar-row"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer quants · local (Windows)</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">run pending</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Spark · Meta API</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">needs META_API_KEY</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">after both above</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">blocked: quota (429)</span></div>
+      </div>
+      <p class="pg-note">Rules split: 9/20 on hard benign cases, 0/8 on plain ones. Lower is better.</p>
+      <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Box run, commit <code>342f39f</code>. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>. Empty bars are not zero; they have not been measured yet.</p>
+    </div>
+  </section>
+
+  <section class="hack-slide" id="warden-latency" data-label="Latency &amp; cost">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">05 · Warden · latency and cost</span>
+      <h2>What each gated request costs</h2>
+      <div class="pg-chart" role="img" aria-label="Gate latency: rules median 6.8 microseconds, p95 21.3 microseconds; model tiers pending">
+        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules) · median</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:31.9%"></span></span><span class="pg-bar-value">6.8 µs</span></div>
+        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules) · p95</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">21.3 µs</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer quants · local (Windows)</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">run pending</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Spark · Meta API</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">needs META_API_KEY</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">after both above</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">pending</span></span><span class="pg-bar-value">blocked: quota (429)</span></div>
+      </div>
+      <p class="pg-note">Always ask has no gate latency to measure; it waits on you. Rules bars share one scale (p95 = full width); model rows join it once measured.</p>
+      <div class="pg-grid" style="margin-top:12px">
+        <article class="pg-card"><span class="n">Policy only · local quants</span><h3>$0 in API fees</h3><p class="pg-note">Runs on your machine. Electricity is excluded.</p></article>
+        <article class="pg-card"><span class="n">Muse Spark · Meta API</span><h3>Pending</h3><p class="pg-note">Priced at $1.25 input / $4.25 output per 1M tokens (<a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>). Dollars per gated request will come from measured <code>usage</code> tokens once a key is set.</p></article>
+        <article class="pg-card"><span class="n">Free baselines · comparison only</span><h3>$0, tokens pending</h3><p class="pg-note">Listed as free on <a href="https://opencode.ai/docs/zen">OpenCode Zen</a>. Every call so far was refused with a free-usage limit, so no tokens were measured.</p></article>
+      </div>
+      <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Box run, commit <code>342f39f</code>. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>. Empty bars are not zero; they have not been measured yet.</p>
     </div>
   </section>
 

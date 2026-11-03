@@ -44,6 +44,51 @@ Box run (Linux, commit `342f39f`), held-out set, 60 cases:
 Dev set (20 cases): rules 10/10 recall, 0/10 FPR. Oracle runs (`--oracle`) are harness
 checks only. Raw: `verification/thesis-*.txt|json`. Review: `research/thesis-review.md`.
 
+### Comparison baselines: free models on OpenCode Zen (not shipped)
+
+These are comparison points only; the shipped warden stays a Meta model. Harness:
+`--provider openai-compat --base-url https://opencode.ai/zen/v1 --api-key-env OPENCODE_API_KEY
+--price-in 0 --price-out 0 --pricing-url https://opencode.ai/docs/zen --min-interval-ms 3000`
+(retries 429/5xx with backoff and `Retry-After`; logs `usage` tokens per call; a quota
+refusal aborts the run so nothing else is sent).
+
+| Zen model id | maker | model card | status (2026-11-03 15:57 PHT, held-out) |
+|---|---|---|---|
+| `deepseek-v4.1-flash-free` | DeepSeek | https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash | blocked |
+| `glm-5.3-flash-free` | Z.ai | https://huggingface.co/zai-org/GLM-5.3-Flash | blocked |
+| `mimo-v2.6-flash-free` | Xiaomi | https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL | blocked |
+| `nemotron-3.5-lightning-free` | NVIDIA | https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 | blocked |
+| `nemotron-3.5-super-vl-free` | NVIDIA | https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16 | blocked |
+| `flint-40b-free` | Recursive | https://huggingface.co/RecursiveSI/flint | blocked |
+| `beam-free` | Reflection | https://huggingface.co/reflection/Beam-1.0-501B-A23B | blocked |
+
+Excluded: `big-pickle` and `pulse-alpha-free`, which Zen lists as stealth models with no
+named maker or card, so their benchmarks are unknown.
+
+Every run stopped at its first request with HTTP 429 `FreeUsageLimitError` ("Free usage
+limit reached. Free models work in OpenCode ..."). That is a quota refusal, not a rate
+limit, so it is not retried; the other 59 cases are recorded as "not sent". Result:
+0/60 answered per model, 0 tokens, so **no recall, FPR, latency or token figures exist
+for these models**. Raw: `verification/thesis-<model>-heldout-2026-11-03T07-57-*.txt|json`.
+
+### Dollars per gated request
+
+One gated request = one warden call (60 per held-out run). Cost =
+`prompt_tokens x input price + completion_tokens x output price` (cached input at its own
+rate), from the `usage` field of each response; the run report prints tokens and dollars per
+gated request. `--budget-usd` (default 0.50) refuses any call whose worst-case cost would
+pass the cap.
+
+| tier | price source | $ per gated request | tokens per gated request |
+|---|---|---|---|
+| Policy only | none | $0 (no model) | 0 |
+| Muse Glimmer quants, local | none | $0 in API fees (electricity excluded) | pending (Windows run) |
+| Free baselines (Zen) | https://opencode.ai/docs/zen lists them as Free | $0 | pending (quota refused every call) |
+| Muse Spark 1.3, Meta API | https://dev.meta.ai/docs/pricing-rate-limits: $1.25 in / $4.25 out / $0.15 cached per 1M | pending `META_API_KEY` | pending |
+
+Meta run, once a key is set: `META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live
+--provider meta-api` (defaults: `muse-spark-1.3`, `https://api.meta.ai/v1`, $0.50 cap).
+
 ## Coverage baseline (Task 7, measured before thresholds)
 
 Measured with `npm run test:coverage` (Vitest + `@vitest/coverage-v8`,
