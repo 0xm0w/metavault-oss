@@ -246,12 +246,12 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     </div>
   </section>
 
-  <section class="hack-slide" id="warden-recall" data-label="Recall">
+  <section class="hack-slide" id="warden-recall" data-label="Risky reads">
     <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · high-risk recall</span>
-      <h2>How many risky reads reach you</h2>
+      <span class="caption-mono-sm pg-kicker">05 · Warden · risky reads caught</span>
+      <h2>Risky reads caught before they leak</h2>
       <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="High-risk read recall, best to worst, failed warden calls counted as misses: always-ask 28 of 28, rules plus Muse Spark 27 of 28, Muse Spark warden 25 of 28, rules 12 of 28">
+      <div class="pg-chart" role="img" aria-label="Risky reads caught before they leak, best to worst, failed warden calls not credited: always ask 28 of 28, rules plus Muse Spark 27 of 28, Muse Spark alone 25 of 28, policy only 12 of 28">
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="96.4"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="89.3"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
@@ -271,22 +271,22 @@ if warden_call_failed:
     </div>
   </section>
 
-  <section class="hack-slide" id="warden-fpr" data-label="False alarms">
+  <section class="hack-slide" id="warden-fpr" data-label="Safe reads">
     <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · false-alarm rate</span>
-      <h2>How often a safe read bothers you</h2>
-      <p class="pg-sub">Lower is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="False-alarm rate on benign reads, best to worst: Muse Spark 0 of 28, rules plus Muse Spark 9 of 28, rules 9 of 28, always-ask 28 of 28">
-        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="0"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="32.1"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="32.1"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="100"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+      <span class="caption-mono-sm pg-kicker">05 · Warden · safe reads that pass</span>
+      <h2>Safe reads that go through without asking you</h2>
+      <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
+      <div class="pg-chart" role="img" aria-label="Safe reads that go through without asking you, best to worst: Muse Spark alone 28 of 28, rules plus Muse Spark 19 of 28, policy only 19 of 28, always ask 0 of 28">
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="0"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
       </div>
       <p class="pg-legend" data-verdict-legend="percent"></p>
-      <blockquote class="pg-pull" style="margin-top:14px">Rules + Spark keeps the rules' 9 alarms, <strong>because the stricter verdict wins</strong>. All 9 are "hard" benign reads with words like <em>keys</em> or <em>export</em>; plain reads: 0/8.</blockquote>
-      <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the recall slide. Striped = no measurement.</p>
+      <blockquote class="pg-pull" style="margin-top:14px">All <strong>8/8</strong> plain safe reads go straight through. The 9 that ask you are "hard" reads that mention <em>keys</em> or <em>export</em>, where <strong>the stricter verdict wins</strong>.</blockquote>
+      <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the risky-reads slide. Striped = no measurement.</p>
     </div>
   </section>
 
@@ -315,7 +315,7 @@ cost = ((prompt - cached) * IN
           <p class="pg-tiny" style="margin:0">1,505–1,537 tokens per request, mostly output, from each response's <code>usage</code>. <a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>. Always ask has no gate latency: <em>it waits on you.</em></p>
         </div>
       </div>
-      <p class="pg-note pg-chart-src">Same runs as the recall slide. Lighter segment = range across the two Muse Spark runs.</p>
+      <p class="pg-note pg-chart-src">Same runs as the risky-reads slide. Lighter segment = range across the two Muse Spark runs.</p>
     </div>
   </section>
 
@@ -381,8 +381,8 @@ cost = ((prompt - cached) * IN
   <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 12, IDEs"><span></span></button>
   <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 12, App"><span></span></button>
   <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 12, Warden"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 12, Recall"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 12, False alarms"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 12, Risky reads"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 12, Safe reads"><span></span></button>
   <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 12, Latency &amp; cost"><span></span></button>
   <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 12, Grants"><span></span></button>
   <button type="button" class="hack-dot" data-slide="10" aria-label="Slide 11 of 12, Logs"><span></span></button>

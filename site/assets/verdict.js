@@ -2,10 +2,11 @@
  * Semantic chart colours. One place for every threshold on the site.
  *
  * A row is scored on how good the outcome is for that metric, not on how big
- * the number is. 100% recall is good; 100% false alarms is bad.
+ * the number is. Every site chart is now higher-is-better; data-better="lower"
+ * stays supported for any metric where a smaller number wins.
  *
  *   <div data-verdict="percent" data-better="higher" data-value="96.4"> ... </div>
- *   <div data-verdict="percent" data-better="lower"  data-value="32.1"> ... </div>
+ *   <div data-verdict="percent" data-better="lower"  data-value="10"> ... </div>
  *   <div data-verdict="latency" data-ms="17300"> ... </div>   (a range uses its slower end)
  *   <p data-verdict-legend="percent"></p>                      (renders the thresholds)
  */
