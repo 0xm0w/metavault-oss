@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- VS Code extension test runner loads CommonJS. */
 const vscode = require('vscode');
 const fs = require('fs');
 exports.run = async () => {
