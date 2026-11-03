@@ -9,7 +9,10 @@
 // bundle/vaultd ships as resources/vaultd and runs under the app's own
 // Electron binary with ELECTRON_RUN_AS_NODE=1, so users need no Node.
 // better-sqlite3 stays external: its Node-API prebuild for the target
-// platform is copied next to the bundles. No model is bundled.
+// platform is copied to bundle/vaultd/native/better-sqlite3 (not
+// node_modules: electron-builder drops node_modules folders from
+// extraResources) and the bundles require it by that relative path.
+// No model is bundled.
 import { build } from "esbuild";
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,6 +44,13 @@ await build({
   external: ["electron"],
 });
 
+const nativeSqlite = {
+  name: "native-better-sqlite3",
+  setup(b) {
+    b.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: "./native/better-sqlite3", external: true }));
+  },
+};
+
 rmSync(outVaultd, { recursive: true, force: true });
 mkdirSync(outVaultd, { recursive: true });
 const entries = [
@@ -53,13 +63,13 @@ for (const [entry, out] of entries) {
     ...shared,
     entryPoints: [join(repoRoot, "packages", entry)],
     outfile: join(outVaultd, out),
-    external: ["better-sqlite3"],
+    plugins: [nativeSqlite],
   });
 }
 
 // better-sqlite3: package.json + lib + the one Node-API prebuild we need.
 const sqliteSrc = join(repoRoot, "node_modules", "better-sqlite3");
-const sqliteDst = join(outVaultd, "node_modules", "better-sqlite3");
+const sqliteDst = join(outVaultd, "native", "better-sqlite3");
 const prebuild = join(sqliteSrc, "prebuilds", `${target}.node`);
 if (!existsSync(prebuild)) {
   throw new Error(`better-sqlite3 has no prebuild for ${target} (${prebuild})`);

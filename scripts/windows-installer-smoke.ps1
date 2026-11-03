@@ -67,13 +67,13 @@ foreach ($f in @(
     (Join-Path $installDir "resources\vaultd\vaultd.cjs"),
     (Join-Path $installDir "resources\vaultd\metavault.cjs"),
     (Join-Path $installDir "resources\vaultd\mcp.cjs"),
-    (Join-Path $installDir "resources\vaultd\node_modules\better-sqlite3\prebuilds\win32-x64.node"),
+    (Join-Path $installDir "resources\vaultd\native\better-sqlite3\prebuilds\win32-x64.node"),
     (Join-Path $binDir "metavault.cmd"),
     (Join-Path $binDir "vaultd.cmd"),
     (Join-Path $binDir "metavault.ps1"))) {
   Check (Test-Path $f) "installed: $($f.Substring($installDir.Length + 1))"
 }
-$models = Get-ChildItem $installDir -Recurse -File -Include "*.gguf", "*.safetensors", "*.bin" -ErrorAction SilentlyContinue
+$models = Get-ChildItem $installDir -Recurse -File -Include "*.gguf", "*.safetensors", "*.onnx", "*.ggml" -ErrorAction SilentlyContinue
 Check (-not $models) "no model files in the install folder"
 $sizeMb = [math]::Round(((Get-ChildItem $installDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
 Log "Install folder size: $sizeMb MB"
