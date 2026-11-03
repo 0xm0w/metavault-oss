@@ -62,18 +62,22 @@ npm test            # full suite (268/268 at Task 10 verification)
    ```
 
    (Build first with `npx tsc -p tsconfig.json --outDir dist`.)
-3. **Pull the marshal model.** On an **8 GB GPU** the default is
-   **Llama 3.2 3B Q4** (`llama3.2:3b`, ~2 GB download), which leaves most of
-   the card free for your IDE and agent:
+3. **Pull the marshal model.** The on-device marshal is Meta's open-weight
+   **Muse Glimmer 30B, Q4_K_M** (`muse-glimmer:30b`, ~18 GB download; needs
+   Ollama 0.32.7 or newer). Source: the official GGUF at
+   <https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF>
+   (`Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf`) and the Ollama library tag
+   <https://ollama.com/library/muse-glimmer>:
 
    ```powershell
-   node dist/packages/cli/src/cli.js model pull          # pulls llama3.2:3b
-   # equivalent direct Ollama call:  ollama pull llama3.2:3b
+   node dist/packages/cli/src/cli.js model pull          # pulls muse-glimmer:30b
+   # equivalent direct Ollama call:  ollama pull muse-glimmer:30b
    ```
 
-   Larger marshals (Llama 3.1 8B, Muse Glimmer 30B) speak the same
-   interface on bigger hardware; the guarantees do not change with model
-   seniority, only judgement quality does.
+   The model runs with a low reasoning-strength system prompt and a 120 s
+   local timeout (Fast/Standard/Deep: 60 s / 120 s / 240 s). The guarantees
+   do not change with the model, only judgement quality does: if Ollama is
+   down or the model times out, the request fails closed to your approval.
 4. **Add a credential once** (the secret is read with echo disabled and is
    stored only as AES-256-GCM ciphertext):
 
@@ -118,21 +122,21 @@ Tools exposed to agents (exactly five): `request_capability({alias, scope, reaso
 The desktop app's **Settings** page chooses who judges capability requests. Deterministic policy stays the floor in every configuration: the warden can narrow or escalate, never widen.
 
 - **Warden provider:** `None (policy only)` / `Local — Ollama` / `Meta API (cloud)`. Meta API sends request metadata (agent, alias, scope, reason — never secrets) off-device; the page says so plainly.
-- **Model:** for Ollama, the catalogue below (or any free-text model id); for Meta API, the API model id plus an editable base URL (default `https://api.llama.com/v1`).
-- **Effort:** `Fast` (one marshal pass, 10s timeout), `Standard` (one pass, 30s), `Deep` (two passes — assess + verify — 60s; on disagreement it escalates to you and keeps the narrower scope). Effort never changes policy ceilings.
+- **Model:** for Ollama, the catalogue below (or any free-text model id); for Meta API, the API model id (default `muse-spark-1.3`; also `muse-spark-1.2`, `muse-wonder-1.0`, per <https://dev.meta.ai/docs/models>) plus an editable base URL (default `https://api.meta.ai/v1`).
+- **Effort:** `Fast` (one marshal pass; 10s cloud / 60s local timeout), `Standard` (one pass; 30s / 120s), `Deep` (two passes — assess + verify — 60s / 240s; on disagreement it escalates to you and keeps the narrower scope). Effort never changes policy ceilings.
 - **Meta API key:** paste once and Save; the field clears and is never repopulated. Status shows only `Not configured` or `Configured ••••last4`. The key is stored as an ordinary encrypted credential (alias `warden-meta-api`) and decrypted only inside the daemon at call time. **Test connection** runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.
 - **Daemon / Security defaults:** read-only daemon URL, vault path and version, plus a policy-floor summary with a jump to Policies. Settings apply on the next request — no daemon restart needed. All settings routes require the daemon token; agents cannot read or change them.
 
 ### Security levels (warden tiers & hardware profiles)
 
-These are the tiers supported by the daemon and Settings UI. Higher tiers buy independent judgment and multi-model consensus, not permission:
+These are the tiers supported by the daemon and Settings UI. Higher tiers buy independent judgment, not permission:
 
 | Tier | Mode & Warden Architecture | Hardware Profile & Requirements |
 |---|---|---|
-| **Meta BFT Consensus** | **Dual-Warden (Cloud API + Local Fallback)** | Multi-tier consensus. Meta API (llama-3.3-70b-instruct) as primary cloud warden cross-verifying with on-device Meta Llama 3.2 1B (WebGPU) with automatic offline resilience. |
-| **Meta API (Cloud)** | **Lightweight / Universal** (llama-3.3-70b-instruct) | Any machine (0 MB download, 0 VRAM overhead). Instant setup, pure cloud speed. Hackathon MVP default. |
-| **Built-in AI (WebGPU)** | **On-Device Private** (llama3.2:1b INT4) | Modern PC with WebGPU (Direct3D 12 / Vulkan, ~680 MB edge model). 100% private on-device execution. |
-| Self-Hosted | llama3.2:3b / llama3.1:8b (Ollama) | Local Ollama instance, 8 GB+ GPU. |
+| **Meta BFT (two-warden quorum)** | **Cloud + local** | Muse Spark (`muse-spark-1.3`, Meta API) and on-device Muse Glimmer 30B both score the request and the stricter verdict wins (higher risk, narrower scope, approval if either asks); if one leg is unavailable the other decides alone. Two wardens, not a Byzantine fault-tolerant cluster. |
+| **Meta API (Cloud)** | **Muse Spark** (`muse-spark-1.3`) | Any machine (no model download). Sends request metadata (never secrets) to `https://api.meta.ai/v1`. |
+| **On-Device (Built-in)** | **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b`, via Ollama) | ~18 GB model download; needs enough RAM/VRAM for a 30B Q4 model. Nothing about the request leaves the machine. |
+| Self-Hosted | `muse-glimmer:30b` (your Ollama) | Same model through a local Ollama you manage (`METAVAULT_OLLAMA_URL`). |
 | Policy Only | Provider one | Deterministic policy rules alone; all non-trivial operations escalate to human. |
 
 ## End-to-end agent flows (real screenshots)
@@ -216,38 +220,25 @@ Run it:
 ```powershell
 npx tsc -p tsconfig.json --outDir dist
 node dist/packages/brain/eval/run-eval.js --fake   # deterministic fake brain (mechanics proof)
-node dist/packages/brain/eval/run-eval.js --live   # live Ollama marshal (default llama3.2:3b)
+node dist/packages/brain/eval/run-eval.js --live   # live Ollama marshal (default muse-glimmer:30b)
 ```
 
-Measured fake-brain run (this repo, harness mechanics — the fake marshal's
-canned decisions include deliberately fooled ones, so risk accuracy below
-100% is by construction; safety is the gate):
+The fake-brain run proves the harness mechanics only (the fake marshal's
+canned decisions include deliberately fooled ones, so its risk accuracy is
+below 100% by construction; safety is the gate).
 
-| Metric | Fake brain (measured) | Live `llama3.2:3b` (measured, one warm run, 2026-10-31) |
-|---|---|---|
-| Risk accuracy | 76.5% (13/17) | 35.3% (6/17) |
-| Approval accuracy | 100% (17/17) | 82.4% (14/17) |
-| Safety rate | 100% (17/17) | 100% (17/17) |
-| Safety gate | PASS | PASS |
-
-Reading the live column honestly: the 3B marshal's *risk labels* are weak
-(35.3% against ground truth on this labelled set) and its approval advice
-disagrees with expected outcomes in 3 of 17 cases — and in **zero** cases
-did that matter for safety, because deterministic policy clamped every
-scope and required human approval for every write. That is the design
-claim, measured: marshal quality is a judgement metric, never the security
-floor. Caveats: this is a single warm-model run of a nondeterministic local
-model (scores will vary between runs; a first cold run with an unloaded
-model timed every request out to the null-decision path and still scored
-100% safety), and the two `marshal-failure` scenarios only exercise their
-labelled path in `--fake` mode (in live mode the model simply answers).
-Re-run the `--live` command after `model pull` to reproduce.
+**Live Muse Glimmer 30B results: pending.** The earlier live numbers in this
+README were measured against the previous local model, which is no longer shipped, and have
+been removed. The live eval for `muse-glimmer:30b` (accuracy, safety gate,
+latency, and the Ollama process's peak RAM) is produced by
+`scripts/eval-windows.ps1` and saved under `docs/verification/`; no figures
+are quoted here until that run exists.
 
 ## Demo script (3 minutes)
 
 1. (15s) The horror: a real key pasted into an agent chat, now in a transcript.
 2. (20s) Without MetaVault OSS, the agent is blocked or the human pastes the key.
-3. (45s) Agent requests `stripe:charges.read` via MCP. Llama 3.2 3B explains
+3. (45s) Agent requests `stripe:charges.read` via MCP. Muse Glimmer 30B explains
    the risk in one sentence. Human approves once.
 4. (30s) Tool succeeds. Show the chat/transcript: the key never appeared.
 5. (30s) Revoke the agent mid-task. Its next request fails safely.
@@ -269,12 +260,12 @@ fail-closed whitelist before rendering.
 
 ## Verification (measured 2026-10-31)
 
-All gates were run on the demo-class machine (RTX 3070 8 GB, llama3.2:3b Q4). Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
+These gates were run on 2026-10-31 on the demo-class machine (RTX 3070 8 GB) with the previous local model; the live brain eval is being re-run for Muse Glimmer 30B (pending). Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 | Gate | Result |
 |---|---|
 | Tests / typecheck / lint | 268 passed / exit 0 / exit 0 |
-| Brain eval (fake / live) | safety 100% / 100%, gate PASS |
+| Brain eval (fake / live) | fake: safety 100%, gate PASS / live Muse Glimmer 30B: pending |
 | Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS in 3.6 s |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |
 | Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
@@ -283,6 +274,6 @@ All gates were run on the demo-class machine (RTX 3070 8 GB, llama3.2:3b Q4). Fu
 
 Known limitations, honestly:
 
-- The 3B marshal risk labels are weak (23.5% live risk accuracy); safety comes from deterministic policy, not the model. See the eval.
+- Live marshal accuracy for Muse Glimmer 30B is pending the Windows eval run. Safety comes from deterministic policy, not the model.
 - Standing approvals (Always allow) live in daemon memory and do not persist across vaultd restarts - fail-safe, but a known limitation.
 - The macOS DMG and code signing still need a Mac and a certificate. The full 3-minute demo video should be re-recorded live on demo day; the walkthrough above is assembled from real screenshots.

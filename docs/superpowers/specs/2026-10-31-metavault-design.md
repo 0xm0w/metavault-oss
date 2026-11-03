@@ -1,5 +1,7 @@
 # MetaVault OSS — Design Spec
 
+> **Superseded model choice (#70, 2026-11-03):** this is the historical design record. The local warden is now Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) and the cloud default is **Muse Spark** (`muse-spark-1.3` at `https://api.meta.ai/v1`). Model names below describe the original plan and are no longer shipped or supported. See README.md and `docs/verification/muse-glimmer-model-verification.md`.
+
 - Date: 2026-10-31
 - Track: Indie Developer
 - Challenge: Push the Frontier (primary) + Build for Your World (secondary)

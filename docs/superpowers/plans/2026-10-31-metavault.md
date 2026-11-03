@@ -1,5 +1,7 @@
 # MetaVault OSS Implementation Plan
 
+> **Superseded model choice (#70, 2026-11-03):** this is the historical design record. The local warden is now Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) and the cloud default is **Muse Spark** (`muse-spark-1.3` at `https://api.meta.ai/v1`). Model names below describe the original plan and are no longer shipped or supported. See README.md and `docs/verification/muse-glimmer-model-verification.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build MetaVault OSS — a local-first Electron wallet where AI agents request scoped capabilities via MCP, a local Llama 3.2 3B marshal vets each request, the human approves, and the daemon injects the secret into one tool call that then expires.

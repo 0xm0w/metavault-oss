@@ -1,9 +1,15 @@
 # Verification — measured gates (2026-10-31)
 
 Every number below was produced by running the gate on the demo-class
-machine (Windows, NVIDIA GeForce RTX 3070 8 GB, Node 24, Ollama with
-`llama3.2:3b` Q4, 2.0 GB model download) and saving the raw output next
-to this file. Re-run any gate with the commands shown.
+machine (Windows, NVIDIA GeForce RTX 3070 8 GB, Node 24, Ollama with the
+previous ~2 GB local model) and saving the raw output next to this file.
+Re-run any gate with the commands shown.
+
+> **#70 (2026-11-03):** the local warden is now Meta **Muse Glimmer 30B
+> Q4_K_M** (`muse-glimmer:30b`). The fake-brain eval was re-run on the agent
+> box (`eval-fake.txt`). The live eval for the new model is **pending**: run
+> `scripts\eval-windows.ps1` on the Windows desktop; see
+> `verification/eval-live-PENDING.md`. The old live output was removed.
 
 ## Gate results
 
@@ -12,15 +18,15 @@ to this file. Re-run any gate with the commands shown.
 | Unit + integration tests | `npm test` | **268 passed** (33 files), 0 failed |
 | Typecheck (strict) | `npm run typecheck` | exit 0 |
 | Lint (max-warnings 0) | `npm run lint` | exit 0 |
-| Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (1.2 s wall) |
-| Brain eval, live marshal | `node dist/packages/brain/eval/run-eval.js --live` | risk 23.5%, approval 64.7%, **safety 100%, gate PASS** (59.7 s / 17 scenarios) |
+| Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (re-run 2026-11-03) |
+| Brain eval, live marshal (Muse Glimmer 30B) | `scripts\eval-windows.ps1` | **pending** |
 | Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS**, 3.6 s wall |
 | Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (4.3 s / 4.8 s incl. model call) |
 | Electron GUI | manual CDP-driven run, screenshots below | Approval, Audit, Vault verified live |
 | Windows installer | `npx electron-builder --win nsis` | built, 115.6 MB, unsigned |
 | Demo walkthrough video | ffmpeg from live screenshots | 21 s, 1280x720, h264 |
 
-Raw outputs: `eval-fake.txt`, `eval-live.txt`, `rehearsal.txt`,
+Raw outputs: `eval-fake.txt`, `eval-live-PENDING.md`, `rehearsal.txt`,
 `mcp-two-host.txt` in this directory.
 
 ## Coverage baseline (Task 7, measured before thresholds)
@@ -87,11 +93,11 @@ IDEs; both IDEs are present on this machine and use this exact transport.
 
 - `electron-approval.png` — a real pending request in the Approval hero:
   marshal assessment, expiry countdown, Approve/Deny/Always allow.
-  (The 3B marshal labelled this one LOW RISK while still requiring
+  (The previous local marshal labelled this one LOW RISK while still requiring
   approval — the human gate held. We show it because it is honest.)
 - `electron-audit.png` — the Audit timeline after clicking **Deny** in
   the real window: Requested → Marshal → Policy → Denied by human, each
-  marshal row naming `llama3.2:3b`.
+  marshal row naming the previous local model (screenshot predates #70).
 - `electron-vault.png` — the Vault home: `stripe · charges.read`,
   values never displayed.
 
@@ -137,9 +143,9 @@ The same four images are wired into the site docs page
 `/assets/shots/`) and into the README's end-to-end flows section. The
 site docs and README gained an MCP install section (five hosts, five
 tools), a Settings/warden section, and a security-levels table aligned
-with the Task 3 tiers (`none` / `llama3.2:3b` Medium / `llama3.1:8b`
-High / `llama3.3:70b` Maximum-local / Meta API cloud; effort
-Fast 10s / Standard 30s / Deep 60s). Semantic data-flow charting stays
+with the Task 3 tiers (at the time: `none`, three local sizes, and Meta
+API cloud; effort Fast 10s / Standard 30s / Deep 60s). Since #70 the only
+local model is `muse-glimmer:30b` and local timeouts are 60 / 120 / 240 s. Semantic data-flow charting stays
 deferred, per the plan.
 
 Gates for this task (run in-session): `npm run test` — **268 passed**

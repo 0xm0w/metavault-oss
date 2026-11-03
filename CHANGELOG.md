@@ -4,6 +4,21 @@ All notable changes to MetaVault OSS are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Local warden is now Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) for the Ollama, built-in and BFT paths; earlier local models removed from code, settings, UI and docs (#70).
+- The built-in on-device engine is wired: it runs Muse Glimmer through local Ollama and the Settings download pulls it via `/api/pull` (previously it wrote placeholder files and always failed closed) (#70).
+- Low reasoning-strength system prompt for Glimmer; local timeouts raised to 60 / 120 / 240 s (was 10 / 30 / 60 s) (#70).
+- Meta API cloud default is now `https://api.meta.ai/v1` with `muse-spark-1.3` (#70).
+- BFT copy describes a two-warden quorum (#70).
+
+### Removed
+
+- `site/research/` and every link to it (#70).
+- `docs/verification/eval-live.txt` (old model); live Muse Glimmer eval pending via `scripts/eval-windows.ps1` (#70).
+
 ## [0.1.1-hackathon.sprint] — 2026-11-02
 
 Meta Hackathon (Indie Track) release sprint.
@@ -13,7 +28,7 @@ Meta Hackathon (Indie Track) release sprint.
 - Meta Hackathon portal & interactive snap deck live at `metahackathon.whativedone.xyz`.
 - Trust & pedigree bridge linking to Keythings (`keythings.xyz`), creators of Keeta Wallet OSS (securing cryptographic keys and non-custodial transactions since 2025).
 - Live carousel and real GitHub shipping timeline showcasing the security researcher heritage.
-- Hardened adversarial prompt defenses, unverified caller quarantine, and empirical 100% defense benchmark against live Llama 3.2 3B (#55).
+- Hardened adversarial prompt defenses, unverified caller quarantine, and an adversarial defense benchmark against the then-default local model (#55).
 
 ## [0.1.0] — 2026-11-01
 

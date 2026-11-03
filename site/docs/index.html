@@ -23,7 +23,6 @@
     <a class="mb-logo" href="/overview/">METAVAULT OSS</a>
     <div class="mb-nav-desktop-links">
       <a class="caption-mono-sm" href="/">Hackathon</a>
-      <a class="caption-mono-sm" href="/research/">Research</a>
       <a class="caption-mono-sm" href="/architecture/">Architecture</a>
       <a class="caption-mono-sm is-active" href="/docs/">Docs</a>
       <a class="mb-btn-nav" href="/overview/#download">Download</a>
@@ -34,7 +33,6 @@
   </div>
   <div class="mb-nav-mobile-menu" id="mobile-menu" hidden>
     <a class="mb-mobile-menu-item" href="/">Hackathon</a>
-    <a class="mb-mobile-menu-item" href="/research/">Research</a>
     <a class="mb-mobile-menu-item" href="/architecture/">Architecture</a>
     <a class="mb-mobile-menu-item is-active" href="/docs/">Docs</a>
     <a class="mb-btn-nav" href="/overview/#download" style="margin-top:8px;align-self:flex-start">Download</a>
@@ -73,7 +71,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         <article class="pg-card">
           <span class="n">Local model</span>
           <h3>Ollama, if you want a warden</h3>
-          <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Llama 3.2 1B (Edge / WebGPU DirectML)</span>, about 1.3 GB.</p>
+          <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Muse Glimmer 30B (Q4_K_M via Ollama)</span>, about 18 GB.</p>
           <a class="mb-btn-secondary" href="https://ollama.com"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Get Ollama</span></a>
         </article>
       </div>
@@ -86,7 +84,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <h2>Three commands, then the app</h2>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key goes to the OS keychain, not a file you can paste.</p></article>
-        <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Detects the GPU and loads Llama 3.2 1B (Edge / WebGPU DirectML). Skip this and policy still holds the ceiling.</p></article>
+        <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Pulls Muse Glimmer 30B (Q4_K_M) through Ollama. Skip this and policy still holds the ceiling.</p></article>
         <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>metavault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
       </div>
     </div>
@@ -237,13 +235,11 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       <h2>A stronger model is not a stronger permission.</h2>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">Policy only</span><h3>None</h3><p class="pg-note">Ceilings, expiry, and your approval. Works with the model switched off.</p></article>
-        <article class="pg-card"><span class="n">Edge · default</span><h3>Llama 3.2 1B</h3><p class="pg-note">Edge / WebGPU DirectML on this machine. Risk, a recommended scope, one line of why.</p></article>
-        <article class="pg-card"><span class="n">High</span><h3>llama3.1:8b</h3><p class="pg-note">Same metadata. Stronger judgement. Still no key in the prompt.</p></article>
-        <article class="pg-card"><span class="n">Maximum-local</span><h3>llama3.3:70b</h3><p class="pg-note">A large local GPU. Nothing about the request leaves the machine.</p></article>
-        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Metadata only, to the API you configure. The key stays in the daemon.</p></article>
-        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta BFT</h3><p class="pg-note">Byzantine fault-tolerant consensus: Meta API (cloud) plus on-device Llama co-audit. Cross-verification with offline fallback.</p></article>
+        <article class="pg-card"><span class="n">On-device · default</span><h3>Muse Glimmer 30B</h3><p class="pg-note">Meta's open-weight model, Q4_K_M via Ollama on this machine (~18 GB). Risk, a recommended scope, one line of why. Nothing about the request leaves the machine.</p></article>
+        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta API</h3><p class="pg-note">Muse Spark by default. Metadata only, to the API you configure. The key stays in the daemon.</p></article>
+        <article class="pg-card"><span class="n">Opt-in</span><h3>Meta BFT</h3><p class="pg-note">Two-warden quorum: Muse Spark (Meta API) plus on-device Muse Glimmer. The stricter verdict wins; if one is unavailable the other decides alone.</p></article>
       </div>
-      <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes; if they disagree it keeps the narrower scope, raises risk to the higher of the two, and requires your approval. Why the floor holds is on the <a href="../research/">research page</a>.</p>
+      <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes; if they disagree it keeps the narrower scope, raises risk to the higher of the two, and requires your approval. Why the floor holds is on the <a href="../architecture/">architecture page</a>.</p>
     </div>
   </section>
 
@@ -270,7 +266,7 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
         </article>
         <article class="pg-card">
           <span class="n">Never logged</span>
-          <p class="pg-note">No key, fragment, or hash. Same ban on MCP responses and the settings screen. The check is the <a href="../research/#q2-proofs">27-surface canary</a>.</p>
+          <p class="pg-note">No key, fragment, or hash. Same ban on MCP responses and the settings screen. The check is the <a href="https://github.com/0xm0w/metavault-oss/blob/main/test/security/canary.test.ts">27-surface canary</a>.</p>
         </article>
       </div>
     </div>
@@ -292,7 +288,6 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       <a href="/overview/">Overview</a>
       <a href="/docs/">Docs</a>
       <a href="/architecture/">Architecture</a>
-      <a href="/research/">Research</a>
       <a href="/">Hackathon</a>
       <a href="https://github.com/0xm0w/metavault-oss">GitHub</a>
     </nav>

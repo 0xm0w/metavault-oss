@@ -33,10 +33,11 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
   Key stored encrypted as credential `warden-meta-api`, only `last4` ever shown,
   routes token-guarded (`GET/PATCH /settings/warden`, `PUT/DELETE/GET /settings/warden/key`,
   real self-check `POST /settings/warden/test`).
-- **Warden providers**: Ollama (default `llama3.2:3b`) + Meta API
-  (`https://api.llama.com/v1/chat/completions`, verified from official docs, cited in
-  `packages/brain/src/meta-api.ts`). Effort: fast 1 pass/10s, standard 1 pass/30s,
-  deep 2 passes/60s (disagreement escalates, keeps narrower scope).
+- **Warden providers**: Ollama / built-in on-device (default `muse-glimmer:30b`, Meta
+  Muse Glimmer 30B Q4_K_M, #70) + Meta API (`https://api.meta.ai/v1/chat/completions`,
+  default `muse-spark-1.3`, per https://dev.meta.ai/docs/models, cited in
+  `packages/brain/src/meta-api.ts`). Effort: fast 1 pass, standard 1 pass, deep 2 passes
+  (disagreement escalates, keeps narrower scope); timeouts cloud 10/30/60 s, local 60/120/240 s.
 - **Audit page**: every request grouped by `requestId` with warden verdict timeline
   (risk, recommended scope, decision source, latency, explanation). No secrets in audit.
 - **Pen test done**: `docs/SECURITY-AUDIT.md`, `test/security/pentest.test.ts`,
