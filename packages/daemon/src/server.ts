@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import Database from "better-sqlite3";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -892,6 +893,25 @@ export function firstRunSetupEnabled(env: NodeJS.ProcessEnv = process.env): bool
   return env["METAVAULT_FIRST_RUN_SETUP"] === "1";
 }
 
+// First-run is not recovery. A missing wrapped key must never invite creation
+// of a new unrelated key over encrypted records. Inspect without creating or
+// migrating a DB; unreadable/unknown existing DBs fail closed too.
+export function assertFirstRunDatabaseEmpty(dbPath: string): void {
+  if (dbPath === ":memory:" || !existsSync(dbPath)) return;
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='credentials'").get();
+    if (table === undefined) throw new Error("existing database schema is unrecognized");
+    const row = db.prepare("SELECT COUNT(*) AS count FROM credentials").get() as {count: number};
+    if (row.count !== 0) throw new Error("existing credentials require their original key");
+  } catch {
+    throw new Error("Vault recovery required: an existing vault has no available key. Do not create a new vault or delete files. Stop MetaVault and restore the matching database and key backup, or recover its legacy OS keychain key.");
+  } finally {
+    db?.close();
+  }
+}
+
 export function resolveDaemonKeySession(
   dbPath: string,
   warn: (line: string) => void = (l) => process.stderr.write(`${l}\n`),
@@ -913,6 +933,7 @@ export function resolveDaemonKeySession(
     return createKeySession({ mode: "keychain-legacy", key: fromKeychain });
   }
   if (allowFirstRun) {
+    assertFirstRunDatabaseEmpty(dbPath);
     const autoLockMs = autoLockMsFromEnv();
     return createFirstRunKeySession({
       wrappedKeyPath: wrappedKeyFilePath(dbPath),
