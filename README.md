@@ -34,7 +34,7 @@ The `0.1.0-alpha` installer (`MetaVault-OSS-0.1.0-alpha-win-x64.exe`) is built b
 - The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
 - No model is bundled or downloaded.
 - Uninstall (Apps & features) removes the program, shortcuts, PATH entry and start-at-login entry, and asks whether to delete your vault data. A silent uninstall (`/S`) keeps it.
-- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall. It then checks that the uninstall removed the program, shortcuts, registry entries and PATH entry, and that it kept the vault data in `%APPDATA%\MetaVault OSS` (by design). Log from the run that built the draft exe: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt) ([run 41624173924](https://github.com/0xm0w/metavault-oss/actions/runs/41624173924)).
+- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall. It then checks that the uninstall removed the program, shortcuts, registry entries and PATH entry, and that it kept the vault data in `%APPDATA%\MetaVault OSS` (by design). Log from the run that built the draft exe: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt) ([run 41627209888](https://github.com/0xm0w/metavault-oss/actions/runs/41627209888)).
 
 To build the installer locally from source (on Windows):
 
@@ -297,7 +297,7 @@ Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come fro
 | Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |
 | Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
-| Windows installer | NSIS `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,227 bytes, unsigned; clean-install smoke test PASS in CI |
+| Windows installer | NSIS `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,486 bytes, unsigned; clean-install smoke test PASS in CI |
 | Demo walkthrough video | docs/verification/demo-walkthrough.mp4 (21 s) |
 
 Known limitations, honestly:

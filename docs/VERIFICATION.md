@@ -24,7 +24,7 @@ Re-run any gate with the commands shown.
 | Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS** (previous local model) |
 | Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (366 ms / 378 ms, [`mcp-two-host.txt`](verification/mcp-two-host.txt)) |
 | Electron GUI | manual CDP-driven run, screenshots below | Approval, Audit, Vault verified live |
-| Windows installer | CI `Windows installer` workflow (`electron-builder --win --publish never`) | `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,227 bytes, unsigned; clean-install smoke test PASS ([log](verification/windows-installer-smoke.txt)) |
+| Windows installer | CI `Windows installer` workflow (`electron-builder --win --publish never`) | `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,486 bytes, unsigned; clean-install smoke test PASS ([log](verification/windows-installer-smoke.txt)) |
 | Demo walkthrough video | ffmpeg from live screenshots | 21 s, 1280x720, h264 |
 
 Raw outputs: `eval-fake.txt`, `rehearsal.txt`,
@@ -199,10 +199,10 @@ client moved to the main process behind a whitelisted IPC channel).
 
 ## Installer
 
-`MetaVault-OSS-0.1.0-alpha-win-x64.exe` (NSIS, x64, 121,940,227 bytes,
-SHA256 `596477612e1ea81a4ca9bfd527f3e9f55746b52bb1232a8014347414676abde2`)
+`MetaVault-OSS-0.1.0-alpha-win-x64.exe` (NSIS, x64, 121,940,486 bytes,
+SHA256 `79a76ca029bbcbf774e830ff4ca8094a35c15f8f0e9c6a778ad9411bdfac7f78`)
 is built by CI run
-[41624173924](https://github.com/0xm0w/metavault-oss/actions/runs/41624173924)
+[41627209888](https://github.com/0xm0w/metavault-oss/actions/runs/41627209888)
 and attached to the draft `v0.1.0-alpha` release. It is unsigned (no
 certificate). The same run's clean-install smoke test passed:
 [`verification/windows-installer-smoke.txt`](verification/windows-installer-smoke.txt). The macOS DMG config is
