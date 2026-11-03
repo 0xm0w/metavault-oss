@@ -6,7 +6,6 @@ import { DAEMON_CALL_CHANNEL, callDaemon } from "./daemon-client.js";
 import { DEEPLINK_CHANNEL, findVaultDeeplink, parseVaultDeeplink, type DeeplinkAddParams } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 import { initAutoUpdater } from "./updater.js";
-import { registerBuiltinAiIpc } from "./builtin-ai-ipc.js";
 import { registerWindowsHelloIpc } from "./windows-hello.js";
 
 // MetaVault OSS desktop shell: a window over vaultd, in the wallet pattern.
@@ -177,7 +176,6 @@ if (!hasLock) {
   void app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
-    registerBuiltinAiIpc(() => mainWindow);
     registerWindowsHelloIpc();
     ipcMain.on("metavault:bring-to-front", () => {
       bringWindowToFront();

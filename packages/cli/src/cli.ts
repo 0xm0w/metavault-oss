@@ -6,7 +6,6 @@ import { createInterface } from "node:readline";
 import { Writable, type Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import { resolveDefaultWardenModel } from "../../core/src/settings.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
 import { metavaultEnv } from "../../core/src/env.js";
 import { parseDotEnvWithInference } from "../../core/src/dotenv.js";
@@ -87,7 +86,6 @@ export type CliSpawn = (
 
 export interface CliDeps {
   readonly daemonUrl?: string | undefined;
-  readonly ollamaUrl?: string | undefined;
   readonly fetchFn?: CliFetch | undefined;
   readonly readSecret?: ((prompt: string) => Promise<string>) | undefined;
   readonly masterKey?: Buffer | undefined;
@@ -124,13 +122,12 @@ interface ResolvedIo {
   readonly err: (text: string) => void;
   readonly fetchFn: CliFetch;
   readonly daemonUrl: string;
-  readonly ollamaBase: string;
   readonly daemonToken: string | undefined;
   readonly readSecret: (prompt: string) => Promise<string>;
 }
 
 const USAGE =
-  "usage: metavault <init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|model pull>\n";
+  "usage: metavault <init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -175,9 +172,6 @@ function resolveIo(deps: CliDeps): ResolvedIo {
     fetchFn: deps.fetchFn ?? fetch,
     daemonUrl: trimTrailingSlashes(
       deps.daemonUrl ?? metavaultEnv("DAEMON_URL") ?? "http://127.0.0.1:7077",
-    ),
-    ollamaBase: trimTrailingSlashes(
-      deps.ollamaUrl ?? metavaultEnv("OLLAMA_URL") ?? "http://localhost:11434",
     ),
     daemonToken: resolveDaemonToken(deps),
     readSecret:
@@ -890,24 +884,6 @@ function auditProgram(io: ResolvedIo): Effect.Effect<string, CliFailure> {
   });
 }
 
-function modelPullProgram(io: ResolvedIo, model: string): Effect.Effect<string, CliFailure> {
-  const pull: Effect.Effect<void, MarshalUnavailable> = Effect.tryPromise({
-    try: async (): Promise<void> => {
-      const res = await io.fetchFn(`${io.ollamaBase}/api/pull`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: model, stream: false }),
-      });
-      await res.text();
-      if (!res.ok) {
-        throw new Error(`ollama pull returned HTTP ${String(res.status)}`);
-      }
-    },
-    catch: () => new MarshalUnavailable({ message: "MarshalUnavailable: model pull failed" }),
-  });
-  return pull.pipe(Effect.map(() => `pulled ${model}\n`));
-}
-
 function programFor(
   argv: readonly string[],
   deps: CliDeps,
@@ -980,12 +956,6 @@ function programFor(
       const enrollmentId = argv[1];
       if (enrollmentId === undefined || enrollmentId === "") { return Effect.fail(new UsageError({ message: "enroll-status requires <enrollmentId>" })); }
       return enrollStatusProgram(io, enrollmentId);
-    }
-    case "model": {
-      if (argv[1] !== "pull") {
-        return Effect.fail(new UsageError({ message: "model requires the pull subcommand" }));
-      }
-      return modelPullProgram(io, argv[2] ?? resolveDefaultWardenModel(process.env));
     }
     default:
       return Effect.fail(new UsageError({ message: "unknown command" }));

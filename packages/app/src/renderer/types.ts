@@ -133,7 +133,8 @@ export interface DeeplinkAddParams {
   readonly enrollmentId: string;
 }
 
-export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin" | "bft";
+export type WardenProvider = "none" | "meta-api" | "local" | "bft";
+export type LocalApiStyle = "ollama" | "openai";
 export type WardenEffort = "fast" | "standard" | "deep";
 
 export interface WardenSettingsLike {
@@ -141,6 +142,9 @@ export interface WardenSettingsLike {
   readonly model: string;
   readonly effort: WardenEffort;
   readonly metaApiBaseUrl: string;
+  readonly localBaseUrl: string;
+  readonly localApi: LocalApiStyle;
+  readonly localModel: string;
 }
 
 export interface WardenSettingsPatch {
@@ -148,6 +152,9 @@ export interface WardenSettingsPatch {
   readonly model?: string;
   readonly effort?: WardenEffort;
   readonly metaApiBaseUrl?: string;
+  readonly localBaseUrl?: string;
+  readonly localApi?: LocalApiStyle;
+  readonly localModel?: string;
 }
 
 export interface WardenKeyStatusLike {
@@ -249,25 +256,6 @@ export interface UpdaterStatusLike {
 }
 
 
-export interface BuiltinAiProgressLike {
-  readonly state: "idle" | "downloading" | "verifying" | "completed" | "error" | "cancelled";
-  readonly percent: number;
-  readonly downloadedBytes: number;
-  readonly totalBytes: number;
-  readonly speedBytesPerSec: number;
-  readonly error?: string;
-}
-
-export interface BuiltinAiStatusLike {
-  readonly resolverStatus: {
-    readonly state: "bundled" | "cached" | "missing";
-    readonly modelId: string;
-    readonly path: string | null;
-    readonly requiredBytes: number;
-  };
-  readonly downloadStatus: BuiltinAiProgressLike | null;
-}
-
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
@@ -307,10 +295,6 @@ export interface VaultApi {
   readonly checkForUpdates: () => Promise<unknown>;
   readonly quitAndInstallUpdate: () => Promise<unknown>;
   readonly onUpdaterStatus: (handler: (status: UpdaterStatusLike) => void) => () => void;
-  readonly getBuiltinAiStatus: () => Promise<BuiltinAiStatusLike>;
-  readonly startBuiltinAiDownload: () => Promise<boolean>;
-  readonly cancelBuiltinAiDownload: () => Promise<boolean>;
-  readonly onBuiltinAiProgress: (handler: (progress: BuiltinAiProgressLike) => void) => () => void;
 }
 
 declare global {

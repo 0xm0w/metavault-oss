@@ -54,7 +54,7 @@ describe("warden provider none", () => {
     expect(JSON.stringify(audit)).not.toContain("sk-test-secret");
 
     // Settings are read per request: switching back re-enables the marshal.
-    await Effect.runPromise(service.updateWardenSettings({ provider: "ollama" }));
+    await Effect.runPromise(service.updateWardenSettings({ provider: "local" }));
     const second = await Effect.runPromise(
       service.requestCapability({ ...req, reason: "again" }),
     );

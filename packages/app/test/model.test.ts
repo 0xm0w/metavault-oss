@@ -34,7 +34,11 @@ import {
   wardenVerdict,
   DEFAULT_WARDEN_SETTINGS,
   EFFORT_OPTIONS,
-  OLLAMA_MODEL_OPTIONS,
+  LOCAL_API_OPTIONS,
+  SUGGESTED_LOCAL_BASE_URL,
+  SUGGESTED_LOCAL_MODEL,
+  WARDEN_PROVIDERS,
+  isLocalBaseUrlValid,
   buildWardenPatch,
   isWardenFormComplete,
   META_API_MODEL_OPTIONS,
@@ -125,14 +129,16 @@ describe("scope risk helpers", () => {
 });
 
 describe("marshal status line", () => {
-  it("renders the pinned on-device line by default", () => {
-    expect(marshalStatusLine()).toBe("Marshal · Muse Glimmer 30B · On-device");
-    expect(marshalStatusLine(undefined)).toBe("Marshal · Muse Glimmer 30B · On-device");
-    expect(marshalStatusLine("muse-glimmer:30b")).toBe("Marshal · Muse Glimmer 30B · On-device");
+  it("renders the Muse Spark Meta API line by default", () => {
+    expect(marshalStatusLine()).toBe("Marshal · muse-spark-1.3 · Meta API");
+    expect(marshalStatusLine(undefined)).toBe("Marshal · muse-spark-1.3 · Meta API");
+    expect(marshalStatusLine("  ")).toBe("Marshal · muse-spark-1.3 · Meta API");
+    expect(marshalStatusLine("muse-spark-1.2")).toBe("Marshal · muse-spark-1.2 · Meta API");
   });
 
-  it("names other models without changing the shape", () => {
-    expect(marshalStatusLine("custom-model:7b")).toBe("Marshal · custom-model:7b · On-device");
+  it("names a bring-your-own model without claiming where it runs", () => {
+    expect(marshalStatusLine("muse-glimmer:30b")).toBe("Marshal · muse-glimmer:30b");
+    expect(marshalStatusLine("custom-model:7b")).toBe("Marshal · custom-model:7b");
   });
 });
 
@@ -844,17 +850,21 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
 });
 
 describe("warden settings form state (Task 6)", () => {
-  it("mirrors daemon defaults and the OLLAMA_MODELS catalogue with tier labels", () => {
+  it("defaults to Muse Spark on the Meta API with no local endpoint set", () => {
     expect(DEFAULT_WARDEN_SETTINGS).toEqual({
-      provider: "builtin",
-      model: "muse-glimmer:30b",
+      provider: "meta-api",
+      model: "muse-spark-1.3",
       effort: "standard",
       metaApiBaseUrl: "https://api.meta.ai/v1",
+      localBaseUrl: "",
+      localApi: "ollama",
+      localModel: "",
     });
-    expect(OLLAMA_MODEL_OPTIONS.map((m) => [m.id, m.tier])).toEqual([
-      ["muse-glimmer:30b", "High"],
-      ["hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS", "Medium"],
-    ]);
+    expect(WARDEN_PROVIDERS.map((p) => p.id)).toEqual(["meta-api", "local", "bft", "none"]);
+    expect(LOCAL_API_OPTIONS.map((o) => o.id)).toEqual(["ollama", "openai"]);
+    expect(SUGGESTED_LOCAL_MODEL).toBe("muse-glimmer:30b");
+    expect(SUGGESTED_LOCAL_BASE_URL.ollama).toBe("http://localhost:11434");
+    expect(SUGGESTED_LOCAL_BASE_URL.openai).toBe("http://localhost:8000/v1");
     expect(EFFORT_OPTIONS.map((e) => e.id)).toEqual(["fast", "standard", "deep"]);
     for (const e of EFFORT_OPTIONS) expect(e.description.length).toBeGreaterThan(10);
   });
@@ -862,7 +872,18 @@ describe("warden settings form state (Task 6)", () => {
   it("projects warden settings whitelisted fields only and validates enums", () => {
     expect(projectWardenSettings({ provider: "meta-api", model: "muse-spark-1.3", effort: "deep", metaApiBaseUrl: "https://api.meta.ai/v1", extra: 1 })).toEqual({
       provider: "meta-api", model: "muse-spark-1.3", effort: "deep", metaApiBaseUrl: "https://api.meta.ai/v1",
+      localBaseUrl: "", localApi: "ollama", localModel: "",
     });
+    expect(projectWardenSettings({
+      provider: "local", model: "muse-spark-1.3", effort: "fast", metaApiBaseUrl: "u",
+      localBaseUrl: "http://localhost:8000/v1", localApi: "openai", localModel: "muse-glimmer:30b",
+    })).toEqual({
+      provider: "local", model: "muse-spark-1.3", effort: "fast", metaApiBaseUrl: "u",
+      localBaseUrl: "http://localhost:8000/v1", localApi: "openai", localModel: "muse-glimmer:30b",
+    });
+    // Legacy provider names from older daemons map to the BYO local endpoint.
+    expect(projectWardenSettings({ provider: "builtin", model: "x", effort: "fast", metaApiBaseUrl: "u" })?.provider).toBe("local");
+    expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "fast", metaApiBaseUrl: "u", localApi: "grpc" })?.localApi).toBe("ollama");
     expect(projectWardenSettings({ provider: "evil", model: "x", effort: "standard", metaApiBaseUrl: "u" })).toBeNull();
     expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "turbo", metaApiBaseUrl: "u" })).toBeNull();
     expect(projectWardenSettings(null)).toBeNull();
@@ -880,13 +901,31 @@ describe("warden settings form state (Task 6)", () => {
   });
 
   it("builds a trimmed patch and checks form completeness", () => {
-    const s: WardenSettingsLike = { provider: "meta-api", model: "  muse-spark-1.3  ", effort: "fast", metaApiBaseUrl: " https://api.meta.ai/v1 " };
-    expect(buildWardenPatch(s)).toEqual({ provider: "meta-api", model: "muse-spark-1.3", effort: "fast", metaApiBaseUrl: "https://api.meta.ai/v1" });
+    const s: WardenSettingsLike = {
+      provider: "meta-api", model: "  muse-spark-1.3  ", effort: "fast", metaApiBaseUrl: " https://api.meta.ai/v1 ",
+      localBaseUrl: " http://localhost:11434 ", localApi: "ollama", localModel: " muse-glimmer:30b ",
+    };
+    expect(buildWardenPatch(s)).toEqual({
+      provider: "meta-api", model: "muse-spark-1.3", effort: "fast", metaApiBaseUrl: "https://api.meta.ai/v1",
+      localBaseUrl: "http://localhost:11434", localApi: "ollama", localModel: "muse-glimmer:30b",
+    });
     expect(isWardenFormComplete(s)).toBe(true);
     expect(isWardenFormComplete({ ...s, model: "  " })).toBe(false);
     expect(isWardenFormComplete({ ...s, metaApiBaseUrl: "" })).toBe(false);
-    expect(isWardenFormComplete({ provider: "none", model: "", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
-    expect(isWardenFormComplete({ provider: "ollama", model: "muse-glimmer:30b", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
+    expect(isWardenFormComplete({ ...DEFAULT_WARDEN_SETTINGS, provider: "none", model: "", metaApiBaseUrl: "" })).toBe(true);
+    const local: WardenSettingsLike = { ...DEFAULT_WARDEN_SETTINGS, provider: "local", localBaseUrl: "http://localhost:11434", localModel: "muse-glimmer:30b" };
+    expect(isWardenFormComplete(local)).toBe(true);
+    expect(isWardenFormComplete({ ...local, localBaseUrl: "" })).toBe(false);
+    expect(isWardenFormComplete({ ...local, localModel: " " })).toBe(false);
+    expect(isWardenFormComplete({ ...local, localBaseUrl: "file:///etc/passwd" })).toBe(false);
+    expect(isWardenFormComplete({ ...local, localBaseUrl: "http://user:pw@localhost:11434" })).toBe(false);
+    // BFT: the local leg is optional, but a typed URL must be valid and named.
+    const bft: WardenSettingsLike = { ...DEFAULT_WARDEN_SETTINGS, provider: "bft" };
+    expect(isWardenFormComplete(bft)).toBe(true);
+    expect(isWardenFormComplete({ ...bft, localBaseUrl: "http://localhost:11434" })).toBe(false);
+    expect(isWardenFormComplete({ ...bft, localBaseUrl: "http://localhost:11434", localModel: "muse-glimmer:30b" })).toBe(true);
+    expect(isLocalBaseUrlValid("https://gpu-box.lan:8000/v1")).toBe(true);
+    expect(isLocalBaseUrlValid("not a url")).toBe(false);
   });
 
   it("projects real warden test results strictly and maps them to honest copy", () => {
@@ -903,10 +942,16 @@ describe("warden settings form state (Task 6)", () => {
     expect(okMsg.message).toContain("muse-spark-1.3");
     expect(okMsg.message).toContain("42");
     expect(okMsg.message).not.toContain("canary");
-    const failMsg = wardenTestMessage({ ok: false, provider: "ollama", model: "muse-glimmer:30b", latencyMs: 7, detail: "warden unavailable" });
+    const failMsg = wardenTestMessage({ ok: false, provider: "meta-api", model: "muse-spark-1.3", latencyMs: 7, detail: "warden unavailable" });
     expect(failMsg.ok).toBe(false);
     expect(failMsg.message.toLowerCase()).toContain("fail");
     expect(failMsg.message).not.toContain("reachable");
+    const localFail = wardenTestMessage({ ok: false, provider: "local", model: "muse-glimmer:30b", latencyMs: 7, detail: "connection refused" });
+    expect(localFail.ok).toBe(false);
+    expect(localFail.message).toContain("go to you for approval");
+    const localOk = wardenTestMessage({ ok: true, provider: "local", model: "muse-glimmer:30b", latencyMs: 12, detail: "ok" });
+    expect(localOk.message).toContain("muse-glimmer:30b");
+    expect(projectWardenTestResult({ ...raw, provider: "ollama" })?.provider).toBe("local");
     const noneMsg = wardenTestMessage({ ok: true, provider: "none", model: "muse-glimmer:30b", latencyMs: 0, detail: "policy-only" });
     expect(noneMsg.ok).toBe(true);
     expect(noneMsg.message.toLowerCase()).toContain("policy-only");
@@ -1231,11 +1276,9 @@ describe("projectLocalAuthStatus (#19)", () => {
       // Only approved Meta model ids are offered (sources: dev.meta.ai/docs/models,
       // ollama.com/library/muse-glimmer). Anything else must fail this allowlist.
       const APPROVED_META_API_IDS = ["muse-spark-1.3", "muse-spark-1.2", "muse-wonder-1.0"];
-      const APPROVED_LOCAL_IDS = ["muse-glimmer:30b", "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"];
       expect(META_API_MODEL_OPTIONS.map((o) => o.id)).toEqual(APPROVED_META_API_IDS);
-      expect(OLLAMA_MODEL_OPTIONS.every((o) => APPROVED_LOCAL_IDS.includes(o.id))).toBe(true);
       expect(APPROVED_META_API_IDS).toContain(DEFAULT_META_API_MODEL_ID);
-      expect(APPROVED_LOCAL_IDS).toContain(DEFAULT_WARDEN_SETTINGS.model);
+      expect(DEFAULT_WARDEN_SETTINGS.model).toBe(DEFAULT_META_API_MODEL_ID);
       expect(isKnownMetaApiModel("custom-fine-tuned-meta-model")).toBe(false);
     });
   });

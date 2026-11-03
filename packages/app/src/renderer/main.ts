@@ -31,11 +31,12 @@ import {
   DEFAULT_META_API_MODEL_ID,
   DEFAULT_WARDEN_SETTINGS,
   EFFORT_OPTIONS,
-  OLLAMA_MODEL_OPTIONS,
+  LOCAL_API_OPTIONS,
+  SUGGESTED_LOCAL_BASE_URL,
+  SUGGESTED_LOCAL_MODEL,
   VAULT_PATH_DISPLAY,
   WARDEN_PROVIDERS,
   buildWardenPatch,
-  isKnownOllamaModel,
   META_API_MODEL_OPTIONS,
   isKnownMetaApiModel,
   isWardenFormComplete,
@@ -68,8 +69,6 @@ import type {
   PoliciesData,
   SecurityPostureReportLike,
   LocalAuthStatusLike,
-  BuiltinAiProgressLike,
-  BuiltinAiStatusLike,
   UpdaterStatusLike,
   WardenKeyStatusLike,
   WardenSettingsLike,
@@ -129,8 +128,6 @@ let settingsBusy = false;
 let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
 let localAuthNotice: { readonly text: string; readonly ok: boolean } | null = null;
 let updaterStatus: UpdaterStatusLike = { status: "idle" };
-let builtinAiStatus: BuiltinAiStatusLike | null = null;
-let builtinAiProgress: BuiltinAiProgressLike | null = null;
 type SettingsTab = "general" | "warden" | "daemon" | "security";
 let settingsOpen = false;
 let settingsTab: SettingsTab = "general";
@@ -245,11 +242,12 @@ function updateMarshalLine(): void {
     } else if (wardenDraft.provider === "meta-api") {
       line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Meta API (cloud)`;
     } else if (wardenDraft.provider === "bft") {
-      line.textContent = "Marshal · Meta Family of AIs · Dual-Warden BFT (Cloud + Local)";
-    } else if (wardenDraft.provider === "builtin") {
-      line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 On-device (Ollama)`;
+      line.textContent = "Marshal \u00B7 Meta Family of AIs \u00B7 Dual-Warden BFT";
     } else {
-      line.textContent = marshalStatusLine(wardenDraft.model);
+      line.textContent =
+        wardenDraft.localModel.trim() !== "" && wardenDraft.localBaseUrl.trim() !== ""
+          ? `Marshal \u00B7 ${wardenDraft.localModel} \u00B7 Your local endpoint`
+          : "Marshal \u00B7 Local endpoint not set \u00B7 Requests come to you";
     }
     return;
   }
@@ -1869,12 +1867,6 @@ function openSettings(tab?: SettingsTab): void {
   if (tab !== undefined) settingsTab = tab;
   settingsFocusOnOpen = !settingsOpen;
   settingsOpen = true;
-  if (typeof window.metavault.getBuiltinAiStatus === "function") {
-    void window.metavault.getBuiltinAiStatus().then((s) => {
-      builtinAiStatus = s;
-      render();
-    });
-  }
   render();
 }
 
@@ -1988,85 +1980,12 @@ function renderSettings(view: HTMLElement): void {
   modeSection.append(modeGroup);
   view.append(modeSection);
 
-  // Hardware Capacity Check Banner
-  interface HardwareCapacityProfile {
-    readonly hasWebGpu: boolean;
-    readonly cpuCores: number;
-    readonly recommendedProvider: WardenSettingsLike["provider"];
-    readonly tierBadge: string;
-    readonly recommendationCopy: string;
-  }
-
-  function detectCapacityProfile(): HardwareCapacityProfile {
-    const hasWebGpu = typeof navigator !== "undefined" && "gpu" in navigator && (navigator as { gpu?: unknown }).gpu !== undefined;
-    const cpuCores = typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number"
-      ? navigator.hardwareConcurrency
-      : 4;
-
-    if (!hasWebGpu || cpuCores < 4) {
-      return {
-        hasWebGpu,
-        cpuCores,
-        recommendedProvider: "meta-api",
-        tierBadge: "Recommended: Meta API",
-        recommendationCopy:
-          "Limited local GPU acceleration detected. Meta API (Cloud) is recommended: zero download footprint, zero VRAM overhead, Muse Spark reasoning in the cloud.",
-      };
-    }
-
-    return {
-      hasWebGpu,
-      cpuCores,
-      recommendedProvider: "bft",
-      tierBadge: "Recommended: Meta BFT",
-      recommendationCopy:
-        "Hardware acceleration detected. Meta BFT Consensus is recommended: Muse Spark in the cloud cross-checked by on-device Muse Glimmer 30B (via Ollama) for offline resilience.",
-    };
-  }
-
-  const profile = detectCapacityProfile();
-  const capacityCard = el("div", "capacity-card");
-  capacityCard.dataset["settingsTab"] = "warden";
-
-  const capHead = el("div", "capacity-head");
-  const capTitle = el("div", "capacity-title");
-  capTitle.textContent = "Hardware Capacity & Profile Recommendation";
-  capHead.append(capTitle);
-  capHead.append(el("span", profile.hasWebGpu ? "status-badge is-ok" : "status-badge", profile.tierBadge));
-  capacityCard.append(capHead);
-
-  const capDesc = el("div", "capacity-details", profile.recommendationCopy);
-  capacityCard.append(capDesc);
-
-  const capSpecs = el("div", "capacity-specs");
-  capSpecs.append(el("span", "capacity-pill", `WebGPU: ${profile.hasWebGpu ? "Available" : "Not detected"}`));
-  capSpecs.append(el("span", "capacity-pill", `CPU: ${String(profile.cpuCores)} cores`));
-  capacityCard.append(capSpecs);
-
-  if (wardenDraft.provider !== profile.recommendedProvider) {
-    const capActions = el("div", "capacity-actions");
-    const applyBtn = el("button", "action btn-approve", `Switch to Recommended (${profile.recommendedProvider === "bft" ? "Meta BFT" : "Meta API"})`) as HTMLButtonElement;
-    applyBtn.type = "button";
-    applyBtn.addEventListener("click", () => {
-      const nextModel = profile.recommendedProvider === "builtin" ? DEFAULT_WARDEN_SETTINGS.model : DEFAULT_META_API_MODEL_ID;
-      wardenDraft = { ...wardenDraft, provider: profile.recommendedProvider, model: nextModel };
-      wardenDirty = true;
-      settingsMessage = null;
-      render();
-    });
-    capActions.append(applyBtn);
-    capacityCard.append(capActions);
-  }
-
-  view.append(capacityCard);
-
   // 1. Provider
   const providerSection = settingsSection("Warden provider", "", "warden");
   const providerCopy: Record<WardenSettingsLike["provider"], string> = {
-    bft: "Meta BFT Consensus: Dual-warden quorum combining Meta Model API (Muse Spark, cloud) + local Muse Glimmer 30B (Ollama) for cross-verification and offline fallback.",
-    "meta-api": "Meta API (Cloud): Meta Model API inference (Muse Spark 1.3 by default). Zero model download, 0 VRAM required. Recommended for machines without a 24 GB GPU.",
-    builtin: "On-device: Meta Muse Glimmer 30B (official Q4_K_M, ~18 GB) served by local Ollama. Request metadata stays on this device. Needs Ollama 0.32.7+ and ~24 GB VRAM for full GPU speed.",
-    ollama: "Local — Ollama runs on this device. Request metadata stays on-device.",
+    "meta-api": "The default: Muse Spark 1.3 on the Meta Model API. Needs your Meta API key. Nothing to download.",
+    local: "Bring your own: point MetaVault at an Ollama or OpenAI-compatible server you already run, and name the model. A Meta open model such as Muse Glimmer is recommended. MetaVault does not download or run the model for you.",
+    bft: "Two wardens: Muse Spark on the Meta API, cross-checked by your local endpoint if you set one. If they disagree, the request comes to you.",
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
   };
   for (const provider of WARDEN_PROVIDERS) {
@@ -2077,8 +1996,7 @@ function renderSettings(view: HTMLElement): void {
     radio.value = provider.id;
     radio.checked = wardenDraft.provider === provider.id;
     radio.addEventListener("change", () => {
-      const nextModel = provider.id === "builtin" ? DEFAULT_WARDEN_SETTINGS.model : wardenDraft.model;
-      wardenDraft = { ...wardenDraft, provider: provider.id, model: nextModel };
+      wardenDraft = { ...wardenDraft, provider: provider.id };
       wardenDirty = true;
       settingsMessage = null;
       render();
@@ -2091,51 +2009,36 @@ function renderSettings(view: HTMLElement): void {
   }
   view.append(providerSection);
 
-  // 2. Model
-  const modelSection = settingsSection("Model", "", "warden");
-  if (wardenDraft.provider === "none") {
-    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose On-Device, Ollama, or Meta API to enable a warden model."));
-    } else if (wardenDraft.provider === "bft") {
-    const card = el("div", "bft-card");
-    const head = el("div", "bft-head");
-    const info = el("div", "");
-    info.append(el("div", "bft-title", "Meta Dual-Warden BFT Consensus"));
-    info.append(el("div", "bft-desc", "Two-warden quorum across Meta's cloud and local models. Muse Spark on Meta Model API reasons in the cloud, while on-device Muse Glimmer 30B co-audits and keeps working offline."));
-    head.append(info);
-    head.append(el("span", "status-badge is-ok", "\u25CF BFT Active"));
-    card.append(head);
+  const textField = (
+    id: string,
+    labelText: string,
+    value: string,
+    placeholder: string,
+    onInput: (value: string) => void,
+  ): HTMLLabelElement => {
+    const fieldLabel = el("label", "vault-field") as HTMLLabelElement;
+    fieldLabel.append(el("span", "vault-field-label", labelText));
+    const input = document.createElement("input");
+    input.className = "vault-input";
+    input.id = id;
+    input.type = "text";
+    input.value = value;
+    input.placeholder = placeholder;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.addEventListener("input", () => {
+      onInput(input.value);
+      wardenDirty = true;
+      const save = document.querySelector<HTMLButtonElement>("#warden-save-button");
+      if (save !== null) save.disabled = settingsBusy || !isWardenFormComplete(wardenDraft);
+    });
+    fieldLabel.append(input);
+    return fieldLabel;
+  };
 
-    const pillars = el("div", "bft-pillars");
-
-    // Pillar 1: Meta API (Cloud Chief Justice)
-    const activeCloudModel = wardenDraft.model && wardenDraft.model !== DEFAULT_WARDEN_SETTINGS.model ? wardenDraft.model : DEFAULT_META_API_MODEL_ID;
-    const metaPillar = el("div", "bft-pillar-item");
-    metaPillar.append(createMetaLogo());
-    const metaDetails = el("div", "bft-pillar-details");
-    metaDetails.append(el("div", "bft-pillar-title", `Meta API Cloud Warden: ${activeCloudModel}`));
-    metaDetails.append(el("div", "bft-pillar-sub", "Cloud High-Capacity Reasoning \u00B7 Primary Policy Evaluator"));
-    metaPillar.append(metaDetails);
-    metaPillar.append(el("span", "status-badge is-ok", "Cloud Primary"));
-
-    // Pillar 2: Meta Local Fallback (On-Device Co-Auditor)
-    const localPillar = el("div", "bft-pillar-item");
-    localPillar.append(createMetaLogo());
-    const localDetails = el("div", "bft-pillar-details");
-    localDetails.append(el("div", "bft-pillar-title", "Meta Muse Glimmer 30B (Q4_K_M via Ollama)"));
-    localDetails.append(el("div", "bft-pillar-sub", "On-Device Zero-Egress Fallback \u00B7 Offline & Divergence Guard"));
-    localPillar.append(localDetails);
-    localPillar.append(el("span", "status-badge is-ok", "Local Fallback"));
-
-    pillars.append(metaPillar, localPillar);
-    card.append(pillars);
-    modelSection.append(card);
-
-    // Cloud Warden Model Selector & Custom Free-Text Input
-    const configHeading = el("p", "settings-copy", "Choose or type ANY Meta AI model for your Cloud Warden:");
-    modelSection.append(configHeading);
-
+  const appendMetaApiFields = (section: HTMLElement): void => {
     const selectLabel = el("label", "vault-field");
-    selectLabel.append(el("span", "vault-field-label", "Meta API cloud model"));
+    selectLabel.append(el("span", "vault-field-label", "Meta API model"));
     const select = document.createElement("select");
     select.className = "vault-input";
     select.id = "warden-meta-model-select";
@@ -2145,190 +2048,122 @@ function renderSettings(view: HTMLElement): void {
       opt.textContent = option.label;
       select.append(opt);
     }
-    if (!isKnownMetaApiModel(activeCloudModel)) {
+    const current = wardenDraft.model.trim() !== "" ? wardenDraft.model : DEFAULT_META_API_MODEL_ID;
+    if (!isKnownMetaApiModel(current)) {
       const custom = document.createElement("option");
-      custom.value = activeCloudModel;
-      custom.textContent = `${activeCloudModel} \u2014 Custom`;
+      custom.value = current;
+      custom.textContent = `${current} \u2014 Custom`;
       select.append(custom);
     }
-    select.value = activeCloudModel;
+    select.value = current;
     select.addEventListener("change", () => {
       wardenDraft = { ...wardenDraft, model: select.value };
       wardenDirty = true;
       render();
     });
     selectLabel.append(select);
-    modelSection.append(selectLabel);
+    section.append(selectLabel);
+    section.append(
+      textField("warden-model-input", "Meta API model id (free text)", wardenDraft.model, DEFAULT_META_API_MODEL_ID, (v) => {
+        wardenDraft = { ...wardenDraft, model: v };
+      }),
+    );
+    section.append(
+      textField("warden-base-url-input", "Meta API base URL", wardenDraft.metaApiBaseUrl, DEFAULT_WARDEN_SETTINGS.metaApiBaseUrl, (v) => {
+        wardenDraft = { ...wardenDraft, metaApiBaseUrl: v };
+      }),
+    );
+  };
 
-    const modelLabel = el("label", "vault-field");
-    modelLabel.append(el("span", "vault-field-label", "Custom Meta API model id (free text)"));
-    const modelInput = document.createElement("input");
-    modelInput.className = "vault-input";
-    modelInput.id = "warden-model-input";
-    modelInput.type = "text";
-    modelInput.value = activeCloudModel;
-    modelInput.placeholder = DEFAULT_META_API_MODEL_ID;
-    modelInput.autocomplete = "off";
-    modelInput.addEventListener("input", () => {
-      wardenDraft = { ...wardenDraft, model: modelInput.value };
-      wardenDirty = true;
-    });
-    modelLabel.append(modelInput);
-    modelSection.append(modelLabel);
-
-    const baseLabel = el("label", "vault-field");
-    baseLabel.append(el("span", "vault-field-label", "Meta API base URL"));
-    const baseInput = document.createElement("input");
-    baseInput.className = "vault-input";
-    baseInput.id = "warden-base-url-input";
-    baseInput.type = "text";
-    baseInput.value = wardenDraft.metaApiBaseUrl;
-    baseInput.autocomplete = "off";
-    baseInput.addEventListener("input", () => {
-      wardenDraft = { ...wardenDraft, metaApiBaseUrl: baseInput.value };
-      wardenDirty = true;
-    });
-    baseLabel.append(baseInput);
-    modelSection.append(baseLabel);
-  } else if (wardenDraft.provider === "builtin") {
-    const card = el("div", "builtin-ai-card");
-    const head = el("div", "builtin-ai-head");
-    const info = el("div", "");
-    info.append(el("div", "builtin-ai-title", "Meta Muse Glimmer 30B (official Q4_K_M via Ollama)"));
-    info.append(el("div", "builtin-ai-desc", "~18 GB open-weight Meta model served by local Ollama (muse-glimmer:30b). Request metadata never leaves this device."));
-    head.append(info);
-
-    const isDownloading = builtinAiProgress?.state === "downloading" || builtinAiProgress?.state === "verifying";
-    const resolverState = builtinAiStatus?.resolverStatus.state ?? "missing";
-
-    let badgeClass = "status-badge";
-    let badgeText = "Checking...";
-
-    if (isDownloading) {
-      badgeClass = "status-badge is-warn";
-      badgeText = builtinAiProgress?.state === "verifying" ? "Verifying..." : `Downloading (${String(Math.round(builtinAiProgress?.percent ?? 0))}%)`;
-    } else if (resolverState === "bundled") {
-      badgeClass = "status-badge is-ok";
-      badgeText = "\u25CF Ready \u00B7 Baked-in";
-    } else if (resolverState === "cached") {
-      badgeClass = "status-badge is-ok";
-      badgeText = "\u25CF Ready \u00B7 Cached";
-    } else {
-      badgeClass = "status-badge";
-      badgeText = "\u25CB Download Available (~18 GB)";
+  const appendLocalEndpointFields = (section: HTMLElement, optional: boolean): void => {
+    section.append(
+      el(
+        "p",
+        "settings-copy",
+        optional
+          ? "Optional second warden: your own local endpoint. Leave the base URL empty to use the Meta API alone."
+          : "Your own local endpoint. MetaVault sends only request metadata (never secrets) to the URL you set. If it is not reachable, requests come to you for approval.",
+      ),
+    );
+    const apiLabel = el("label", "vault-field");
+    apiLabel.append(el("span", "vault-field-label", "API style"));
+    const apiSelect = document.createElement("select");
+    apiSelect.className = "vault-input";
+    apiSelect.id = "warden-local-api-select";
+    for (const option of LOCAL_API_OPTIONS) {
+      const opt = document.createElement("option");
+      opt.value = option.id;
+      opt.textContent = option.label;
+      apiSelect.append(opt);
     }
+    apiSelect.value = wardenDraft.localApi;
+    apiSelect.addEventListener("change", () => {
+      wardenDraft = { ...wardenDraft, localApi: apiSelect.value === "openai" ? "openai" : "ollama" };
+      wardenDirty = true;
+      render();
+    });
+    apiLabel.append(apiSelect);
+    section.append(apiLabel);
+    section.append(
+      textField(
+        "warden-local-base-url-input",
+        "Base URL",
+        wardenDraft.localBaseUrl,
+        SUGGESTED_LOCAL_BASE_URL[wardenDraft.localApi],
+        (v) => {
+          wardenDraft = { ...wardenDraft, localBaseUrl: v };
+        },
+      ),
+    );
+    section.append(
+      textField("warden-local-model-input", "Model name", wardenDraft.localModel, SUGGESTED_LOCAL_MODEL, (v) => {
+        wardenDraft = { ...wardenDraft, localModel: v };
+      }),
+    );
+    section.append(
+      el(
+        "p",
+        "settings-copy",
+        `We recommend a Meta open model such as Muse Glimmer (for example ${SUGGESTED_LOCAL_MODEL} in Ollama). Any model your server can run works.`,
+      ),
+    );
+  };
 
-    head.append(el("span", badgeClass, badgeText));
-    card.append(head);
-
-    if (isDownloading && builtinAiProgress !== null) {
-      const prog = el("div", "builtin-ai-progress");
-      const track = el("div", "builtin-ai-progress-track");
-      const fill = el("div", "builtin-ai-progress-fill") as HTMLDivElement;
-      fill.style.width = `${String(builtinAiProgress.percent)}%`;
-      track.append(fill);
-      prog.append(track);
-
-      const stats = el("div", "builtin-ai-progress-stats");
-      const dlMb = (builtinAiProgress.downloadedBytes / (1024 * 1024)).toFixed(1);
-      const totMb = (builtinAiProgress.totalBytes / (1024 * 1024)).toFixed(1);
-      const speedMb = (builtinAiProgress.speedBytesPerSec / (1024 * 1024)).toFixed(1);
-      stats.append(el("span", "mono", `${dlMb} / ${totMb} MB (${String(Math.round(builtinAiProgress.percent))}%) \u00B7 ${speedMb} MB/s`));
-
-      const cancelBtn = el("button", "action btn-deny", "Cancel") as HTMLButtonElement;
-      cancelBtn.type = "button";
-      cancelBtn.addEventListener("click", () => {
-        void window.metavault.cancelBuiltinAiDownload().then(() => {
-          builtinAiProgress = null;
-          render();
-        });
-      });
-      stats.append(cancelBtn);
-      prog.append(stats);
-      card.append(prog);
-    } else if (resolverState === "missing") {
-      const actions = el("div", "builtin-ai-actions");
-      const dlBtn = el("button", "action btn-approve", "Download Model (~18 GB, via Ollama)") as HTMLButtonElement;
-      dlBtn.type = "button";
-      dlBtn.disabled = settingsBusy;
-      dlBtn.addEventListener("click", () => {
-        void window.metavault.startBuiltinAiDownload().then((started) => {
-          if (started) {
-            render();
-          }
-        });
-      });
-      actions.append(dlBtn);
-      card.append(actions);
-      card.append(el("p", "settings-copy", "Ollama pulls muse-glimmer:30b into its own model store. Ollama 0.32.7+ must be running."));
-    } else {
-      const pathText = builtinAiStatus?.resolverStatus.path ?? "Default storage location";
-      const infoP = el("p", "settings-copy", "Muse Glimmer is pulled and ready in Ollama.");
-      const pathLine = el("p", "settings-status mono", `Path: ${pathText}`);
-      card.append(infoP, pathLine);
-    }
-
-    modelSection.append(card);
+  // 2. Model
+  const modelSection = settingsSection("Model", "", "warden");
+  if (wardenDraft.provider === "none") {
+    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose the Meta API or your local endpoint to enable a warden model."));
+  } else if (wardenDraft.provider === "meta-api") {
+    appendMetaApiFields(modelSection);
+  } else if (wardenDraft.provider === "local") {
+    appendLocalEndpointFields(modelSection, false);
   } else {
-    if (wardenDraft.provider === "ollama") {
-      const selectLabel = el("label", "vault-field");
-      selectLabel.append(el("span", "vault-field-label", "Ollama model"));
-      const select = document.createElement("select");
-      select.className = "vault-input";
-      select.id = "warden-model-select";
-      for (const option of OLLAMA_MODEL_OPTIONS) {
-        const opt = document.createElement("option");
-        opt.value = option.id;
-        opt.textContent = option.label;
-        select.append(opt);
-      }
-      if (!isKnownOllamaModel(wardenDraft.model)) {
-        const custom = document.createElement("option");
-        custom.value = wardenDraft.model;
-        custom.textContent = `${wardenDraft.model} \u2014 Custom`;
-        select.append(custom);
-      }
-      select.value = wardenDraft.model;
-      select.addEventListener("change", () => {
-        wardenDraft = { ...wardenDraft, model: select.value };
-        wardenDirty = true;
-        render();
-      });
-      selectLabel.append(select);
-      modelSection.append(selectLabel);
-    }
-    const modelLabel = el("label", "vault-field");
-    modelLabel.append(el("span", "vault-field-label", wardenDraft.provider === "meta-api" ? "Meta API model id" : "Model id (free text)"));
-    const modelInput = document.createElement("input");
-    modelInput.className = "vault-input";
-    modelInput.id = "warden-model-input";
-    modelInput.type = "text";
-    modelInput.value = wardenDraft.model;
-    modelInput.placeholder = wardenDraft.provider === "meta-api" ? "Meta API model id" : DEFAULT_WARDEN_SETTINGS.model;
-    modelInput.autocomplete = "off";
-    modelInput.addEventListener("input", () => {
-      wardenDraft = { ...wardenDraft, model: modelInput.value };
-      wardenDirty = true;
-    });
-    modelLabel.append(modelInput);
-    modelSection.append(modelLabel);
-    modelSection.append(el("p", "settings-copy", "Free-text model ids are allowed; the catalogue above is a shortcut, not a limit."));
-    if (wardenDraft.provider === "meta-api") {
-      const baseLabel = el("label", "vault-field");
-      baseLabel.append(el("span", "vault-field-label", "Meta API base URL"));
-      const baseInput = document.createElement("input");
-      baseInput.className = "vault-input";
-      baseInput.id = "warden-base-url-input";
-      baseInput.type = "text";
-      baseInput.value = wardenDraft.metaApiBaseUrl;
-      baseInput.autocomplete = "off";
-      baseInput.addEventListener("input", () => {
-        wardenDraft = { ...wardenDraft, metaApiBaseUrl: baseInput.value };
-        wardenDirty = true;
-      });
-      baseLabel.append(baseInput);
-      modelSection.append(baseLabel);
-    }
+    const card = el("div", "bft-card");
+    const head = el("div", "bft-head");
+    const info = el("div", "");
+    info.append(el("div", "bft-title", "Meta Dual-Warden BFT Consensus"));
+    info.append(el("div", "bft-desc", "Muse Spark on the Meta API judges each request. If you set a local endpoint, it judges too, and any disagreement sends the request to you."));
+    head.append(info);
+    card.append(head);
+    const pillars = el("div", "bft-pillars");
+    const metaPillar = el("div", "bft-pillar-item");
+    metaPillar.append(createMetaLogo());
+    const metaDetails = el("div", "bft-pillar-details");
+    metaDetails.append(el("div", "bft-pillar-title", `Meta API: ${wardenDraft.model.trim() !== "" ? wardenDraft.model : DEFAULT_META_API_MODEL_ID}`));
+    metaDetails.append(el("div", "bft-pillar-sub", "Cloud warden"));
+    metaPillar.append(metaDetails);
+    const localPillar = el("div", "bft-pillar-item");
+    localPillar.append(createMetaLogo());
+    const localDetails = el("div", "bft-pillar-details");
+    const localSet = wardenDraft.localBaseUrl.trim() !== "" && wardenDraft.localModel.trim() !== "";
+    localDetails.append(el("div", "bft-pillar-title", localSet ? `Your endpoint: ${wardenDraft.localModel}` : "Your endpoint: not set"));
+    localDetails.append(el("div", "bft-pillar-sub", localSet ? wardenDraft.localBaseUrl : "Optional"));
+    localPillar.append(localDetails);
+    pillars.append(metaPillar, localPillar);
+    card.append(pillars);
+    modelSection.append(card);
+    appendMetaApiFields(modelSection);
+    appendLocalEndpointFields(modelSection, true);
   }
   view.append(modelSection);
 
@@ -2355,6 +2190,7 @@ function renderSettings(view: HTMLElement): void {
   }
   const saveBtn = el("button", "action btn-approve", "Save settings") as HTMLButtonElement;
   saveBtn.type = "button";
+  saveBtn.id = "warden-save-button";
   saveBtn.disabled = settingsBusy || !isWardenFormComplete(wardenDraft);
   saveBtn.addEventListener("click", () => {
     const doSave = () => {
@@ -3489,19 +3325,6 @@ function start(): void {
     });
   }
   void refreshTracked();
-  if (typeof window.metavault.onBuiltinAiProgress === "function") {
-    window.metavault.onBuiltinAiProgress((progress) => {
-      builtinAiProgress = progress;
-      if (progress.state === "completed" || progress.state === "idle") {
-        void window.metavault.getBuiltinAiStatus().then((s) => {
-          builtinAiStatus = s;
-          render();
-        });
-      } else {
-        render();
-      }
-    });
-  }
   if (typeof window.metavault.onUpdaterStatus === "function") {
     window.metavault.onUpdaterStatus((status) => {
       updaterStatus = status;

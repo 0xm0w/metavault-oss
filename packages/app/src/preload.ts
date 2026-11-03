@@ -5,7 +5,6 @@ import type {
   DeeplinkAddParams,
   AgentSecuritySettingsPatchLike,
   LocalAuthPatchLike,
-  BuiltinAiProgressLike,
   UpdaterStatusLike,
   VaultApi,
   WardenSettingsPatch,
@@ -109,18 +108,6 @@ const api: VaultApi = {
     ipcRenderer.on("metavault:updater-status", listener);
     return () => {
       ipcRenderer.removeListener("metavault:updater-status", listener);
-    };
-  },
-  getBuiltinAiStatus: () => ipcRenderer.invoke("metavault:builtin-ai-status"),
-  startBuiltinAiDownload: () => ipcRenderer.invoke("metavault:start-builtin-ai-download"),
-  cancelBuiltinAiDownload: () => ipcRenderer.invoke("metavault:cancel-builtin-ai-download"),
-  onBuiltinAiProgress: (handler: (progress: BuiltinAiProgressLike) => void) => {
-    const listener = (_event: unknown, data: unknown): void => {
-      handler(data as BuiltinAiProgressLike);
-    };
-    ipcRenderer.on("metavault:builtin-ai-progress", listener);
-    return () => {
-      ipcRenderer.removeListener("metavault:builtin-ai-progress", listener);
     };
   },
 };
