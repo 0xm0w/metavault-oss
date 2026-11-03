@@ -1542,3 +1542,4 @@ body.is-simple-mode .verbose-note {
 .vault-key-gate p { max-width: 460px; }
 .vault-key-gate .field-error { color: #c0392b; min-height: 1.2em; margin: 0; }
 
+.agent-code-block pre { overflow-x: auto; max-width: 100%; }
