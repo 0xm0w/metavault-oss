@@ -1,0 +1,62 @@
+MetaVault OSS 0.1.0-alpha - Windows installer clean-install smoke test
+=====================================================================
+Real log from GitHub Actions. Nothing below was edited.
+Workflow: Windows installer (.github/workflows/windows-installer.yml), job "Clean-install smoke test"
+Run:      https://github.com/0xm0w/metavault-oss/actions/runs/41623340343 (pull_request, PR #75)
+Commit:   510ae04 (feat/windows-installer)
+Runner:   windows-latest
+Script:   scripts/windows-installer-smoke.ps1
+Source:   artifact "windows-installer-smoke-log" (windows-installer-smoke.txt) from that run
+Times:    UTC (11:00Z = 7:00 PM Asia/Manila, Nov 3 2026)
+No API keys were set, so the Meta API was not called.
+
+[2026-11-03T10:59:51Z] Windows: Microsoft Windows NT 10.0.26100.0
+[2026-11-03T10:59:51Z] Installer: MetaVault-OSS-0.1.0-alpha-win-x64.exe (121940109 bytes)
+[2026-11-03T10:59:51Z] SHA256: e434549248a824ed7c1a5c866b80bf6ce5d15123a0cc07099a94117b03ab8e86
+[2026-11-03T10:59:51Z] PASS  install folder does not exist before install
+[2026-11-03T10:59:51Z] PASS  no vault data before install (clean machine)
+[2026-11-03T10:59:51Z] Installing: MetaVault-OSS-0.1.0-alpha-win-x64.exe /S /D=D:\a\_temp\MVInstall
+[2026-11-03T11:00:14Z] Installer exit code 0 after 22 s
+[2026-11-03T11:00:14Z] PASS  installer exit code is 0
+[2026-11-03T11:00:14Z] PASS  installed: MetaVault OSS.exe
+[2026-11-03T11:00:14Z] PASS  installed: Uninstall MetaVault OSS.exe
+[2026-11-03T11:00:14Z] PASS  installed: resources\app.asar
+[2026-11-03T11:00:14Z] PASS  installed: resources\vaultd\vaultd.cjs
+[2026-11-03T11:00:14Z] PASS  installed: resources\vaultd\metavault.cjs
+[2026-11-03T11:00:14Z] PASS  installed: resources\vaultd\mcp.cjs
+[2026-11-03T11:00:14Z] PASS  installed: resources\vaultd\native\better-sqlite3\prebuilds\win32-x64.node
+[2026-11-03T11:00:14Z] PASS  installed: bin\metavault.cmd
+[2026-11-03T11:00:14Z] PASS  installed: bin\vaultd.cmd
+[2026-11-03T11:00:14Z] PASS  installed: bin\metavault.ps1
+[2026-11-03T11:00:14Z] PASS  no model files in the install folder
+[2026-11-03T11:00:14Z] Install folder size: 363.6 MB
+[2026-11-03T11:00:14Z] PASS  desktop shortcut exists
+[2026-11-03T11:00:14Z] PASS  Start menu shortcut exists
+[2026-11-03T11:00:14Z] PASS  Apps & features (Uninstall) registry entry exists
+[2026-11-03T11:00:14Z] Registry: DisplayName='MetaVault OSS 0.1.0-alpha' DisplayVersion='0.1.0-alpha'
+[2026-11-03T11:00:14Z] PASS  user PATH contains D:\a\_temp\MVInstall\bin
+[2026-11-03T11:00:14Z] PASS  start-at-login Run entry exists
+[2026-11-03T11:00:14Z] Launching: D:\a\_temp\MVInstall\MetaVault OSS.exe
+[2026-11-03T11:00:18Z] GET /health -> {"status":"ok","service":"vaultd"} after 4 s
+[2026-11-03T11:00:18Z] PASS  bundled daemon answers /health
+[2026-11-03T11:00:18Z] PASS  vault DB created in %APPDATA%\MetaVault OSS
+[2026-11-03T11:00:18Z] PASS  daemon token file created
+[2026-11-03T11:00:18Z] GET /key/status -> {"mode":"uninitialized","locked":true,"autoLockMs":null,"kdf":null,"lockedUntilRetryMs":null}
+[2026-11-03T11:00:18Z] PASS  fresh install waits for first-run passphrase setup
+[2026-11-03T11:00:18Z] MetaVault OSS processes running: 5
+[2026-11-03T11:00:18Z] PASS  app UI and bundled daemon processes are running
+[2026-11-03T11:00:18Z] vaultd.log: 
+[2026-11-03T11:00:18Z] Stopping app
+[2026-11-03T11:00:20Z] PASS  app processes stopped
+[2026-11-03T11:00:20Z] Uninstalling: "D:\a\_temp\MVInstall\Uninstall MetaVault OSS.exe" /S
+[2026-11-03T11:00:23Z] Uninstaller exit code 0
+[2026-11-03T11:00:23Z] PASS  uninstaller exit code is 0
+[2026-11-03T11:00:23Z] Uninstall finished after 2 s
+[2026-11-03T11:00:23Z] PASS  install folder removed
+[2026-11-03T11:00:23Z] PASS  desktop shortcut removed
+[2026-11-03T11:00:23Z] PASS  Start menu shortcut removed
+[2026-11-03T11:00:23Z] PASS  Uninstall registry entry removed
+[2026-11-03T11:00:23Z] PASS  user PATH entry removed
+[2026-11-03T11:00:23Z] PASS  Run entry removed
+[2026-11-03T11:00:23Z] PASS  vault data kept on silent uninstall (by design)
+[2026-11-03T11:00:23Z] Result: PASS

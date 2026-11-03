@@ -24,12 +24,22 @@ context, an audit row, or the desktop UI.
 
 Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned. A Windows Store (MSIX) build is also available for a Windows-verified install path — see `docs/MICROSOFT_STORE.md`.
 
-To build the installer locally from source:
+### Windows Installer (v0.1.0-alpha, draft)
+
+The `0.1.0-alpha` installer (`MetaVault-OSS-0.1.0-alpha-win-x64.exe`) is built by the `Windows installer` workflow on `windows-latest`. Each run uploads it as a workflow artifact, and a tag or manual run attaches it to a **draft** prerelease. It is not published yet.
+
+- Assisted install: you accept the alpha terms (`packages/app/TERMS.txt`), choose the folder, and get a desktop shortcut and a Start menu shortcut. `bin\` is added to your user PATH (`metavault`, `vaultd`).
+- The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
+- No model is bundled or downloaded.
+- Uninstall (Apps & features) removes the program, shortcuts, PATH entry and start-at-login entry, and asks whether to delete your vault data. A silent uninstall (`/S`) keeps it.
+- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall, then a check that nothing is left behind. Latest log: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt).
+
+To build the installer locally from source (on Windows):
 
 ```powershell
+npm ci
 cd packages/app
-npm run build
-npx electron-builder --win
+npm run pack:win    # build + bundle + electron-builder --win --publish never
 ```
 
 ### From source (works today)

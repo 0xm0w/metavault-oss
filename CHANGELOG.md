@@ -16,15 +16,22 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Bring-your-own local endpoint** in Settings (provider `local`): API style (Ollama `POST {base}/api/chat`, or OpenAI-compatible `POST {base}/chat/completions`), base URL and model name. Placeholder and docs recommend a Meta open model such as Muse Glimmer (`muse-glimmer:30b`). The daemon rejects base URLs that are not `http`/`https` or that carry a username or password (`400`).
 - BFT uses Muse Spark plus your local endpoint when one is set.
+- **Windows installer (`MetaVault-OSS-0.1.0-alpha-win-x64.exe`, unsigned).** Assisted NSIS install with a choice of folder, a desktop and a Start menu shortcut, a short alpha terms page (`packages/app/TERMS.txt`), and an uninstaller. The daemon, CLI and MCP server are bundled into `resources/vaultd` and run on the app's own Electron runtime (`ELECTRON_RUN_AS_NODE=1`), so no Node install is needed. The app starts the bundled daemon when none is running and stops it on quit.
+- **First-run passphrase setup.** A fresh vault opens on a "create a passphrase" screen (`POST /setup`, which needs the token and works once, only on an uninitialized vault), and a locked vault opens on an unlock screen.
+- **CI: `Windows installer` workflow** on `windows-latest`. It builds the installer, uploads it as an artifact, and runs a clean-install smoke test: silent install, launch, `/health`, silent uninstall, then checks that files, shortcuts, registry and PATH entries are gone. On a `v*` tag or a manual run it creates or updates a **draft** prerelease only. It replaces `release.yml`, which published releases on tags.
 - Tests: no reachable warden fails closed to the human (no Meta key, empty local endpoint, unreachable local port, BFT with neither), with no request to `api.meta.ai` when no key is set.
 
 ### Changed
 
 - Site, docs page, README, design doc and security audit no longer mention an 18 GB download, lazy loading, or RAM/VRAM requirements. Requirement copy describes the app only.
 - Marshal status line defaults to `Marshal · muse-spark-1.3 · Meta API`.
+- Version is `0.1.0-alpha` across root, app, MCP package and MCP server.
+- Installer hooks: the user PATH add and remove are idempotent and keep `REG_EXPAND_SZ`. The duplicate shortcuts are gone. The "delete vault data?" prompt answers No on a silent uninstall and is skipped on updates.
+- Prerelease builds do not check for updates on launch, so a published stable release cannot replace an alpha without you asking. "Check for updates" still works.
 
 ### Removed
 
+- `pack:win:ai` (the "with AI" installer variant).
 - `packages/app/src/model-downloader.ts`, `model-resolver.ts`, `builtin-ai-ipc.ts`, `packages/brain/src/builtin.ts`, the hardware-capacity card and the built-in download UI.
 
 ## [Unreleased]
