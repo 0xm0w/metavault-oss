@@ -96,7 +96,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">03 · MCP</span>
       <h2>One snippet per IDE</h2>
-      <p class="pg-lead" style="margin:0 0 16px">Replace <code>&lt;metavault-oss&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
+      <p class="pg-lead" style="margin:0 auto 16px">Replace <code>&lt;metavault-oss&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
       <div data-tabs>
         <div class="pg-tablist" role="tablist" aria-label="IDE setup">
           <button type="button" data-tab="muse" aria-selected="false">Meta Muse</button>
@@ -259,7 +259,6 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
       </div>
-      <p class="pg-legend" data-verdict-legend="percent"></p>
       <div class="pg-duo">
         <div class="pg-snippet is-tight"><pre data-lang="python"># counting rule
 caught = decision in ("deny", "ask_human")
@@ -284,7 +283,6 @@ if warden_call_failed:
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
       </div>
-      <p class="pg-legend" data-verdict-legend="percent"></p>
       <blockquote class="pg-pull" style="margin-top:14px">Rules + Spark keeps the rules' 9 alarms, <strong>because the stricter verdict wins</strong>. All 9 are "hard" benign reads with words like <em>keys</em> or <em>export</em>; plain reads: 0/8.</blockquote>
       <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the recall slide. Striped = no measurement.</p>
     </div>
@@ -302,7 +300,6 @@ if warden_call_failed:
         <div class="pg-bar-row" data-verdict="latency" data-ms="17300"><span class="pg-bar-label">Muse Spark 1.3 · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:89.6%"></span><span class="pg-bar-range" style="left:89.6%;width:0.9%"></span></span><span class="pg-bar-value">14.8–17.3 s</span></div>
         <div class="pg-bar-row pg-axis-row" aria-hidden="true"><span></span><span class="pg-axis"><span style="left:0.0%">1 µs</span><span style="left:12.5%">10 µs</span><span style="left:25.0%">100 µs</span><span style="left:37.5%">1 ms</span><span style="left:50.0%">10 ms</span><span style="left:62.5%">100 ms</span><span style="left:75.0%">1 s</span><span style="left:87.5%">10 s</span><span style="left:100.0%">100 s</span></span><span></span></div>
       </div>
-      <p class="pg-legend" data-verdict-legend="latency"></p>
       <div class="pg-duo">
         <div class="pg-snippet is-tight"><pre data-lang="python"># $ per 1M tokens (Meta pricing)
 IN, CACHED, OUT = 1.25, 0.15, 4.25

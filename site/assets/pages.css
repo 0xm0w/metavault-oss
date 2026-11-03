@@ -315,6 +315,7 @@ body:has(.hack-deck) {
 .hack-slide .pg-card p:last-child,
 .hack-slide .pg-note { margin-bottom: 0; }
 .hack-slide .pg-lead { margin: 0 auto 18px; text-align: center; }
+.hack-slide .pg-sub { margin: -4px auto 14px; }
 .hack-slide .pg-grid,
 .hack-slide .pg-grid-2 { text-align: left; }
 .hack-slide .pg-row,
