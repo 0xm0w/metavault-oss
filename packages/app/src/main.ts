@@ -210,7 +210,7 @@ if (!hasLock) {
     });
     createWindow();
     createTray();
-    initAutoUpdater(() => mainWindow);
+    void initAutoUpdater(() => mainWindow);
     app.on("activate", () => {
       showWindow();
     });
