@@ -8,8 +8,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "pack:win": "npm run build && npm run bundle && electron-builder --win --publish never",
-    "pack:mac": "electron-builder --mac",
-    "pack:win:store": "electron-builder --win appx",
+    "pack:mac": "electron-builder --mac --publish never",
+    "pack:win:store": "electron-builder --win appx --publish never",
     "bundle": "node scripts/bundle.mjs"
   },
   "build": {

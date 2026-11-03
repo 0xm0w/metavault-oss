@@ -45,7 +45,8 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
   }
 
   // Configure autoUpdater
-  autoUpdater.autoDownload = true;
+  // Download only after isOfferableUpdate() accepts the version.
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("checking-for-update", () => {
@@ -53,7 +54,14 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
   });
 
   autoUpdater.on("update-available", (info) => {
+    if (!isOfferableUpdate(info.version)) {
+      broadcast({ status: "not-available", version: app.getVersion() });
+      return;
+    }
     broadcast({ status: "available", version: info.version });
+    void autoUpdater.downloadUpdate().catch((err: unknown) => {
+      broadcast({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    });
   });
 
   autoUpdater.on("update-not-available", (info) => {
@@ -88,7 +96,11 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
     try {
       broadcast({ status: "checking" });
       const result = await updaterInstance.checkForUpdates();
-      return { ok: true, updateInfo: result?.updateInfo };
+      const updateInfo = result?.updateInfo;
+      if (updateInfo !== undefined && !isOfferableUpdate(updateInfo.version)) {
+        return { ok: true, updateInfo: undefined };
+      }
+      return { ok: true, updateInfo };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       broadcast({ status: "error", message: msg });
@@ -126,4 +138,13 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
 // itself without the user asking. "Check for updates" still works.
 export function shouldAutoCheckForUpdates(version: string): boolean {
   return !version.includes("-");
+}
+
+// v0.1.0 is the older build that bundled a local model. It sorts above
+// 0.1.0-alpha (the current build, which bundles no model), so neither the
+// launch check nor "Check for updates" may ever offer it.
+export const LEGACY_BUNDLED_MODEL_VERSIONS: readonly string[] = ["0.1.0"];
+
+export function isOfferableUpdate(offeredVersion: string): boolean {
+  return !LEGACY_BUNDLED_MODEL_VERSIONS.includes(offeredVersion.replace(/^v/, ""));
 }

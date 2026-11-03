@@ -22,8 +22,8 @@ Please read this before you install.
 
 5. What can leave your computer.
    - If you add a Meta API key, MetaVault sends request metadata (which
-     agent asked, the tool, the alias and the scope, never a secret value)
-     to the Meta API so Muse Spark can advise on the request. Meta's own
+     agent asked, the tool, the alias, the scope and the agent's stated
+     reason, never a secret value) to the Meta API so Muse Spark can advise on the request. Meta's own
      terms apply to that use.
    - If you set a local endpoint, the same metadata goes only to the URL
      you enter.

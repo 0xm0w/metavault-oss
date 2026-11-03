@@ -6,6 +6,7 @@ import {
   CHECK_UPDATES_CHANNEL,
   getCurrentUpdaterStatus,
   QUIT_AND_INSTALL_CHANNEL,
+  isOfferableUpdate,
   shouldAutoCheckForUpdates,
   UPDATER_STATUS_CHANNEL,
 } from "../src/updater.js";
@@ -95,6 +96,14 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
     expect(pkg.build.extraResources).toContainEqual({ from: "bundle/vaultd", to: "vaultd" });
     expect(pkg.build.extraMetadata.main).toBe("dist/main.bundle.cjs");
     expect(Object.keys(pkg.scripts)).not.toContain("pack:win:ai");
+  });
+
+  it("never offers the legacy v0.1.0 (bundled-model) build as an update", () => {
+    expect(isOfferableUpdate("0.1.0")).toBe(false);
+    expect(isOfferableUpdate("v0.1.0")).toBe(false);
+    expect(isOfferableUpdate("0.1.0-alpha")).toBe(true);
+    expect(isOfferableUpdate("0.1.1")).toBe(true);
+    expect(isOfferableUpdate("0.2.0-alpha")).toBe(true);
   });
 
   it("does not auto-check for updates on prerelease builds", () => {

@@ -22,7 +22,9 @@ context, an audit row, or the desktop UI.
 
 ### Windows Installer (v0.1.0)
 
-Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned. A Windows Store (MSIX) build is also available for a Windows-verified install path — see `docs/MICROSOFT_STORE.md`.
+Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned.
+
+**v0.1.0 is the older build.** It bundled a local model. `0.1.0-alpha` (below) is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. Version numbers sort v0.1.0 above 0.1.0-alpha, so the app's update check never offers v0.1.0 to an alpha install.
 
 ### Windows Installer (v0.1.0-alpha, draft)
 
@@ -32,7 +34,7 @@ The `0.1.0-alpha` installer (`MetaVault-OSS-0.1.0-alpha-win-x64.exe`) is built b
 - The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
 - No model is bundled or downloaded.
 - Uninstall (Apps & features) removes the program, shortcuts, PATH entry and start-at-login entry, and asks whether to delete your vault data. A silent uninstall (`/S`) keeps it.
-- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall, then a check that nothing is left behind. Latest log: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt).
+- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall. It then checks that the uninstall removed the program, shortcuts, registry entries and PATH entry, and that it kept the vault data in `%APPDATA%\MetaVault OSS` (by design). Log from the run that built the draft exe: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt) ([run 41624173924](https://github.com/0xm0w/metavault-oss/actions/runs/41624173924)).
 
 To build the installer locally from source (on Windows):
 
@@ -286,7 +288,7 @@ fail-closed whitelist before rendering.
 
 ## Verification
 
-Tests were re-run on 2026-11-03; the rehearsal, MCP, GUI, installer and video rows were run on 2026-10-31 on the demo-class machine (RTX 3070 8 GB) with the previous local model. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
+Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come from an earlier run on the demo-class machine (RTX 3070 8 GB) with the previous local model. The Windows installer row is now checked by CI: every PR runs the clean-install smoke test on `windows-latest`. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 | Gate | Result |
 |---|---|
@@ -295,7 +297,7 @@ Tests were re-run on 2026-11-03; the rehearsal, MCP, GUI, installer and video ro
 | Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |
 | Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
-| Windows installer | NSIS built, 115.6 MB, unsigned |
+| Windows installer | NSIS `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,227 bytes, unsigned; clean-install smoke test PASS in CI |
 | Demo walkthrough video | docs/verification/demo-walkthrough.mp4 (21 s) |
 
 Known limitations, honestly:
