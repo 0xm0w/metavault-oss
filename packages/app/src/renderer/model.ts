@@ -1150,7 +1150,7 @@ export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] 
 
 export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
 export const VAULT_PATH_DISPLAY = "metavault.db (in vaultd's working directory; METAVAULT_DB_PATH can override it)";
-export const APP_VERSION_DISPLAY = "0.1.0";
+export const APP_VERSION_DISPLAY = "0.1.0-alpha";
 
 const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "meta-api", "local", "bft"];
 const LOCAL_API_LIST: readonly LocalApiStyle[] = ["ollama", "openai"];
@@ -1389,4 +1389,43 @@ export function isAutoLockDue(status: LocalAuthStatusLike, lastActivityTs: numbe
 
 export function canLockSessionNow(status: LocalAuthStatusLike): boolean {
   return status.enabled && hasLocalFactor(status);
+}
+
+// Vault-key gate for the desktop app. A fresh install starts the bundled
+// daemon in first-run mode ("uninitialized"): the user must create a
+// passphrase before anything else. A passphrase vault that is locked must
+// be unlocked. Anything else (unlocked, legacy keychain, env key, or an
+// unreadable response) shows the normal app.
+export type KeyGate = "setup" | "unlock" | null;
+
+export const MIN_PASSPHRASE_LENGTH = 12;
+
+export function projectKeyGate(raw: unknown): KeyGate {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const mode = record["mode"];
+  if (mode === "uninitialized") return "setup";
+  if (mode === "passphrase" && record["locked"] === true) return "unlock";
+  return null;
+}
+
+// Client-side check before POST /setup. The daemon enforces the same rule.
+export function passphraseSetupError(passphrase: string, confirm: string): string | null {
+  // Same count as the daemon: user-perceived characters after NFKC.
+  const length = Array.from(new Intl.Segmenter().segment(passphrase.normalize("NFKC"))).length;
+  if (length < MIN_PASSPHRASE_LENGTH) {
+    return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;
+  }
+  if (passphrase !== confirm) return "The two passphrases do not match.";
+  return null;
+}
+
+// Plain words for the daemon's tagged setup/unlock errors.
+export function keyGateErrorMessage(message: string): string {
+  if (message.includes("WrongPassphrase")) return "Wrong passphrase.";
+  if (message.includes("UnlockThrottled")) return "Too many tries. Wait a moment and try again.";
+  if (message.includes("PassphraseTooShort")) return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;
+  if (message.includes("AlreadyInitialized")) return "This vault already has a passphrase. Unlock it instead.";
+  if (message.includes("unreachable")) return "MetaVault could not reach its background service. Try again in a moment.";
+  return "That did not work. Try again.";
 }

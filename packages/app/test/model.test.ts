@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  MIN_PASSPHRASE_LENGTH,
   TOKENS,
+  keyGateErrorMessage,
+  passphraseSetupError,
+  projectKeyGate,
   buildAuditRows,
   buildEditPayload,
   buildPolicyRows,
@@ -1281,5 +1285,31 @@ describe("projectLocalAuthStatus (#19)", () => {
       expect(DEFAULT_WARDEN_SETTINGS.model).toBe(DEFAULT_META_API_MODEL_ID);
       expect(isKnownMetaApiModel("custom-fine-tuned-meta-model")).toBe(false);
     });
+  });
+});
+
+describe("vault key gate", () => {
+  it("asks for a new passphrase on a first-run daemon and for unlock on a locked passphrase vault", () => {
+    expect(projectKeyGate({ mode: "uninitialized", locked: true })).toBe("setup");
+    expect(projectKeyGate({ mode: "passphrase", locked: true })).toBe("unlock");
+    expect(projectKeyGate({ mode: "passphrase", locked: false })).toBeNull();
+    expect(projectKeyGate({ mode: "keychain-legacy", locked: false })).toBeNull();
+    expect(projectKeyGate(null)).toBeNull();
+    expect(projectKeyGate("nope")).toBeNull();
+  });
+
+  it("checks passphrase length the way the daemon does, and that both entries match", () => {
+    expect(passphraseSetupError("short", "short")).toContain(String(MIN_PASSPHRASE_LENGTH));
+    expect(passphraseSetupError("twelve chars", "twelve chars")).toBeNull();
+    expect(passphraseSetupError("twelve chars", "twelve charz")).toBe("The two passphrases do not match.");
+  });
+
+  it("turns daemon error tags into plain words", () => {
+    expect(keyGateErrorMessage("MetaVault OSS daemon error (401): WrongPassphrase")).toBe("Wrong passphrase.");
+    expect(keyGateErrorMessage("daemon error (429): UnlockThrottled")).toContain("Wait");
+    expect(keyGateErrorMessage("daemon error (400): PassphraseTooShort")).toContain("12");
+    expect(keyGateErrorMessage("daemon error (409): AlreadyInitialized")).toContain("Unlock");
+    expect(keyGateErrorMessage("MetaVault OSS daemon unreachable — is vaultd running?")).toContain("background service");
+    expect(keyGateErrorMessage("something else")).toBe("That did not work. Try again.");
   });
 });

@@ -1,0 +1,42 @@
+MetaVault OSS 0.1.0-alpha - Terms of use
+
+Please read this before you install.
+
+1. This is alpha software. It is an early test build. It may have bugs,
+   it may lose data, and it may change in ways that break your setup.
+   Do not rely on it as the only place you keep a secret.
+
+2. License. MetaVault OSS is open source under the Apache License,
+   Version 2.0. The full text is in the LICENSE file in the source
+   repository: https://github.com/0xm0w/metavault-oss
+
+3. No warranty. The software is provided "AS IS", without warranties or
+   conditions of any kind, as set out in sections 7 and 8 of the Apache
+   License 2.0. You use it at your own risk.
+
+4. What stays on your computer. Your vault (metavault.db), its key file
+   and the daemon token are stored in your user profile under
+   %APPDATA%\MetaVault OSS. Secret values are encrypted with a key that is
+   protected by the passphrase you create on first run. There is no
+   passphrase reset: if you forget it, the vault cannot be opened.
+
+5. What can leave your computer.
+   - If you add a Meta API key, MetaVault sends request metadata (which
+     agent asked, the tool, the alias and the scope, never a secret value)
+     to the Meta API so Muse Spark can advise on the request. Meta's own
+     terms apply to that use.
+   - If you set a local endpoint, the same metadata goes only to the URL
+     you enter.
+   - When the app checks for updates it contacts GitHub.
+   With no warden reachable, requests come to you to approve or deny.
+
+6. No model is included. This installer does not bundle or download an
+   AI model.
+
+7. Unsigned build. This alpha installer is not code-signed, so Windows
+   SmartScreen may warn you before it runs.
+
+8. Uninstalling removes the program files, shortcuts and the PATH entry.
+   It asks whether to delete your vault data. A silent uninstall keeps it.
+
+By clicking "I Agree" you accept these terms.

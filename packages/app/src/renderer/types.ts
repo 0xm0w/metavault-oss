@@ -272,6 +272,7 @@ export interface VaultApi {
   readonly addCard: (alias: string, card: CardInputLike, website?: string) => Promise<unknown>;
   readonly keyStatus: () => Promise<unknown>;
   readonly unlockVault: (passphrase: string) => Promise<unknown>;
+  readonly setupVault: (passphrase: string) => Promise<unknown>;
   readonly lockVault: () => Promise<unknown>;
   readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
   readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;

@@ -58,6 +58,7 @@ const api: VaultApi = {
     }),
   keyStatus: () => invoke("GET", "/key/status"),
   unlockVault: (passphrase: string) => invoke("POST", "/unlock", { passphrase }),
+  setupVault: (passphrase: string) => invoke("POST", "/setup", { passphrase }),
   lockVault: () => invoke("POST", "/lock"),
   onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => {
     // Fixed channel, validated shape only: no new privilege, just a

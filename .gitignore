@@ -8,3 +8,4 @@ openvault.token
 openvault.key
 *.key
 packages/app/package-lock.json
+packages/app/bundle/

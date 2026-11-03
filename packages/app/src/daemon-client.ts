@@ -35,6 +35,7 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "POST", path: "/cards" },
   { method: "GET", path: "/key/status" },
   { method: "POST", path: "/unlock" },
+  { method: "POST", path: "/setup" },
   { method: "POST", path: "/lock" },
   { method: "GET", path: "/settings/warden" },
   { method: "PATCH", path: "/settings/warden" },
@@ -88,9 +89,10 @@ export function validateDaemonCall(input: unknown): DaemonCallRequest {
   return validated;
 }
 
-const daemonBase = (
+export const DAEMON_BASE_URL = (
   metavaultEnv("DAEMON_URL") ?? "http://127.0.0.1:7077"
 ).replace(/\/+$/, "");
+const daemonBase = DAEMON_BASE_URL;
 
 // Daemon token for the human-decision routes: METAVAULT_DAEMON_TOKEN, else
 // the metavault.token file the daemon writes next to the vault DB. Resolved

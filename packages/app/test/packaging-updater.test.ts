@@ -6,6 +6,7 @@ import {
   CHECK_UPDATES_CHANNEL,
   getCurrentUpdaterStatus,
   QUIT_AND_INSTALL_CHANNEL,
+  shouldAutoCheckForUpdates,
   UPDATER_STATUS_CHANNEL,
 } from "../src/updater.js";
 
@@ -51,14 +52,54 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
     expect(existsSync(ps1Path)).toBe(true);
     expect(existsSync(daemonCmdPath)).toBe(true);
 
+    // The installed shims run the bundled scripts with the app's own
+    // Electron binary in Node mode, so no separate Node install is needed.
     const cmdContent = readFileSync(cmdPath, "utf8");
-    expect(cmdContent).toContain("--cli");
+    expect(cmdContent).toContain("ELECTRON_RUN_AS_NODE=1");
+    expect(cmdContent).toContain("resources\\vaultd\\metavault.cjs");
 
     const ps1Content = readFileSync(ps1Path, "utf8");
-    expect(ps1Content).toContain("--cli");
+    expect(ps1Content).toContain("ELECTRON_RUN_AS_NODE");
+    expect(ps1Content).toContain("resources\\vaultd\\metavault.cjs");
 
     const daemonCmdContent = readFileSync(daemonCmdPath, "utf8");
-    expect(daemonCmdContent).toContain("--daemon");
+    expect(daemonCmdContent).toContain("ELECTRON_RUN_AS_NODE=1");
+    expect(daemonCmdContent).toContain("resources\\vaultd\\vaultd.cjs");
+    expect(daemonCmdContent).toContain("METAVAULT_FIRST_RUN_SETUP=1");
+  });
+
+  it("keeps vault data on a silent uninstall and does not duplicate shortcuts", () => {
+    const nshContent = readFileSync(join(appRoot, "scripts", "installer.nsh"), "utf8");
+    expect(nshContent).toContain("/SD IDNO");
+    expect(nshContent).not.toContain("CreateShortCut");
+    expect(nshContent).toContain("-notcontains $$d");
+  });
+
+  it("ships a short alpha TERMS page as the installer license", () => {
+    const terms = readFileSync(join(appRoot, "TERMS.txt"), "utf8");
+    expect(terms).toContain("0.1.0-alpha");
+    expect(terms).toContain("Apache License");
+    expect(terms).toContain("AS IS");
+    const pkg = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8")) as {
+      version: string;
+      scripts: Record<string, string>;
+      build: {
+        nsis: { license: string; allowToChangeInstallationDirectory: boolean };
+        extraResources: { from: string; to: string }[];
+        extraMetadata: { main: string };
+      };
+    };
+    expect(pkg.version).toBe("0.1.0-alpha");
+    expect(pkg.build.nsis.license).toBe("TERMS.txt");
+    expect(pkg.build.nsis.allowToChangeInstallationDirectory).toBe(true);
+    expect(pkg.build.extraResources).toContainEqual({ from: "bundle/vaultd", to: "vaultd" });
+    expect(pkg.build.extraMetadata.main).toBe("dist/main.bundle.cjs");
+    expect(Object.keys(pkg.scripts)).not.toContain("pack:win:ai");
+  });
+
+  it("does not auto-check for updates on prerelease builds", () => {
+    expect(shouldAutoCheckForUpdates("0.1.0-alpha")).toBe(false);
+    expect(shouldAutoCheckForUpdates("0.1.0")).toBe(true);
   });
 
   it("configures electron-builder with NSIS wizard and GitHub Releases provider", () => {

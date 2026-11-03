@@ -1,16 +1,16 @@
 {
   "name": "metavault-app",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "type": "module",
   "description": "MetaVault OSS desktop app — Electron shell over vaultd. Holds no secrets.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
-    "pack:win": "electron-builder --win",
+    "pack:win": "npm run build && npm run bundle && electron-builder --win --publish never",
     "pack:mac": "electron-builder --mac",
-    "pack:win:ai": "electron-builder --win -c.extraResources[0].from=models -c.extraResources[0].to=models -c.artifactName=MetaVault-OSS--with-ai--.",
-    "pack:win:store": "electron-builder --win appx"
+    "pack:win:store": "electron-builder --win appx",
+    "bundle": "node scripts/bundle.mjs"
   },
   "build": {
     "appId": "dev.metavault.app",
@@ -19,11 +19,26 @@
     "directories": {
       "output": "release"
     },
+    "extraMetadata": {
+      "main": "dist/main.bundle.cjs"
+    },
     "files": [
       "dist/**/*",
-      "bin/**/*",
+      "!dist/bin/**",
       "package.json",
       "icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "bundle/vaultd",
+        "to": "vaultd"
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "bin",
+        "to": "bin"
+      }
     ],
     "win": {
       "icon": "icon.ico",
@@ -51,7 +66,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "MetaVault OSS",
       "include": "scripts/installer.nsh",
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "license": "TERMS.txt",
+      "uninstallDisplayName": "MetaVault OSS ${version}",
+      "deleteAppDataOnUninstall": false
     },
     "publish": {
       "provider": "github",

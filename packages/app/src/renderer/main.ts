@@ -58,6 +58,11 @@ import {
   canLockSessionNow,
   parseDotEnvWithInference,
   type DotEnvImportItem,
+  MIN_PASSPHRASE_LENGTH,
+  keyGateErrorMessage,
+  passphraseSetupError,
+  projectKeyGate,
+  type KeyGate,
 } from "./model.js";
 import type {
   AgentSecuritySettingsLike,
@@ -109,6 +114,7 @@ let auditPageSize = 10;
 let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "skill" = "claude";
 let localAuthStatus: LocalAuthStatusLike = { ...DEFAULT_LOCAL_AUTH_STATUS };
 let vaultLocked = false;
+let keyGate: KeyGate = null;
 let initialAuthChecked = false;
 let lastUserActivityTs = Date.now();
 
@@ -3006,6 +3012,20 @@ function render(): void {
     currentView = "policies";
   }
   if (vaultLocked) settingsOpen = false;
+  if (keyGate !== null) {
+    settingsOpen = false;
+    const gateTitle = document.querySelector("#view-title");
+    if (gateTitle !== null) gateTitle.textContent = keyGate === "setup" ? "Welcome" : "Locked";
+    // Keep the open form (and what the user typed) across poll re-renders.
+    const existing = view.querySelector<HTMLElement>("#vault-key-gate");
+    if (existing === null || existing.dataset["mode"] !== keyGate) {
+      view.replaceChildren(renderKeyGate(keyGate));
+    }
+    paintSettingsModal();
+    paintApprovalDialog();
+    syncChrome();
+    return;
+  }
   const page: Exclude<ViewName, "settings"> =
     currentView === "vault" || currentView === "audit" || currentView === "policies" || currentView === "posture" ? currentView : "approval";
   const title = document.querySelector("#view-title");
@@ -3143,6 +3163,12 @@ function render(): void {
 
 async function refresh(): Promise<void> {
   try {
+    keyGate = projectKeyGate(await window.metavault.keyStatus().catch(() => null));
+    if (keyGate !== null) {
+      setDaemonStatus(true);
+      render();
+      return;
+    }
     const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw, secRaw] = await Promise.all([
       window.metavault.pending(),
       window.metavault.aliases(),
@@ -3215,6 +3241,76 @@ async function refresh(): Promise<void> {
 // The most recent refresh, so the deeplink flow can wait out a render that
 // is already in flight instead of racing it (see runDeeplinkAddFlow).
 let inFlightRefresh: Promise<void> | null = null;
+
+// First run: create the vault passphrase (POST /setup). Later launches:
+// unlock with it (POST /unlock). The passphrase goes straight to the local
+// daemon through main and is never stored by the app.
+function renderKeyGate(mode: "setup" | "unlock"): HTMLElement {
+  const box = el("form", "lock-screen vault-key-gate");
+  box.id = "vault-key-gate";
+  box.dataset["mode"] = mode;
+  box.style.display = "flex";
+  box.style.flexDirection = "column";
+  box.style.alignItems = "center";
+  box.style.gap = "12px";
+  box.style.padding = "60px 20px";
+  box.style.textAlign = "center";
+  const icon = el("div", "lock-icon");
+  icon.append(lockSvg());
+  const heading = el("h2", "", mode === "setup" ? "Create your vault passphrase" : "Unlock your vault");
+  const sub = el(
+    "p",
+    "",
+    mode === "setup"
+      ? `This passphrase encrypts your vault key on this computer. Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters. There is no reset: if you forget it, the vault cannot be opened.`
+      : "Enter your vault passphrase.",
+  );
+  const pass = document.createElement("input");
+  pass.type = "password";
+  pass.id = "vault-passphrase-input";
+  pass.autocomplete = mode === "setup" ? "new-password" : "current-password";
+  pass.placeholder = "Passphrase";
+  pass.setAttribute("aria-label", "Vault passphrase");
+  const confirm = document.createElement("input");
+  confirm.type = "password";
+  confirm.id = "vault-passphrase-confirm";
+  confirm.autocomplete = "new-password";
+  confirm.placeholder = "Type it again";
+  confirm.setAttribute("aria-label", "Confirm vault passphrase");
+  const error = el("p", "field-error");
+  error.id = "vault-key-gate-error";
+  error.setAttribute("role", "alert");
+  const submit = el("button", "action btn-approve", mode === "setup" ? "Create vault" : "Unlock") as HTMLButtonElement;
+  submit.type = "submit";
+  box.append(icon, heading, sub, pass);
+  if (mode === "setup") box.append(confirm);
+  box.append(error, submit);
+  box.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const problem = mode === "setup" ? passphraseSetupError(pass.value, confirm.value) : pass.value === "" ? "Enter your passphrase." : null;
+    if (problem !== null) {
+      error.textContent = problem;
+      return;
+    }
+    submit.disabled = true;
+    error.textContent = "";
+    const call = mode === "setup" ? window.metavault.setupVault(pass.value) : window.metavault.unlockVault(pass.value);
+    call
+      .then(() => {
+        pass.value = "";
+        confirm.value = "";
+        return refreshTracked();
+      })
+      .catch((err: unknown) => {
+        const message = keyGateErrorMessage(err instanceof Error ? err.message : "");
+        error.textContent = message;
+        submit.disabled = false;
+        if (message.includes("already has a passphrase")) void refreshTracked();
+      });
+  });
+  setTimeout(() => { pass.focus(); }, 50);
+  return box;
+}
 
 function refreshTracked(): Promise<void> {
   const pending = refresh();

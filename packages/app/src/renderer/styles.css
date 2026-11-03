@@ -1531,3 +1531,13 @@ body.is-simple-mode .verbose-note {
   color: var(--muted);
 }
 
+
+.vault-key-gate input {
+  width: min(360px, 100%);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d0d4dc);
+  font: inherit;
+}
+.vault-key-gate p { max-width: 460px; }
+.vault-key-gate .field-error { color: #c0392b; min-height: 1.2em; margin: 0; }

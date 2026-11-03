@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrowserWindow } from "electron";
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 import pkg from "electron-updater";
 
 export interface UpdaterStatusPayload {
@@ -110,7 +110,7 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
     try {
       const resourcesDir = typeof process.resourcesPath === "string" ? process.resourcesPath : "";
       const updateYml = join(resourcesDir, "app-update.yml");
-      if (existsSync(updateYml)) {
+      if (existsSync(updateYml) && shouldAutoCheckForUpdates(app.getVersion())) {
         void updaterInstance.checkForUpdates().catch(() => {
           // Ignored on network failure
         });
@@ -119,4 +119,11 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
       // Ignored
     }
   }, 5000);
+}
+
+// Prerelease builds (e.g. 0.1.0-alpha) do not check on launch: a published
+// stable release can sort above them, and an alpha must never replace
+// itself without the user asking. "Check for updates" still works.
+export function shouldAutoCheckForUpdates(version: string): boolean {
+  return !version.includes("-");
 }
