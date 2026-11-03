@@ -284,7 +284,7 @@ if warden_call_failed:
         <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
       </div>
       <p class="pg-legend" data-verdict-legend="percent"></p>
-      <blockquote class="pg-pull" style="margin-top:14px">Rules alone aren't enough: they miss bad requests and still raise false alarms on <strong>9/28</strong> safe reads. Muse Spark alone lets all <strong>28/28</strong> through.</blockquote>
+      <blockquote class="pg-pull" style="margin-top:14px"><strong>Rules alone aren't enough.</strong> They miss bad requests and still flag 9/28 (32%) safe reads, which means needless interruptions. Muse Spark reads the context and passes all 28/28 safe reads as low risk.</blockquote>
       <p class="pg-tiny" style="margin:6px 0 0">Rules + Spark keeps the rules' 9 alarms: <strong>the stricter verdict wins</strong>. All 9 are hard reads that mention <em>keys</em> or <em>export</em>; 8/8 plain reads pass.</p>
       <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the risky-reads slide.</p>
     </div>

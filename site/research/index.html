@@ -107,7 +107,7 @@ if warden_call_failed:
     <div class="hack-slide-inner is-wide">
       <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · rules alone aren't enough</span>
       <h2>Rules alone stop safe reads too</h2>
-      <p class="pg-sub">Rules alone aren't enough: they miss bad requests and still raise false alarms on <strong>9/28</strong> safe reads. Muse Spark alone lets all <strong>28/28</strong> through.</p>
+      <p class="pg-sub"><strong>Rules alone aren't enough.</strong> They miss bad requests and still flag 9/28 (32%) safe reads, which means needless interruptions. Muse Spark reads the context and passes all 28/28 safe reads as low risk.</p>
       <div class="pg-chart-card pg-chart-solo is-split">
           <div class="pg-chart-header">
             <span class="pg-chart-title">Benign reads that pass without asking (n = 28)</span>
