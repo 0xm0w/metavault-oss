@@ -34,6 +34,7 @@ import {
   buildWardenPatch,
   isWardenFormComplete,
   META_API_MODEL_OPTIONS,
+  DEFAULT_META_API_MODEL_ID,
   isKnownMetaApiModel,
   projectWardenKeyStatus,
   projectWardenSettings,
@@ -1194,8 +1195,14 @@ describe("projectLocalAuthStatus (#19)", () => {
       expect(isKnownMetaApiModel("muse-spark-1.3")).toBe(true);
       expect(isKnownMetaApiModel("muse-spark-1.2")).toBe(true);
       expect(isKnownMetaApiModel("muse-wonder-1.0")).toBe(true);
-      // Llama ids are not Meta hackathon-qualifying models and are not offered.
-      expect(META_API_MODEL_OPTIONS.some((o) => /llama/i.test(o.id))).toBe(false);
+      // Only approved Meta model ids are offered (sources: dev.meta.ai/docs/models,
+      // ollama.com/library/muse-glimmer). Anything else must fail this allowlist.
+      const APPROVED_META_API_IDS = ["muse-spark-1.3", "muse-spark-1.2", "muse-wonder-1.0"];
+      const APPROVED_LOCAL_IDS = ["muse-glimmer:30b"];
+      expect(META_API_MODEL_OPTIONS.map((o) => o.id)).toEqual(APPROVED_META_API_IDS);
+      expect(OLLAMA_MODEL_OPTIONS.every((o) => APPROVED_LOCAL_IDS.includes(o.id))).toBe(true);
+      expect(APPROVED_META_API_IDS).toContain(DEFAULT_META_API_MODEL_ID);
+      expect(APPROVED_LOCAL_IDS).toContain(DEFAULT_WARDEN_SETTINGS.model);
       expect(isKnownMetaApiModel("custom-fine-tuned-meta-model")).toBe(false);
     });
   });

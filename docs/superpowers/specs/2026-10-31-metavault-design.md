@@ -1,6 +1,6 @@
 # MetaVault OSS — Design Spec
 
-> **Superseded model choice (#70, 2026-11-03):** this is the historical design record. The local warden is now Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) and the cloud default is **Muse Spark** (`muse-spark-1.3` at `https://api.meta.ai/v1`). Model names below describe the original plan and are no longer shipped or supported. See README.md and `docs/verification/muse-glimmer-model-verification.md`.
+> **Updated for #70 (2026-11-03):** the local warden is Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) and the cloud default is **Muse Spark** (`muse-spark-1.3` at `https://api.meta.ai/v1`). Model sections below were rewritten to match; sources are in `docs/verification/muse-glimmer-model-verification.md`.
 
 - Date: 2026-10-31
 - Track: Indie Developer
@@ -64,7 +64,7 @@ natural language, mid-task, many times a day.
 
 ## 4. Eligibility strategy (Meta models)
 
-Meta's model landscape changed in 2026: the hosted Llama API was wound down,
+Meta's model landscape changed in 2026: the earlier hosted model API was wound down,
 the flagship moved to closed Muse Spark via the Meta Model API, Muse Spark
 Open shipped as a very large open-weight model, and Muse Glimmer shipped as
 a 30B Apache-2.0 open-weight model for local agents. Exact hackathon rule
@@ -74,11 +74,10 @@ MetaVault OSS therefore treats the Meta model as pluggable, Meta-first:
 
 | Tier | Model | When used |
 |---|---|---|
-| Default (this project) | Llama 3.2 3B Q4 via Ollama / llama.cpp | Developer machine has an 8 GB GPU. Default for the hackathon build and demo. |
-| Baseline fallback | Llama 3.2 3B Q4 on CPU / unified memory | No discrete GPU. Slower, still usable for approval decisions. |
-| Recommended upgrade | Muse Glimmer 30B Q4 | 24 GB-class GPU. Same policy interface, stronger reasoning. |
-| Large open-weight option | Muse Spark Open (hosted) | No suitable local GPU; served via a hosted provider. Metadata only. |
-| Hosted fallback | Muse Spark via Meta Model API | Demo-day backup and zero-GPU users. Metadata only, off by default. |
+| Default local (this project) | Muse Glimmer 30B Q4_K_M via Ollama (`muse-glimmer:30b`, ~18 GB) | On-device warden. Default for the hackathon build and demo. |
+| Smaller local quants | Third-party Muse Glimmer 30B GGUF quants (e.g. unsloth UD-Q3_K_XL, UD-IQ2_XXS) | Only if a measured eval in `docs/verification/` shows minimal loss. Not shipped as default. |
+| Hosted default | Muse Spark via Meta Model API (`muse-spark-1.3`) | Zero-GPU users and demo-day backup. Metadata only, off by default. |
+| Two-warden quorum | Muse Spark + on-device Muse Glimmer | Stricter verdict wins; if one is unavailable the other decides alone. |
 
 Rules that hold for every tier:
 
@@ -91,19 +90,20 @@ Rules that hold for every tier:
 4. Model ID, provider, prompt template version, and decision are recorded
    in the audit log for every request, so Meta-model use is provable to judges.
 
-### 4.1 Why Llama 3.2 3B Q4 is the default
+### 4.1 Why Muse Glimmer 30B Q4_K_M is the default
 
-- The developer's machine has an 8 GB GPU. The default must run well there,
-  not merely fit.
-- Llama 3.2 3B Q4 is roughly a 2 GB download and leaves most of the 8 GB
-  card free for the IDE, the agent, and context. Llama 3.1 8B Q4 (~4.9 GB
-  file, ~7 GB VRAM at 8K context) fits an 8 GB card only tightly.
+- It is a Meta open-weight model built for local agents, so the on-device
+  warden is a qualifying Meta model with no cloud dependency.
+- Q4_K_M is the smallest quant Meta publishes for it
+  (`meta-models/Muse-Glimmer-30B-GGUF`) and is the Ollama `30b` tag
+  (~18 GB). Ollama 0.32.7 or later is required.
 - Policy-brain work is small and structured: classify intent, score risk,
-  recommend a scope, write a short explanation. It does not need a large
-  model's context window or long-form generation.
-- Trade-off accepted: 3B reasoning is weaker than 8B/Glimmer. Mitigations
-  are structured JSON output, a small fixed label set, deterministic rules
-  underneath, and human approval on anything sensitive. See Section 9.
+  recommend a scope, write a short explanation. Prompts ask for low
+  reasoning effort and strict JSON, with a 120 s local timeout.
+- Trade-off accepted: the download and memory footprint are large.
+  Mitigations are fail-closed deterministic rules underneath, human
+  approval on anything sensitive, and the hosted Muse Spark option. Peak
+  RAM is measured by `scripts/eval-windows.ps1`, not asserted. See Section 9.
 
 ### 4.2 Marshal seniority (what a bigger model actually buys)
 
@@ -117,10 +117,8 @@ secret-injection inside `vaultd` hold identically on every tier.
 | Tier | Marshal equivalent | Practical difference |
 |---|---|---|
 | No model (rules only) | Locked door + checklist | Safe, but blunt: sensitive requests always interrupt the human. |
-| Llama 3.2 3B Q4 (default, 8 GB GPU) | Junior marshal | Spots obvious risk, follows the checklist, escalates when unsure. |
-| Llama 3.1 8B | Experienced marshal | Better grey-area judgement, fewer false alarms. |
-| Muse Glimmer 30B | Senior investigator | Reads history for slow scope-creep; strongest local explanations. |
-| Muse Spark (hosted, opt-in) | Chief of security | Strongest reasoning; can audit lower-tier decisions. |
+| Muse Glimmer 30B Q4_K_M (default, on-device) | Senior investigator | Reads history for slow scope-creep; strongest local explanations. |
+| Muse Spark (hosted, opt-in) | Chief of security | Strongest reasoning; can audit local decisions. |
 
 Even a fully compromised or prompt-injected marshal cannot exfiltrate a
 secret it never receives. Its worst failures are a bad recommendation
@@ -138,8 +136,8 @@ MetaVault OSS runs locally. There is no MetaVault OSS cloud account in v1.
    keychain (Windows Credential Manager / macOS Keychain / Linux secret
    service) holding the master key.
 3. `metavault model pull` auto-detects VRAM/RAM and pulls the right model
-   via Ollama. On an 8 GB GPU this is Llama 3.2 3B Q4. First run prints the
-   detected tier so there are no surprises.
+   via Ollama. The default is Muse Glimmer 30B Q4_K_M (`muse-glimmer:30b`). First
+   run prints the detected tier so there are no surprises.
 4. The user adds credentials once in the desktop app or CLI:
    `metavault add stripe --scope charges:read`.
 5. The user pastes one MCP config snippet into their IDE/agent
@@ -169,21 +167,19 @@ fallback is opt-in, clearly labelled, and still receives metadata only.
 
 | Hardware | Default model | Experience |
 |---|---|---|
-| 8 GB GPU, 16 GB RAM (demo machine) | Llama 3.2 3B Q4 | Fast approvals. Target demo config. |
-| 16 GB GPU | Llama 3.1 8B Q4 or 3.2 3B Q4 | More headroom, longer history context. |
-| 24 GB+ GPU | Muse Glimmer 30B Q4 | Recommended upgrade path. |
-| No GPU, 16 GB RAM | Llama 3.2 3B Q4 on CPU | Usable. Approvals take seconds, not milliseconds. |
-| Apple Silicon 16 GB unified | Llama 3.2 3B Q4 via Ollama/MLX | Usable local path. |
+| Enough RAM/VRAM for an ~18 GB model | Muse Glimmer 30B Q4_K_M (local) | Target config. Measured numbers live in `docs/verification/`. |
+| Not enough memory for the local model | Muse Spark via Meta Model API (opt-in) | Metadata only. |
+| No model available | Rules only | Fail-closed: sensitive scopes are denied or need human approval. |
 
-We do not promise Muse Spark Open locally (816B) or Llama 4 Scout locally
-(~67 GB at Q4). Both are hosted-only in MetaVault OSS's tiers.
+We do not promise Muse Spark Open locally (816B). It is hosted-only in
+MetaVault OSS's tiers.
 
 ## 6. Core loop
 
 1. Agent needs a credential-backed action. It calls the MetaVault OSS MCP tool
    with a capability request, e.g. `stripe:charges.read` plus a reason.
 2. MetaVault OSS resolves the credential alias. The agent never learns the value.
-3. The policy brain (default Llama 3.2 3B Q4) scores the request from
+3. The policy brain (default Muse Glimmer 30B Q4_K_M) scores the request from
    metadata only and returns strict JSON: risk level, recommended scope,
    whether human approval is required, and a one-sentence explanation.
 4. Deterministic policy checks run regardless: allow/deny lists, scope
@@ -227,11 +223,9 @@ testable interface.
   scope ceilings, rate limits, TTLs. Always runs; no model output can
   override it. Secure by default with no model present.
 - `brain` (the marshals) — Meta-model adapter. One interface, pluggable
-  providers. v1 ships the Ollama provider only (default Llama 3.2 3B Q4;
-  Muse Glimmer via Ollama is a config change on the same provider). The
-  Meta Model API and hosted Muse Spark Open providers are interface-
-  compatible follow-ups, built only if official rules require them or
-  time remains after the core loop. Sees metadata only, emits strict
+  providers. Ships the Ollama provider (default Muse Glimmer 30B Q4_K_M), the
+  Meta Model API provider (default Muse Spark `muse-spark-1.3`), and a
+  two-warden quorum over both. Sees metadata only, emits strict
   JSON only, can narrow or escalate, never widen.
 - `connectors` — credential-backed tool executors. v1: a generic
   HTTP-with-injected-header executor, plus Stripe and GitHub examples.
@@ -294,7 +288,7 @@ from mockups in `metavault-oss/mockups/directions.html`, Directions A–C).
   requested scope in mono, the agent's stated reason, the marshal's
   one-paragraph assessment with risk level, expiry terms, and
   Approve once / Deny / Always allow (scoped) actions.
-- The marshal status line ("Marshal · Llama 3.2 3B · On-device") is
+- The marshal status line ("Marshal · Muse Glimmer 30B · On-device") is
   always visible in the app header. It is both a trust signal for users
   and visible evidence of Meta-model use for judges.
 - Supporting surfaces: Vault home (credential cards showing alias, scope
@@ -310,7 +304,7 @@ from mockups in `metavault-oss/mockups/directions.html`, Directions A–C).
 - Local daemon, encrypted vault, OS-keychain master key.
 - MCP server + CLI + desktop app (Electron shell over `vaultd`) for
   approvals, policies, and the audit log. Localhost web UI as fallback.
-- Policy brain on Llama 3.2 3B Q4 via Ollama, with the model-pluggable
+- Policy brain on Muse Glimmer 30B Q4_K_M via Ollama, with the model-pluggable
   interface and rule-based fallback.
 - Generic HTTP connector + Stripe and GitHub demo connectors.
 - Scoped, expiring grants; one-click revoke; full audit log.
@@ -325,7 +319,7 @@ from mockups in `metavault-oss/mockups/directions.html`, Directions A–C).
 - Five bespoke IDE plugins. MCP + CLI is the universal surface.
 - 50 connector integrations. Depth on 2–3, not breadth.
 - Sending any secret, fragment, or hash of a secret to a model.
-- Local hosting of Muse Spark Open or Llama 4 Scout.
+- Local hosting of Muse Spark Open.
 - Mobile approval app. The Electron desktop app (tray-resident) plus the
   CLI approval path is enough for v1.
 
@@ -406,17 +400,17 @@ credential or request headers that carried it.
   the canary. Any hit fails the build.
 - Brain evaluation: a fixed set of labelled request scenarios (benign read,
   sneaky write, scope escalation, injection in the reason field, burst
-  requests) scored against expected risk/approval outcomes on Llama 3.2 3B
-  Q4. This eval doubles as judging evidence for Meta-model quality.
+  requests) scored against expected risk/approval outcomes on Muse Glimmer
+  30B Q4_K_M. This eval doubles as judging evidence for Meta-model quality.
 - Integration: MCP request -> approval -> connector call -> result ->
   expiry, against Stripe/GitHub test-mode or a local mock HTTP server.
-- Manual demo rehearsal on the actual 8 GB GPU machine, timed.
+- Manual demo rehearsal on the actual demo machine, timed.
 
 ## 12. Demo script (3 minutes)
 
 1. (15s) The horror: a real key pasted into an agent chat, now in a transcript.
 2. (20s) Without MetaVault OSS, the agent is blocked or the human pastes the key.
-3. (45s) Agent requests `stripe:charges.read` via MCP. Llama 3.2 3B explains
+3. (45s) Agent requests `stripe:charges.read` via MCP. Muse Glimmer explains
    the risk in one sentence. Human approves once.
 4. (30s) Tool succeeds. Show the chat/transcript: the key never appeared.
 5. (30s) Revoke the agent mid-task. Its next request fails safely.

@@ -10,7 +10,7 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 - CI/CD verified green on GitHub Actions:
   - CI: https://github.com/0xm0w/metavault-oss/actions/runs/41223410981 (Windows + Ubuntu exit 0)
   - CodeQL: https://github.com/0xm0w/metavault-oss/actions/runs/41223410962 (exit 0)
-- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-metavault-hardening-release.md`
+- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. (The implementation plans were removed in #70 as obsolete; see git history.)
 - SDD ledger (task-by-task record, deferred minors, rulings):
   `.superpowers/sdd/2026-10-31-metavault-hardening-release/progress.md`
   Per-task reports + review diffs are in the same folder (`task-N-report.md`, `task-N-review.md`).

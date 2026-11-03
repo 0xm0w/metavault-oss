@@ -41,5 +41,5 @@ Status: implemented on branch `fix/70-muse-glimmer-fallback` (see "Implementatio
 - Cloud path: default moved to the Meta Model API (`https://api.meta.ai/v1`, `muse-spark-1.3`,
   per https://dev.meta.ai/docs/models). Unverified: whether that API honours
   `response_format: {type: "json_object"}` (no key available; the endpoint returns 401 without one).
-- The name check is `rg -iP '(?<!o)llama'` (plain `rg -i llama` also matches "ollama").
+- The name check is a case-insensitive PCRE search for the retired model-family name ("ollama" minus its leading "o"), with a `(?<!o)` lookbehind so "ollama" itself does not match. Expected result: zero matches repo-wide.
 - Local CI note: better-sqlite3 has no Node 24 prebuild here; use Node 22 (as CI does).

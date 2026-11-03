@@ -1,5 +1,5 @@
 # command: node dist/packages/brain/eval/run-eval.js --fake
-# run: 2026-11-03 13:33 PST (Asia/Manila), box, commit 40a0776+worktree
+# run: 2026-11-03 14:11 PHT (Asia/Manila), box, commit 5d0dc95+worktree
 MetaVault OSS brain eval — mode=fake model=fake-brain
 
 scenario                       class                  risk  approval  safe
