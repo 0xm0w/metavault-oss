@@ -209,7 +209,7 @@ $add = Invoke-Daemon "POST" "/credentials" @{ alias = $smokeAlias; scope = "smok
 Check ($null -ne $add -and $null -eq $add.__httpStatus) "credential stored"
 $aliases = Invoke-Daemon "GET" "/aliases"
 Log "GET /aliases -> $($aliases | ConvertTo-Json -Compress)"
-Check ($null -ne $aliases -and @($aliases).Contains($smokeAlias)) "credential alias listed"
+Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "credential alias listed"
 $setup = $null; $add = $null
 
 # === 3. silent uninstall keeps the vault ===============================
@@ -235,7 +235,7 @@ Check ($null -ne $unlock -and ($unlock.status -eq "unlocked" -or $unlock.status 
 $unlock = $null
 $aliases = Invoke-Daemon "GET" "/aliases"
 Log "GET /aliases (reinstall) -> $($aliases | ConvertTo-Json -Compress)"
-Check ($null -ne $aliases -and @($aliases).Contains($smokeAlias)) "stored credential survives uninstall + reinstall (encrypted round-trip)"
+Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "stored credential survives uninstall + reinstall (encrypted round-trip)"
 
 # === 5. install-over-install (update path) keeps the vault =============
 Stop-App
@@ -248,7 +248,7 @@ $unlock = Invoke-Daemon "POST" "/unlock" @{ passphrase = $smokePassphrase }
 Check ($null -ne $unlock -and ($unlock.status -eq "unlocked" -or $unlock.status -eq "already-unlocked")) "vault unlocks after update-path install"
 $unlock = $null
 $aliases = Invoke-Daemon "GET" "/aliases"
-Check ($null -ne $aliases -and @($aliases).Contains($smokeAlias)) "stored credential survives install-over-install"
+Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "stored credential survives install-over-install"
 
 # === 6. final silent uninstall: cleanup + data kept ====================
 Stop-App
