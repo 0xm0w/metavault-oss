@@ -139,3 +139,34 @@ describe("approve-always ordering (standing approval only after successful execu
     expect((second.body as Record<string, unknown>)["status"]).toBe("awaiting-approval");
   });
 });
+
+describe("GET /policies token hygiene (F2 regression)", () => {
+  it("never exposes agent bearer tokens on the open /policies route", async () => {
+    const service = await makeService(brainReturning("low", "charges.read", true));
+    const res = await handleVaultRequest(service, "GET", "/policies");
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      agents: { id: string; name: string; createdAt: string; revoked: boolean }[];
+    };
+    expect(body.agents.length).toBeGreaterThanOrEqual(4);
+    for (const agent of body.agents) {
+      expect(agent).not.toHaveProperty("token");
+      expect(typeof agent.id).toBe("string");
+      expect(typeof agent.name).toBe("string");
+    }
+    expect(JSON.stringify(res.body)).not.toContain("ov_agent_");
+  });
+
+  it("serves agent bearer tokens only via the token-guarded GET /agents route", async () => {
+    const service = await makeService(brainReturning("low", "charges.read", true));
+    const denied = await handleVaultRequest(service, "GET", "/agents");
+    expect(denied.status).toBe(401);
+
+    const allowed = await handleVaultRequest(service, "GET", "/agents", undefined, withToken);
+    expect(allowed.status).toBe(200);
+    const agents = allowed.body as { id: string; token: string }[];
+    expect(agents.length).toBeGreaterThanOrEqual(4);
+    const cursor = agents.find((a) => a.id === "cursor");
+    expect(cursor?.token).toMatch(/^ov_agent_cursor_[0-9a-f]{32}$/);
+  });
+});

@@ -47,10 +47,13 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
   it("auto-provisions default agents with high-entropy tokens", async () => {
     const daemon = await makeTestDaemon();
     try {
-      const res = await fetch(`${daemon.base}/policies`);
-      const body = await res.json() as { agents: { id: string; name: string; token: string; revoked: boolean }[] };
-      expect(body.agents.length).toBeGreaterThanOrEqual(4);
-      const cursor = body.agents.find((a) => a.id === "cursor");
+      // Agent tokens are served only via the token-guarded GET /agents route.
+      const res = await fetch(`${daemon.base}/agents`, {
+        headers: { "x-metavault-token": "test-daemon-token" },
+      });
+      const body = await res.json() as { id: string; name: string; token: string; revoked: boolean }[];
+      expect(body.length).toBeGreaterThanOrEqual(4);
+      const cursor = body.find((a) => a.id === "cursor");
       expect(cursor).toBeDefined();
       expect(cursor?.name).toBe("Cursor");
       expect(cursor?.token).toMatch(/^ov_agent_cursor_[0-9a-f]{32}$/);
@@ -63,9 +66,11 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
   it("authenticates legitimate agent via bearer token and forces authoritative identity", async () => {
     const daemon = await makeTestDaemon();
     try {
-      // Get cursor's token
-      const policies = await (await fetch(`${daemon.base}/policies`)).json() as { agents: { id: string; token: string }[] };
-      const cursorToken = policies.agents.find((a) => a.id === "cursor")?.token ?? "";
+      // Get cursor's token via the token-guarded route
+      const agents = await (await fetch(`${daemon.base}/agents`, {
+        headers: { "x-metavault-token": "test-daemon-token" },
+      })).json() as { id: string; token: string }[];
+      const cursorToken = agents.find((a) => a.id === "cursor")?.token ?? "";
 
       // Caller attempts to claim agentId: "attacker" or "spoofed" in the body, but presents Cursor's token
       const res = await fetch(`${daemon.base}/request`, {
@@ -128,8 +133,10 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
     const daemon = await makeTestDaemon();
     try {
       // 1. First, create a verified request with Cursor's real token and approve with always-allow
-      const policies = await (await fetch(`${daemon.base}/policies`)).json() as { agents: { id: string; token: string }[] };
-      const cursorToken = policies.agents.find((a) => a.id === "cursor")?.token ?? "";
+      const agents = await (await fetch(`${daemon.base}/agents`, {
+        headers: { "x-metavault-token": "test-daemon-token" },
+      })).json() as { id: string; token: string }[];
+      const cursorToken = agents.find((a) => a.id === "cursor")?.token ?? "";
 
       await fetch(`${daemon.base}/request`, {
         method: "POST",
@@ -195,8 +202,10 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
   it("revoking an agent invalidates its token immediately", async () => {
     const daemon = await makeTestDaemon();
     try {
-      const policies = await (await fetch(`${daemon.base}/policies`)).json() as { agents: { id: string; token: string }[] };
-      const cursorToken = policies.agents.find((a) => a.id === "cursor")?.token ?? "";
+      const agents = await (await fetch(`${daemon.base}/agents`, {
+        headers: { "x-metavault-token": "test-daemon-token" },
+      })).json() as { id: string; token: string }[];
+      const cursorToken = agents.find((a) => a.id === "cursor")?.token ?? "";
 
       // Revoke cursor
       const revokeRes = await fetch(`${daemon.base}/agents/revoke`, {

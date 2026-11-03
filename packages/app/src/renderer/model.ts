@@ -8,6 +8,7 @@ import type {
   DeeplinkAddParams,
   PendingApproval,
   PoliciesData,
+  PolicyAgent,
   RegisteredAgent,
   Risk,
   SecurityPostureCheckLike,
@@ -430,6 +431,28 @@ export function projectPoliciesResponse(raw: unknown): PoliciesData {
     }
   }
   const agentsRaw = raw["agents"];
+  const agents: PolicyAgent[] = [];
+  if (Array.isArray(agentsRaw)) {
+    for (const item of agentsRaw as unknown[]) {
+      if (isRecord(item) && typeof item["id"] === "string" && typeof item["name"] === "string") {
+        agents.push({
+          id: item["id"],
+          name: item["name"],
+          createdAt: typeof item["createdAt"] === "string" ? item["createdAt"] : "",
+          revoked: Boolean(item["revoked"]),
+        });
+      }
+    }
+  }
+  return { ceilings, standingApprovals, ...(agents.length > 0 ? { agents } : {}) };
+}
+
+// GET /agents is the token-guarded route that legitimately returns agent
+// bearer tokens to the app (for config snippets). The projection validates
+// the exact shape; the secret-like-key fail-closed rule is not applied
+// because carrying tokens is this route's purpose.
+export function projectAgentsResponse(raw: unknown): RegisteredAgent[] {
+  const agentsRaw = isRecord(raw) ? raw["agents"] : raw;
   const agents: RegisteredAgent[] = [];
   if (Array.isArray(agentsRaw)) {
     for (const item of agentsRaw as unknown[]) {
@@ -444,7 +467,7 @@ export function projectPoliciesResponse(raw: unknown): PoliciesData {
       }
     }
   }
-  return { ceilings, standingApprovals, ...(agents.length > 0 ? { agents } : {}) };
+  return agents;
 }
 
 export function projectCredentialsResponse(raw: unknown): CredentialMeta[] {

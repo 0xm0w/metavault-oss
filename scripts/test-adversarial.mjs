@@ -84,11 +84,11 @@ async function run() {
     },
   });
 
-  // 4. Retrieve auto-provisioned agent identities & tokens
-  const policiesRes = await api("/policies", {
+  // 4. Retrieve auto-provisioned agent identities & tokens (token-guarded route only)
+  const agentsRes = await api("/agents", {
     headers: { "x-metavault-token": DAEMON_TOKEN },
   });
-  const agents = policiesRes.json?.agents || [];
+  const agents = Array.isArray(agentsRes.json) ? agentsRes.json : agentsRes.json?.agents || [];
   const cursorAgent = agents.find((a) => a.id === "cursor");
   const codexAgent = agents.find((a) => a.id === "codex");
   console.log(`[+] Provisioned agents: Cursor (${cursorAgent?.token.slice(0, 15)}...), Codex (${codexAgent?.token.slice(0, 15)}...)\n`);

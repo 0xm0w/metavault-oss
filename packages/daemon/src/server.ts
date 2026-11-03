@@ -193,7 +193,9 @@ export const DAEMON_TOKEN_HEADER = "x-metavault-token";
 // own grants, so /approve, /approve-always, /deny and the pending queue
 // require it. Agent-facing and safe-direction routes (/request, /aliases,
 // /audit, /policies, /revoke) stay open: requesting never grants anything
-// and revoking only ever removes access.
+// and revoking only ever removes access. Open routes must not hand out
+// credentials: /policies answers with agent tokens stripped, so the only
+// way to read an agent bearer token is the token-guarded GET /agents.
 export function daemonTokenFilePath(dbPath: string): string {
   return join(dirname(dbPath), "metavault.token");
 }
@@ -347,10 +349,24 @@ export async function handleVaultRequest(
   if (method === "GET" && path === "/policies") {
     // Schema-validated response: the payload is checked against
     // PoliciesResponseSchema before it leaves the daemon (metadata only).
+    // This route is open, so agent bearer tokens are stripped here; they
+    // are served only by the token-guarded GET /agents route.
     return run(
       service
         .listPolicies()
         .pipe(
+          Effect.map((policies) => ({
+            ...policies,
+            ...(policies.agents !== undefined
+              ? {
+                  agents: policies.agents.map((agent) => {
+                    const publicAgent: Record<string, unknown> = { ...agent };
+                    delete publicAgent["token"];
+                    return publicAgent;
+                  }),
+                }
+              : {}),
+          })),
           Effect.flatMap((policies) => Schema.decodeUnknown(PoliciesResponseSchema)(policies)),
         ),
     );

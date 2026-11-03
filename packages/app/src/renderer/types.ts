@@ -92,10 +92,20 @@ export interface RegisteredAgent {
   readonly revoked: boolean;
 }
 
+// Agent rows carried by the open GET /policies route: the daemon strips
+// bearer tokens there, so this shape has no token field. Full records
+// (with token) come only from the token-guarded GET /agents route.
+export interface PolicyAgent {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly revoked: boolean;
+}
+
 export interface PoliciesData {
   readonly ceilings: Readonly<Record<string, string>>;
   readonly standingApprovals: readonly StandingApproval[];
-  readonly agents?: readonly RegisteredAgent[];
+  readonly agents?: readonly PolicyAgent[];
 }
 
 // Credential types the vault stores. "secret" is an API key/token the
@@ -267,6 +277,7 @@ export interface VaultApi {
   readonly audit: () => Promise<unknown>;
   readonly pending: () => Promise<unknown>;
   readonly policies: () => Promise<unknown>;
+  readonly agents: () => Promise<unknown>;
   readonly getSecurityPosture: () => Promise<unknown>;
   readonly addCredential: (alias: string, scope: string, secret: string, website?: string, enrollmentId?: string) => Promise<unknown>;
   readonly addCard: (alias: string, card: CardInputLike, website?: string) => Promise<unknown>;
