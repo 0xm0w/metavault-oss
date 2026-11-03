@@ -234,13 +234,13 @@ if ($PreviousInstallerDir -ne "") {
   $env:MV_UPGRADE_DB = $dbFile; $env:MV_UPGRADE_KEY = $keyFile
   $env:MV_UPGRADE_PASSWORD = $smokePassphrase; $env:MV_UPGRADE_EXPECTED = $smokeSecret
   $verifyScript = Join-Path (Split-Path $PSScriptRoot -Parent) 'verify-upgrade-fixture.cjs'
-  & node (Join-Path (Split-Path $PSScriptRoot -Parent) 'node_modules\esbuild\bin\esbuild') (Join-Path $PSScriptRoot 'verify-upgrade-credential.ts') --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=$verifyScript
+  & (Join-Path (Split-Path $PSScriptRoot -Parent) 'node_modules\.bin\esbuild.cmd') (Join-Path $PSScriptRoot 'verify-upgrade-credential.ts') --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=$verifyScript
   if ($LASTEXITCODE -ne 0) { throw 'Synthetic upgrade verifier build failed' }
   & node $verifyScript
   if ($LASTEXITCODE -ne 0) { throw 'Synthetic published credential decrypt verification failed' }
   Remove-Item $verifyScript -Force
   Remove-Item Env:MV_UPGRADE_DB,Env:MV_UPGRADE_KEY,Env:MV_UPGRADE_PASSWORD,Env:MV_UPGRADE_EXPECTED
-  Uninstall-App 'remove synthetic upgraded fixture using candidate policy' 
+  Uninstall-App 'remove synthetic upgraded fixture using candidate policy'
   Check-Cleanup
   Check (-not (Test-Path $dataDir)) 'synthetic published-upgrade fixture removed before clean tests'
 } else {
