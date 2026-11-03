@@ -20,8 +20,22 @@ New-Item (Join-Path $userData 'User') -ItemType Directory -Force | Out-Null
 $env:MV_HOST_LOG = $LogPath
 $extension = Join-Path $PSScriptRoot 'vscode-smoke'
 $code = Join-Path $root 'editor\Code.exe'
-$p = Start-Process $code -ArgumentList @('--user-data-dir',('"'+$userData+'"'),'--extensions-dir',('"'+(Join-Path $root 'extensions')+'"'),'--disable-extensions','--skip-welcome','--skip-release-notes',('--extensionDevelopmentPath="'+$extension+'"'),('--extensionTestsPath="'+(Join-Path $extension 'test.cjs')+'"'),('"'+$workspace+'"')) -PassThru
-if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'VS Code host proof timed out' }
+$stdout = Join-Path $root 'stdout.log'
+$stderr = Join-Path $root 'stderr.log'
+$p = Start-Process $code -RedirectStandardOutput $stdout -RedirectStandardError $stderr -ArgumentList @('--user-data-dir',('"'+$userData+'"'),'--extensions-dir',('"'+(Join-Path $root 'extensions')+'"'),'--disable-extensions','--skip-welcome','--skip-release-notes',('--extensionDevelopmentPath="'+$extension+'"'),('--extensionTestsPath="'+(Join-Path $extension 'test.cjs')+'"'),('"'+$workspace+'"')) -PassThru
+if (-not $p.WaitForExit(120000)) {
+  Get-Content $stdout,$stderr -ErrorAction SilentlyContinue | Add-Content $LogPath
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Drawing
+  $b = [Windows.Forms.SystemInformation]::VirtualScreen
+  $image = New-Object Drawing.Bitmap $b.Width,$b.Height
+  $g = [Drawing.Graphics]::FromImage($image); $g.CopyFromScreen($b.Left,$b.Top,0,0,$image.Size)
+  $memory = New-Object IO.MemoryStream; $image.Save($memory,[Drawing.Imaging.ImageFormat]::Png)
+  Add-Content $LogPath ('VSCODE_SCREENSHOT_BASE64=' + [Convert]::ToBase64String($memory.ToArray()))
+  $g.Dispose(); $image.Dispose(); $memory.Dispose()
+  $p.Kill(); throw 'VS Code host proof timed out; inspect captured trust/UI state'
+}
+Get-Content $stdout,$stderr -ErrorAction SilentlyContinue | Add-Content $LogPath
 if ($p.ExitCode -ne 0) { throw ('VS Code host proof exit ' + $p.ExitCode) }
 Remove-Item Env:MV_HOST_LOG
 # No real profile, settings sync, model account or credentials ever loaded.
