@@ -961,6 +961,7 @@ export function makeVaultServiceLive(
               const grantId = yield* Effect.sync(() => randomUUID());
               const grant = createGrant(grantId, req, allowedScope, now, grantTtlMs);
               yield* registry.register(grant);
+              if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) { yield* registry.markDenied(grantId); return {status:"denied",reason:"agent-credentials-changed"} as const; }
               yield* Ref.update(decisions, (map) => {
                 const next = new Map(map);
                 next.set(grantId, decision);
