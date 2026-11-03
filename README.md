@@ -20,11 +20,11 @@ context, an audit row, or the desktop UI.
 
 ## Install
 
-### Windows Installer (v0.1.1-alpha)
+### Windows Installer (v0.1.2-alpha)
 
-Download the Windows NSIS installer (`MetaVault-OSS-0.1.1-alpha-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.1-alpha). The installer is unsigned, so Windows SmartScreen may warn.
+Download the Windows NSIS installer (`MetaVault-OSS-0.1.2-alpha-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.2-alpha). The installer is unsigned, so Windows SmartScreen may warn.
 
-**Do not install the older `v0.1.0` build**: it crashes at startup with `ERR_MODULE_NOT_FOUND` (`electron-updater` was missing from the packaged app). It also bundled a local model. `0.1.1-alpha` is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. The app's update check never offers v0.1.0 to an alpha install.
+**Do not install the older `v0.1.0` build**: it crashes at startup with `ERR_MODULE_NOT_FOUND` (`electron-updater` was missing from the packaged app). It also bundled a local model. `0.1.2-alpha` is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. The app's update check never offers v0.1.0 to an alpha install.
 
 The installer is built by the `Windows installer` workflow on `windows-latest`, which also runs a clean-install smoke test (silent install, launch, `/health`, uninstall) on the exact `.exe` before it reaches the release.
 

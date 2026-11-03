@@ -1,4 +1,4 @@
-MetaVault OSS 0.1.1-alpha - Terms of use
+MetaVault OSS 0.1.2-alpha - Terms of use
 
 Please read this before you install.
 
