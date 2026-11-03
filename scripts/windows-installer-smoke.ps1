@@ -65,6 +65,14 @@ $dbFile = Join-Path $dataDir "metavault.db"
 $keyFile = Join-Path $dataDir "metavault.key.json"
 $tokenFile = Join-Path $dataDir "metavault.token"
 
+function Write-McpLine($process, [string]$line) {
+  # Framework StreamWriter can emit a UTF-8 BOM. MCP stdio accepts JSON lines,
+  # not a BOM prefix; write exact UTF-8 bytes without its encoding preamble.
+  $bytes = [Text.Encoding]::UTF8.GetBytes($line + "`n")
+  $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+  $process.StandardInput.BaseStream.Flush()
+}
+
 function Test-PackagedMcp {
   Check (Test-Path (Join-Path $binDir "metavault-mcp.cmd")) "MCP cmd launcher installed"
   Check (Test-Path (Join-Path $binDir "metavault-mcp.ps1")) "MCP PowerShell launcher installed"
@@ -81,14 +89,14 @@ function Test-PackagedMcp {
   $p.StartInfo = $info
   try {
     [void]$p.Start()
-    $p.StandardInput.AutoFlush = $true
-    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"installed-smoke","version":"1"}}}')
+    $stderr = $p.StandardError.ReadToEndAsync()
+    Write-McpLine $p ('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"installed-smoke","version":"1"}}}')
     $read = $p.StandardOutput.ReadLineAsync()
-    if (-not $read.Wait(15000)) { throw "Installed MCP initialize timed out" }
+    if (-not $read.Wait(15000)) { $p.Kill(); [void]$stderr.Wait(5000); Log ("MCP stderr: " + $stderr.Result); throw "Installed MCP initialize timed out" }
     $reply = $read.Result | ConvertFrom-Json
     Check ($reply.id -eq 1 -and $null -ne $reply.result.serverInfo) "installed runtime completes MCP initialize without source checkout or Node"
-    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized"}')
-    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
+    Write-McpLine $p ('{"jsonrpc":"2.0","method":"notifications/initialized"}')
+    Write-McpLine $p ('{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
     $read = $p.StandardOutput.ReadLineAsync()
     if (-not $read.Wait(15000)) { throw "Installed MCP tools/list timed out" }
     $reply = $read.Result | ConvertFrom-Json
