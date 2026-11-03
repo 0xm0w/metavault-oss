@@ -19,6 +19,13 @@ param(
   [int]$HealthTimeoutSec = 90
 )
 
+# WinRT PasswordVault requires Windows PowerShell/.NET Framework, not pwsh7.
+# Match the runtime used by installed cleanup and the app's legacy keychain.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -InstallerDir $InstallerDir -LogPath $LogPath -Port $Port -HealthTimeoutSec $HealthTimeoutSec
+  exit $LASTEXITCODE
+}
+
 $ErrorActionPreference = "Stop"
 $script:failures = 0
 New-Item -ItemType File -Force -Path $LogPath | Out-Null
