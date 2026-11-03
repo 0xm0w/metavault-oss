@@ -50,3 +50,32 @@ valid again. Rotate affected credentials and update host configs afterwards.
 Only synthetic tests cover the missing-key guard and migration snapshot behavior.
 A genuine published old-installer-to-candidate Windows upgrade remains a separate
 gate. Do not upgrade a valuable vault using an unverified candidate.
+
+## Deliberate uninstall versus update
+
+Deliberate uninstall now deletes the fixed `%APPDATA%\MetaVault OSS` directory,
+including credentials, settings, wrapped key, daemon token and migration backups.
+It removes the app-owned `metavault` / `master-key` Windows keychain entry too.
+The interactive uninstaller warns before deletion and offers Cancel. `/S` is
+noninteractive consent to this same wipe; it is not a keep-data switch. Reinstall
+then starts first-run setup. Back up privately before intentionally uninstalling
+if you need to retain anything. Old uninstallers keep their old behavior until
+replaced by this version; installing a new build cannot change an old exe.
+
+An in-place update uses electron-builder's `--updated` path and preserves data.
+Do not manually uninstall first if you want to keep the vault. Do not call a
+deliberate uninstall an update, and do not pass `--delete-app-data` to an updater.
+
+Only the fixed current-profile app directory is removed. External/custom DB paths,
+external backups, exported agent-token files and third-party IDE configurations
+are not recursively searched or deleted. Uninstall does not erase outside copies
+or promise forensic erasure. Any linked directory or entry in the vault profile
+causes cleanup to stop rather than follow it into unrelated files. Locked files
+can also stop cleanup; inspect the error instead of assuming a complete wipe.
+
+The keychain entry is app-scoped but shared by legacy custom vaults using it.
+Such a vault needs its own matching key backup before uninstalling. Environment
+variables set outside the app are not removed by the uninstaller. A default
+fresh setup is not guaranteed if an external daemon or environment-selected
+master key is still configured. These external dependencies are not owned by
+this install and must not be silently deleted.

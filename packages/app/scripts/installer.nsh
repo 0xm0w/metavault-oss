@@ -15,19 +15,36 @@
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MetaVault OSS" '"$INSTDIR\MetaVault OSS.exe" --minimized'
 !macroend
 
+!macro customUnInit
+  ; Warn before removing program files, registry entries or vault bytes.
+  ; /S deliberately skips UI but has the same wipe semantics. Updates preserve.
+  ${ifNot} ${isUpdated}
+    IfSilent wipe_notice_done
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "Uninstall MetaVault OSS and permanently delete its vault, saved credentials, password key, settings and migration backups in this Windows profile? Reinstall will start fresh.$\n$\nThis cannot be undone. Custom external vault paths are not deleted. Cancel to keep everything. In-place updates preserve data." IDOK wipe_notice_done
+    Abort
+    wipe_notice_done:
+  ${endIf}
+!macroend
+
 !macro customUnInstall
+  ; Never wipe data when electron-builder invokes the uninstaller for an update.
+  ${ifNot} ${isUpdated}
+    ; Fixed current-user path only. Reject junctions/symlinks instead of following
+    ; them into unrelated data. No environment-selected DB path is ever deleted.
+    nsExec::ExecToStack `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\cleanup-profile.ps1"`
+    Pop $0
+    Pop $1
+    ${if} $0 != 0
+      IfSilent cleanup_failed_silent
+      MessageBox MB_OK|MB_ICONSTOP "MetaVault data cleanup failed. Uninstall stopped. Close all MetaVault processes and check the vault folder for links or locked files before retrying. No external vault path was deleted."
+      cleanup_failed_silent:
+      SetErrorLevel 1
+      Abort
+    ${endIf}
+  ${endIf}
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MetaVault OSS"
   DetailPrint "Removing $INSTDIR\bin from your user PATH..."
   nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d = '$INSTDIR\bin'; $$k = Get-Item 'HKCU:\Environment'; $$p = [string]$$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); $$parts = @($$p -split ';' | Where-Object { $$_ -ne '' }); if ($$parts -contains $$d) { Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Type ExpandString -Value ((@($$parts | Where-Object { $$_ -ne $$d })) -join ';') }"`
   Pop $0
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=3000
-
-  ; Updates run the uninstaller too; never ask about data then.
-  ${ifNot} ${isUpdated}
-    ; Silent uninstall (/S) answers No, so vault data is kept.
-    MessageBox MB_YESNO|MB_ICONQUESTION "Also delete your encrypted vault data (metavault.db, key file and token)?$\n$\nYes: delete it from this computer. This cannot be undone.$\nNo: keep it for a later install." /SD IDNO IDNO skip_purge
-      RMDir /r "$APPDATA\MetaVault OSS"
-      DetailPrint "Deleted vault data in $APPDATA\MetaVault OSS."
-    skip_purge:
-  ${endIf}
 !macroend

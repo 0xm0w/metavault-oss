@@ -31,8 +31,8 @@ The installer is built by the `Windows installer` workflow on `windows-latest`, 
 - Assisted install: you accept the alpha terms (`packages/app/TERMS.txt`), choose the folder, and get a desktop shortcut and a Start menu shortcut. `bin\` is added to your user PATH (`metavault`, `vaultd`).
 - The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
 - No model is bundled or downloaded.
-- Uninstall (Apps & features) removes the program, shortcuts, PATH entry and start-at-login entry, and asks whether to delete your vault data. A silent uninstall (`/S`) keeps it.
-- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall. It then checks that the uninstall removed the program, shortcuts, registry entries and PATH entry, and that it kept the vault data in `%APPDATA%\MetaVault OSS` (by design). Log from the run that built the draft exe: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt) ([run 41627209888](https://github.com/0xm0w/metavault-oss/actions/runs/41627209888)).
+- A deliberate uninstall removes the program, shortcuts, PATH/startup entries and the app-owned vault, password key, credentials, settings and migration backups in `%APPDATA%\MetaVault OSS`. Interactive uninstall warns before deletion; Cancel keeps it. Silent uninstall (`/S`) has the same destructive semantics without a prompt. Reinstall starts fresh. In-place updates (`--updated`) preserve data. Custom external DB paths are never recursively deleted; see [recovery and uninstall](docs/RECOVERY.md).
+- Windows CI checks clean install, interactive uninstall warning/Cancel, deliberate silent wipe/fresh reinstall, and encrypted-vault preservation on install-over-install. Historical preservation-on-uninstall logs describe the previous behavior, not this change.
 
 To build the installer locally from source (on Windows):
 
