@@ -231,76 +231,6 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     </div>
   </section>
 
-  <section class="hack-slide" id="warden-recall" data-label="Risky reads">
-    <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · rules alone aren't enough</span>
-      <h2>Rules alone miss most risky reads</h2>
-      <p class="pg-sub">Risky reads caught. Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="Risky reads caught, best to worst, failed warden calls not credited: rules plus Muse Spark 27 of 28, Muse Spark alone 25 of 28, policy only 12 of 28. Unranked baseline, ask on every read: 28 of 28, only by asking about everything, so it lets 0 of 28 safe reads through">
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="96.4"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="89.3"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="42.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
-        <div class="pg-bar-row is-baseline"><span class="pg-bar-label">Baseline: ask on every read</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
-        <p class="pg-baseline-note">Catches 28/28 only by asking about everything: it lets 0/28 safe reads through.</p>
-      </div>
-      <blockquote class="pg-pull" style="margin-top:10px">Rules catch <strong>12/28</strong>. Add Muse Spark: <strong>27/28</strong>.</blockquote>
-      <div class="pg-duo">
-        <div class="pg-snippet is-tight"><pre data-lang="python"># counting rule
-caught = decision in ("deny", "ask_human")
-if warden_call_failed:
-    caught = False  # fail closed, but no credit</pre></div>
-        <p class="pg-tiny" style="margin:6px 0 0">1 of 60 calls per run hit the 2,048-token cap → a miss. Counted as caught: <strong>26/28</strong> and <strong>28/28</strong>. Spark alone missed both history-only anomalies; rules catch those. Policy floor: <strong>4/4</strong> in every arm.</p>
-      </div>
-      <p class="pg-note pg-chart-src">Held-out set: 28 high-risk, 4 policy-floor, 28 benign. Rules: commit <code>342f39f</code>. Muse Spark 1.3: two live runs, 2026-11-03 16:14 and 16:25 PHT, same counts. Raw: <code>docs/verification/thesis-*-heldout-*</code>.</p>
-    </div>
-  </section>
-
-  <section class="hack-slide" id="warden-fpr" data-label="Safe reads">
-    <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · rules alone aren't enough</span>
-      <h2>Rules alone stop safe reads too</h2>
-      <p class="pg-sub">Safe reads that pass without asking. Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="Safe reads that pass without asking, best to worst: Muse Spark alone 28 of 28, rules plus Muse Spark 19 of 28, policy only 19 of 28. Unranked baseline, ask on every read: 0 of 28">
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
-        <div class="pg-bar-row is-baseline"><span class="pg-bar-label">Baseline: ask on every read</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
-        <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
-      </div>
-      <blockquote class="pg-pull" style="margin-top:14px"><strong>Rules alone aren't enough.</strong> They miss bad requests and still flag 9/28 (32%) safe reads, which means needless interruptions. Muse Spark reads the context and passes all 28/28 safe reads as low risk.</blockquote>
-      <p class="pg-tiny" style="margin:6px 0 0">Rules + Spark keeps the rules' 9 alarms: <strong>the stricter verdict wins</strong>. All 9 are hard reads that mention <em>keys</em> or <em>export</em>; 8/8 plain reads pass.</p>
-      <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the risky-reads slide.</p>
-    </div>
-  </section>
-
-  <section class="hack-slide" id="warden-latency" data-label="Latency &amp; cost">
-    <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · latency and cost</span>
-      <h2>What each gated request costs</h2>
-      <p class="pg-sub">Lower is better. <em>Log scale: each gridline is 10×.</em></p>
-      <div class="pg-chart" role="img" aria-label="Gate latency, fastest to slowest: rules median 6.8 microseconds and rules p95 21.3 microseconds (rules-only run), Muse Spark median 8.2 to 8.9 seconds, Muse Spark p95 14.8 to 17.3 seconds, on one log-scale axis from 1 microsecond to 100 seconds">
-        <div class="pg-bar-row" data-verdict="latency" data-ms="0.0068"><span class="pg-bar-label">Policy only (rules-only run) · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:10.4%"></span></span><span class="pg-bar-value">6.8 µs</span></div>
-        <div class="pg-bar-row" data-verdict="latency" data-ms="0.0213"><span class="pg-bar-label">Policy only (rules) · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:16.6%"></span></span><span class="pg-bar-value">21.3 µs</span></div>
-        <div class="pg-bar-row" data-verdict="latency" data-ms="8900"><span class="pg-bar-label">Muse Spark 1.3 · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:86.4%"></span><span class="pg-bar-range" style="left:86.4%;width:0.5%"></span></span><span class="pg-bar-value">8.2–8.9 s</span></div>
-        <div class="pg-bar-row" data-verdict="latency" data-ms="17300"><span class="pg-bar-label">Muse Spark 1.3 · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:89.6%"></span><span class="pg-bar-range" style="left:89.6%;width:0.9%"></span></span><span class="pg-bar-value">14.8–17.3 s</span></div>
-        <div class="pg-bar-row pg-axis-row" aria-hidden="true"><span></span><span class="pg-axis"><span style="left:0.0%">1 µs</span><span style="left:12.5%">10 µs</span><span style="left:25.0%">100 µs</span><span style="left:37.5%">1 ms</span><span style="left:50.0%">10 ms</span><span style="left:62.5%">100 ms</span><span style="left:75.0%">1 s</span><span style="left:87.5%">10 s</span><span style="left:100.0%">100 s</span></span><span></span></div>
-      </div>
-      <div class="pg-duo">
-        <div class="pg-snippet is-tight"><pre data-lang="python"># $ per 1M tokens (Meta pricing)
-IN, CACHED, OUT = 1.25, 0.15, 4.25
-cost = ((prompt - cached) * IN
-        + cached * CACHED
-        + completion * OUT) / 1_000_000</pre></div>
-        <div class="pg-stack">
-          <div class="pg-big">$0.0052–0.0053 <small>Muse Spark · per gated request</small></div>
-          <div class="pg-big">$0 <small>rules or your own endpoint · no API fees</small></div>
-          <p class="pg-tiny" style="margin:0">1,505–1,537 tokens per request, mostly output, from each response's <code>usage</code>. <a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>. The baseline, ask on every read, has no gate latency: <em>it waits on you.</em></p>
-        </div>
-      </div>
-      <p class="pg-note pg-chart-src">Same runs as the risky-reads slide. Lighter segment = range across the two Muse Spark runs.</p>
-    </div>
-  </section>
-
   <section class="hack-slide" id="tripwire" data-label="Grants">
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">06</span>
@@ -357,18 +287,15 @@ cost = ((prompt - cached) * IN
 </div>
 
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
-  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 12, Overview"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 12, Install"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 12, First run"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 12, IDEs"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 12, App"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 12, Warden"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 12, Risky reads"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 12, Safe reads"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 12, Latency &amp; cost"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 12, Grants"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="10" aria-label="Slide 11 of 12, Logs"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="11" aria-label="Slide 12 of 12, Policy"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 9, Overview"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 9, Install"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 9, First run"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 9, IDEs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 9, App"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 9, Warden"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 9, Grants"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 9, Logs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 9, Policy"><span></span></button>
 </nav>
 <div class="hack-chevrons">
   <button type="button" class="hack-chevron" id="hack-up" aria-label="Previous slide" disabled>
