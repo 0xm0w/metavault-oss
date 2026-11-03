@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Effect } from "effect";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { VaultStore, VaultStoreScoped, hashAgentToken } from "../src/storage.js";
 
 describe("agent token hash migration", () => {
@@ -45,4 +45,24 @@ describe("agent token hash migration", () => {
       }
     } finally { rmSync(dir, {recursive:true,force:true}); }
   });
+});
+
+it("rolls back an interrupted table rebuild and can retry from intact legacy credentials", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mv-agent-failure-")); const dbPath = join(dir,"vault.db");
+  const db = new Database(dbPath);
+  db.pragma("journal_mode=WAL");
+  db.exec("CREATE TABLE agents (id TEXT PRIMARY KEY,name TEXT NOT NULL,token TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0)");
+  db.prepare("INSERT INTO agents VALUES (?,?,?,?,0)").run("legacy","Legacy","legacy-failure-token","2026-01-01"); db.close();
+  const original = Database.prototype.exec;
+  const fail = vi.spyOn(Database.prototype,"exec").mockImplementation(function(this: Database.Database, sql:string) {
+    if (sql === "DROP TABLE agents_legacy") throw new Error("simulated interrupted rebuild");
+    return original.call(this,sql);
+  });
+  try {
+    const attempt = await Effect.runPromiseExit(Effect.gen(function* () { yield* VaultStore; }).pipe(Effect.provide(VaultStoreScoped(dbPath))));
+    expect(attempt._tag).toBe("Failure"); fail.mockRestore();
+    const inspect = new Database(dbPath);
+    expect(inspect.prepare("SELECT token FROM agents WHERE id='legacy'").get()).toEqual({token:"legacy-failure-token"}); inspect.close();
+    await Effect.runPromise(Effect.gen(function* () {const store=yield* VaultStore; expect((yield* store.getAgentByToken("legacy-failure-token"))?.id).toBe("legacy");}).pipe(Effect.provide(VaultStoreScoped(dbPath))));
+  } finally {fail.mockRestore();rmSync(dir,{recursive:true,force:true});}
 });

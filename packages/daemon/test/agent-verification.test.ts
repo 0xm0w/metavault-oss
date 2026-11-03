@@ -20,7 +20,7 @@ const FakeConnector = Layer.succeed(Connector, {
   execute: (_alias, scope) => Effect.succeed({ scope }),
 });
 
-async function makeTestDaemon() {
+async function makeTestDaemon(brain = BrainLowRisk) {
   const service = await Effect.runPromise(
     Effect.gen(function* () {
       const svc = yield* VaultService;
@@ -28,7 +28,7 @@ async function makeTestDaemon() {
       return svc;
     }).pipe(
       Effect.provide(makeVaultServiceLive({ masterKey: MASTER_KEY })),
-      Effect.provide(Layer.mergeAll(VaultStoreTest(MASTER_KEY), BrainLowRisk, FakeConnector)),
+      Effect.provide(Layer.mergeAll(VaultStoreTest(MASTER_KEY), brain, FakeConnector)),
     ),
   );
   const cursor = await Effect.runPromise(service.registerAgent("cursor", "Cursor"));
@@ -290,4 +290,22 @@ it("rotation removes a previously approved standing grant", async () => {
     expect(after.standingApprovals).toHaveLength(0);
     expect((await (await request(rotated.token)).json() as {status:string}).status).toBe("awaiting-approval");
   } finally {await daemon.close();}
+});
+
+it("denies a request suspended in warden assessment when its token rotates", async () => {
+  let begin: (()=>void) | undefined; let release: (()=>void) | undefined;
+  const started = new Promise<void>(resolve=>{begin=resolve;});
+  const gate = new Promise<void>(resolve=>{release=resolve;});
+  const slow = Layer.succeed(Brain,{assess:()=>Effect.promise(async()=>{begin?.();await gate;return {risk:"low" as const,recommendedScope:"charges.read",requireApproval:true,explanation:"test"};})});
+  const daemon = await makeTestDaemon(slow);
+  try {
+    const req = fetch(`${daemon.base}/request`,{method:"POST",headers:{"content-type":"application/json","x-metavault-agent-token":daemon.cursorToken},body:JSON.stringify({agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"test"})});
+    await started;
+    await fetch(`${daemon.base}/agents/rotate`,{method:"POST",headers:{"content-type":"application/json","x-metavault-token":"test-daemon-token"},body:JSON.stringify({id:"cursor",name:"Cursor"})});
+    release?.();
+    expect((await (await req).json() as {status:string}).status).toBe("denied");
+    expect(await Effect.runPromise(daemon.service.listPendingApprovals())).toHaveLength(0);
+    const stale = await Effect.runPromise(daemon.service.requestCapability({agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"test",verified:true},daemon.cursorToken));
+    expect(stale.status).toBe("denied");
+  } finally {release?.();await daemon.close();}
 });
