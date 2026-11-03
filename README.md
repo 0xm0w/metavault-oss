@@ -20,15 +20,13 @@ context, an audit row, or the desktop UI.
 
 ## Install
 
-### Windows Installer (v0.1.0)
+### Windows Installer (v0.1.1-alpha)
 
-Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned.
+Download the Windows NSIS installer (`MetaVault-OSS-0.1.1-alpha-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.1-alpha). The installer is unsigned, so Windows SmartScreen may warn.
 
-**v0.1.0 is the older build.** It bundled a local model. `0.1.0-alpha` (below) is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. Version numbers sort v0.1.0 above 0.1.0-alpha, so the app's update check never offers v0.1.0 to an alpha install.
+**Do not install the older `v0.1.0` build**: it crashes at startup with `ERR_MODULE_NOT_FOUND` (`electron-updater` was missing from the packaged app). It also bundled a local model. `0.1.1-alpha` is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. The app's update check never offers v0.1.0 to an alpha install.
 
-### Windows Installer (v0.1.0-alpha, draft)
-
-The `0.1.0-alpha` installer (`MetaVault-OSS-0.1.0-alpha-win-x64.exe`) is built by the `Windows installer` workflow on `windows-latest`. Each run uploads it as a workflow artifact, and a tag or manual run attaches it to a **draft** prerelease. It is not published yet.
+The installer is built by the `Windows installer` workflow on `windows-latest`, which also runs a clean-install smoke test (silent install, launch, `/health`, uninstall) on the exact `.exe` before it reaches the release.
 
 - Assisted install: you accept the alpha terms (`packages/app/TERMS.txt`), choose the folder, and get a desktop shortcut and a Start menu shortcut. `bin\` is added to your user PATH (`metavault`, `vaultd`).
 - The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
