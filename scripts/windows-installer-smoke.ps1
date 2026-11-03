@@ -298,7 +298,9 @@ foreach ($window in $topWindows) { Log ("UIA_WINDOW name=" + $window.Current.Nam
 if ($null -eq $warning) { throw "No interactive warning; stopping before data wipe" }
 
 $parent = [Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($warning)
-$cancel = $parent.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,"Cancel"))
+while ($null -ne $parent -and $parent.Current.ControlType -ne [Windows.Automation.ControlType]::Window) { $parent = [Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($parent) }
+$cancelCondition = [Windows.Automation.AndCondition]::new([Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,"Cancel"),[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Button))
+$cancel = $parent.FindFirst([Windows.Automation.TreeScope]::Descendants,$cancelCondition)
 if ($null -eq $cancel) { throw "Destructive warning has no Cancel button" }
 ([Windows.Automation.InvokePattern]$cancel.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)).Invoke()
 Start-Sleep -Seconds 3
