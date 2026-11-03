@@ -26,7 +26,7 @@ import {
   type WrapOptions,
 } from "../../core/src/keywrap.js";
 import { MarshalUnavailable, StorageError } from "../../core/src/errors.js";
-import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
+import { VaultStore, VaultStoreScoped } from "../../core/src/storage.js";
 import type { AuditEvent } from "../../core/src/types.js";
 import { EnrollmentIdSchema, EnrollmentRequestSchema, GrantIdSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 
@@ -486,7 +486,7 @@ function initProgram(deps: CliDeps, io: ResolvedIo, args: readonly string[]): Ef
     const openStore = Effect.gen(function* () {
       const store = yield* VaultStore;
       yield* store.listAudit();
-    }).pipe(Effect.provide(VaultStoreLive(dbPath)));
+    }).pipe(Effect.provide(VaultStoreScoped(dbPath)));
     const header = `initialized vault at ${dbPath}\n`;
     const wrapped = yield* Effect.try({
       try: () => readWrappedKeyFile(wrappedKeyFilePath(dbPath)),
@@ -713,7 +713,7 @@ function addProgram(
     yield* Effect.gen(function* () {
       const store = yield* VaultStore;
       yield* store.addCredential(alias, scope, ciphertext);
-    }).pipe(Effect.provide(VaultStoreLive(resolveDbPath(deps))));
+    }).pipe(Effect.provide(VaultStoreScoped(resolveDbPath(deps))));
     return `added ${alias} (scope ${scope})\n`;
   });
 }
@@ -741,7 +741,7 @@ function importProgram(
         const ciphertext = encryptSecret(masterKey, item.value);
         yield* store.addCredential(item.alias, item.scope, ciphertext, `env:${item.rawKey}`);
       }
-    }).pipe(Effect.provide(VaultStoreLive(dbPath)));
+    }).pipe(Effect.provide(VaultStoreScoped(dbPath)));
 
     let out = `imported ${String(items.length)} credential${items.length === 1 ? "" : "s"} from ${filePath}:\n`;
     for (const item of items) {
@@ -782,7 +782,7 @@ function runProgram(
           }
         }
       }
-    }).pipe(Effect.provide(VaultStoreLive(dbPath)));
+    }).pipe(Effect.provide(VaultStoreScoped(dbPath)));
 
     const [cmd, ...args] = commandAndArgs;
     if (!cmd) {

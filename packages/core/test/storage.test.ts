@@ -7,7 +7,7 @@ import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import Database from "better-sqlite3";
 import { encryptSecret, decryptSecret } from "../src/crypto.js";
-import { VaultStore, VaultStoreLive, VaultStoreTest } from "../src/storage.js";
+import { VaultStore, VaultStoreLive, VaultStoreScoped, VaultStoreTest } from "../src/storage.js";
 import type { AuditEvent } from "../src/types.js";
 
 describe("vault storage", () => {
@@ -155,5 +155,23 @@ describe("vault storage", () => {
     const tampered = [parts[0] ?? "", parts[1] ?? "", flipped].join(".");
     expect(tampered).not.toBe(blob);
     expect(() => decryptSecret(key, tampered)).toThrow();
+  });
+  it("VaultStoreScoped closes vault.db when its scope ends", async () => {
+    // Windows cannot delete an open file; a one-shot CLI command must not
+    // leave the database handle open after it returns.
+    const dir = mkdtempSync(join(tmpdir(), "metavault-scoped-"));
+    try {
+      const store = await Effect.runPromise(
+        Effect.gen(function* () {
+          const s = yield* VaultStore;
+          yield* s.listAudit();
+          return s;
+        }).pipe(Effect.provide(VaultStoreScoped(join(dir, "vault.db")))),
+      );
+      const after = await Effect.runPromise(Effect.either(store.listAudit()));
+      expect(after._tag).toBe("Left");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

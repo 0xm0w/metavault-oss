@@ -149,8 +149,7 @@ function toStorageError(operation: string) {
 
 // The store never sees the master key: ciphertext reaches it already
 // encrypted via crypto.ts (see KeySession in key-session.ts).
-function makeStore(dbPath: string): VaultStoreService {
-  const db = new Database(dbPath);
+function makeStore(db: Database.Database): VaultStoreService {
   db.exec(
     `CREATE TABLE IF NOT EXISTS credentials (
        alias TEXT PRIMARY KEY,
@@ -529,13 +528,29 @@ function makeStore(dbPath: string): VaultStoreService {
   };
 }
 
+// Closes the database when the layer's scope ends. For one-shot callers
+// (the CLI): leaving vault.db open makes Windows refuse to delete or move
+// it. Long-lived callers that keep the service past the scope use
+// VaultStoreLive, which stays open for the life of the process.
+export const VaultStoreScoped = (dbPath: string): Layer.Layer<VaultStore> =>
+  Layer.scoped(
+    VaultStore,
+    Effect.map(
+      Effect.acquireRelease(
+        Effect.sync(() => new Database(dbPath)),
+        (db) => Effect.sync(() => db.close()),
+      ),
+      makeStore,
+    ),
+  );
+
 // The optional key argument is accepted for older call sites and ignored.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function VaultStoreLive(dbPath: string, _legacyMasterKey?: Buffer): Layer.Layer<VaultStore> {
-  return Layer.sync(VaultStore, () => makeStore(dbPath));
+  return Layer.sync(VaultStore, () => makeStore(new Database(dbPath)));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function VaultStoreTest(_legacyMasterKey?: Buffer): Layer.Layer<VaultStore> {
-  return Layer.sync(VaultStore, () => makeStore(":memory:"));
+  return Layer.sync(VaultStore, () => makeStore(new Database(":memory:")));
 }
