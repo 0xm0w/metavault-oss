@@ -81,6 +81,7 @@ function Test-PackagedMcp {
   $p.StartInfo = $info
   try {
     [void]$p.Start()
+    $p.StandardInput.AutoFlush = $true
     $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"installed-smoke","version":"1"}}}')
     $read = $p.StandardOutput.ReadLineAsync()
     if (-not $read.Wait(15000)) { throw "Installed MCP initialize timed out" }
