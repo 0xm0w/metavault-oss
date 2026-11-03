@@ -121,9 +121,9 @@
 
   <section class="hack-slide" id="gap" data-label="The gap">
     <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set</span>
-      <h2>Where a strong rules engine stops</h2>
-      <p class="pg-sub">Same vault policy for every arm. <strong>Caught</strong> = denied, or sent to a human.</p>
+      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · rules alone aren't enough</span>
+      <h2>Rules alone miss most risky reads</h2>
+      <p class="pg-sub">Rules catch <strong>12/28</strong>. Add Muse Spark: <strong>27/28</strong>. Same vault policy for every arm; <strong>caught</strong> = denied, or sent to a human.</p>
       <div class="pg-chart-card pg-chart-solo is-split">
           <div class="pg-chart-header">
             <span class="pg-chart-title">High-risk reads caught (n = 28)</span>
@@ -141,7 +141,11 @@
             <div class="pg-chart-meta"><span><strong>Rules only</strong> · frozen before the test set</span><span data-verdict-num>12 / 28 · 42.9%</span></div>
             <div class="pg-chart-track"><div class="pg-chart-bar" style="width:42.9%"></div></div>
           </div>
-          <p class="pg-legend" data-verdict-legend="percent"></p>
+          <div class="pg-chart-row is-baseline">
+            <div class="pg-chart-meta"><span>Baseline: ask on every read</span><span>28 / 28 · 100%</span></div>
+            <div class="pg-chart-track"><div class="pg-chart-bar is-muted" style="width:100%"></div></div>
+          </div>
+          <p class="pg-baseline-note">Catches 28/28 only by asking about everything: it lets 0/28 safe reads through.</p>
           <div class="pg-chart-insight pg-stack">
             <div>
               <div class="pg-big">6 → 21 <small>of 22 paraphrased attacks</small></div>
@@ -160,36 +164,36 @@ if warden_call_failed:
     </div>
   </section>
 
-  <section class="hack-slide" id="gap-fpr" data-label="False alarms">
+  <section class="hack-slide" id="gap-fpr" data-label="Safe reads">
     <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · false alarms</span>
-      <h2>More catches, but rules keep their false alarms</h2>
-      <p class="pg-sub">A safe read sent to you is a <strong>false alarm</strong>. Lower is better. Rules + Muse Spark 1.3 takes the stricter of the two, so on these 28 benign reads it keeps all 9 rules alarms. Muse Spark 1.3 alone raised none, and caught 25/28 against 27/28 combined.</p>
+      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · rules alone aren't enough</span>
+      <h2>Rules alone stop safe reads too</h2>
+      <p class="pg-sub"><strong>Rules alone aren't enough.</strong> They miss bad requests and still flag 9/28 (32%) safe reads, which means needless interruptions. Muse Spark reads the context and passes all 28/28 safe reads as low risk.</p>
       <div class="pg-chart-card pg-chart-solo is-split">
           <div class="pg-chart-header">
-            <span class="pg-chart-title">Benign reads sent to a human (n = 28)</span>
+            <span class="pg-chart-title">Benign reads that pass without asking (n = 28)</span>
             <span class="pg-chart-badge">best → worst</span>
           </div>
-          <div class="pg-chart-row" data-verdict="percent" data-better="lower" data-value="0">
-            <div class="pg-chart-meta"><span><strong>Muse Spark 1.3 alone</strong> · Meta API</span><span data-verdict-num>0 / 28 · 0%</span></div>
-            <div class="pg-chart-track"><div class="pg-chart-bar" style="width:0%"></div></div>
-          </div>
-          <div class="pg-chart-row" data-verdict="percent" data-better="lower" data-value="32.1">
-            <div class="pg-chart-meta"><span><strong>Rules + Muse Spark 1.3</strong> · stricter wins</span><span data-verdict-num>9 / 28 · 32.1%</span></div>
-            <div class="pg-chart-track"><div class="pg-chart-bar" style="width:32.1%"></div></div>
-          </div>
-          <div class="pg-chart-row" data-verdict="percent" data-better="lower" data-value="32.1">
-            <div class="pg-chart-meta"><span><strong>Rules only</strong></span><span data-verdict-num>9 / 28 · 32.1%</span></div>
-            <div class="pg-chart-track"><div class="pg-chart-bar" style="width:32.1%"></div></div>
-          </div>
-          <div class="pg-chart-row" data-verdict="percent" data-better="lower" data-value="100">
-            <div class="pg-chart-meta"><span><strong>Ask every time</strong> · no warden</span><span data-verdict-num>28 / 28 · 100%</span></div>
+          <div class="pg-chart-row" data-verdict="percent" data-better="higher" data-value="100">
+            <div class="pg-chart-meta"><span><strong>Muse Spark 1.3 alone</strong> · Meta API</span><span data-verdict-num>28 / 28 · 100%</span></div>
             <div class="pg-chart-track"><div class="pg-chart-bar" style="width:100%"></div></div>
           </div>
-          <p class="pg-legend" data-verdict-legend="percent"></p>
+          <div class="pg-chart-row" data-verdict="percent" data-better="higher" data-value="67.9">
+            <div class="pg-chart-meta"><span><strong>Rules + Muse Spark 1.3</strong> · stricter wins</span><span data-verdict-num>19 / 28 · 67.9%</span></div>
+            <div class="pg-chart-track"><div class="pg-chart-bar" style="width:67.9%"></div></div>
+          </div>
+          <div class="pg-chart-row" data-verdict="percent" data-better="higher" data-value="67.9">
+            <div class="pg-chart-meta"><span><strong>Rules only</strong></span><span data-verdict-num>19 / 28 · 67.9%</span></div>
+            <div class="pg-chart-track"><div class="pg-chart-bar" style="width:67.9%"></div></div>
+          </div>
+          <div class="pg-chart-row is-baseline">
+            <div class="pg-chart-meta"><span>Baseline: ask on every read</span><span>0 / 28 · 0%</span></div>
+            <div class="pg-chart-track"><div class="pg-chart-bar is-muted" style="width:0%"></div></div>
+          </div>
+          <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
           <div class="pg-chart-insight pg-stack">
             <blockquote class="pg-pull">Users clicked through <strong>70.2%</strong> of Chrome's SSL warnings.<cite>Akhawe &amp; Felt, USENIX Security 2013 · 25M+ real warnings</cite></blockquote>
-            <div class="pg-tiny"><strong>Ask every time</strong> catches everything and trains you to click Allow. All 9 rules alarms are on the 20 "hard" benign reads that use words like <em>keys</em> or <em>export</em>; 0 of 8 plain reads.</div>
+            <div class="pg-tiny">The baseline, <strong>ask on every read</strong>, catches everything and trains you to click Allow. Rules + Spark keeps the rules' 9 alarms: <strong>the stricter verdict wins</strong>. All 9 are hard reads that mention <em>keys</em> or <em>export</em>; 8/8 plain reads pass.</div>
             <div>
               <div class="pg-big">6.8 µs <small>rules, median</small></div>
               <div class="pg-big" style="margin-top:6px">8.2–8.9 s <small>Muse Spark, median</small></div>
@@ -231,7 +235,7 @@ cost = ((prompt - cached) * IN
       <div class="pg-grid pg-grid-4" style="margin-top:16px">
         <article class="pg-card"><span class="n">Freeze</span><h3>Rules first</h3><p class="pg-note">Rules + 20 dev cases pushed in <code>793371d</code>. The 60 held-out cases came later (<code>702bb2b</code>). Rules unchanged since.</p></article>
         <article class="pg-card"><span class="n">Ground</span><h3>Cases from the literature</h3><p class="pg-note">Patterns from InjecAgent, AgentDojo, ToolEmu, Greshake et al., HackAPrompt, EIA and real incidents. <em>No benchmark text copied.</em></p></article>
-        <article class="pg-card"><span class="n">Four arms</span><h3>Same policy, different brains</h3><p class="pg-note">Always ask · rules · warden · rules + warden (stricter wins). Recall, false alarms, prompts, latency.</p></article>
+        <article class="pg-card"><span class="n">Four arms</span><h3>Same policy, different brains</h3><p class="pg-note">Rules · warden · rules + warden (stricter wins), against a baseline that asks on every read. Risky reads caught, safe reads passed, prompts, latency.</p></article>
         <article class="pg-card"><span class="n">Honest failures</span><h3>A crash isn't a catch</h3><p class="pg-note">A failed warden call still reaches you, but scores as a <strong>miss</strong>.</p></article>
       </div>
       <div class="pg-table-wrap">
@@ -373,7 +377,7 @@ META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live --provider met
       <span class="caption-mono-sm pg-kicker neon-rainbow-text">Next step</span>
       <h2>Integrate now</h2>
       <p class="pg-lead">Drop in the 5-tool MCP server for Meta Muse, Cursor, Claude Code, Codex, or VS Code. Secure credentials on-device in under two minutes.</p>
-      <div class="pg-row" style="margin-top:24px">
+      <div class="pg-row pg-cta">
         <a class="mb-btn-primary" href="/docs/">Read the docs</a>
       </div>
       <footer class="mb-foot pg-foot-gap">
@@ -395,11 +399,11 @@ META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live --provider met
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
   <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 16, Thesis"><span></span></button>
   <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 16, Zero-context"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 16, Custody limits"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 16, Why not ZK?"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 16, Why custody wins"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 16, Custody limits"><span></span></button>
   <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 16, Proof roadmap"><span></span></button>
   <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 16, The gap"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 16, False alarms"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 16, Safe reads"><span></span></button>
   <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 16, Dumb vault"><span></span></button>
   <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 16, Method"><span></span></button>
   <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 16, Card storage"><span></span></button>

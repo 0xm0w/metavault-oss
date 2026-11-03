@@ -2,12 +2,12 @@
  * Semantic chart colours. One place for every threshold on the site.
  *
  * A row is scored on how good the outcome is for that metric, not on how big
- * the number is. 100% recall is good; 100% false alarms is bad.
+ * the number is. Percentage charts use higher-is-better; latency and data-better="lower"
+ * remain supported for metrics where a smaller number wins.
  *
  *   <div data-verdict="percent" data-better="higher" data-value="96.4"> ... </div>
- *   <div data-verdict="percent" data-better="lower"  data-value="32.1"> ... </div>
+ *   <div data-verdict="percent" data-better="lower"  data-value="10"> ... </div>
  *   <div data-verdict="latency" data-ms="17300"> ... </div>   (a range uses its slower end)
- *   <p data-verdict-legend="percent"></p>                      (renders the thresholds)
  */
 (function () {
   "use strict";
@@ -47,23 +47,6 @@
     return '<span class="v-icon" role="img" aria-label="' + WORDS[v] + '">' + ICONS[v] + "</span>";
   }
 
-  function legendText(kind) {
-    var t = THRESHOLDS[kind];
-    var keys;
-    if (kind === "percent") {
-      keys =
-        '<span class="v-good">' + icon("good") + " \u2265 " + t.good + "</span>" +
-        '<span class="v-mid">' + icon("mid") + " " + t.bad + "\u2013" + (t.good - 1) + "</span>" +
-        '<span class="v-bad">' + icon("bad") + " &lt; " + t.bad + "</span>";
-    } else {
-      keys =
-        '<span class="v-good">' + icon("good") + " &lt; " + t.good / 1000 + " s</span>" +
-        '<span class="v-mid">' + icon("mid") + " " + t.good / 1000 + "\u2013" + t.bad / 1000 + " s</span>" +
-        '<span class="v-bad">' + icon("bad") + " &gt; " + t.bad / 1000 + " s</span>";
-    }
-    return '<span class="pg-legend-keys">' + keys + "</span>";
-  }
-
   function apply() {
     document.querySelectorAll("[data-verdict]").forEach(function (row) {
       var v = verdictFor(row.getAttribute("data-verdict"), row);
@@ -71,9 +54,6 @@
       row.classList.add("v-" + v);
       var num = row.querySelector("[data-verdict-num], .pg-bar-value");
       if (num && !num.querySelector(".v-icon")) num.insertAdjacentHTML("afterbegin", icon(v));
-    });
-    document.querySelectorAll("[data-verdict-legend]").forEach(function (el) {
-      el.innerHTML = legendText(el.getAttribute("data-verdict-legend"));
     });
   }
 

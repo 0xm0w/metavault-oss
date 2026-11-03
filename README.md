@@ -258,9 +258,9 @@ been removed. `scripts/eval-windows.ps1` produces the live eval for `muse-glimme
 here until its raw output is committed under `docs/verification/`.
 
 **Held-out thesis benchmark (Muse Spark 1.3 via the Meta API, 2 runs, 60 cases):** on the 28
-high-risk reads the warden alone caught 25/28 and rules + warden 27/28 in both runs, with 0/28
-warden false alarms (rules + warden 9/28). Counting rule: a failed warden call (one per run, at
-the 2,048-token output cap) counts as a miss. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
+high-risk reads the warden alone caught 25/28 and rules + warden 27/28 in both runs, and the
+warden let all 28/28 safe reads through without asking you (rules + warden 19/28). Counting
+rule: a failed warden call (one per run, at the 2,048-token output cap) counts as a miss. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Demo script (3 minutes)
 

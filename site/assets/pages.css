@@ -239,6 +239,9 @@ details.pg-more p { margin: 10px 0 0; color: var(--muted-foreground); font-size:
 
 .pg-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .pg-foot-gap { margin-top: 24px; }
+/* Closing CTA row: same breathing room above the button on every deck's last slide. */
+.pg-row.pg-cta,
+.hack-slide .pg-row.pg-cta { margin-top: 24px; }
 
 @media (max-width: 800px) {
   .pg-split { grid-template-columns: 1fr; }
@@ -830,7 +833,13 @@ body:has(.hack-deck) {
 .v-icon { display: inline-flex; width: 15px; height: 15px; flex-shrink: 0; vertical-align: -2px; }
 .v-icon svg { width: 100%; height: 100%; }
 .v-mid .v-icon, span.v-mid .v-icon { color: var(--v-mid); }
-.pg-legend { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--muted-foreground); margin: 2px 0 0; text-align: left; }
+/* Unranked reference row: neutral grey, never scored by verdict.js. */
+.pg-bar-row.is-baseline, .pg-chart-row.is-baseline { border-top: 1px dashed var(--border, #e2e8f0); padding-top: 8px; margin-top: 4px; }
+.is-baseline .pg-bar-fill, .is-baseline .pg-chart-bar { background: #cbd5e1; }
+.is-baseline .pg-bar-label, .is-baseline .pg-bar-value, .is-baseline .pg-chart-meta span { color: var(--muted-foreground); font-weight: 400; }
+.pg-baseline-note { margin: -2px 0 0; font-size: 12px; color: var(--muted-foreground); text-align: left; }
+.pg-chart .pg-baseline-note { padding-left: calc(28.6% + 12px); }
+@media (max-width: 640px) { .pg-chart .pg-baseline-note { padding-left: 0; } }
 
 /* Typographic rhythm: one big line, one quiet line, a quote, a code block. */
 .pg-pull { margin: 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--accent); font-size: 19px; line-height: 1.35; font-style: italic; color: var(--foreground); text-align: left; }
@@ -846,11 +855,6 @@ body:has(.hack-deck) {
 .pg-sub strong { color: var(--foreground); }
 .pg-duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 12px; }
 @media (max-width: 720px) { .pg-duo { grid-template-columns: 1fr; } }
-.pg-legend { flex-wrap: nowrap; }
-.pg-legend-keys { display: inline-flex; gap: 12px; flex-shrink: 0; }
-.pg-legend-keys > span { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.pg-legend-why { font-weight: 400; }
-@media (max-width: 640px) { .pg-legend { flex-wrap: wrap; } }
 #gap-fpr .pg-big { font-size: 28px; }
 #warden-latency .pg-big small { display: block; margin-top: 2px; }
 .pg-chart-src { margin-top: 12px; }
