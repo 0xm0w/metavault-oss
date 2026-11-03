@@ -276,8 +276,8 @@ $warning = $null
 $deadline = (Get-Date).AddSeconds(30)
 while ((Get-Date) -lt $deadline) {
   $desktop = [Windows.Automation.AutomationElement]::RootElement
-  $texts = $desktop.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Text))
-  foreach ($text in $texts) { if ($text.Current.Name -like "Uninstall MetaVault OSS and permanently delete*") { $warning = $text; break } }
+  $texts = $desktop.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
+  foreach ($text in $texts) { if (($text.Current.Name -replace "\s+", " ") -like "*Uninstall MetaVault OSS and permanently delete*") { $warning = $text; break } }
   if ($null -ne $warning) { break }
   Start-Sleep -Milliseconds 500
 }
