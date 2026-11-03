@@ -76,7 +76,7 @@ Meta Hackathon (Indie Track) release sprint.
 ### Added
 
 - Meta Hackathon portal & interactive snap deck live at `metahackathon.whativedone.xyz`.
-- Trust & pedigree bridge linking to Keythings (`keythings.xyz`), creators of Keeta Wallet OSS (securing cryptographic keys and non-custodial transactions since 2025).
+- Background note: From the crypto industry, securing wallets since 2025.
 - Live carousel and real GitHub shipping timeline showcasing the security researcher heritage.
 - Hardened adversarial prompt defenses, unverified caller quarantine, and an adversarial defense benchmark against the then-default local model (#55).
 

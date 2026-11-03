@@ -99,26 +99,11 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <p class="pg-lead" style="margin:0 auto 16px">Replace <code>&lt;metavault-oss&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
       <div data-tabs>
         <div class="pg-tablist" role="tablist" aria-label="IDE setup">
-          <button type="button" data-tab="muse" aria-selected="false">Meta Muse</button>
           <button type="button" data-tab="cursor" aria-selected="true">Cursor</button>
           <button type="button" data-tab="claude" aria-selected="false">Claude Code</button>
           <button type="button" data-tab="vscode" aria-selected="false">VS Code</button>
           <button type="button" data-tab="codex" aria-selected="false">Codex</button>
           <button type="button" data-tab="opencode" aria-selected="false">OpenCode</button>
-        </div>
-        <div data-panel="muse" hidden>
-          <div class="pg-snippet"><pre id="snip-muse" data-lang="json">{
-  "mcpServers": {
-    "metavault": {
-      "command": "node",
-      "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
-      "env": {
-        "METAVAULT_AGENT_ID": "muse",
-        "METAVAULT_IDE": "Meta Muse"
-      }
-    }
-  }
-}</pre><button type="button" data-copy="snip-muse">Copy</button></div>
         </div>
         <div data-panel="cursor">
           <div class="pg-snippet"><pre id="snip-cursor" data-lang="json">{
