@@ -813,3 +813,43 @@ body:has(.hack-deck) {
 #cards .pg-table.is-compact th, #cards .pg-table.is-compact td { padding: 6px 10px; line-height: 1.4; }
 .pg-refs.is-cols li { margin-bottom: 4px; line-height: 1.4; }
 #cards h2 { font-size: clamp(30px, 3.4vw, 46px); }
+
+/* Semantic verdict colours. Thresholds live in assets/verdict.js only. */
+:root { --v-good: #16a34a; --v-mid: #eab308; --v-mid-text: #a16207; --v-bad: #dc2626; }
+.v-good .pg-bar-fill, .v-good .pg-chart-bar { background: var(--v-good); }
+.v-mid .pg-bar-fill, .v-mid .pg-chart-bar { background: var(--v-mid); }
+.v-bad .pg-bar-fill, .v-bad .pg-chart-bar { background: var(--v-bad); }
+.v-good .pg-bar-range { background: var(--v-good); }
+.v-mid .pg-bar-range { background: var(--v-mid); }
+.v-bad .pg-bar-range { background: var(--v-bad); }
+.v-good .pg-bar-value, .v-good [data-verdict-num], span.v-good { color: var(--v-good); }
+.v-mid .pg-bar-value, .v-mid [data-verdict-num], span.v-mid { color: var(--v-mid-text); }
+.v-bad .pg-bar-value, .v-bad [data-verdict-num], span.v-bad { color: var(--v-bad); }
+[data-verdict] .pg-bar-value, [data-verdict] [data-verdict-num] { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.v-icon { display: inline-flex; width: 15px; height: 15px; flex-shrink: 0; vertical-align: -2px; }
+.v-icon svg { width: 100%; height: 100%; }
+.v-mid .v-icon, span.v-mid .v-icon { color: var(--v-mid); }
+.pg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--muted-foreground); margin: 2px 0 0; text-align: left; }
+
+/* Typographic rhythm: one big line, one quiet line, a quote, a code block. */
+.pg-pull { margin: 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--accent); font-size: 19px; line-height: 1.35; font-style: italic; color: var(--foreground); text-align: left; }
+.pg-pull cite { display: block; margin-top: 6px; font-size: 12px; font-style: normal; color: var(--muted-foreground); }
+.pg-big { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pg-big small { font-size: 14px; font-weight: 400; color: var(--muted-foreground); letter-spacing: 0; }
+.pg-stack { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.pg-tiny { font-size: 12px; color: var(--muted-foreground); line-height: 1.45; }
+.pg-tiny code { font-size: 11px; }
+.pg-snippet.is-tight { padding: 2px 4px 2px 14px; border-radius: 14px; }
+.pg-snippet.is-tight pre { margin: 8px 0; font-size: 12px; }
+.pg-sub { font-size: 17px; color: var(--muted-foreground); margin: -4px auto 14px; max-width: 760px; }
+.pg-sub strong { color: var(--foreground); }
+.pg-duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 12px; }
+@media (max-width: 720px) { .pg-duo { grid-template-columns: 1fr; } }
+.pg-legend { flex-wrap: nowrap; }
+.pg-legend-keys { display: inline-flex; gap: 12px; flex-shrink: 0; }
+.pg-legend-keys > span { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pg-legend-why { font-weight: 400; }
+@media (max-width: 640px) { .pg-legend { flex-wrap: wrap; } }
+#gap-fpr .pg-big { font-size: 28px; }
+#warden-latency .pg-big small { display: block; margin-top: 2px; }
+.pg-chart-src { margin-top: 12px; }

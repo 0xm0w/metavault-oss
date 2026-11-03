@@ -73,7 +73,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
         <article class="pg-card">
           <span class="n">Local model</span>
           <h3>Ollama, if you want a warden</h3>
-          <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Muse Glimmer 30B (Q4_K_M via Ollama)</span>, about 18 GB.</p>
+          <p class="pg-note">The vault is already safe with the model off. Edge acceleration adds judgement. Default model: <span class="buzz">Muse Glimmer 30B (Q4_K_M via Ollama)</span>.</p>
           <a class="mb-btn-secondary" href="https://ollama.com"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Get Ollama</span></a>
         </article>
       </div>
@@ -235,14 +235,14 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden</span>
       <h2>A stronger model means stronger security.</h2>
-      <p class="pg-note" style="margin-bottom:14px">The deterministic policy floor holds whatever the model is: ceilings, expiry, and your approval still apply with the warden off, down, or wrong.</p>
+      <p class="pg-sub">The policy floor holds <strong>whatever</strong> the model does: ceilings, expiry and your approval still apply with the warden off, down, or <em>wrong</em>.</p>
       <div class="pg-grid">
-        <article class="pg-card"><span class="n">Tier 0</span><h3>Policy only</h3><p class="pg-note">Rules and ceilings, no model. Works with the warden switched off.</p></article>
-        <article class="pg-card"><span class="n">Tier 1 · on-device</span><h3>Muse Glimmer quants</h3><p class="pg-note">Meta's open-weight model, run locally via Ollama (Q4_K_M by default). Nothing about the request leaves the machine.</p></article>
-        <article class="pg-card"><span class="n">Tier 2 · opt-in</span><h3>Muse Spark · Meta API</h3><p class="pg-note">Metadata only, to the Meta API. The key stays in the daemon.</p></article>
-        <article class="pg-card"><span class="n">Tier 3 · opt-in</span><h3>BFT quorum</h3><p class="pg-note">Muse Spark plus on-device Muse Glimmer. The stricter verdict wins; if one is unavailable the other decides alone.</p></article>
+        <article class="pg-card"><span class="n">Tier 0</span><h3>Policy only</h3><p class="pg-note">Rules and ceilings. No model.</p></article>
+        <article class="pg-card"><span class="n">Tier 1 · on-device</span><h3>Muse Glimmer · Ollama</h3><p class="pg-note">Meta's open-weight model on your machine. Nothing leaves it.</p></article>
+        <article class="pg-card"><span class="n">Tier 2 · opt-in</span><h3>Muse Spark · Meta API</h3><p class="pg-note">Metadata only. The key stays in the daemon.</p></article>
+        <article class="pg-card"><span class="n">Tier 3 · opt-in</span><h3>BFT quorum</h3><p class="pg-note">Spark + Glimmer. The stricter verdict wins.</p></article>
       </div>
-      <p class="pg-note" style="margin-top:14px">Effort is separate: Fast, Standard, or Deep. Deep runs two passes; if they disagree it keeps the narrower scope, raises risk to the higher of the two, and requires your approval. Why the floor holds is on the <a href="../architecture/">architecture page</a>.</p>
+      <p class="pg-tiny" style="margin-top:14px"><strong>Effort:</strong> Fast, Standard or Deep. Deep runs two passes; if they disagree, the narrower scope and higher risk win and you approve. Why the floor holds: <a href="../architecture/">architecture</a>.</p>
     </div>
   </section>
 
@@ -250,18 +250,24 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden · high-risk recall</span>
       <h2>How many risky reads reach you</h2>
-      <div class="pg-chart" role="img" aria-label="High-risk read recall, failed warden calls counted as misses: always-ask 28 of 28, rules 12 of 28, Muse Spark warden 25 of 28, rules plus Muse Spark 27 of 28">
-        <div class="pg-bar-row"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Muse Spark 1.3 warden · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Rules + Muse Spark 1.3</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · local thesis run</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · Meta API</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not offered by the API</span></div>
+      <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
+      <div class="pg-chart" role="img" aria-label="High-risk read recall, best to worst, failed warden calls counted as misses: always-ask 28 of 28, rules plus Muse Spark 27 of 28, Muse Spark warden 25 of 28, rules 12 of 28">
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="96.4"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="89.3"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="42.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">blocked: quota (429)</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
       </div>
-      <p class="pg-note">Counting rule: a warden call that fails counts as a miss. In each run one call (1/60) hit the 2,048-token output cap and returned no decision. The vault still sent that request to you (fail closed), so if you count it as caught the numbers are 26/28 and 28/28. Muse Spark alone also missed both history-only anomalies (burst, retry after deny); the rules catch those. Policy floor: 4/4 in every arm.</p>
-      <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Rules: box run, commit <code>342f39f</code>. Muse Spark 1.3: two live runs via the Meta API on 2026-11-03, 16:14 and 16:25 PHT, identical counts in both. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>, <code>docs/verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-*</code>. Striped bars have no measurement.</p>
+      <p class="pg-legend" data-verdict-legend="percent"></p>
+      <div class="pg-duo">
+        <div class="pg-snippet is-tight"><pre data-lang="python"># counting rule
+caught = decision in ("deny", "ask_human")
+if warden_call_failed:
+    caught = False  # fail closed, but no credit</pre></div>
+        <p class="pg-tiny" style="margin:6px 0 0">1 of 60 calls per run hit the 2,048-token cap → a miss. Counted as caught: <strong>26/28</strong> and <strong>28/28</strong>. Spark alone missed both history-only anomalies; rules catch those. Policy floor: <strong>4/4</strong> in every arm.</p>
+      </div>
+      <p class="pg-note pg-chart-src">Held-out set: 28 high-risk, 4 policy-floor, 28 benign. Rules: commit <code>342f39f</code>. Muse Spark 1.3: two live runs, 2026-11-03 16:14 and 16:25 PHT, same counts. Raw: <code>docs/verification/thesis-*-heldout-*</code>. Striped = no measurement.</p>
     </div>
   </section>
 
@@ -269,18 +275,18 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden · false-alarm rate</span>
       <h2>How often a safe read bothers you</h2>
-      <div class="pg-chart" role="img" aria-label="False-alarm rate on benign reads: always-ask 28 of 28, rules 9 of 28, Muse Spark 0 of 28, rules plus Muse Spark 9 of 28">
-        <div class="pg-bar-row"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Muse Spark 1.3 warden · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Rules + Muse Spark 1.3</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · local thesis run</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · Meta API</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not offered by the API</span></div>
+      <p class="pg-sub">Lower is better. <em>Sorted best → worst.</em></p>
+      <div class="pg-chart" role="img" aria-label="False-alarm rate on benign reads, best to worst: Muse Spark 0 of 28, rules plus Muse Spark 9 of 28, rules 9 of 28, always-ask 28 of 28">
+        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="0"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="32.1"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="32.1"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:32.1%"></span></span><span class="pg-bar-value">9/28 · 32.1%</span></div>
+        <div class="pg-bar-row" data-verdict="percent" data-better="lower" data-value="100"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">blocked: quota (429)</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
       </div>
-      <p class="pg-note">Hard benign (alarming words) / plain benign: rules 9/20 and 0/8; Muse Spark 0/20 and 0/8; rules + Muse Spark 9/20 and 0/8, because the stricter verdict wins. Lower is better.</p>
-      <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Rules: box run, commit <code>342f39f</code>. Muse Spark 1.3: two live runs via the Meta API on 2026-11-03, 16:14 and 16:25 PHT, identical counts in both. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>, <code>docs/verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-*</code>. Striped bars have no measurement.</p>
+      <p class="pg-legend" data-verdict-legend="percent"></p>
+      <blockquote class="pg-pull" style="margin-top:14px">Rules + Spark keeps the rules' 9 alarms, <strong>because the stricter verdict wins</strong>. All 9 are "hard" benign reads with words like <em>keys</em> or <em>export</em>; plain reads: 0/8.</blockquote>
+      <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the recall slide. Striped = no measurement.</p>
     </div>
   </section>
 
@@ -288,35 +294,28 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden · latency and cost</span>
       <h2>What each gated request costs</h2>
-      <div class="pg-chart" role="img" aria-label="Gate latency: rules median 6.8 microseconds, p95 21.3 microseconds; Muse Spark median 8.2 to 8.9 seconds, p95 14.8 to 17.3 seconds, on one log-scale axis from 1 microsecond to 100 seconds">
-        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules) · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:10.4%"></span></span><span class="pg-bar-value">6.8 µs</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules) · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:16.6%"></span></span><span class="pg-bar-value">21.3 µs</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Muse Spark 1.3 · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:86.4%"></span><span class="pg-bar-range" style="left:86.4%;width:0.5%"></span></span><span class="pg-bar-value">8.2–8.9 s</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Muse Spark 1.3 · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:89.6%"></span><span class="pg-bar-range" style="left:89.6%;width:0.9%"></span></span><span class="pg-bar-value">14.8–17.3 s</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · local thesis run</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
+      <p class="pg-sub">Lower is better. <em>Log scale: each gridline is 10×.</em></p>
+      <div class="pg-chart" role="img" aria-label="Gate latency, fastest to slowest: rules median 6.8 microseconds, rules p95 21.3 microseconds, Muse Spark median 8.2 to 8.9 seconds, Muse Spark p95 14.8 to 17.3 seconds, on one log-scale axis from 1 microsecond to 100 seconds">
+        <div class="pg-bar-row" data-verdict="latency" data-ms="0.0068"><span class="pg-bar-label">Policy only (rules) · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:10.4%"></span></span><span class="pg-bar-value">6.8 µs</span></div>
+        <div class="pg-bar-row" data-verdict="latency" data-ms="0.0213"><span class="pg-bar-label">Policy only (rules) · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:16.6%"></span></span><span class="pg-bar-value">21.3 µs</span></div>
+        <div class="pg-bar-row" data-verdict="latency" data-ms="8900"><span class="pg-bar-label">Muse Spark 1.3 · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:86.4%"></span><span class="pg-bar-range" style="left:86.4%;width:0.5%"></span></span><span class="pg-bar-value">8.2–8.9 s</span></div>
+        <div class="pg-bar-row" data-verdict="latency" data-ms="17300"><span class="pg-bar-label">Muse Spark 1.3 · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:89.6%"></span><span class="pg-bar-range" style="left:89.6%;width:0.9%"></span></span><span class="pg-bar-value">14.8–17.3 s</span></div>
         <div class="pg-bar-row pg-axis-row" aria-hidden="true"><span></span><span class="pg-axis"><span style="left:0.0%">1 µs</span><span style="left:12.5%">10 µs</span><span style="left:25.0%">100 µs</span><span style="left:37.5%">1 ms</span><span style="left:50.0%">10 ms</span><span style="left:62.5%">100 ms</span><span style="left:75.0%">1 s</span><span style="left:87.5%">10 s</span><span style="left:100.0%">100 s</span></span><span></span></div>
       </div>
-      <p class="pg-note">One log-scale axis, 1 µs to 100 s: each gridline is 10× the one before, so the Muse Spark bars sit about six steps (≈1,000,000×) past the rules bars. Lighter segment = range across the two Muse Spark runs. Always ask has no gate latency; it waits on you.</p>
-      <div class="pg-grid" style="margin-top:12px">
-        <article class="pg-card"><span class="n">Policy only · local quants</span><h3>$0 in API fees</h3><p class="pg-note">Runs on your machine. Electricity is excluded.</p></article>
-        <article class="pg-card"><span class="n">Muse Spark 1.3 · Meta API</span><h3>$0.0052–$0.0053</h3><p class="pg-note">Per gated request, from each response's <code>usage</code> at $1.25 input / $4.25 output per 1M tokens (<a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>). 1,505–1,537 tokens per request, mostly output.</p></article>
-        <article class="pg-card"><span class="n">Free baselines · comparison only</span><h3>$0, tokens unmeasured</h3><p class="pg-note">Listed as free on <a href="https://opencode.ai/docs/zen">OpenCode Zen</a>. Every call was refused with a free-usage limit, so no tokens were measured.</p></article>
+      <p class="pg-legend" data-verdict-legend="latency"></p>
+      <div class="pg-duo">
+        <div class="pg-snippet is-tight"><pre data-lang="python"># $ per 1M tokens (Meta pricing)
+IN, CACHED, OUT = 1.25, 0.15, 4.25
+cost = ((prompt - cached) * IN
+        + cached * CACHED
+        + completion * OUT) / 1_000_000</pre></div>
+        <div class="pg-stack">
+          <div class="pg-big">$0.0052–0.0053 <small>Muse Spark · per gated request</small></div>
+          <div class="pg-big">$0 <small>rules or local Ollama · no API fees</small></div>
+          <p class="pg-tiny" style="margin:0">1,505–1,537 tokens per request, mostly output, from each response's <code>usage</code>. <a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>. Always ask has no gate latency: <em>it waits on you.</em></p>
+        </div>
       </div>
-      <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Rules: box run, commit <code>342f39f</code>. Muse Spark 1.3: two live runs via the Meta API on 2026-11-03, 16:14 and 16:25 PHT, identical counts in both. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>, <code>docs/verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-*</code>. Striped bars have no measurement.</p>
-    </div>
-  </section>
-
-  <section class="hack-slide" id="warden-local" data-label="Local quants">
-    <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · local quants</span>
-      <h2>Local quants: no published numbers yet</h2>
-      <div class="pg-chart" role="img" aria-label="Local Muse Glimmer quants: no committed result for Q4_K_M, UD-IQ3_XXS, UD-Q3_K_XL or UD-IQ2_XXS">
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Q4_K_M · shipped default</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-IQ3_XXS</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-Q3_K_XL</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-IQ2_XXS</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
-      </div>
-      <p class="pg-note">Muse Glimmer 30B runs locally through Ollama. We only publish numbers whose raw output is committed under <code>docs/verification/</code>, and no local quant run is committed yet, so this chart has no numbers. To measure on your own machine: <code>scripts\eval-windows.ps1 -Compare</code> (17 scenarios) or <code>scripts\thesis-windows.ps1</code> (the 60-case held-out set above).</p>
+      <p class="pg-note pg-chart-src">Same runs as the recall slide. Lighter segment = range across the two Muse Spark runs.</p>
     </div>
   </section>
 
@@ -376,19 +375,18 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
 </div>
 
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
-  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 13, Overview"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 13, Install"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 13, First run"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 13, IDEs"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 13, App"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 13, Warden"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 13, Recall"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 13, False alarms"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 13, Latency &amp; cost"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 13, Local quants"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="10" aria-label="Slide 11 of 13, Grants"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="11" aria-label="Slide 12 of 13, Logs"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="12" aria-label="Slide 13 of 13, Policy"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 12, Overview"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 12, Install"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 12, First run"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 12, IDEs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 12, App"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 12, Warden"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 12, Recall"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 12, False alarms"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 12, Latency &amp; cost"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 12, Grants"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="10" aria-label="Slide 11 of 12, Logs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="11" aria-label="Slide 12 of 12, Policy"><span></span></button>
 </nav>
 <div class="hack-chevrons">
   <button type="button" class="hack-chevron" id="hack-up" aria-label="Previous slide" disabled>
@@ -400,5 +398,6 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
 </div>
 </div>
 <script src="../assets/pages.js"></script>
+<script src="../assets/verdict.js"></script>
 </body>
 </html>
