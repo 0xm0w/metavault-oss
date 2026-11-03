@@ -105,7 +105,7 @@
       <span class="caption-mono-sm pg-kicker">The floor</span>
       <h2>These do not depend on the model</h2>
       <div class="pg-grid">
-        <article class="pg-card"><h3>No secret in the transcript</h3><p class="pg-note">MCP, HTTP, logs, the UI, and the model prompt. A canary covers <a href="../research/#q2-proofs">27 surfaces</a> and fails the build on a hit.</p></article>
+        <article class="pg-card"><h3>No secret in the transcript</h3><p class="pg-note">MCP, HTTP, logs, the UI, and the model prompt. A canary covers <a href="https://github.com/0xm0w/metavault-oss/blob/main/test/security/canary.test.ts">27 surfaces</a> and fails the build on a hit.</p></article>
         <article class="pg-card"><h3>Plaintext stays in memory</h3><p class="pg-note">Decrypted at call time for one grant. The app never writes it to disk and never logs it.</p></article>
         <article class="pg-card"><h3>Narrow, never widen</h3><p class="pg-note">The warden can shrink a scope. It cannot step past the alias ceiling.</p></article>
         <article class="pg-card"><h3>Grants expire</h3><p class="pg-note">After the call, after the TTL, or the moment you revoke.</p></article>
@@ -122,12 +122,9 @@
       <p class="pg-lead" style="margin:0 0 16px">The shipped catalogue is what Settings exposes. A larger model is better at spotting a write phrased as a read. It is not a wider permission.</p>
       <div class="pg-row">
         <span class="pg-pill">none</span>
-        <span class="pg-pill">Llama 3.2 1B (Edge / WebGPU DirectML) · default</span>
-        <span class="pg-pill">llama3.2:3b</span>
-        <span class="pg-pill">llama3.1:8b</span>
-        <span class="pg-pill">llama3.3:70b</span>
+        <span class="pg-pill">Muse Glimmer 30B (Q4_K_M via Ollama) · default</span>
         <span class="pg-pill">Meta API · opt-in</span>
-        <span class="pg-pill">Meta BFT · opt-in (Meta API + on-device Llama)</span>
+        <span class="pg-pill">Meta BFT · opt-in (Muse Spark via Meta API + on-device Muse Glimmer)</span>
       </div>
       <div class="pg-grid-2" id="wallet" style="margin-top:20px">
         <article class="pg-card">
@@ -154,7 +151,7 @@
         <article class="pg-card"><h3>Browser approval</h3><p class="pg-note">The same human decision, outside the desktop app.</p></article>
         <article class="pg-card"><h3>Team policy packs</h3><p class="pg-note">Ceilings you share. The floor still cannot be widened by a model.</p></article>
       </div>
-      <p class="pg-note" style="margin-top:16px">The measured write-up, including the ceiling probes and the canary, is the <a href="/research/">research page</a>.</p>
+      <p class="pg-note" style="margin-top:16px">The canary test and the verification notes are <a href="https://github.com/0xm0w/metavault-oss/blob/main/docs/verification/">in the repo</a>.</p>
           </div>
   </section>
 

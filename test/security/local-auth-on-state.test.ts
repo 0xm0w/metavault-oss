@@ -285,7 +285,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
           service,
           "PATCH",
           "/settings/warden",
-          { provider: "meta-api", model: "llama-3.3-70b-instruct" },
+          { provider: "meta-api", model: "muse-spark-1.3" },
           withToken,
         ),
       ),

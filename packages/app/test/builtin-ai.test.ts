@@ -2,7 +2,16 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveBuiltinModel } from "../src/model-resolver.js";
+import {
+  BUILTIN_MODEL_DIR_NAME,
+  BUILTIN_MODEL_ID,
+  BUILTIN_MODEL_REQUIRED_BYTES,
+  IQ3_XXS_MODEL_ID,
+  IQ3_XXS_REQUIRED_BYTES,
+  OLLAMA_MARKER_FILE,
+  configuredBuiltinModel,
+  resolveBuiltinModel,
+} from "../src/model-resolver.js";
 import {
   BUILTIN_AI_PROGRESS_CHANNEL,
   BUILTIN_AI_STATUS_CHANNEL,
@@ -43,14 +52,14 @@ describe("Built-in AI Model Resolver & Downloader Specifications", () => {
     const status = resolveBuiltinModel(resourcesDir, userDataDir);
     expect(status.state).toBe("missing");
     expect(status.path).toBeNull();
-    expect(status.requiredBytes).toBeGreaterThan(500_000_000);
+    expect(status.modelId).toBe("muse-glimmer:30b");
+    expect(status.requiredBytes).toBe(16_756_683_904);
   });
 
   it("detects bundled model in resources/ (Baked-in Complete Edition)", () => {
-    const bundledDir = join(resourcesDir, "models", "llama-3.2-1b-int4");
+    const bundledDir = join(resourcesDir, "models", BUILTIN_MODEL_DIR_NAME);
     mkdirSync(bundledDir, { recursive: true });
-    writeFileSync(join(bundledDir, "model.onnx"), "dummy-weights");
-    writeFileSync(join(bundledDir, "tokenizer.json"), "{}");
+    writeFileSync(join(bundledDir, OLLAMA_MARKER_FILE), '{"model":"muse-glimmer:30b"}');
 
     const status = resolveBuiltinModel(resourcesDir, userDataDir);
     expect(status.state).toBe("bundled");
@@ -58,10 +67,9 @@ describe("Built-in AI Model Resolver & Downloader Specifications", () => {
   });
 
   it("detects cached model in userData/ (Standard Edition after lazy download)", () => {
-    const cachedDir = join(userDataDir, "models", "llama-3.2-1b-int4");
+    const cachedDir = join(userDataDir, "models", BUILTIN_MODEL_DIR_NAME);
     mkdirSync(cachedDir, { recursive: true });
-    writeFileSync(join(cachedDir, "model.onnx"), "dummy-weights");
-    writeFileSync(join(cachedDir, "tokenizer.json"), "{}");
+    writeFileSync(join(cachedDir, OLLAMA_MARKER_FILE), '{"model":"muse-glimmer:30b"}');
 
     const status = resolveBuiltinModel(resourcesDir, userDataDir);
     expect(status.state).toBe("cached");
@@ -99,5 +107,71 @@ describe("Built-in AI Model Resolver & Downloader Specifications", () => {
     const success = await downloadPromise;
     expect(success).toBe(false);
     expect(downloader.getStatus().state).toBe("cancelled");
+  });
+
+  it("pulls muse-glimmer:30b through Ollama /api/pull, reports progress and marks the model ready", async () => {
+    const lines = [
+      { status: "pulling manifest" },
+      { status: "pulling a", digest: "sha256:a", total: 1000, completed: 0 },
+      { status: "pulling a", digest: "sha256:a", total: 1000, completed: 500 },
+      { status: "pulling b", digest: "sha256:b", total: 1000, completed: 1000 },
+      { status: "pulling a", digest: "sha256:a", total: 1000, completed: 1000 },
+      { status: "verifying sha256 digest" },
+      { status: "success" },
+    ];
+    const ndjson = lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
+    const calls: { url: string; body: unknown }[] = [];
+    const fetchImpl = (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, body: JSON.parse(typeof init?.body === "string" ? init.body : "null") as unknown });
+      return Promise.resolve(new Response(ndjson, { status: 200 }));
+    };
+    const percents: number[] = [];
+    const downloader = new ModelDownloader(userDataDir, (p) => percents.push(p.percent), fetchImpl);
+
+    expect(await downloader.download()).toBe(true);
+    expect(calls).toEqual([{ url: "http://localhost:11434/api/pull", body: { model: BUILTIN_MODEL_ID, stream: true } }]);
+    expect(percents).toEqual([0, 0, 50, 75, 100, 100]);
+    expect(downloader.getStatus()).toMatchObject({ state: "completed", percent: 100, totalBytes: 2000 });
+    expect(resolveBuiltinModel(resourcesDir, userDataDir).state).toBe("cached");
+  });
+
+  it("reports an Ollama pull error and does not mark the model ready", async () => {
+    const fetchImpl = (): Promise<Response> =>
+      Promise.resolve(new Response(JSON.stringify({ error: "pull model manifest: file does not exist" }) + "\n", { status: 200 }));
+    const downloader = new ModelDownloader(userDataDir, undefined, fetchImpl);
+    expect(await downloader.download()).toBe(false);
+    expect(downloader.getStatus().state).toBe("error");
+    expect(downloader.getStatus().error).toContain("file does not exist");
+    expect(resolveBuiltinModel(resourcesDir, userDataDir).state).toBe("missing");
+  });
+
+  it("reports an error when Ollama is not running", async () => {
+    const fetchImpl = (): Promise<Response> => Promise.reject(new Error("fetch failed: ECONNREFUSED"));
+    const downloader = new ModelDownloader(userDataDir, undefined, fetchImpl);
+    expect(await downloader.download()).toBe(false);
+    expect(downloader.getStatus().error).toContain("ECONNREFUSED");
+  });
+});
+
+describe("configuredBuiltinModel (METAVAULT_WARDEN_MODEL)", () => {
+  it("defaults to the shipped Q4_K_M model", () => {
+    expect(configuredBuiltinModel({})).toEqual({
+      modelId: BUILTIN_MODEL_ID,
+      dirName: BUILTIN_MODEL_DIR_NAME,
+      requiredBytes: BUILTIN_MODEL_REQUIRED_BYTES,
+    });
+  });
+
+  it("selects the UD-IQ3_XXS quant with its Hugging Face file size and its own marker dir", () => {
+    const choice = configuredBuiltinModel({ METAVAULT_WARDEN_MODEL: IQ3_XXS_MODEL_ID });
+    expect(choice.modelId).toBe("hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS");
+    expect(choice.requiredBytes).toBe(IQ3_XXS_REQUIRED_BYTES);
+    expect(choice.dirName).toBe("hf.co-unsloth-muse-glimmer-30b-gguf-ud-iq3_xxs");
+    expect(choice.dirName).not.toBe(BUILTIN_MODEL_DIR_NAME);
+  });
+
+  it("rejects malformed values", () => {
+    expect(configuredBuiltinModel({ METAVAULT_WARDEN_MODEL: "../x" }).modelId).toBe(BUILTIN_MODEL_ID);
+    expect(configuredBuiltinModel({ METAVAULT_WARDEN_MODEL: "a b" }).modelId).toBe(BUILTIN_MODEL_ID);
   });
 });

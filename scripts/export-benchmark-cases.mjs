@@ -1,5 +1,5 @@
 // Exports the 8 benchmark-warden cases WITH the real buildMarshalPrompt prompt
-// (identical prompt text the Llama 3.2 1B run processed) to cases.json.
+// (identical prompt text the warden benchmark sends) to cases.json.
 // Uses the compiled brain module like the benchmark script.
 import { buildMarshalPrompt } from "../dist/packages/brain/src/brain.js";
 import { writeFileSync } from "node:fs";

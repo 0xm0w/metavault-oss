@@ -1,22 +1,31 @@
 # MetaVault OSS — Handover (2026-10-31, repo renamed from metavault)
 
-Read this first when resuming. Repo: `C:\Users\Mowreez.DESKTOP-D1GHS6J\metavault`
+Read this first when resuming. Repo: your local clone
 Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/metavault; old URL redirects)
 
 ## Where things stand
+
+> **2026-11-03, branch `feat/cards-hardening` (pushed, no PR):** payment-card
+> credentials, passphrase-wrapped master key with auto-lock, configurable
+> warden model (`METAVAULT_WARDEN_MODEL`, default unchanged), optional
+> UD-IQ3_XXS quant in the eval scripts, and a fixed eval memory measurement.
+> The ps1 scripts are parse-checked only; no Windows run and no IQ3_XXS
+> numbers yet. The app has no passphrase unlock screen yet (use
+> `metavault unlock`). Exposures still open: `SECURITY.md#master-key-protection`.
 
 - Branch `main` pushed and merged via PR #1 (https://github.com/0xm0w/metavault-oss/pull/1).
 - Working tree clean. `main` is up to date with `origin/main`.
 - CI/CD verified green on GitHub Actions:
   - CI: https://github.com/0xm0w/metavault-oss/actions/runs/41223410981 (Windows + Ubuntu exit 0)
   - CodeQL: https://github.com/0xm0w/metavault-oss/actions/runs/41223410962 (exit 0)
-- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-metavault-hardening-release.md`
+- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. (The implementation plans were removed in #70 as obsolete; see git history.)
 - SDD ledger (task-by-task record, deferred minors, rulings):
   `.superpowers/sdd/2026-10-31-metavault-hardening-release/progress.md`
   Per-task reports + review diffs are in the same folder (`task-N-report.md`, `task-N-review.md`).
-- Last verified gates: **271 tests passed**,
+- Gates at v0.1.0-alpha.1 (2026-10-31, historical): 271 tests passed,
   `npm run test:coverage` at plan targets, `npm run typecheck` exit 0, `npm run lint` exit 0.
-  Coverage baseline: core 97.46%, daemon 89.94%, brain 96.34%, mcp 87.98%, renderer model 95.13%.
+  Coverage at that time: core 97.46%, daemon 89.94%, brain 96.34%, mcp 87.98%, renderer model 95.13%.
+  Current counts (2026-11-03, `feat/cards-hardening`): Node 22 503 passed / 3 skipped, Node 24 504 / 2; see `docs/VERIFICATION.md`.
 - Windows installer built locally (unpacked-launch smoke passed):
   `packages/app/release/MetaVault OSS-0.1.0-alpha.1-win-x64.exe` — 121,250,505 bytes,
   SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`.
@@ -33,10 +42,11 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
   Key stored encrypted as credential `warden-meta-api`, only `last4` ever shown,
   routes token-guarded (`GET/PATCH /settings/warden`, `PUT/DELETE/GET /settings/warden/key`,
   real self-check `POST /settings/warden/test`).
-- **Warden providers**: Ollama (default `llama3.2:3b`) + Meta API
-  (`https://api.llama.com/v1/chat/completions`, verified from official docs, cited in
-  `packages/brain/src/meta-api.ts`). Effort: fast 1 pass/10s, standard 1 pass/30s,
-  deep 2 passes/60s (disagreement escalates, keeps narrower scope).
+- **Warden providers**: Ollama / built-in on-device (default `muse-glimmer:30b`, Meta
+  Muse Glimmer 30B Q4_K_M, #70) + Meta API (`https://api.meta.ai/v1/chat/completions`,
+  default `muse-spark-1.3`, per https://dev.meta.ai/docs/models, cited in
+  `packages/brain/src/meta-api.ts`). Effort: fast 1 pass, standard 1 pass, deep 2 passes
+  (disagreement escalates, keeps narrower scope); timeouts cloud 10/30/60 s, local 60/120/240 s.
 - **Audit page**: every request grouped by `requestId` with warden verdict timeline
   (risk, recommended scope, decision source, latency, explanation). No secrets in audit.
 - **Pen test done**: `docs/SECURITY-AUDIT.md`, `test/security/pentest.test.ts`,
@@ -51,7 +61,7 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 - **Must-fix #1 (phantom `modelId`)**: Fixed in `packages/daemon/src/service.ts`. Stamped `modelId` only when marshal actually ran (`marshalRan`). Dropped `modelId` from policy-only chains (pre-check denials, revoked denials, provider-`none` chains) and policy-only pendings in `listPendingApprovals`. Regression tests added in `packages/daemon/test/audit-trail.test.ts`.
 - **Must-fix #3 (version test surface)**: Added fifth surface `packages/mcp/package.json` to `test/version.test.ts`.
 - **Low (phantom Policies rows)**: Updated `derivePolicies` in `packages/app/src/renderer/model.ts` to skip administrative/lifecycle events (`settings-changed`, `enrollment-created`, `enrollment-completed`). Regression test added in `packages/app/test/model.test.ts`.
-- **Full gates & rebuild**: 271 tests passing, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
+- **Full gates & rebuild** (2026-10-31): 271 tests passing at the time, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
 - **Release v0.1.0-alpha.1 published**: Tag `v0.1.0-alpha.1` pushed. GitHub Release created at https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0-alpha.1 with NSIS installer and SHA256SUMS attached. Site and README links updated and redeployed.
 
 ## Remaining tasks (in order)

@@ -2,19 +2,26 @@ import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
-import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
+import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, defaultWardenSettings, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
 import type { AuditEvent, DecisionSource, Risk } from "./types.js";
+import { CARD_KIND, SECRET_KIND, type CredentialKind } from "./card.js";
 
+// kind is "secret" (API key / token) or "card" (payment card). publicMeta
+// is non-secret JSON kept in clear (for cards: brand + last 4 only).
 export interface CredentialRecord {
   readonly scopeCeiling: string;
   readonly ciphertext: string;
   readonly website: string;
+  readonly kind: CredentialKind;
+  readonly publicMeta: string;
 }
 
 export interface CredentialMeta {
   readonly alias: string;
   readonly scopeCeiling: string;
   readonly website: string;
+  readonly kind?: CredentialKind;
+  readonly publicMeta?: string;
 }
 
 export interface AgentRecord {
@@ -31,6 +38,8 @@ export interface VaultStoreService {
     scopeCeiling: string,
     ciphertext: string,
     website?: string,
+    kind?: CredentialKind,
+    publicMeta?: string,
   ) => Effect.Effect<void, StorageError>;
   readonly updateCredential: (
     alias: string,
@@ -76,12 +85,20 @@ interface CredentialRow {
   readonly ceiling: string;
   readonly ciphertext: string;
   readonly website: string | null;
+  readonly kind: string | null;
+  readonly public_meta: string | null;
 }
 
 interface CredentialMetaRow {
   readonly alias: string;
   readonly ceiling: string;
   readonly website: string | null;
+  readonly kind: string | null;
+  readonly public_meta: string | null;
+}
+
+function toKind(raw: string | null): CredentialKind {
+  return raw === CARD_KIND ? CARD_KIND : SECRET_KIND;
 }
 
 interface AliasRow {
@@ -130,11 +147,9 @@ function toStorageError(operation: string) {
     });
 }
 
-// masterKey is part of the layer contract (the daemon supplies it from the
-// keychain); ciphertext reaches the store already encrypted via crypto.ts.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
-  const db = new Database(dbPath);
+// The store never sees the master key: ciphertext reaches it already
+// encrypted via crypto.ts (see KeySession in key-session.ts).
+function makeStore(db: Database.Database): VaultStoreService {
   db.exec(
     `CREATE TABLE IF NOT EXISTS credentials (
        alias TEXT PRIMARY KEY,
@@ -186,6 +201,12 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   if (!cols.some((c) => c.name === "website")) {
     db.exec("ALTER TABLE credentials ADD COLUMN website TEXT NOT NULL DEFAULT ''");
   }
+  if (!cols.some((c) => c.name === "kind")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN kind TEXT NOT NULL DEFAULT 'secret'");
+  }
+  if (!cols.some((c) => c.name === "public_meta")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN public_meta TEXT NOT NULL DEFAULT ''");
+  }
   const auditCols = db.prepare("PRAGMA table_info(audit)").all() as { name: string }[];
   const auditColumnDefs: Record<string, string> = {
     request_id: "TEXT",
@@ -204,17 +225,17 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
     }
   }
   const insertCredential = db.prepare(
-    "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext, website) VALUES (?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext, website, kind, public_meta) VALUES (?, ?, ?, ?, ?, ?)",
   );
   const selectCredential = db.prepare(
-    "SELECT ceiling, ciphertext, website FROM credentials WHERE alias = ?",
+    "SELECT ceiling, ciphertext, website, kind, public_meta FROM credentials WHERE alias = ?",
   );
   const updateCredentialStmt = db.prepare(
     "UPDATE credentials SET ceiling = ?, ciphertext = ?, website = ? WHERE alias = ?",
   );
   const deleteCredentialStmt = db.prepare("DELETE FROM credentials WHERE alias = ?");
   const selectCredentials = db.prepare(
-    "SELECT alias, ceiling, website FROM credentials ORDER BY alias ASC",
+    "SELECT alias, ceiling, website, kind, public_meta FROM credentials ORDER BY alias ASC",
   );
   const selectAliases = db.prepare(
     "SELECT alias FROM credentials ORDER BY alias ASC",
@@ -282,10 +303,10 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   );
 
   return {
-    addCredential: (alias, scopeCeiling, ciphertext, website) =>
+    addCredential: (alias, scopeCeiling, ciphertext, website, kind, publicMeta) =>
       Effect.try({
         try: () => {
-          insertCredential.run(alias, scopeCeiling, ciphertext, website ?? "");
+          insertCredential.run(alias, scopeCeiling, ciphertext, website ?? "", kind ?? SECRET_KIND, publicMeta ?? "");
         },
         catch: toStorageError("addCredential"),
       }),
@@ -309,7 +330,7 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
           const row = selectCredential.get(alias) as CredentialRow | undefined;
           return row === undefined
             ? undefined
-            : { scopeCeiling: row.ceiling, ciphertext: row.ciphertext, website: row.website ?? "" };
+            : { scopeCeiling: row.ceiling, ciphertext: row.ciphertext, website: row.website ?? "", kind: toKind(row.kind), publicMeta: row.public_meta ?? "" };
         },
         catch: toStorageError("getCredential"),
       }),
@@ -317,7 +338,7 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
       Effect.try({
         try: () => {
           const rows = selectCredentials.all() as CredentialMetaRow[];
-          return rows.map((row) => ({ alias: row.alias, scopeCeiling: row.ceiling, website: row.website ?? "" }));
+          return rows.map((row) => ({ alias: row.alias, scopeCeiling: row.ceiling, website: row.website ?? "", kind: toKind(row.kind), publicMeta: row.public_meta ?? "" }));
         },
         catch: toStorageError("listCredentials"),
       }),
@@ -390,7 +411,7 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
         try: () => {
           const row = selectSettings.get() as WardenSettingsRow | undefined;
           if (row === undefined) {
-            return { ...DEFAULT_WARDEN_SETTINGS };
+            return defaultWardenSettings();
           }
           return {
             provider: row.provider as WardenSettings["provider"],
@@ -507,10 +528,29 @@ function makeStore(dbPath: string, masterKey: Buffer): VaultStoreService {
   };
 }
 
-export function VaultStoreLive(dbPath: string, masterKey: Buffer): Layer.Layer<VaultStore> {
-  return Layer.sync(VaultStore, () => makeStore(dbPath, masterKey));
+// Closes the database when the layer's scope ends. For one-shot callers
+// (the CLI): leaving vault.db open makes Windows refuse to delete or move
+// it. Long-lived callers that keep the service past the scope use
+// VaultStoreLive, which stays open for the life of the process.
+export const VaultStoreScoped = (dbPath: string): Layer.Layer<VaultStore> =>
+  Layer.scoped(
+    VaultStore,
+    Effect.map(
+      Effect.acquireRelease(
+        Effect.sync(() => new Database(dbPath)),
+        (db) => Effect.sync(() => db.close()),
+      ),
+      makeStore,
+    ),
+  );
+
+// The optional key argument is accepted for older call sites and ignored.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function VaultStoreLive(dbPath: string, _legacyMasterKey?: Buffer): Layer.Layer<VaultStore> {
+  return Layer.sync(VaultStore, () => makeStore(new Database(dbPath)));
 }
 
-export function VaultStoreTest(masterKey: Buffer): Layer.Layer<VaultStore> {
-  return Layer.sync(VaultStore, () => makeStore(":memory:", masterKey));
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function VaultStoreTest(_legacyMasterKey?: Buffer): Layer.Layer<VaultStore> {
+  return Layer.sync(VaultStore, () => makeStore(new Database(":memory:")));
 }

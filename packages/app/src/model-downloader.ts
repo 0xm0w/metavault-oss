@@ -1,6 +1,11 @@
-import { createWriteStream, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BUILTIN_MODEL_DIR_NAME, BUILTIN_MODEL_REQUIRED_BYTES } from "./model-resolver.js";
+import { metavaultEnv } from "./env.js";
+import {
+  BUILTIN_MODEL_REQUIRED_BYTES,
+  configuredBuiltinModel,
+  OLLAMA_MARKER_FILE,
+} from "./model-resolver.js";
 
 export const BUILTIN_AI_STATUS_CHANNEL = "metavault:builtin-ai-status";
 export const START_BUILTIN_AI_DOWNLOAD_CHANNEL = "metavault:start-builtin-ai-download";
@@ -18,6 +23,79 @@ export interface DownloadProgressPayload {
 
 export type ProgressListener = (payload: DownloadProgressPayload) => void;
 
+export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+export function ollamaBaseUrl(): string {
+  const raw = metavaultEnv("OLLAMA_URL")?.trim();
+  return raw !== undefined && raw !== "" ? raw.replace(/\/+$/, "") : "http://localhost:11434";
+}
+
+interface OllamaPullLine {
+  readonly status?: string;
+  readonly digest?: string;
+  readonly total?: number;
+  readonly completed?: number;
+  readonly error?: string;
+}
+
+/**
+ * Streams `POST /api/pull` (NDJSON) for the model and reports aggregate
+ * progress across layers. Resolves on `status: "success"`, rejects on an
+ * `error` line or a non-2xx response.
+ */
+export async function pullOllamaModel(
+  fetchImpl: FetchLike,
+  baseUrl: string,
+  model: string,
+  onProgress: (completed: number, total: number) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await fetchImpl(`${baseUrl}/api/pull`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, stream: true }),
+    signal,
+  });
+  if (!res.ok || res.body === null) {
+    throw new Error(`Ollama pull failed: HTTP ${String(res.status)} (is Ollama 0.32.7+ running at ${baseUrl}?)`);
+  }
+  const layers = new Map<string, { total: number; completed: number }>();
+  const decoder = new TextDecoder();
+  const reader = res.body.getReader();
+  let buffered = "";
+  let succeeded = false;
+  // Returns true when the line is Ollama's final `status: "success"`.
+  const handle = (line: string): boolean => {
+    if (line.trim() === "") return false;
+    const msg = JSON.parse(line) as OllamaPullLine;
+    if (msg.error !== undefined) throw new Error(`Ollama pull failed: ${msg.error}`);
+    if (msg.digest !== undefined && typeof msg.total === "number") {
+      layers.set(msg.digest, { total: msg.total, completed: msg.completed ?? 0 });
+      let total = 0;
+      let completed = 0;
+      for (const layer of layers.values()) {
+        total += layer.total;
+        completed += layer.completed;
+      }
+      onProgress(completed, total);
+    }
+    return msg.status === "success";
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffered += decoder.decode(value, { stream: true });
+    let nl = buffered.indexOf("\n");
+    while (nl !== -1) {
+      if (handle(buffered.slice(0, nl))) succeeded = true;
+      buffered = buffered.slice(nl + 1);
+      nl = buffered.indexOf("\n");
+    }
+  }
+  if (handle(buffered)) succeeded = true;
+  if (!succeeded) throw new Error("Ollama pull ended without success");
+}
+
 export class ModelDownloader {
   private abortController: AbortController | null = null;
   private currentPayload: DownloadProgressPayload = {
@@ -31,6 +109,7 @@ export class ModelDownloader {
   constructor(
     private readonly targetBaseDir: string,
     private readonly listener?: ProgressListener,
+    private readonly fetchImpl: FetchLike = (input, init) => fetch(input, init),
   ) {}
 
   public getStatus(): DownloadProgressPayload {
@@ -62,7 +141,8 @@ export class ModelDownloader {
       return false;
     }
 
-    const modelDir = join(this.targetBaseDir, "models", BUILTIN_MODEL_DIR_NAME);
+    const choice = configuredBuiltinModel();
+    const modelDir = join(this.targetBaseDir, "models", choice.dirName);
     mkdirSync(modelDir, { recursive: true });
 
     this.abortController = new AbortController();
@@ -72,7 +152,7 @@ export class ModelDownloader {
       state: "downloading",
       percent: 0,
       downloadedBytes: 0,
-      totalBytes: BUILTIN_MODEL_REQUIRED_BYTES,
+      totalBytes: choice.requiredBytes,
       speedBytesPerSec: 0,
     });
 
@@ -85,7 +165,7 @@ export class ModelDownloader {
           if (signal.aborted) throw new Error("Download aborted");
           downloaded += chunkLength;
           const elapsedSec = Math.max(0.001, (Date.now() - startTime) / 1000);
-          const percent = Math.min(100, Math.round((downloaded / BUILTIN_MODEL_REQUIRED_BYTES) * 100));
+          const percent = Math.min(100, Math.round((downloaded / Math.max(1, choice.requiredBytes)) * 100));
           this.update({
             percent,
             downloadedBytes: downloaded,
@@ -93,21 +173,34 @@ export class ModelDownloader {
           });
         }, signal);
       } else {
-        // Fallback / standard manifest bootstrap: write valid stub manifests if offline/testing
-        const onnxStub = join(modelDir, "model.onnx");
-        const tokStub = join(modelDir, "tokenizer.json");
-        const ws1 = createWriteStream(onnxStub);
-        ws1.write("ONNX_WEIGHTS_STUB");
-        ws1.end();
-        const ws2 = createWriteStream(tokStub);
-        ws2.write("{\"version\":\"1.0\"}");
-        ws2.end();
+        await pullOllamaModel(
+          this.fetchImpl,
+          ollamaBaseUrl(),
+          choice.modelId,
+          (completed, total) => {
+            if (signal.aborted) throw new Error("Download aborted");
+            downloaded = completed;
+            const elapsedSec = Math.max(0.001, (Date.now() - startTime) / 1000);
+            this.update({
+              percent: total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0,
+              downloadedBytes: completed,
+              totalBytes: total,
+              speedBytesPerSec: Math.round(completed / elapsedSec),
+            });
+          },
+          signal,
+        );
       }
+
+      writeFileSync(
+        join(modelDir, OLLAMA_MARKER_FILE),
+        JSON.stringify({ model: choice.modelId, runtime: "ollama", pulledAt: new Date().toISOString() }),
+      );
 
       this.update({
         state: "completed",
         percent: 100,
-        downloadedBytes: BUILTIN_MODEL_REQUIRED_BYTES,
+        downloadedBytes: Math.max(downloaded, this.currentPayload.downloadedBytes),
         speedBytesPerSec: 0,
       });
       return true;

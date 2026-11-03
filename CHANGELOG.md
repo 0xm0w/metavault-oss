@@ -4,6 +4,41 @@ All notable changes to MetaVault OSS are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- **Legacy env var prefix dropped.** Only `METAVAULT_*` variables are read. The pre-rebrand `OPENVAULT_*` names (`OPENVAULT_MASTER_KEY`, `OPENVAULT_OLLAMA_URL`, `OPENVAULT_DB_PATH`, `OPENVAULT_DAEMON_URL`, `OPENVAULT_DAEMON_TOKEN` and the rest) are ignored. Rename them to `METAVAULT_*` in shells, IDE MCP configs and scripts. The fallback was documented but had silently stopped working after the rename; it is now removed on purpose and pinned by `packages/core/test/env.test.ts`.
+
+### Added
+
+- Payment-card credential type: `metavault add-card`, `POST /cards`, and an app add form. Luhn-checked number, name, expiry and CVV, sealed as one AES-256-GCM ciphertext; agents and the app see only brand, last 4 and a masked number. Every card use needs a human approval, can't be standing-approved, and execute is refused because no payment connector exists.
+- Passphrase-wrapped master key (`metavault.key.json`, scrypt N=2^17 r=8 p=1 by default, Argon2id 19 MiB t=2 p=1 opt-in), `metavault key status`, `key protect`, `unlock`, `lock`; daemon `/unlock`, `/lock`, `/key/status`; starts locked; 15-minute idle auto-lock (`METAVAULT_AUTO_LOCK_MINUTES`); unlock backoff after 5 failures. Migration: `SECURITY.md#master-key-protection`.
+- `METAVAULT_WARDEN_MODEL` makes the default warden model configurable. The shipped default stays `muse-glimmer:30b`.
+- Optional `hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS` (13,130,658,848 bytes) in the model lists, `-Quant` and `-Compare` in `scripts/eval-windows.ps1` and `scripts/thesis-windows.ps1`. Not benchmarked yet.
+
+- `run-thesis.ts --provider openai-compat|meta-api`: OpenAI-compatible warden for comparison runs (polite pacing, 429/5xx retry with `Retry-After`, quota refusal aborts the run, per-call `usage` tokens, dollars per gated request from published prices, `--budget-usd` cap, default $0.50). `meta-api` reads `META_API_KEY` and defaults to `muse-spark-1.3` at `https://api.meta.ai/v1`.
+- Docs Warden slide reworked into tiers (policy only, Muse Glimmer quants, Muse Spark via Meta API, BFT quorum) with measured-only charts for high-risk recall, false-alarm rate, and latency and cost; unmeasured tiers show as "not run".
+
+- Measured Muse Spark 1.3 (Meta API) on the 60-case held-out set, two runs: warden 25/28 recall (21/22 paraphrased), 0/28 false alarms; rules + warden 27/28 recall, 9/28 false alarms (a failed warden call, one per run, counts as a miss); median 8.2-8.9 s; $0.0052-$0.0053 and about 1.5k tokens per gated request. No local Muse Glimmer eval output is committed, so no local quant numbers are published; the local held-out run was not run. `run-thesis.ts --call-log` writes per-call usage and spend as it happens.
+
+### Changed
+
+- `METAVAULT_MASTER_KEY` is ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1`. The dev plaintext key in `scripts/run-daemon.mjs` needs `METAVAULT_DEV_PLAINTEXT_KEY=1`.
+- Eval memory measurement now walks the Ollama process tree (including child runners) and records `/api/ps` size and `size_vram`, `ollama ps` SIZE and PROCESSOR (GPU/CPU split), system memory delta and NVIDIA usage (`scripts/ollama-mem.ps1`). The earlier process-name-only sum missed the runner.
+- Removed the unsupported privacy-proof wording from the research page and thesis review; copy now describes the actual encryption and key handling.
+
+- Local warden is now Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) for the Ollama, built-in and BFT paths; earlier local models removed from code, settings, UI and docs (#70).
+- The built-in on-device engine is wired: it runs Muse Glimmer through local Ollama and the Settings download pulls it via `/api/pull` (previously it wrote placeholder files and always failed closed) (#70).
+- Low reasoning-strength system prompt for Glimmer; local timeouts raised to 60 / 120 / 240 s (was 10 / 30 / 60 s) (#70).
+- Meta API cloud default is now `https://api.meta.ai/v1` with `muse-spark-1.3` (#70).
+- BFT copy describes a two-warden quorum (#70).
+
+### Removed
+
+- `site/research/` and every link to it (#70).
+- `docs/verification/eval-live.txt` (old model); the live Muse Glimmer eval (`scripts/eval-windows.ps1`) has no committed result yet (#70).
+
 ## [0.1.1-hackathon.sprint] — 2026-11-02
 
 Meta Hackathon (Indie Track) release sprint.
@@ -13,7 +48,7 @@ Meta Hackathon (Indie Track) release sprint.
 - Meta Hackathon portal & interactive snap deck live at `metahackathon.whativedone.xyz`.
 - Trust & pedigree bridge linking to Keythings (`keythings.xyz`), creators of Keeta Wallet OSS (securing cryptographic keys and non-custodial transactions since 2025).
 - Live carousel and real GitHub shipping timeline showcasing the security researcher heritage.
-- Hardened adversarial prompt defenses, unverified caller quarantine, and empirical 100% defense benchmark against live Llama 3.2 3B (#55).
+- Hardened adversarial prompt defenses, unverified caller quarantine, and an adversarial defense benchmark against the then-default local model (#55).
 
 ## [0.1.0] — 2026-11-01
 

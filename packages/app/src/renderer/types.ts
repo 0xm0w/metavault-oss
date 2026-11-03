@@ -98,9 +98,32 @@ export interface PoliciesData {
   readonly agents?: readonly RegisteredAgent[];
 }
 
+// Credential types the vault stores. "secret" is an API key/token the
+// daemon injects into an HTTP call; "card" is a payment card whose number,
+// name, expiry and CVV stay encrypted in the daemon. The renderer only
+// ever receives a card's brand and last 4 digits.
+export const CREDENTIAL_KINDS = ["secret", "card"] as const;
+export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
+
+export interface CardMetaLike {
+  readonly brand: string;
+  readonly last4: string;
+  readonly masked: string;
+}
+
 export interface CredentialMeta {
   readonly alias: string;
   readonly website: string;
+  readonly kind?: CredentialKind;
+  readonly card?: CardMetaLike;
+}
+
+export interface CardInputLike {
+  readonly number: string;
+  readonly name: string;
+  readonly expMonth: number;
+  readonly expYear: number;
+  readonly cvv: string;
 }
 
 export interface DeeplinkAddParams {
@@ -258,6 +281,10 @@ export interface VaultApi {
   readonly policies: () => Promise<unknown>;
   readonly getSecurityPosture: () => Promise<unknown>;
   readonly addCredential: (alias: string, scope: string, secret: string, website?: string, enrollmentId?: string) => Promise<unknown>;
+  readonly addCard: (alias: string, card: CardInputLike, website?: string) => Promise<unknown>;
+  readonly keyStatus: () => Promise<unknown>;
+  readonly unlockVault: (passphrase: string) => Promise<unknown>;
+  readonly lockVault: () => Promise<unknown>;
   readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
   readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;
   readonly deleteCredential: (alias: string) => Promise<unknown>;

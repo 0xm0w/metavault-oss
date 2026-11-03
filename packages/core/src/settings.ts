@@ -34,12 +34,51 @@ export interface WardenSettings {
 
 export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
   provider: "builtin",
-  model: "llama3.2:1b",
+  model: "muse-glimmer:30b",
   effort: "standard",
-  metaApiBaseUrl: "https://api.llama.com/v1",
+  metaApiBaseUrl: "https://api.meta.ai/v1",
 };
 
-export const DEFAULT_BUILTIN_MODEL = "llama3.2:1b";
+// Meta Muse Glimmer 30B (official Q4_K_M), served by local Ollama.
+// This is the SHIPPED default. It does not change until a smaller quant
+// has measured eval numbers on real hardware.
+export const DEFAULT_BUILTIN_MODEL = "muse-glimmer:30b";
+export const SHIPPED_DEFAULT_WARDEN_MODEL = DEFAULT_BUILTIN_MODEL;
+
+// Optional smaller quant (third-party unsloth "UD" dynamic build), selectable
+// but NOT the default. Source:
+// https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF/blob/main/Muse-Glimmer-30B-UD-IQ3_XXS.gguf
+// (13,130,658,848 bytes per the Hugging Face tree API, checked 2026-11-03).
+export const MUSE_GLIMMER_IQ3_XXS_TAG = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS";
+export const MUSE_GLIMMER_IQ3_XXS_BYTES = 13_130_658_848;
+
+const MODEL_TAG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+
+// Default warden model, overridable with METAVAULT_WARDEN_MODEL (e.g. the
+// IQ3_XXS tag above) so a machine can run a different quant without a code
+// change. Invalid values are ignored and the shipped default is used.
+export function resolveDefaultWardenModel(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env["METAVAULT_WARDEN_MODEL"]?.trim();
+  return raw !== undefined && MODEL_TAG_PATTERN.test(raw) && !raw.includes("..") ? raw : SHIPPED_DEFAULT_WARDEN_MODEL;
+}
+
+// Meta Model API id used when the provider is switched to meta-api without
+// an explicit model. Ollama tags (e.g. "muse-glimmer:30b") are not served there.
+export const DEFAULT_META_API_WARDEN_MODEL = "muse-spark-1.3";
+
+// The model a provider should use when none is given. Local providers
+// (builtin, ollama, and the local half of bft) take the local default;
+// meta-api takes the Meta Model API default.
+export function defaultModelForProvider(
+  provider: WardenProvider,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return provider === "meta-api" ? DEFAULT_META_API_WARDEN_MODEL : resolveDefaultWardenModel(env);
+}
+
+export function defaultWardenSettings(env: NodeJS.ProcessEnv = process.env): WardenSettings {
+  return { ...DEFAULT_WARDEN_SETTINGS, model: resolveDefaultWardenModel(env) };
+}
 
 export const WardenSettingsSchema = Schema.Struct({
   provider: Schema.Literal("none", "ollama", "meta-api", "builtin", "bft"),

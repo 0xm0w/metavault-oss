@@ -156,6 +156,21 @@
     }
     return out + escapeCode(src.slice(last));
   }
+  function highlightPython(src) {
+    var re = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\b(if|else|in|and|or|not|return|def|True|False|None)\b|\b(\d[\d_.]*)\b/g;
+    var out = "";
+    var last = 0;
+    var m;
+    while ((m = re.exec(src))) {
+      out += escapeCode(src.slice(last, m.index));
+      if (m[1]) out += spanCode("tok-com", m[1]);
+      else if (m[2]) out += spanCode("tok-str", m[2]);
+      else if (m[3]) out += spanCode("tok-bool", m[3]);
+      else out += spanCode("tok-num", m[4]);
+      last = re.lastIndex;
+    }
+    return out + escapeCode(src.slice(last));
+  }
   function guessLang(text) {
     if (/^\s*\[[^\]\n]+\]\s*$/m.test(text)) return "toml";
     var head = text.replace(/^\s+/, "");
@@ -164,7 +179,7 @@
     return "log";
   }
   function paintCode(pre, lang) {
-    var painters = { json: highlightJson, toml: highlightToml, shell: highlightShell, log: highlightLog };
+    var painters = { json: highlightJson, toml: highlightToml, shell: highlightShell, log: highlightLog, python: highlightPython };
     var paint = painters[lang] || highlightLog;
     pre.innerHTML = paint(pre.textContent);
     pre.setAttribute("data-highlighted", "true");

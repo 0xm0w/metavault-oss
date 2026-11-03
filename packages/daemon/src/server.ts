@@ -16,8 +16,10 @@ import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
   CapabilityRequestSchema,
+  CardCredentialSchema,
   CredentialSchema,
   EnrollmentRequestSchema,
+  UnlockSchema,
   GrantIdSchema,
   PoliciesResponseSchema,
   RevokeSchema,
@@ -26,11 +28,26 @@ import {
   AgentSecuritySettingsPatchSchema,
   WardenSettingsPatchSchema,
 } from "./schemas.js";
-import { makeVaultServiceLive, VaultService, type VaultServiceService } from "./service.js";
+import {
+  CARD_INVALID_OPERATION,
+  makeVaultServiceLive,
+  VAULT_LOCKED_OPERATION,
+  VaultService,
+  type VaultServiceService,
+} from "./service.js";
+import {
+  autoLockMsFromEnv,
+  createKeySession,
+  envMasterKeyIfAllowed,
+  type KeySession,
+} from "../../core/src/key-session.js";
+import { readWrappedKeyFile, wrappedKeyFilePath } from "../../core/src/keywrap.js";
 
 export {
   CapabilityRequestSchema,
+  CardCredentialSchema,
   CredentialSchema,
+  UnlockSchema,
   EnrollmentIdSchema,
   EnrollmentRequestSchema,
   GrantIdSchema,
@@ -57,6 +74,10 @@ export function statusForErrorTag(tag: string): number {
       return 403;
     case "ConnectorFailed":
       return 502;
+    case "VaultLocked":
+      return 423;
+    case "CardInvalid":
+      return 400;
     default:
       return 500;
   }
@@ -71,6 +92,13 @@ function safeErrorBody(err: unknown): SafeErrorBody {
     const tag = String(err._tag);
     const message =
       "message" in err && typeof err.message === "string" ? err.message : tag;
+    const operation = "operation" in err ? err.operation : undefined;
+    if (tag === "StorageError" && operation === VAULT_LOCKED_OPERATION) {
+      return { error: { _tag: "VaultLocked", message } };
+    }
+    if (tag === "StorageError" && operation === CARD_INVALID_OPERATION) {
+      return { error: { _tag: "CardInvalid", message } };
+    }
     return { error: { _tag: tag, message } };
   }
   return { error: { _tag: "InternalError", message: "internal error" } };
@@ -206,7 +234,13 @@ function isTokenProtected(method: string, path: string): boolean {
   }
   if (
     method === "POST" &&
-    (path === "/approve" || path === "/approve-always" || path === "/deny" || path === "/credentials")
+    (path === "/approve" ||
+      path === "/approve-always" ||
+      path === "/deny" ||
+      path === "/credentials" ||
+      path === "/cards" ||
+      path === "/unlock" ||
+      path === "/lock")
   ) {
     return true;
   }
@@ -271,7 +305,13 @@ export async function handleVaultRequest(
       Effect.all([service.listAliases(), service.listCredentialMeta()]).pipe(
         Effect.map(([aliases, meta]) => ({
           aliases,
-          credentials: meta.map((m) => ({ alias: m.alias, website: m.website })),
+          // Cards expose brand + last 4 only: never name, expiry or CVV.
+          credentials: meta.map((m) => ({
+            alias: m.alias,
+            website: m.website,
+            kind: m.kind,
+            ...(m.card !== undefined ? { card: { brand: m.card.brand, last4: m.card.last4, masked: m.card.masked } } : {}),
+          })),
         })),
       ),
     );
@@ -438,6 +478,67 @@ export async function handleVaultRequest(
     if (found.body === null) { return { status: 404, body: { error: { _tag: "NotFound", message: "enrollment not found" } } }; }
     const record = found.body as { enrollmentId: string; status: string; alias: string; scope: string };
     return { status: 200, body: { status: record.status, alias: record.alias, scope: record.scope } };
+  }
+  if (method === "GET" && path === "/key/status") {
+    return run(service.keyStatus());
+  }
+  if (method === "POST" && path === "/lock") {
+    return run(service.lockVault().pipe(Effect.map(() => ({ locked: true }))));
+  }
+  if (method === "POST" && path === "/unlock") {
+    const decoded = await decode(UnlockSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const result = await run(service.unlockVault(decoded.passphrase));
+    if (result.status !== 200) {
+      return result;
+    }
+    switch (result.body) {
+      case "unlocked":
+      case "already-unlocked":
+        return { status: 200, body: { status: result.body } };
+      case "wrong-passphrase":
+        return { status: 401, body: { error: { _tag: "WrongPassphrase", message: "wrong passphrase" } } };
+      case "throttled":
+        return { status: 429, body: { error: { _tag: "UnlockThrottled", message: "too many failed attempts; wait and retry" } } };
+      default:
+        return { status: 409, body: { error: { _tag: "NotPassphraseMode", message: "vault key is not passphrase-protected; run `metavault key protect`" } } };
+    }
+  }
+  if (method === "POST" && path === "/cards") {
+    const decoded = await decode(CardCredentialSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const alias = decoded.alias.trim();
+    if (alias === "" || alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
+      return BAD_REQUEST;
+    }
+    const exists = await run(service.hasCredential(alias));
+    if (exists.status !== 200) {
+      return exists;
+    }
+    if (exists.body === true) {
+      return { status: 409, body: { error: "alias-exists" } };
+    }
+    const result = await run(
+      service
+        .seedCardCredential(
+          alias,
+          {
+            number: decoded.number,
+            name: decoded.name,
+            expMonth: decoded.expMonth,
+            expYear: decoded.expYear,
+            cvv: decoded.cvv,
+          },
+          decoded.scope,
+          decoded.website,
+        )
+        .pipe(Effect.map((card) => ({ alias, kind: "card", card }))),
+    );
+    return result.status === 200 ? { status: 201, body: result.body } : result;
   }
   if (method === "POST" && path === "/credentials") {
     const decoded = await decode(CredentialSchema, body ?? {});
@@ -710,21 +811,30 @@ export function createVaultHttpServer(
   });
 }
 
-export function resolveDaemonMasterKey(): Buffer {
-  const fromEnv = metavaultEnv("MASTER_KEY");
-  if (fromEnv !== undefined && fromEnv !== "") {
-    const decoded = Buffer.from(fromEnv, "base64");
-    if (decoded.length !== 32) {
-      throw new Error("METAVAULT_MASTER_KEY must be base64-encoded 32 bytes");
-    }
-    return decoded;
+// Master-key source, in order of preference:
+//   1. metavault.key.json next to the DB: passphrase-wrapped (scrypt or
+//      argon2id). The daemon starts LOCKED and auto-locks when idle.
+//   2. METAVAULT_MASTER_KEY, only with METAVAULT_ALLOW_ENV_MASTER_KEY=1.
+//   3. A raw key in the OS keychain (legacy `metavault init` before
+//      passphrase protection). Accepted with a migration warning.
+export function resolveDaemonKeySession(dbPath: string, warn: (line: string) => void = (l) => process.stderr.write(`${l}\n`)): KeySession {
+  const wrapped = readWrappedKeyFile(wrappedKeyFilePath(dbPath));
+  if (wrapped !== null) {
+    const autoLockMs = autoLockMsFromEnv();
+    return createKeySession({ mode: "passphrase", wrapped, ...(autoLockMs !== undefined ? { autoLockMs } : {}) });
+  }
+  const fromEnv = envMasterKeyIfAllowed();
+  if (fromEnv !== undefined) {
+    warn("warning: using METAVAULT_MASTER_KEY from the environment (opt-in legacy mode; no auto-lock).");
+    return createKeySession({ mode: "env", key: fromEnv });
   }
   const fromKeychain = retrieveMasterKey();
   if (fromKeychain !== null) {
-    return fromKeychain;
+    warn("warning: master key read unwrapped from the OS keychain (legacy mode; no auto-lock). Run `metavault key protect` to migrate.");
+    return createKeySession({ mode: "keychain-legacy", key: fromKeychain });
   }
   throw new Error(
-    "master key unavailable: set METAVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
+    "master key unavailable: run `metavault init` (passphrase-protected key), or `metavault key protect` to migrate a legacy key",
   );
 }
 
@@ -732,6 +842,7 @@ export interface VaultDaemonOptions {
   readonly port?: number;
   readonly dbPath?: string;
   readonly masterKey?: Buffer;
+  readonly keySession?: KeySession;
   // Dependency-injection seams (tests pass fakes / local presets through
   // these); production defaults are the real layers below.
   readonly connector?: Layer.Layer<Connector>;
@@ -741,9 +852,13 @@ export interface VaultDaemonOptions {
 }
 
 export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promise<Server> {
-  const masterKey = options.masterKey ?? resolveDaemonMasterKey();
   const port = options.port ?? Number(metavaultEnv("PORT") ?? "7077");
   const dbPath = options.dbPath ?? join(process.cwd(), "metavault.db");
+  const keySession =
+    options.keySession ??
+    (options.masterKey !== undefined
+      ? createKeySession({ mode: "injected", key: options.masterKey })
+      : resolveDaemonKeySession(dbPath));
   const daemonToken = options.daemonToken ?? resolveDaemonToken(dbPath);
   // The real connector layer (Task 6): approved grants execute against the
   // preset upstream URLs with the secret injected inside the daemon.
@@ -764,7 +879,7 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
           cred === undefined
             ? Effect.succeed<string | null>(null)
             : Effect.try({
-                try: () => decryptSecret(masterKey, cred.ciphertext) as string | null,
+                try: () => decryptSecret(keySession.key(), cred.ciphertext) as string | null,
                 catch: () => null,
               }),
         ).pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
@@ -788,14 +903,14 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
       };
     }),
   );
-  const storeLayer = VaultStoreLive(dbPath, masterKey);
+  const storeLayer = VaultStoreLive(dbPath);
   const layers = Layer.mergeAll(
     storeLayer,
     options.brain ?? Layer.provide(dynamicBrain, storeLayer),
     connectorLayer,
   );
   const runtime = ManagedRuntime.make(
-    Layer.provide(makeVaultServiceLive({ masterKey }), layers),
+    Layer.provide(makeVaultServiceLive({ keySession }), layers),
   );
   const service = await runtime.runPromise(
     Effect.gen(function* () {

@@ -21,6 +21,11 @@ export { MarshalDecisionSchema, parseMarshalDecision } from "./schema.js";
 export { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
 export {
   DEFAULT_MARSHAL_MODEL,
+  DEFAULT_OLLAMA_TIMEOUT_MS,
+  MUSE_GLIMMER_GGUF_FILE,
+  MUSE_GLIMMER_GGUF_REPO,
+  MUSE_GLIMMER_QUANT,
+  MUSE_GLIMMER_SYSTEM_PROMPT,
   OLLAMA_CHAT_URL,
   OLLAMA_MODELS,
   requestOllamaDecision,
@@ -28,6 +33,7 @@ export {
 } from "./ollama.js";
 export {
   DEFAULT_META_API_BASE_URL,
+  DEFAULT_META_API_MODEL,
   META_API_DOCS_URL,
   requestMetaApiDecision,
   type MetaApiRequest,
@@ -36,6 +42,7 @@ export {
   BUILTIN_MODELS,
   DEFAULT_BUILTIN_MODEL,
   getBuiltinInferenceHandler,
+  ollamaBuiltinHandler,
   requestBuiltinDecision,
   setBuiltinInferenceHandler,
   type BuiltinInferenceHandler,
@@ -67,6 +74,22 @@ export const EFFORT_TIMEOUT_MS: Record<WardenSettings["effort"], number> = {
   standard: 30_000,
   deep: 60_000,
 };
+
+// Local providers run Muse Glimmer 30B, a reasoning model that always thinks
+// before answering. On consumer hardware a single pass takes tens of seconds,
+// so local providers get a longer budget per effort level. Cloud budgets are
+// unchanged. Effort still never changes policy ceilings.
+export const LOCAL_EFFORT_TIMEOUT_MS: Record<WardenSettings["effort"], number> = {
+  fast: 60_000,
+  standard: 120_000,
+  deep: 240_000,
+};
+
+export function effortTimeoutMs(settings: Pick<WardenSettings, "provider" | "effort">): number {
+  return settings.provider === "ollama" || settings.provider === "builtin"
+    ? LOCAL_EFFORT_TIMEOUT_MS[settings.effort]
+    : EFFORT_TIMEOUT_MS[settings.effort];
+}
 
 export type WardenKeyProvider = () => Effect.Effect<string | null>;
 
@@ -130,7 +153,7 @@ export function assessFromSettings(
   policyDigest: string,
 ): Effect.Effect<MarshalDecision, MarshalUnavailableT | MarshalInvalidOutputT> {
   const prompt = buildMarshalPrompt(req, historySummary, policyDigest);
-  const totalMs = EFFORT_TIMEOUT_MS[settings.effort];
+  const totalMs = effortTimeoutMs(settings);
   if (settings.provider === "bft") {
     return Effect.flatMap(
       getKey === undefined ? Effect.succeed<string | null>(null) : getKey(),
@@ -140,6 +163,7 @@ export function assessFromSettings(
           metaApiBaseUrl: settings.metaApiBaseUrl,
           metaModel: settings.model,
           timeoutMs: totalMs,
+          localTimeoutMs: LOCAL_EFFORT_TIMEOUT_MS[settings.effort],
         }),
     ).pipe(Effect.provide(FetchHttpClient.layer));
   }

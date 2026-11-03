@@ -6,9 +6,9 @@ import { join, extname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { Effect } from "effect";
 import puppeteer from "puppeteer-core";
-import { startVaultDaemon } from "/downloads/metavault-oss/dist/packages/daemon/src/server.js";
-import { VaultStore, VaultStoreLive } from "/downloads/metavault-oss/dist/packages/core/src/storage.js";
-import { encryptSecret } from "/downloads/metavault-oss/dist/packages/core/src/crypto.js";
+import { startVaultDaemon } from "../dist/packages/daemon/src/server.js";
+import { VaultStore, VaultStoreLive } from "../dist/packages/core/src/storage.js";
+import { encryptSecret } from "../dist/packages/core/src/crypto.js";
 
 const HARNESS = "/tmp/mvqa/harness";
 const SHOTS = "/tmp/mvqa/shots"; mkdirSync(SHOTS, { recursive: true });
@@ -16,7 +16,7 @@ const MIME = { ".html":"text/html", ".js":"text/javascript", ".css":"text/css", 
 
 // --- daemon setup (policy-only, seeded) ---
 const dir = mkdtempSync(join(tmpdir(), "metavault-shots-"));
-const dbPath = join(dir, "openvault.db");
+const dbPath = join(dir, "metavault.db");
 const masterKey = randomBytes(32);
 const seed = (alias, scope, secret, website) => Effect.runPromise(Effect.gen(function*(){ const s = yield* VaultStore; yield* s.addCredential(alias, scope, encryptSecret(masterKey, secret), website); }).pipe(Effect.provide(VaultStoreLive(dbPath, masterKey))));
 await seed("stripe", "charges.read", "sk-test-DEMO-aaaa1111", "stripe.com");
@@ -24,8 +24,8 @@ await seed("openai", "responses.read", "sk-test-DEMO-bbbb2222", "openai.com");
 await seed("cloudflare", "dns.read", "cf-test-DEMO-cccc3333", "cloudflare.com");
 const daemon = await startVaultDaemon({ port: 0, dbPath, masterKey });
 const base = `http://127.0.0.1:${daemon.address().port}`;
-const token = readFileSync(join(dir, "openvault.token"), "utf8").trim();
-const dcall = (method, path, body, auth=true) => fetch(base+path, { method, headers: { "content-type":"application/json", ...(auth?{"x-openvault-token":token}:{}) }, body: body?JSON.stringify(body):undefined }).then(r=>r.json());
+const token = readFileSync(join(dir, "metavault.token"), "utf8").trim();
+const dcall = (method, path, body, auth=true) => fetch(base+path, { method, headers: { "content-type":"application/json", ...(auth?{"x-metavault-token":token}:{}) }, body: body?JSON.stringify(body):undefined }).then(r=>r.json());
 await dcall("PATCH","/settings/warden",{provider:"none"});
 // one executed flow for audit history
 const r1 = await dcall("POST","/request",{agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"List recent charges for the weekly report"});
@@ -40,7 +40,7 @@ const server = createServer(async (req, res) => {
   if (u.pathname.startsWith("/daemon/")) {
     const path = u.pathname.slice(7);
     const chunks = []; for await (const c of req) chunks.push(c);
-    const r = await fetch(base+path, { method: req.method, headers: { "content-type":"application/json", "x-openvault-token": token }, body: chunks.length?Buffer.concat(chunks):undefined });
+    const r = await fetch(base+path, { method: req.method, headers: { "content-type":"application/json", "x-metavault-token": token }, body: chunks.length?Buffer.concat(chunks):undefined });
     const text = await r.text();
     res.writeHead(r.status, { "content-type": r.headers.get("content-type") ?? "application/json" });
     res.end(text); return;

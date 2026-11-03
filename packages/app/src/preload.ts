@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   CapabilityRequestLike,
+  CardInputLike,
   DeeplinkAddParams,
   AgentSecuritySettingsPatchLike,
   LocalAuthPatchLike,
@@ -44,6 +45,21 @@ const api: VaultApi = {
       ...(website !== undefined ? { website } : {}),
       ...(enrollmentId !== undefined && enrollmentId !== "" ? { enrollmentId } : {}),
     }),
+  // Card fields go straight to the daemon, which validates and encrypts
+  // them; the response carries only brand + last 4.
+  addCard: (alias: string, card: CardInputLike, website?: string) =>
+    invoke("POST", "/cards", {
+      alias,
+      number: card.number,
+      name: card.name,
+      expMonth: card.expMonth,
+      expYear: card.expYear,
+      cvv: card.cvv,
+      ...(website !== undefined && website !== "" ? { website } : {}),
+    }),
+  keyStatus: () => invoke("GET", "/key/status"),
+  unlockVault: (passphrase: string) => invoke("POST", "/unlock", { passphrase }),
+  lockVault: () => invoke("POST", "/lock"),
   onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => {
     // Fixed channel, validated shape only: no new privilege, just a
     // prefill notification from main. Extra keys are dropped here too.

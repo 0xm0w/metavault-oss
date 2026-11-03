@@ -32,13 +32,18 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
   });
 
   it("fails with MarshalUnavailable when no wardens are available", async () => {
+    // No Meta API key, and the default on-device engine (local Ollama) is down.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() => Promise.reject(new Error("ECONNREFUSED"))),
+    );
     const result = await Effect.runPromiseExit(
       assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null }),
     );
     expect(result._tag).toBe("Failure");
   });
 
-  it("succeeds with Meta Llama 1B offline fallback as sole warden", async () => {
+  it("succeeds with on-device Muse Glimmer fallback as sole warden", async () => {
     const metaDecision: MarshalDecision = {
       risk: "low",
       recommendedScope: "charges.read",
@@ -54,7 +59,7 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
 
     expect(decision.risk).toBe("low");
     expect(decision.recommendedScope).toBe("charges.read");
-    expect(decision.explanation).toContain("Local Co-Auditor (Llama 3.2 1B On-Device Fallback)");
+    expect(decision.explanation).toContain("Local Co-Auditor (Muse Glimmer 30B On-Device Fallback)");
   });
 
   it("uses Meta API when valid key is provided in BFT options", async () => {
@@ -123,19 +128,19 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
     const decision = await Effect.runPromise(
       assessBftQuorum(testRequest, historySummary, policyDigest, {
         metaApiKey: "test-meta-key-12345",
-        metaModel: "llama-3.1-405b-instruct",
+        metaModel: "muse-spark-1.2",
       }),
     );
 
-    expect(decision.explanation).toContain("Chief Warden (Meta API: llama-3.1-405b-instruct)");
+    expect(decision.explanation).toContain("Chief Warden (Meta API: muse-spark-1.2)");
   });
 
-  it("achieves unanimous 2/2 BFT quorum across Meta API and Local Llama", async () => {
+  it("achieves unanimous 2/2 BFT quorum across Meta API and local Muse Glimmer", async () => {
     const localDecision: MarshalDecision = {
       risk: "low",
       recommendedScope: "charges.read",
       requireApproval: false,
-      explanation: "Local Llama verified charges.read",
+      explanation: "Local Muse Glimmer verified charges.read",
     };
 
     const metaResponseJson = JSON.stringify({
@@ -182,7 +187,7 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
       risk: "high",
       recommendedScope: "charges.read",
       requireApproval: true,
-      explanation: "Local Llama detected anomaly",
+      explanation: "Local Muse Glimmer detected anomaly",
     };
 
     const metaResponseJson = JSON.stringify({
@@ -226,16 +231,16 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
   it("integrates seamlessly into assessFromSettings when provider='bft'", async () => {
     const settings: WardenSettings = {
       provider: "bft",
-      model: "llama-3.3-70b-instruct",
+      model: "muse-spark-1.3",
       effort: "standard",
-      metaApiBaseUrl: "https://api.llama.com/v1",
+      metaApiBaseUrl: "https://api.meta.ai/v1",
     };
 
     const mockDecision: MarshalDecision = {
       risk: "low",
       recommendedScope: "charges.read",
       requireApproval: false,
-      explanation: "Local Llama verified",
+      explanation: "Local Muse Glimmer verified",
     };
 
     setBuiltinInferenceHandler(() => Effect.succeed(mockDecision));
