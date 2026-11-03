@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { Writable, type Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import { DEFAULT_MARSHAL_MODEL } from "../../brain/src/ollama.js";
+import { resolveDefaultWardenModel } from "../../core/src/settings.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
 import { metavaultEnv } from "../../core/src/env.js";
 import { parseDotEnvWithInference } from "../../core/src/dotenv.js";
@@ -985,7 +985,7 @@ function programFor(
       if (argv[1] !== "pull") {
         return Effect.fail(new UsageError({ message: "model requires the pull subcommand" }));
       }
-      return modelPullProgram(io, argv[2] ?? DEFAULT_MARSHAL_MODEL);
+      return modelPullProgram(io, argv[2] ?? resolveDefaultWardenModel(process.env));
     }
     default:
       return Effect.fail(new UsageError({ message: "unknown command" }));

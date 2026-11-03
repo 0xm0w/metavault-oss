@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
-import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
+import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, defaultWardenSettings, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
 import type { AuditEvent, DecisionSource, Risk } from "./types.js";
 import { CARD_KIND, SECRET_KIND, type CredentialKind } from "./card.js";
 
@@ -412,7 +412,7 @@ function makeStore(dbPath: string): VaultStoreService {
         try: () => {
           const row = selectSettings.get() as WardenSettingsRow | undefined;
           if (row === undefined) {
-            return { ...DEFAULT_WARDEN_SETTINGS };
+            return defaultWardenSettings();
           }
           return {
             provider: row.provider as WardenSettings["provider"],

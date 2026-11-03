@@ -50,7 +50,7 @@ afterEach(() => {
 describe("On-device (builtin) warden: Muse Glimmer via Ollama", () => {
   it("defines the Muse Glimmer 30B Q4_K_M default and model list", () => {
     expect(DEFAULT_BUILTIN_MODEL).toBe("muse-glimmer:30b");
-    expect(BUILTIN_MODELS.map((m) => m.id)).toEqual(["muse-glimmer:30b"]);
+    expect(BUILTIN_MODELS.map((m) => m.id)).toEqual(["muse-glimmer:30b", "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"]);
   });
 
   it("fails closed with MarshalUnavailable when local Ollama is unreachable", async () => {

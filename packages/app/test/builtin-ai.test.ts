@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BUILTIN_MODEL_DIR_NAME,
   BUILTIN_MODEL_ID,
+  BUILTIN_MODEL_REQUIRED_BYTES,
+  IQ3_XXS_MODEL_ID,
+  IQ3_XXS_REQUIRED_BYTES,
   OLLAMA_MARKER_FILE,
+  configuredBuiltinModel,
   resolveBuiltinModel,
 } from "../src/model-resolver.js";
 import {
@@ -146,5 +150,28 @@ describe("Built-in AI Model Resolver & Downloader Specifications", () => {
     const downloader = new ModelDownloader(userDataDir, undefined, fetchImpl);
     expect(await downloader.download()).toBe(false);
     expect(downloader.getStatus().error).toContain("ECONNREFUSED");
+  });
+});
+
+describe("configuredBuiltinModel (METAVAULT_WARDEN_MODEL)", () => {
+  it("defaults to the shipped Q4_K_M model", () => {
+    expect(configuredBuiltinModel({})).toEqual({
+      modelId: BUILTIN_MODEL_ID,
+      dirName: BUILTIN_MODEL_DIR_NAME,
+      requiredBytes: BUILTIN_MODEL_REQUIRED_BYTES,
+    });
+  });
+
+  it("selects the UD-IQ3_XXS quant with its Hugging Face file size and its own marker dir", () => {
+    const choice = configuredBuiltinModel({ METAVAULT_WARDEN_MODEL: IQ3_XXS_MODEL_ID });
+    expect(choice.modelId).toBe("hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS");
+    expect(choice.requiredBytes).toBe(IQ3_XXS_REQUIRED_BYTES);
+    expect(choice.dirName).toBe("hf.co-unsloth-muse-glimmer-30b-gguf-ud-iq3_xxs");
+    expect(choice.dirName).not.toBe(BUILTIN_MODEL_DIR_NAME);
+  });
+
+  it("rejects malformed values", () => {
+    expect(configuredBuiltinModel({ METAVAULT_WARDEN_MODEL: "../x" }).modelId).toBe(BUILTIN_MODEL_ID);
+    expect(configuredBuiltinModel({ METAVAULT_WARDEN_MODEL: "a b" }).modelId).toBe(BUILTIN_MODEL_ID);
   });
 });

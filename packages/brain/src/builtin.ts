@@ -2,6 +2,7 @@ import { FetchHttpClient } from "@effect/platform";
 import { Effect } from "effect";
 import type { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 import type { MarshalDecision } from "../../core/src/types.js";
+import { MUSE_GLIMMER_IQ3_XXS_TAG } from "../../core/src/settings.js";
 import { DEFAULT_MARSHAL_MODEL, requestOllamaDecision } from "./ollama.js";
 
 // The built-in (on-device) warden runs Meta Muse Glimmer 30B, official
@@ -27,6 +28,12 @@ export const BUILTIN_MODELS: readonly BuiltinModelInfo[] = [
     label: "Muse Glimmer 30B (Q4_K_M GGUF)",
     diskSize: "16.8 GB",
     vramRequired: "24 GB",
+  },
+  {
+    id: MUSE_GLIMMER_IQ3_XXS_TAG,
+    label: "Muse Glimmer 30B (unsloth UD-IQ3_XXS GGUF, optional)",
+    diskSize: "13.1 GB",
+    vramRequired: "not yet measured",
   },
 ];
 

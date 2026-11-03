@@ -1,9 +1,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  BUILTIN_MODEL_DIR_NAME,
-  BUILTIN_MODEL_ID,
   BUILTIN_MODEL_REQUIRED_BYTES,
+  configuredBuiltinModel,
   OLLAMA_MARKER_FILE,
 } from "./model-resolver.js";
 
@@ -141,7 +140,8 @@ export class ModelDownloader {
       return false;
     }
 
-    const modelDir = join(this.targetBaseDir, "models", BUILTIN_MODEL_DIR_NAME);
+    const choice = configuredBuiltinModel();
+    const modelDir = join(this.targetBaseDir, "models", choice.dirName);
     mkdirSync(modelDir, { recursive: true });
 
     this.abortController = new AbortController();
@@ -151,7 +151,7 @@ export class ModelDownloader {
       state: "downloading",
       percent: 0,
       downloadedBytes: 0,
-      totalBytes: BUILTIN_MODEL_REQUIRED_BYTES,
+      totalBytes: choice.requiredBytes,
       speedBytesPerSec: 0,
     });
 
@@ -164,7 +164,7 @@ export class ModelDownloader {
           if (signal.aborted) throw new Error("Download aborted");
           downloaded += chunkLength;
           const elapsedSec = Math.max(0.001, (Date.now() - startTime) / 1000);
-          const percent = Math.min(100, Math.round((downloaded / BUILTIN_MODEL_REQUIRED_BYTES) * 100));
+          const percent = Math.min(100, Math.round((downloaded / Math.max(1, choice.requiredBytes)) * 100));
           this.update({
             percent,
             downloadedBytes: downloaded,
@@ -175,7 +175,7 @@ export class ModelDownloader {
         await pullOllamaModel(
           this.fetchImpl,
           ollamaBaseUrl(),
-          BUILTIN_MODEL_ID,
+          choice.modelId,
           (completed, total) => {
             if (signal.aborted) throw new Error("Download aborted");
             downloaded = completed;
@@ -193,7 +193,7 @@ export class ModelDownloader {
 
       writeFileSync(
         join(modelDir, OLLAMA_MARKER_FILE),
-        JSON.stringify({ model: BUILTIN_MODEL_ID, runtime: "ollama", pulledAt: new Date().toISOString() }),
+        JSON.stringify({ model: choice.modelId, runtime: "ollama", pulledAt: new Date().toISOString() }),
       );
 
       this.update({

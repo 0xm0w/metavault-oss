@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from "effect";
-import { Brain, DEFAULT_MARSHAL_MODEL } from "../../brain/src/brain.js";
+import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
 import {
@@ -46,6 +46,7 @@ import {
   WARDEN_KEY_SCOPE,
   generatePinSalt,
   hashPin,
+  resolveDefaultWardenModel,
   verifyPin,
   type AgentSecuritySettings,
   type LocalAuthStatus,
@@ -280,7 +281,7 @@ export function makeVaultServiceLive(
   const grantTtlMs = options.grantTtlMs ?? DEFAULT_GRANT_TTL_MS;
   const rateLimitPerHour = options.rateLimitPerHour ?? DEFAULT_RATE_LIMIT_PER_HOUR;
   const initialStandingApprovals = options.standingApprovals ?? [];
-  const modelId = options.modelId ?? DEFAULT_MARSHAL_MODEL;
+  const modelId = options.modelId ?? resolveDefaultWardenModel();
   const enrollmentTtlMs = options.enrollmentTtlMs ?? DEFAULT_ENROLLMENT_TTL_MS;
 
   return Layer.effect(

@@ -252,9 +252,9 @@ describe("effort levels", () => {
 });
 
 describe("OLLAMA_MODELS catalogue", () => {
-  it("lists only the Meta Muse Glimmer 30B Q4_K_M local model", () => {
-    expect(OLLAMA_MODELS.map((m) => m.id)).toEqual(["muse-glimmer:30b"]);
-    expect(OLLAMA_MODELS.map((m) => m.tier)).toEqual(["High"]);
+  it("lists Muse Glimmer 30B Q4_K_M first (default) plus the optional UD-IQ3_XXS quant", () => {
+    expect(OLLAMA_MODELS.map((m) => m.id)).toEqual(["muse-glimmer:30b", "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"]);
+    expect(OLLAMA_MODELS.map((m) => m.tier)).toEqual(["High", "Medium"]);
   });
 });
 

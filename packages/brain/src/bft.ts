@@ -2,7 +2,8 @@ import { FetchHttpClient } from "@effect/platform";
 import { Effect } from "effect";
 import { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
-import { DEFAULT_BUILTIN_MODEL, requestBuiltinDecision } from "./builtin.js";
+import { resolveDefaultWardenModel } from "../../core/src/settings.js";
+import { requestBuiltinDecision } from "./builtin.js";
 import { DEFAULT_META_API_BASE_URL, DEFAULT_META_API_MODEL, requestMetaApiDecision } from "./meta-api.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 import { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
@@ -79,7 +80,7 @@ export function assessBftQuorum(
 
     // 2. Local Fallback / Edge Co-Auditor: Meta Muse Glimmer 30B (Q4_K_M)
     const builtinResult = yield* Effect.either(
-      requestBuiltinDecision(DEFAULT_BUILTIN_MODEL, prompt, options.localTimeoutMs ?? timeoutMs),
+      requestBuiltinDecision(resolveDefaultWardenModel(), prompt, options.localTimeoutMs ?? timeoutMs),
     );
     if (builtinResult._tag === "Right") {
       const builtinVerdict = enforceScopeSafety(builtinResult.right, req.requestedScope, req.reason);

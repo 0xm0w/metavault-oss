@@ -1,3 +1,4 @@
+import { MUSE_GLIMMER_IQ3_XXS_TAG } from "../../core/src/settings.js";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
 import { Effect, Schema } from "effect";
 import { metavaultEnv } from "../../core/src/env.js";
@@ -44,6 +45,9 @@ export interface OllamaModelInfo {
 
 export const OLLAMA_MODELS: readonly OllamaModelInfo[] = [
   { id: "muse-glimmer:30b", tier: "High", label: "Muse Glimmer 30B Q4_K_M — local (~18 GB, 24 GB VRAM)" },
+  // Optional, not the default: unsloth UD-IQ3_XXS, 13.13 GB file
+  // (https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF). Not yet benchmarked.
+  { id: MUSE_GLIMMER_IQ3_XXS_TAG, tier: "Medium", label: "Muse Glimmer 30B UD-IQ3_XXS (unsloth) — local (13.1 GB file, not yet benchmarked)" },
 ];
 
 const OllamaChatResponseSchema = Schema.Struct({
