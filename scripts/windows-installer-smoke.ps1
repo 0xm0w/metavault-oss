@@ -207,7 +207,7 @@ if ($PreviousInstallerDir -ne "") {
   if ($null -eq $previous) { throw 'Previous release installer missing' }
   $sums = Get-Content (Join-Path $PreviousInstallerDir 'SHA256SUMS') -Raw
   $hash = (Get-FileHash $previous.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ($sums -notmatch [Regex]::Escape($hash)) { throw 'Previous published installer SHA256 mismatch' }
+  if ($sums -notmatch ('(?m)^' + [Regex]::Escape($hash) + '\s+\*?' + [Regex]::Escape($previous.Name) + '\s*$')) { throw 'Previous published installer SHA256/name mismatch' }
   Log ("Previous published artifact: " + $previous.Name + " SHA256=" + $hash)
   $installer = $previous
   Install-App 'published previous release'
