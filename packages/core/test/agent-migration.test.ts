@@ -53,6 +53,8 @@ it("rolls back an interrupted table rebuild and can retry from intact legacy cre
   db.pragma("journal_mode=WAL");
   db.exec("CREATE TABLE agents (id TEXT PRIMARY KEY,name TEXT NOT NULL,token TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0)");
   db.prepare("INSERT INTO agents VALUES (?,?,?,?,0)").run("legacy","Legacy","legacy-failure-token","2026-01-01"); db.close();
+  // Preserve the native method and invoke it with the explicit database receiver.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   const original = Database.prototype.exec;
   const fail = vi.spyOn(Database.prototype,"exec").mockImplementation(function(this: Database.Database, sql:string) {
     if (sql === "DROP TABLE agents_legacy") throw new Error("simulated interrupted rebuild");
