@@ -1,6 +1,7 @@
 import type {
   AuditEventLike,
   AuditStage,
+  CardMetaLike,
   CredentialMeta,
   CredentialPatch,
   DecisionSource,
@@ -457,12 +458,57 @@ export function projectCredentialsResponse(raw: unknown): CredentialMeta[] {
       const alias = item["alias"];
       const website = item["website"];
       if (typeof alias === "string" && alias.length > 0) {
-        out.push({ alias, website: typeof website === "string" ? website : "" });
+        const base = { alias, website: typeof website === "string" ? website : "" };
+        const card = item["kind"] === "card" ? projectCardMeta(item["card"]) : null;
+        out.push(card === null ? base : { ...base, kind: "card", card });
       }
     }
     return out;
   }
   return projectAliasesResponse(raw).map((alias) => ({ alias, website: "" }));
+}
+
+// Only brand + last 4 are accepted from the daemon for a card; anything
+// longer than 4 digits is dropped rather than shown.
+export function projectCardMeta(raw: unknown): CardMetaLike | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+  const brand = raw["brand"];
+  const last4 = raw["last4"];
+  if (typeof brand !== "string" || typeof last4 !== "string" || !/^\d{4}$/.test(last4)) {
+    return null;
+  }
+  return { brand, last4, masked: `\u2022\u2022\u2022\u2022 ${last4}` };
+}
+
+export function cardLabel(card: CardMetaLike): string {
+  const brand = card.brand === "unknown" ? "Card" : card.brand.charAt(0).toUpperCase() + card.brand.slice(1);
+  return `${brand} ${card.masked}`;
+}
+
+// Parses an "MM/YY" or "MM/YYYY" expiry typed into the add-card form.
+export function parseCardExpiry(raw: string): { expMonth: number; expYear: number } | null {
+  const m = /^\s*(\d{1,2})\s*\/\s*(\d{2}|\d{4})\s*$/.exec(raw);
+  if (m === null) {
+    return null;
+  }
+  const expMonth = Number(m[1]);
+  const year = Number(m[2]);
+  if (expMonth < 1 || expMonth > 12) {
+    return null;
+  }
+  return { expMonth, expYear: year < 100 ? 2000 + year : year };
+}
+
+export function isCardFormComplete(alias: string, number: string, name: string, expiry: string, cvv: string): boolean {
+  return (
+    alias.trim() !== "" &&
+    /^[\d\s-]{12,23}$/.test(number.trim()) &&
+    name.trim() !== "" &&
+    parseCardExpiry(expiry) !== null &&
+    /^\d{3,4}$/.test(cvv.trim())
+  );
 }
 
 export function projectAliasesResponse(raw: unknown): string[] {
@@ -489,6 +535,7 @@ export interface VaultCard {
   readonly scopes: readonly string[];
   readonly lastUsedTs: string | null;
   readonly website: string;
+  readonly card?: CardMetaLike;
 }
 
 export function deriveVaultCards(
@@ -497,6 +544,7 @@ export function deriveVaultCards(
   meta: readonly CredentialMeta[] = [],
 ): VaultCard[] {
   const websiteByAlias = new Map(meta.map((entry) => [entry.alias, entry.website]));
+  const cardByAlias = new Map(meta.flatMap((entry) => (entry.card !== undefined ? [[entry.alias, entry.card] as const] : [])));
   return aliases.map((alias) => {
     const mine = events.filter((e) => e.alias === alias);
     const scopes = [...new Set(mine.map((e) => e.scope).filter((s) => s.length > 0))].sort();
@@ -511,7 +559,9 @@ export function deriveVaultCards(
         lastUsedTs = event.ts;
       }
     }
-    return { alias, scopes, lastUsedTs, website: websiteByAlias.get(alias) ?? "" };
+    const card = cardByAlias.get(alias);
+    const base = { alias, scopes, lastUsedTs, website: websiteByAlias.get(alias) ?? "" };
+    return card === undefined ? base : { ...base, card };
   });
 }
 
@@ -1047,6 +1097,11 @@ export interface OllamaModelOption {
 
 export const OLLAMA_MODEL_OPTIONS: readonly OllamaModelOption[] = [
   { id: "muse-glimmer:30b", tier: "High", label: "Muse Glimmer 30B Q4_K_M \u2014 local (~18 GB, 24 GB VRAM)" },
+  {
+    id: "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS",
+    tier: "Medium",
+    label: "Muse Glimmer 30B UD-IQ3_XXS (unsloth) \u2014 local (13.1 GB file, not yet benchmarked)",
+  },
 ];
 
 export interface MetaApiModelOption {

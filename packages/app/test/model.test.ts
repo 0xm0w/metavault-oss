@@ -22,6 +22,10 @@ import {
   projectApproval,
   projectAuditEvent,
   projectCredentialsResponse,
+  projectCardMeta,
+  parseCardExpiry,
+  isCardFormComplete,
+  cardLabel,
   projectPendingResponse,
   projectPoliciesResponse,
   runDeeplinkAddFlow,
@@ -464,6 +468,34 @@ describe("website, favicon and edit payload", () => {
   });
 });
 
+describe("payment card credential type", () => {
+  it("projects card kind with brand + last 4 only and carries it into vault rows", () => {
+    const raw = {
+      aliases: ["corp-visa"],
+      credentials: [{ alias: "corp-visa", website: "", kind: "card", card: { brand: "visa", last4: "4242", masked: "x" } }],
+    };
+    const meta = projectCredentialsResponse(raw);
+    expect(meta).toEqual([{ alias: "corp-visa", website: "", kind: "card", card: { brand: "visa", last4: "4242", masked: "\u2022\u2022\u2022\u2022 4242" } }]);
+    const rows = deriveVaultCards(["corp-visa"], [], meta);
+    expect(rows[0]?.card?.last4).toBe("4242");
+    expect(cardLabel(rows[0]?.card ?? { brand: "", last4: "", masked: "" })).toBe("Visa \u2022\u2022\u2022\u2022 4242");
+  });
+  it("drops card metadata that is not exactly 4 digits", () => {
+    expect(projectCardMeta({ brand: "visa", last4: "4242424242424242" })).toBeNull();
+    expect(projectCardMeta(null)).toBeNull();
+    const meta = projectCredentialsResponse({ aliases: [], credentials: [{ alias: "c", website: "", kind: "card", card: { brand: "visa", last4: "12345" } }] });
+    expect(meta).toEqual([{ alias: "c", website: "" }]);
+  });
+  it("parses MM/YY expiry and gates the add-card form", () => {
+    expect(parseCardExpiry("12/29")).toEqual({ expMonth: 12, expYear: 2029 });
+    expect(parseCardExpiry("1/2031")).toEqual({ expMonth: 1, expYear: 2031 });
+    expect(parseCardExpiry("13/29")).toBeNull();
+    expect(isCardFormComplete("visa", "4242 4242 4242 4242", "Ada", "12/29", "123")).toBe(true);
+    expect(isCardFormComplete("visa", "4242", "Ada", "12/29", "123")).toBe(false);
+    expect(isCardFormComplete("visa", "4242 4242 4242 4242", "Ada", "12/29", "")).toBe(false);
+  });
+});
+
 describe("deeplink add flow sequencing", () => {
   const params: DeeplinkAddParams = {
     alias: "github",
@@ -821,6 +853,7 @@ describe("warden settings form state (Task 6)", () => {
     });
     expect(OLLAMA_MODEL_OPTIONS.map((m) => [m.id, m.tier])).toEqual([
       ["muse-glimmer:30b", "High"],
+      ["hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS", "Medium"],
     ]);
     expect(EFFORT_OPTIONS.map((e) => e.id)).toEqual(["fast", "standard", "deep"]);
     for (const e of EFFORT_OPTIONS) expect(e.description.length).toBeGreaterThan(10);
@@ -1198,7 +1231,7 @@ describe("projectLocalAuthStatus (#19)", () => {
       // Only approved Meta model ids are offered (sources: dev.meta.ai/docs/models,
       // ollama.com/library/muse-glimmer). Anything else must fail this allowlist.
       const APPROVED_META_API_IDS = ["muse-spark-1.3", "muse-spark-1.2", "muse-wonder-1.0"];
-      const APPROVED_LOCAL_IDS = ["muse-glimmer:30b"];
+      const APPROVED_LOCAL_IDS = ["muse-glimmer:30b", "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"];
       expect(META_API_MODEL_OPTIONS.map((o) => o.id)).toEqual(APPROVED_META_API_IDS);
       expect(OLLAMA_MODEL_OPTIONS.every((o) => APPROVED_LOCAL_IDS.includes(o.id))).toBe(true);
       expect(APPROVED_META_API_IDS).toContain(DEFAULT_META_API_MODEL_ID);

@@ -11,6 +11,9 @@ import {
   formatLastUsed,
   groupAuditByRequest,
   isCredentialFormComplete,
+  isCardFormComplete,
+  parseCardExpiry,
+  cardLabel,
   marshalStatusLine,
   normalizeWebsite,
   projectAliasesResponse,
@@ -538,10 +541,54 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
     return input;
   };
 
+  // Credential type. A payment card is validated (Luhn, expiry, CVV) and
+  // encrypted by the daemon; this window only ever gets brand + last 4
+  // back, and every use of the card needs a human approval.
+  const kindWrap = el("label", "vault-field");
+  kindWrap.append(el("span", "vault-field-label", "Type"));
+  const kindSelect = document.createElement("select");
+  kindSelect.className = "vault-input";
+  for (const [value, text] of [
+    ["secret", "API key / token"],
+    ["card", "Payment card"],
+  ] as const) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = text;
+    kindSelect.append(opt);
+  }
+  kindWrap.append(kindSelect);
+  dialog.append(kindWrap);
+  if (prefill !== undefined) {
+    kindWrap.hidden = true;
+  }
+
   const nameInput = makeField("Name", "text", "Stripe", "off");
   const scopeInput = makeField("Scope", "text", "charges.read", "off");
   const secretInput = makeField("Value", "password", "Credential value", "new-password");
+  const cardNumberInput = makeField("Card number", "password", "4242 4242 4242 4242", "new-password");
+  const cardNameInput = makeField("Name on card", "text", "Ada Lovelace", "off");
+  const cardExpiryInput = makeField("Expiry (MM/YY)", "text", "12/29", "off");
+  const cardCvvInput = makeField("CVV", "password", "123", "new-password");
+  cardNumberInput.inputMode = "numeric";
+  cardCvvInput.inputMode = "numeric";
   const websiteInput = makeField("Website", "text", "cloudflare.com", "off");
+  const secretFields = [scopeInput, secretInput];
+  const cardFields = [cardNumberInput, cardNameInput, cardExpiryInput, cardCvvInput];
+  const isCard = (): boolean => kindSelect.value === "card";
+  const syncKind = (): void => {
+    for (const input of secretFields) {
+      (input.parentElement as HTMLElement).hidden = isCard();
+    }
+    for (const input of cardFields) {
+      (input.parentElement as HTMLElement).hidden = !isCard();
+      if (!isCard()) {
+        input.value = "";
+      }
+    }
+    title.textContent = isCard() ? "Add payment card" : "Add credential";
+  };
+  syncKind();
   if (prefill !== undefined) {
     nameInput.value = prefill.alias;
     scopeInput.value = prefill.scope;
@@ -558,12 +605,20 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
   actions.append(cancelBtn, saveBtn);
   dialog.append(actions);
 
+  const formComplete = (): boolean =>
+    isCard()
+      ? isCardFormComplete(nameInput.value, cardNumberInput.value, cardNameInput.value, cardExpiryInput.value, cardCvvInput.value)
+      : isCredentialFormComplete(nameInput.value, scopeInput.value, secretInput.value);
   const syncSave = (): void => {
-    saveBtn.disabled = !isCredentialFormComplete(nameInput.value, scopeInput.value, secretInput.value);
+    saveBtn.disabled = !formComplete();
   };
-  for (const input of [nameInput, scopeInput, secretInput]) {
+  for (const input of [nameInput, scopeInput, secretInput, ...cardFields]) {
     input.addEventListener("input", syncSave);
   }
+  kindSelect.addEventListener("change", () => {
+    syncKind();
+    syncSave();
+  });
 
   const close = (): void => {
     closeCredentialModal();
@@ -588,13 +643,31 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
       cancelBtn.disabled = true;
       errorBox.hidden = true;
       try {
-        await window.metavault.addCredential(
-          nameInput.value.trim(),
-          scopeInput.value.trim(),
-          secretInput.value,
-          websiteInput.value.trim(),
-          prefill?.enrollmentId,
-        );
+        const expiry = parseCardExpiry(cardExpiryInput.value);
+        if (isCard() && expiry !== null) {
+          await window.metavault.addCard(
+            nameInput.value.trim(),
+            {
+              number: cardNumberInput.value,
+              name: cardNameInput.value.trim(),
+              expMonth: expiry.expMonth,
+              expYear: expiry.expYear,
+              cvv: cardCvvInput.value.trim(),
+            },
+            websiteInput.value.trim(),
+          );
+          for (const input of cardFields) {
+            input.value = "";
+          }
+        } else {
+          await window.metavault.addCredential(
+            nameInput.value.trim(),
+            scopeInput.value.trim(),
+            secretInput.value,
+            websiteInput.value.trim(),
+            prefill?.enrollmentId,
+          );
+        }
         closeCredentialModal(false);
         notice = null;
         await refresh();
@@ -606,9 +679,13 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
         const message = err instanceof Error ? err.message : "Could not add credential";
         errorBox.textContent = message.includes("alias-exists")
           ? "A credential with this name already exists. Choose a different name."
-          : message;
+          : message.includes("CardInvalid")
+            ? "That card did not validate (check the number, expiry and CVV)."
+            : message.includes("VaultLocked")
+              ? "The vault is locked. Run `metavault unlock` and try again."
+              : message;
         errorBox.hidden = false;
-        saveBtn.disabled = !isCredentialFormComplete(nameInput.value, scopeInput.value, secretInput.value);
+        saveBtn.disabled = !formComplete();
         cancelBtn.disabled = false;
       }
     })();
@@ -1336,6 +1413,10 @@ function renderVault(view: HTMLElement): void {
     aliasMain.append(faviconNode(card.website, card.alias));
     const aliasText = el("span", "", card.alias);
     aliasMain.append(aliasText);
+    if (card.card !== undefined) {
+      const badge = el("span", "vault-muted", ` \u00B7 ${cardLabel(card.card)} \u00B7 approval every use`);
+      aliasMain.append(badge);
+    }
     aliasCell.append(aliasMain);
     aliasCell.title = card.alias;
     const scopeCell = cell(scopes);
