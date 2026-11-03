@@ -22,7 +22,7 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
     expect(getCurrentUpdaterStatus()).toEqual({ status: "idle" });
   });
 
-  it("provides Windows NSIS script with PATH configuration and data retention choice", () => {
+  it("provides Windows NSIS script with PATH configuration and destructive uninstall warning", () => {
     const nshPath = join(appRoot, "scripts", "installer.nsh");
     expect(existsSync(nshPath)).toBe(true);
 
@@ -40,8 +40,8 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
 
     // Must provide clean uninstaller data wipe prompt
     expect(nshContent).toContain("customUnInstall");
-    expect(nshContent).toContain("MessageBox MB_YESNO");
-    expect(nshContent).toContain("metavault.db");
+    expect(nshContent).toContain("MessageBox MB_OKCANCEL");
+    expect(nshContent).toContain("cleanup-profile.ps1");
   });
 
   it("provides CLI launcher wrappers in bin/ for immediate terminal access", () => {
@@ -69,9 +69,9 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
     expect(daemonCmdContent).toContain("METAVAULT_FIRST_RUN_SETUP=1");
   });
 
-  it("keeps vault data on a silent uninstall and does not duplicate shortcuts", () => {
+  it("wipes deliberate silent uninstall, preserves updates and does not duplicate shortcuts", () => {
     const nshContent = readFileSync(join(appRoot, "scripts", "installer.nsh"), "utf8");
-    expect(nshContent).toContain("/SD IDNO");
+    expect(nshContent).toContain("IfSilent wipe_notice_done");
     expect(nshContent).not.toContain("CreateShortCut");
     expect(nshContent).toContain("-notcontains $$d");
   });
