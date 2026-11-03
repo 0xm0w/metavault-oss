@@ -1441,7 +1441,7 @@ body.is-simple-mode .verbose-note {
 .status-badge.is-danger { background: #fde8e8; color: #dc2626; }
 .status-badge.is-warn { background: #fff6e0; color: #d97706; }
 
-/* Built-in AI (WebGPU ONNX) Component */
+/* Built-in AI (on-device Muse Glimmer via Ollama) Component */
 .builtin-ai-card {
   border: 1px solid var(--border);
   background: #ffffff;

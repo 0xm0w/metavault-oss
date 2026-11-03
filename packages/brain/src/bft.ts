@@ -100,7 +100,7 @@ export function assessBftQuorum(
       );
     }
 
-    // If only 1 warden participated (e.g. offline fallback or no local WebGPU), return its verdict
+    // If only 1 warden participated (e.g. cloud unreachable or local Ollama offline), return its verdict
     if (verdicts.length === 1) {
       const single = verdicts[0];
       if (single === undefined) {
