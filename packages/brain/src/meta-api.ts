@@ -1,10 +1,12 @@
-// Meta Llama API warden provider.
-// Endpoint verified 2026-10-31 against official Meta Llama API docs:
-// https://llama.developer.meta.com/docs/ (quickstart: POST
-// https://api.llama.com/v1/chat/completions). Model ids are user-editable
-// in Settings (WardenSettings.model); the base URL is likewise
-// user-editable (WardenSettings.metaApiBaseUrl, default
-// https://api.llama.com/v1) so an endpoint change is config, not code.
+// Meta Model API warden provider (cloud).
+// Verified 2026-11-03 against the official Meta Model API docs,
+// https://dev.meta.ai/docs/models : Muse Spark (`muse-spark-1.3`, latest,
+// "recommended for new work") and Muse Wonder (`muse-wonder-1.0`) are hosted
+// on Meta Model API and served over Chat Completions at
+// https://api.meta.ai/v1 (POST /v1/chat/completions answers 401 without a
+// key). Model ids are user-editable in Settings (WardenSettings.model); the
+// base URL is likewise user-editable (WardenSettings.metaApiBaseUrl) so an
+// endpoint change is config, not code.
 // The API key is supplied via callback, decrypted in-daemon only, and
 // never reaches the prompt, logs, or audit.
 import { HttpClient, HttpClientRequest } from "@effect/platform";
@@ -13,8 +15,9 @@ import { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.
 import type { MarshalDecision } from "../../core/src/types.js";
 import { parseMarshalDecision } from "./schema.js";
 
-export const META_API_DOCS_URL = "https://llama.developer.meta.com/docs/";
-export const DEFAULT_META_API_BASE_URL = "https://api.llama.com/v1";
+export const META_API_DOCS_URL = "https://dev.meta.ai/docs/models";
+export const DEFAULT_META_API_BASE_URL = "https://api.meta.ai/v1";
+export const DEFAULT_META_API_MODEL = "muse-spark-1.3";
 
 const MetaChatResponseSchema = Schema.Struct({
   choices: Schema.NonEmptyArray(

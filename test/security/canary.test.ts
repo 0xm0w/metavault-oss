@@ -124,7 +124,7 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
       svc,
       "PATCH",
       "/settings/warden",
-      { provider: "ollama", model: "llama3.2:3b", effort: "standard" },
+      { provider: "ollama", model: "muse-glimmer:30b", effort: "standard" },
       withToken,
     );
     const wardenTest = await handleVaultRequest(svc, "POST", "/settings/warden/test", undefined, withToken);

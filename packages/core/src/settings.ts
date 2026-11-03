@@ -34,12 +34,13 @@ export interface WardenSettings {
 
 export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
   provider: "builtin",
-  model: "llama3.2:1b",
+  model: "muse-glimmer:30b",
   effort: "standard",
-  metaApiBaseUrl: "https://api.llama.com/v1",
+  metaApiBaseUrl: "https://api.meta.ai/v1",
 };
 
-export const DEFAULT_BUILTIN_MODEL = "llama3.2:1b";
+// Meta Muse Glimmer 30B (official Q4_K_M), served by local Ollama.
+export const DEFAULT_BUILTIN_MODEL = "muse-glimmer:30b";
 
 export const WardenSettingsSchema = Schema.Struct({
   provider: Schema.Literal("none", "ollama", "meta-api", "builtin", "bft"),

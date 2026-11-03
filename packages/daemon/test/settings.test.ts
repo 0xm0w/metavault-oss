@@ -41,9 +41,9 @@ async function makeService(brain: Layer.Layer<Brain> = BrainLowRisk): Promise<Va
 
 const DEFAULTS = {
   provider: "builtin",
-  model: "llama3.2:1b",
+  model: "muse-glimmer:30b",
   effort: "standard",
-  metaApiBaseUrl: "https://api.llama.com/v1",
+  metaApiBaseUrl: "https://api.meta.ai/v1",
 };
 
 describe("warden settings routes", () => {
@@ -78,18 +78,18 @@ describe("warden settings routes", () => {
       "/settings/warden",
       {
         provider: "meta-api",
-        model: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model: "muse-spark-1.2",
         effort: "deep",
-        metaApiBaseUrl: "https://api.llama.com/v1",
+        metaApiBaseUrl: "https://api.meta.ai/v1",
       },
       withToken,
     );
     expect(patched.status).toBe(200);
     expect(patched.body).toEqual({
       provider: "meta-api",
-      model: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      model: "muse-spark-1.2",
       effort: "deep",
-      metaApiBaseUrl: "https://api.llama.com/v1",
+      metaApiBaseUrl: "https://api.meta.ai/v1",
     });
 
     const reread = await handleVaultRequest(service, "GET", "/settings/warden", undefined, withToken);
@@ -138,9 +138,9 @@ describe("warden settings routes", () => {
     const changed = events.filter((e) => e.stage === "settings-changed");
     expect(changed.length).toBeGreaterThanOrEqual(1);
     expect(changed[0]?.detail).toContain("meta-api");
-    expect(changed[0]?.detail).toContain("Llama-4-Maverick-17B-128E-Instruct-FP8");
+    expect(changed[0]?.detail).toContain("muse-spark-1.2");
     expect(changed[0]?.detail).not.toContain("deep");
-    expect(changed[0]?.detail).not.toContain("api.llama.com");
+    expect(changed[0]?.detail).not.toContain("api.meta.ai");
   });
 
   it("PUT key stores it encrypted: status is exactly {configured,last4}, raw key appears nowhere, DELETE clears", async () => {
@@ -352,7 +352,7 @@ describe("warden settings routes", () => {
     const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
     expect(body.ok).toBe(true);
     expect(body.provider).toBe("builtin");
-    expect(body.model).toBe("llama3.2:1b");
+    expect(body.model).toBe("muse-glimmer:30b");
     expect(typeof body.latencyMs).toBe("number");
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(body.detail).toBe("ok");

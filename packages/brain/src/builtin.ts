@@ -1,8 +1,18 @@
+import { FetchHttpClient } from "@effect/platform";
 import { Effect } from "effect";
-import { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
+import type { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 import type { MarshalDecision } from "../../core/src/types.js";
+import { DEFAULT_MARSHAL_MODEL, requestOllamaDecision } from "./ollama.js";
 
-export const DEFAULT_BUILTIN_MODEL = "llama3.2:1b";
+// The built-in (on-device) warden runs Meta Muse Glimmer 30B, official
+// Q4_K_M build, through the local Ollama runtime
+// (https://ollama.com/library/muse-glimmer, weights from
+// https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF). Unless a host
+// registers its own engine with setBuiltinInferenceHandler, every built-in
+// assessment goes to Ollama. If Ollama is not running or the model is not
+// pulled, the request fails closed with MarshalUnavailable and policy asks
+// the human.
+export const DEFAULT_BUILTIN_MODEL = DEFAULT_MARSHAL_MODEL;
 
 export interface BuiltinModelInfo {
   readonly id: string;
@@ -13,16 +23,10 @@ export interface BuiltinModelInfo {
 
 export const BUILTIN_MODELS: readonly BuiltinModelInfo[] = [
   {
-    id: "llama3.2:1b",
-    label: "Llama 3.2 1B Instruct (INT4 WebGPU)",
-    diskSize: "680 MB",
-    vramRequired: "750 MB",
-  },
-  {
-    id: "llama3.2:3b",
-    label: "Llama 3.2 3B Instruct (INT4 WebGPU)",
-    diskSize: "1.85 GB",
-    vramRequired: "2.1 GB",
+    id: "muse-glimmer:30b",
+    label: "Muse Glimmer 30B (Q4_K_M GGUF)",
+    diskSize: "16.8 GB",
+    vramRequired: "24 GB",
   },
 ];
 
@@ -32,27 +36,25 @@ export type BuiltinInferenceHandler = (
   timeoutMs: number,
 ) => Effect.Effect<MarshalDecision, MarshalUnavailable | MarshalInvalidOutput>;
 
-let registeredHandler: BuiltinInferenceHandler | null = null;
+// Default engine: local Ollama serving Muse Glimmer.
+export const ollamaBuiltinHandler: BuiltinInferenceHandler = (model, prompt, timeoutMs) =>
+  requestOllamaDecision(model, prompt, timeoutMs).pipe(Effect.provide(FetchHttpClient.layer));
 
+let registeredHandler: BuiltinInferenceHandler = ollamaBuiltinHandler;
+
+// Passing null restores the default Ollama-backed engine.
 export function setBuiltinInferenceHandler(handler: BuiltinInferenceHandler | null): void {
-  registeredHandler = handler;
+  registeredHandler = handler ?? ollamaBuiltinHandler;
 }
 
-export function getBuiltinInferenceHandler(): BuiltinInferenceHandler | null {
+export function getBuiltinInferenceHandler(): BuiltinInferenceHandler {
   return registeredHandler;
 }
 
 export function requestBuiltinDecision(
   model: string,
   prompt: string,
-  timeoutMs: number = 30_000,
+  timeoutMs: number = 120_000,
 ): Effect.Effect<MarshalDecision, MarshalUnavailable | MarshalInvalidOutput> {
-  if (registeredHandler === null) {
-    return Effect.fail(
-      new MarshalUnavailable({
-        message: "MarshalUnavailable: built-in AI engine not initialized or model not downloaded",
-      }),
-    );
-  }
   return registeredHandler(model, prompt, timeoutMs);
 }

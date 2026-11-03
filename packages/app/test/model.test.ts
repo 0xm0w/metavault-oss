@@ -121,9 +121,9 @@ describe("scope risk helpers", () => {
 
 describe("marshal status line", () => {
   it("renders the pinned on-device line by default", () => {
-    expect(marshalStatusLine()).toBe("Marshal · Llama 3.2 3B · On-device");
-    expect(marshalStatusLine(undefined)).toBe("Marshal · Llama 3.2 3B · On-device");
-    expect(marshalStatusLine("llama3.2:3b")).toBe("Marshal · Llama 3.2 3B · On-device");
+    expect(marshalStatusLine()).toBe("Marshal · Muse Glimmer 30B · On-device");
+    expect(marshalStatusLine(undefined)).toBe("Marshal · Muse Glimmer 30B · On-device");
+    expect(marshalStatusLine("muse-glimmer:30b")).toBe("Marshal · Muse Glimmer 30B · On-device");
   });
 
   it("names other models without changing the shape", () => {
@@ -385,7 +385,7 @@ describe("credential form helpers", () => {
       auditEvent({
         stage: "settings-changed",
         agentId: "human",
-        detail: "warden settings changed: provider=none model=llama3.2:3b",
+        detail: "warden settings changed: provider=none model=muse-glimmer:30b",
       }),
       auditEvent({
         stage: "enrollment-created",
@@ -596,7 +596,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
       ts: "2026-10-31T10:00:01.000Z",
       scope: "charges.read",
       detail: "marshal decision",
-      modelId: "llama3.2:3b",
+      modelId: "muse-glimmer:30b",
       risk: "low",
       recommendedScope: "charges.read",
       decisionSource: "marshal",
@@ -662,7 +662,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
         ts: "2026-10-31T10:00:01.000Z",
         scope: "charges.read",
         detail: "marshal decision",
-        modelId: "llama3.2:3b",
+        modelId: "muse-glimmer:30b",
         risk: "low",
         recommendedScope: "charges.read",
         decisionSource: "marshal",
@@ -690,7 +690,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
         ts: "2026-10-31T10:00:01.000Z",
         scope: "charges.write",
         detail: "marshal decision",
-        modelId: "llama3.2:3b",
+        modelId: "muse-glimmer:30b",
         risk: "low",
         recommendedScope: "charges.read",
         decisionSource: "marshal",
@@ -708,9 +708,9 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
     expect(verdict.outcome).toBe("executed");
     expect(verdict.outcomeLabel).toBe("Executed");
     expect(verdict.risk).toBe("low");
-    expect(verdict.modelId).toBe("llama3.2:3b");
+    expect(verdict.modelId).toBe("muse-glimmer:30b");
     expect(verdict.isPolicyOnly).toBe(false);
-    expect(verdict.wardenLabel).toBe("low · llama3.2:3b");
+    expect(verdict.wardenLabel).toBe("low · muse-glimmer:30b");
     expect(verdict.recommendedScope).toBe("charges.read");
     expect(verdict.latencyMs).toBe(42);
     expect(verdict.explanation).toBe("low-risk read of charges");
@@ -742,7 +742,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
         ts: "2026-10-31T10:00:01.000Z",
         scope: "charges.write",
         detail: "marshal decision",
-        modelId: "llama3.1:8b",
+        modelId: "muse-glimmer:30b",
         risk: "high",
         recommendedScope: "charges.read",
         decisionSource: "marshal",
@@ -758,7 +758,7 @@ describe("audit request grouping and warden verdicts (Task 5)", () => {
     const verdict = wardenVerdict(group);
     expect(verdict.escalated).toBe(true);
     expect(verdict.narrowed).toBe(true);
-    expect(verdict.wardenLabel).toBe("high · llama3.1:8b");
+    expect(verdict.wardenLabel).toBe("high · muse-glimmer:30b");
     expect(verdict.outcome).toBe("pending");
     expect(verdict.recommendedScope).toBe("charges.read");
   });
@@ -814,22 +814,20 @@ describe("warden settings form state (Task 6)", () => {
   it("mirrors daemon defaults and the OLLAMA_MODELS catalogue with tier labels", () => {
     expect(DEFAULT_WARDEN_SETTINGS).toEqual({
       provider: "builtin",
-      model: "llama3.2:1b",
+      model: "muse-glimmer:30b",
       effort: "standard",
-      metaApiBaseUrl: "https://api.llama.com/v1",
+      metaApiBaseUrl: "https://api.meta.ai/v1",
     });
     expect(OLLAMA_MODEL_OPTIONS.map((m) => [m.id, m.tier])).toEqual([
-      ["llama3.2:3b", "Medium"],
-      ["llama3.1:8b", "High"],
-      ["llama3.3:70b", "Maximum-local"],
+      ["muse-glimmer:30b", "High"],
     ]);
     expect(EFFORT_OPTIONS.map((e) => e.id)).toEqual(["fast", "standard", "deep"]);
     for (const e of EFFORT_OPTIONS) expect(e.description.length).toBeGreaterThan(10);
   });
 
   it("projects warden settings whitelisted fields only and validates enums", () => {
-    expect(projectWardenSettings({ provider: "meta-api", model: "llama-4", effort: "deep", metaApiBaseUrl: "https://api.llama.com/v1", extra: 1 })).toEqual({
-      provider: "meta-api", model: "llama-4", effort: "deep", metaApiBaseUrl: "https://api.llama.com/v1",
+    expect(projectWardenSettings({ provider: "meta-api", model: "muse-spark-1.3", effort: "deep", metaApiBaseUrl: "https://api.meta.ai/v1", extra: 1 })).toEqual({
+      provider: "meta-api", model: "muse-spark-1.3", effort: "deep", metaApiBaseUrl: "https://api.meta.ai/v1",
     });
     expect(projectWardenSettings({ provider: "evil", model: "x", effort: "standard", metaApiBaseUrl: "u" })).toBeNull();
     expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "turbo", metaApiBaseUrl: "u" })).toBeNull();
@@ -848,34 +846,34 @@ describe("warden settings form state (Task 6)", () => {
   });
 
   it("builds a trimmed patch and checks form completeness", () => {
-    const s: WardenSettingsLike = { provider: "meta-api", model: "  llama-4  ", effort: "fast", metaApiBaseUrl: " https://api.llama.com/v1 " };
-    expect(buildWardenPatch(s)).toEqual({ provider: "meta-api", model: "llama-4", effort: "fast", metaApiBaseUrl: "https://api.llama.com/v1" });
+    const s: WardenSettingsLike = { provider: "meta-api", model: "  muse-spark-1.3  ", effort: "fast", metaApiBaseUrl: " https://api.meta.ai/v1 " };
+    expect(buildWardenPatch(s)).toEqual({ provider: "meta-api", model: "muse-spark-1.3", effort: "fast", metaApiBaseUrl: "https://api.meta.ai/v1" });
     expect(isWardenFormComplete(s)).toBe(true);
     expect(isWardenFormComplete({ ...s, model: "  " })).toBe(false);
     expect(isWardenFormComplete({ ...s, metaApiBaseUrl: "" })).toBe(false);
     expect(isWardenFormComplete({ provider: "none", model: "", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
-    expect(isWardenFormComplete({ provider: "ollama", model: "llama3.2:3b", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
+    expect(isWardenFormComplete({ provider: "ollama", model: "muse-glimmer:30b", effort: "standard", metaApiBaseUrl: "" })).toBe(true);
   });
 
   it("projects real warden test results strictly and maps them to honest copy", () => {
-    const raw = { ok: true, provider: "meta-api", model: "llama-4", latencyMs: 42, detail: "ok" };
+    const raw = { ok: true, provider: "meta-api", model: "muse-spark-1.3", latencyMs: 42, detail: "ok" };
     expect(projectWardenTestResult(raw)).toEqual(raw);
     expect(projectWardenTestResult({ ...raw, ok: "yes" })).toBeNull();
     expect(projectWardenTestResult({ ...raw, provider: "evil" })).toBeNull();
     expect(projectWardenTestResult({ ...raw, latencyMs: -1 })).toBeNull();
     expect(projectWardenTestResult({ ...raw, apiKey: "canary" })).toBeNull();
     expect(projectWardenTestResult(null)).toBeNull();
-    const okMsg = wardenTestMessage({ ok: true, provider: "meta-api", model: "llama-4", latencyMs: 42, detail: "ok" });
+    const okMsg = wardenTestMessage({ ok: true, provider: "meta-api", model: "muse-spark-1.3", latencyMs: 42, detail: "ok" });
     expect(okMsg.ok).toBe(true);
     expect(okMsg.message).toContain("meta-api");
-    expect(okMsg.message).toContain("llama-4");
+    expect(okMsg.message).toContain("muse-spark-1.3");
     expect(okMsg.message).toContain("42");
     expect(okMsg.message).not.toContain("canary");
-    const failMsg = wardenTestMessage({ ok: false, provider: "ollama", model: "llama3.2:3b", latencyMs: 7, detail: "warden unavailable" });
+    const failMsg = wardenTestMessage({ ok: false, provider: "ollama", model: "muse-glimmer:30b", latencyMs: 7, detail: "warden unavailable" });
     expect(failMsg.ok).toBe(false);
     expect(failMsg.message.toLowerCase()).toContain("fail");
     expect(failMsg.message).not.toContain("reachable");
-    const noneMsg = wardenTestMessage({ ok: true, provider: "none", model: "llama3.2:3b", latencyMs: 0, detail: "policy-only" });
+    const noneMsg = wardenTestMessage({ ok: true, provider: "none", model: "muse-glimmer:30b", latencyMs: 0, detail: "policy-only" });
     expect(noneMsg.ok).toBe(true);
     expect(noneMsg.message.toLowerCase()).toContain("policy-only");
   });
@@ -1193,9 +1191,11 @@ describe("projectLocalAuthStatus (#19)", () => {
   describe("Meta API Models", () => {
     it("recognizes known Meta AI models and allows custom model IDs", () => {
       expect(META_API_MODEL_OPTIONS.length).toBeGreaterThan(0);
-      expect(isKnownMetaApiModel("llama-3.3-70b-instruct")).toBe(true);
-      expect(isKnownMetaApiModel("llama-3.1-405b-instruct")).toBe(true);
-      expect(isKnownMetaApiModel("llama-3.1-8b-instruct")).toBe(true);
+      expect(isKnownMetaApiModel("muse-spark-1.3")).toBe(true);
+      expect(isKnownMetaApiModel("muse-spark-1.2")).toBe(true);
+      expect(isKnownMetaApiModel("muse-wonder-1.0")).toBe(true);
+      // Llama ids are not Meta hackathon-qualifying models and are not offered.
+      expect(META_API_MODEL_OPTIONS.some((o) => /llama/i.test(o.id))).toBe(false);
       expect(isKnownMetaApiModel("custom-fine-tuned-meta-model")).toBe(false);
     });
   });

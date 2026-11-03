@@ -41,18 +41,15 @@ export const TOKENS = {
 export const DISPLAY_FONT = "Georgia, 'Times New Roman', serif";
 export const BODY_FONT = "'Segoe UI', -apple-system, 'San Francisco', system-ui, sans-serif";
 
-export const MARSHAL_DEFAULT_LINE = "Marshal · Llama 3.2 3B · On-device";
+export const MARSHAL_DEFAULT_LINE = "Marshal · Muse Glimmer 30B · On-device";
 
 export function marshalStatusLine(modelId?: string): string {
   if (modelId === undefined || modelId === "") {
     return MARSHAL_DEFAULT_LINE;
   }
   const lower = modelId.toLowerCase();
-  if (lower.includes("llama3.2") || lower.includes("llama 3.2")) {
-    return MARSHAL_DEFAULT_LINE;
-  }
   if (lower.includes("glimmer")) {
-    return "Marshal · Muse Glimmer 30B · On-device";
+    return MARSHAL_DEFAULT_LINE;
   }
   return `Marshal · ${modelId} · On-device`;
 }
@@ -1037,9 +1034,9 @@ export async function runDeeplinkAddFlow(
 
 export const DEFAULT_WARDEN_SETTINGS: WardenSettingsLike = {
   provider: "builtin",
-  model: "llama3.2:1b",
+  model: "muse-glimmer:30b",
   effort: "standard",
-  metaApiBaseUrl: "https://api.llama.com/v1",
+  metaApiBaseUrl: "https://api.meta.ai/v1",
 };
 
 export interface OllamaModelOption {
@@ -1049,9 +1046,7 @@ export interface OllamaModelOption {
 }
 
 export const OLLAMA_MODEL_OPTIONS: readonly OllamaModelOption[] = [
-  { id: "llama3.2:3b", tier: "Medium", label: "Llama 3.2 3B \u2014 Medium (fast local)" },
-  { id: "llama3.1:8b", tier: "High", label: "Llama 3.1 8B \u2014 High" },
-  { id: "llama3.3:70b", tier: "Maximum-local", label: "Llama 3.3 70B \u2014 Maximum-local" },
+  { id: "muse-glimmer:30b", tier: "High", label: "Muse Glimmer 30B Q4_K_M \u2014 local (~18 GB, 24 GB VRAM)" },
 ];
 
 export interface MetaApiModelOption {
@@ -1059,14 +1054,13 @@ export interface MetaApiModelOption {
   readonly label: string;
 }
 
+export const DEFAULT_META_API_MODEL_ID = "muse-spark-1.3";
+
 export const META_API_MODEL_OPTIONS: readonly MetaApiModelOption[] = [
-  { id: "llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct (Recommended / Default)" },
-  { id: "llama-3.1-405b-instruct", label: "Llama 3.1 405B Instruct (Premier Frontier)" },
-  { id: "llama-3.1-70b-instruct", label: "Llama 3.1 70B Instruct" },
-  { id: "llama-3.1-8b-instruct", label: "Llama 3.1 8B Instruct (Fast & Lightweight)" },
-  { id: "llama-3.2-3b-instruct", label: "Llama 3.2 3B Instruct (Edge Cloud)" },
-  { id: "llama-3.2-1b-instruct", label: "Llama 3.2 1B Instruct (Ultra-Light)" },
-  { id: "llama-guard-3-8b", label: "Llama Guard 3 8B (Safety Guardrail)" },
+  // Source: https://dev.meta.ai/docs/models (verified 2026-11-03).
+  { id: "muse-spark-1.3", label: "Muse Spark 1.3 (Recommended / Default)" },
+  { id: "muse-spark-1.2", label: "Muse Spark 1.2" },
+  { id: "muse-wonder-1.0", label: "Muse Wonder 1.0" },
 ];
 
 export function isKnownMetaApiModel(model: string): boolean {
@@ -1080,15 +1074,15 @@ export interface EffortOption {
 }
 
 export const EFFORT_OPTIONS: readonly EffortOption[] = [
-  { id: "fast", label: "Fast", description: "Single marshal pass, 10s timeout \u2014 quickest check." },
-  { id: "standard", label: "Standard", description: "Single marshal pass, 30s timeout \u2014 balanced latency and strictness." },
-  { id: "deep", label: "Deep", description: "Two passes (assess + verify), 60s timeout \u2014 disagreement escalates to approval and keeps the narrower scope." },
+  { id: "fast", label: "Fast", description: "Single marshal pass, 10s cloud / 60s local timeout \u2014 quickest check." },
+  { id: "standard", label: "Standard", description: "Single marshal pass, 30s cloud / 120s local timeout \u2014 balanced latency and strictness." },
+  { id: "deep", label: "Deep", description: "Two passes (assess + verify), 60s cloud / 240s local timeout \u2014 disagreement escalates to approval and keeps the narrower scope." },
 ];
 
 export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
   { id: "bft", label: "Meta BFT Consensus (Cloud API + Local Fallback)" },
   { id: "meta-api", label: "Meta API (Cloud) — Lightweight / Zero-Download" },
-  { id: "builtin", label: "Built-in AI (WebGPU) — On-Device Private" },
+  { id: "builtin", label: "On-Device — Muse Glimmer 30B via Ollama (Private)" },
   { id: "ollama", label: "Local — Ollama (Self-Hosted)" },
   { id: "none", label: "None (policy only)" },
 ];
@@ -1187,8 +1181,8 @@ export function wardenTestMessage(result: WardenTestResultLike): WardenTestResul
   }
   if (result.provider === "builtin") {
     return result.ok
-      ? { ok: true, message: `Built-in AI OK \u2014 Llama 3.2 on WebGPU responded in ${String(Math.round(result.latencyMs))} ms.` }
-      : { ok: false, message: `Built-in AI model not ready \u2014 ${result.detail}. Download or bundle the model files in Settings.` };
+      ? { ok: true, message: `On-device warden OK \u2014 Muse Glimmer via Ollama responded in ${String(Math.round(result.latencyMs))} ms.` }
+      : { ok: false, message: `On-device warden not ready \u2014 ${result.detail}. Start Ollama and pull muse-glimmer:30b (Settings \u2192 Download Model).` };
   }
   if (result.ok) {
     return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };

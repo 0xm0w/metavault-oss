@@ -191,7 +191,7 @@ describe("metavault CLI (in-process daemon wire)", () => {
     expect(code).toBe(0);
     const text = cap.out();
     expect(text).toContain("marshal");
-    expect(text).toContain("llama3.2:1b");
+    expect(text).toContain("muse-glimmer:30b");
     expect(text).toContain("ok");
     expect(text).not.toContain(CANARY);
     expect(cap.err()).not.toContain(CANARY);
@@ -237,11 +237,11 @@ describe("metavault CLI (in-process daemon wire)", () => {
     const cap = capture();
     const code = await runCli(["model", "pull"], cap.deps);
     expect(code).toBe(0);
-    expect(cap.out()).toContain("llama3.2:3b");
+    expect(cap.out()).toContain("muse-glimmer:30b");
     expect(ollamaCalls.length).toBe(before + 1);
     const call = ollamaCalls[ollamaCalls.length - 1];
     expect(call?.url).toContain("/api/pull");
-    expect(JSON.stringify(call?.body)).toContain("llama3.2:3b");
+    expect(JSON.stringify(call?.body)).toContain("muse-glimmer:30b");
   });
 
   it("model pull failure prints only the tagged error name", async () => {

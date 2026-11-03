@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Brain,
   BrainFromSettings,
+  DEFAULT_META_API_BASE_URL,
+  DEFAULT_META_API_MODEL,
   EFFORT_TIMEOUT_MS,
+  effortTimeoutMs,
+  LOCAL_EFFORT_TIMEOUT_MS,
+  META_API_DOCS_URL,
   OLLAMA_MODELS,
   type WardenSettings,
 } from "../src/brain.js";
@@ -20,9 +25,9 @@ const history = { requests24h: 3, denials24h: 0 };
 const META_KEY = "meta-test-key-1234567890";
 const settings = {
   provider: "meta-api" as const,
-  model: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+  model: "muse-spark-1.3",
   effort: "standard" as const,
-  metaApiBaseUrl: "https://api.llama.com/v1",
+  metaApiBaseUrl: "https://api.meta.ai/v1",
 };
 const getKey = () => Effect.succeed<string | null>(META_KEY);
 
@@ -60,7 +65,7 @@ describe("Meta API brain provider (fake fetch)", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url instanceof URL ? url.href : url).toBe(
-      "https://api.llama.com/v1/chat/completions",
+      "https://api.meta.ai/v1/chat/completions",
     );
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe(`Bearer ${META_KEY}`);
@@ -131,6 +136,13 @@ describe("Meta API brain provider (fake fetch)", () => {
 describe("effort levels", () => {
   it("exposes fast=10s standard=30s deep=60s timeouts", () => {
     expect(EFFORT_TIMEOUT_MS).toEqual({ fast: 10_000, standard: 30_000, deep: 60_000 });
+  });
+
+  it("gives local Muse Glimmer (ollama/builtin) a longer budget than the cloud", () => {
+    expect(LOCAL_EFFORT_TIMEOUT_MS).toEqual({ fast: 60_000, standard: 120_000, deep: 240_000 });
+    expect(effortTimeoutMs({ ...settings, provider: "ollama", effort: "standard" })).toBe(120_000);
+    expect(effortTimeoutMs({ ...settings, provider: "builtin", effort: "fast" })).toBe(60_000);
+    expect(effortTimeoutMs({ ...settings, provider: "meta-api", effort: "standard" })).toBe(30_000);
   });
 
   it("fast effort times out at 10s as MarshalUnavailable", async () => {
@@ -240,16 +252,16 @@ describe("effort levels", () => {
 });
 
 describe("OLLAMA_MODELS catalogue", () => {
-  it("lists llama3.2:3b / llama3.1:8b / llama3.3:70b with tiers", () => {
-    expect(OLLAMA_MODELS.map((m) => m.id)).toEqual([
-      "llama3.2:3b",
-      "llama3.1:8b",
-      "llama3.3:70b",
-    ]);
-    expect(OLLAMA_MODELS.map((m) => m.tier)).toEqual([
-      "Medium",
-      "High",
-      "Maximum-local",
-    ]);
+  it("lists only the Meta Muse Glimmer 30B Q4_K_M local model", () => {
+    expect(OLLAMA_MODELS.map((m) => m.id)).toEqual(["muse-glimmer:30b"]);
+    expect(OLLAMA_MODELS.map((m) => m.tier)).toEqual(["High"]);
+  });
+});
+
+describe("Meta Model API defaults", () => {
+  it("defaults to Muse Spark 1.3 on api.meta.ai (https://dev.meta.ai/docs/models)", () => {
+    expect(DEFAULT_META_API_BASE_URL).toBe("https://api.meta.ai/v1");
+    expect(DEFAULT_META_API_MODEL).toBe("muse-spark-1.3");
+    expect(META_API_DOCS_URL).toBe("https://dev.meta.ai/docs/models");
   });
 });

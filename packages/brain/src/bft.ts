@@ -2,8 +2,8 @@ import { FetchHttpClient } from "@effect/platform";
 import { Effect } from "effect";
 import { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
-import { requestBuiltinDecision } from "./builtin.js";
-import { requestMetaApiDecision } from "./meta-api.js";
+import { DEFAULT_BUILTIN_MODEL, requestBuiltinDecision } from "./builtin.js";
+import { DEFAULT_META_API_BASE_URL, DEFAULT_META_API_MODEL, requestMetaApiDecision } from "./meta-api.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 import { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
 
@@ -26,12 +26,14 @@ export interface BftExecutionOptions {
   readonly metaApiBaseUrl?: string;
   readonly metaModel?: string;
   readonly timeoutMs?: number;
+  // Budget for the on-device Muse Glimmer leg (defaults to timeoutMs).
+  readonly localTimeoutMs?: number;
 }
 
 /**
  * Assesses a capability request using the Meta BFT Consensus Engine:
- * 1. Meta API (Cloud Chief Justice) — Llama 3.3 70B Instruct
- * 2. Meta Local Fallback (On-Device Co-Auditor) — Llama 3.2 1B INT4 WebGPU
+ * 1. Meta Model API (Cloud Chief Justice) — Muse Spark 1.3 by default
+ * 2. Meta Local Fallback (On-Device Co-Auditor) — Muse Glimmer 30B Q4_K_M
  *
  * Byzantine fault-tolerant consensus between cloud and local edge models.
  */
@@ -48,14 +50,17 @@ export function assessBftQuorum(
     const verdicts: BftWardenVerdict[] = [];
 
     // 1. Primary Cloud Warden: Meta API (Any Meta AI model)
-    const cloudModel = options.metaModel && options.metaModel.trim() !== "" ? options.metaModel.trim() : "llama-3.3-70b-instruct";
+    // Ollama tags (e.g. "muse-glimmer:30b") are local ids, never Meta Model
+    // API ids; fall back to the verified cloud default for those.
+    const requestedCloud = options.metaModel?.trim() ?? "";
+    const cloudModel = requestedCloud !== "" && !requestedCloud.includes(":") ? requestedCloud : DEFAULT_META_API_MODEL;
     const metaKey = options.metaApiKey?.trim();
     if (metaKey !== undefined && metaKey !== "") {
       const metaApiResult = yield* Effect.either(
         requestMetaApiDecision(
           {
             model: cloudModel,
-            baseUrl: options.metaApiBaseUrl ?? "https://api.llama.com/v1",
+            baseUrl: options.metaApiBaseUrl ?? DEFAULT_META_API_BASE_URL,
             apiKey: metaKey,
             prompt,
           },
@@ -72,15 +77,15 @@ export function assessBftQuorum(
       }
     }
 
-    // 2. Local Fallback / Edge Co-Auditor: Meta Llama 3.2 1B (WebGPU)
+    // 2. Local Fallback / Edge Co-Auditor: Meta Muse Glimmer 30B (Q4_K_M)
     const builtinResult = yield* Effect.either(
-      requestBuiltinDecision("llama3.2:1b", prompt, timeoutMs),
+      requestBuiltinDecision(DEFAULT_BUILTIN_MODEL, prompt, options.localTimeoutMs ?? timeoutMs),
     );
     if (builtinResult._tag === "Right") {
       const builtinVerdict = enforceScopeSafety(builtinResult.right, req.requestedScope, req.reason);
       verdicts.push({
         name: "Meta Family of AIs",
-        role: "Local Co-Auditor (Llama 3.2 1B On-Device Fallback)",
+        role: "Local Co-Auditor (Muse Glimmer 30B On-Device Fallback)",
         decision: builtinVerdict,
       });
     }
@@ -90,7 +95,7 @@ export function assessBftQuorum(
       return yield* Effect.fail(
         new MarshalUnavailable({
           message:
-            "MarshalUnavailable: No BFT wardens available (Meta API unreachable and local Llama offline)",
+            "MarshalUnavailable: No BFT wardens available (Meta API unreachable and local Muse Glimmer offline)",
         }),
       );
     }
@@ -139,7 +144,7 @@ export function assessBftQuorum(
 
     let explanation: string;
     if (isUnanimous) {
-      explanation = `[Meta BFT Quorum ${String(verdicts.length)}/${String(verdicts.length)} Unanimous] ${breakdown}. Cross-verified across Cloud & Local Llama.`;
+      explanation = `[Meta BFT Quorum ${String(verdicts.length)}/${String(verdicts.length)} Unanimous] ${breakdown}. Cross-verified across Cloud & Local Muse Glimmer.`;
     } else {
       explanation = `[Meta BFT Consensus Divergence] ${breakdown}. Clamped to narrowest scope '${finalScope}' and escalated risk to '${highestRisk}'.`;
     }

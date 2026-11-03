@@ -25,6 +25,7 @@ import {
   wardenVerdict,
   APP_VERSION_DISPLAY,
   DAEMON_URL_DISPLAY,
+  DEFAULT_META_API_MODEL_ID,
   DEFAULT_WARDEN_SETTINGS,
   EFFORT_OPTIONS,
   OLLAMA_MODEL_OPTIONS,
@@ -243,7 +244,7 @@ function updateMarshalLine(): void {
     } else if (wardenDraft.provider === "bft") {
       line.textContent = "Marshal · Meta Family of AIs · Dual-Warden BFT (Cloud + Local)";
     } else if (wardenDraft.provider === "builtin") {
-      line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 Built-in (WebGPU)`;
+      line.textContent = `Marshal \u00B7 ${wardenDraft.model} \u00B7 On-device (Ollama)`;
     } else {
       line.textContent = marshalStatusLine(wardenDraft.model);
     }
@@ -1928,7 +1929,7 @@ function renderSettings(view: HTMLElement): void {
         recommendedProvider: "meta-api",
         tierBadge: "Recommended: Meta API",
         recommendationCopy:
-          "Limited local GPU acceleration detected. Meta API (Cloud) is recommended: zero download footprint, zero VRAM overhead, instant 70B parameter reasoning.",
+          "Limited local GPU acceleration detected. Meta API (Cloud) is recommended: zero download footprint, zero VRAM overhead, Muse Spark reasoning in the cloud.",
       };
     }
 
@@ -1938,7 +1939,7 @@ function renderSettings(view: HTMLElement): void {
       recommendedProvider: "bft",
       tierBadge: "Recommended: Meta BFT",
       recommendationCopy:
-        "Hardware acceleration detected. Meta BFT Consensus is recommended: cloud 70B intelligence cross-verified with on-device Llama 3.2 1B (WebGPU) for offline resilience.",
+        "Hardware acceleration detected. Meta BFT Consensus is recommended: Muse Spark in the cloud cross-checked by on-device Muse Glimmer 30B (via Ollama) for offline resilience.",
     };
   }
 
@@ -1966,7 +1967,7 @@ function renderSettings(view: HTMLElement): void {
     const applyBtn = el("button", "action btn-approve", `Switch to Recommended (${profile.recommendedProvider === "bft" ? "Meta BFT" : "Meta API"})`) as HTMLButtonElement;
     applyBtn.type = "button";
     applyBtn.addEventListener("click", () => {
-      const nextModel = profile.recommendedProvider === "builtin" ? "llama3.2:1b" : "llama-3.3-70b-instruct";
+      const nextModel = profile.recommendedProvider === "builtin" ? DEFAULT_WARDEN_SETTINGS.model : DEFAULT_META_API_MODEL_ID;
       wardenDraft = { ...wardenDraft, provider: profile.recommendedProvider, model: nextModel };
       wardenDirty = true;
       settingsMessage = null;
@@ -1981,9 +1982,9 @@ function renderSettings(view: HTMLElement): void {
   // 1. Provider
   const providerSection = settingsSection("Warden provider", "", "warden");
   const providerCopy: Record<WardenSettingsLike["provider"], string> = {
-    bft: "Meta BFT Consensus: Dual-warden quorum combining Meta API (Cloud 70B) + Local Llama (WebGPU 1B) for Byzantine fault tolerance, cross-verification, and offline fallback.",
-    "meta-api": "Meta API (Cloud): Lightweight cloud inference (Llama 3.3 70B). Zero model download, 0 VRAM required, instant evaluation. Recommended for all machines.",
-    builtin: "Built-in AI (WebGPU): Local WebGPU acceleration (Llama 3.2 1B INT4). 100% private on-device execution with automatic offline fallback.",
+    bft: "Meta BFT Consensus: Dual-warden quorum combining Meta Model API (Muse Spark, cloud) + local Muse Glimmer 30B (Ollama) for cross-verification and offline fallback.",
+    "meta-api": "Meta API (Cloud): Meta Model API inference (Muse Spark 1.3 by default). Zero model download, 0 VRAM required. Recommended for machines without a 24 GB GPU.",
+    builtin: "On-device: Meta Muse Glimmer 30B (official Q4_K_M, ~18 GB) served by local Ollama. Request metadata stays on this device. Needs Ollama 0.32.7+ and ~24 GB VRAM for full GPU speed.",
     ollama: "Local — Ollama runs on this device. Request metadata stays on-device.",
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
   };
@@ -1995,7 +1996,7 @@ function renderSettings(view: HTMLElement): void {
     radio.value = provider.id;
     radio.checked = wardenDraft.provider === provider.id;
     radio.addEventListener("change", () => {
-      const nextModel = provider.id === "builtin" ? "llama3.2:1b" : wardenDraft.model;
+      const nextModel = provider.id === "builtin" ? DEFAULT_WARDEN_SETTINGS.model : wardenDraft.model;
       wardenDraft = { ...wardenDraft, provider: provider.id, model: nextModel };
       wardenDirty = true;
       settingsMessage = null;
@@ -2012,13 +2013,13 @@ function renderSettings(view: HTMLElement): void {
   // 2. Model
   const modelSection = settingsSection("Model", "", "warden");
   if (wardenDraft.provider === "none") {
-    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose Built-in AI, Ollama, or Meta API to enable a warden model."));
+    modelSection.append(el("p", "settings-copy", "No model \u2014 policy only. Choose On-Device, Ollama, or Meta API to enable a warden model."));
     } else if (wardenDraft.provider === "bft") {
     const card = el("div", "bft-card");
     const head = el("div", "bft-head");
     const info = el("div", "");
     info.append(el("div", "bft-title", "Meta Dual-Warden BFT Consensus"));
-    info.append(el("div", "bft-desc", "Byzantine fault-tolerant consensus across Meta's cloud and local AI architectures. Meta API provides 70B parameter reasoning, while on-device Llama 3.2 co-audits and provides instant offline resilience."));
+    info.append(el("div", "bft-desc", "Two-warden quorum across Meta's cloud and local models. Muse Spark on Meta Model API reasons in the cloud, while on-device Muse Glimmer 30B co-audits and keeps working offline."));
     head.append(info);
     head.append(el("span", "status-badge is-ok", "\u25CF BFT Active"));
     card.append(head);
@@ -2026,7 +2027,7 @@ function renderSettings(view: HTMLElement): void {
     const pillars = el("div", "bft-pillars");
 
     // Pillar 1: Meta API (Cloud Chief Justice)
-    const activeCloudModel = wardenDraft.model && wardenDraft.model !== "llama3.2:1b" ? wardenDraft.model : "llama-3.3-70b-instruct";
+    const activeCloudModel = wardenDraft.model && wardenDraft.model !== DEFAULT_WARDEN_SETTINGS.model ? wardenDraft.model : DEFAULT_META_API_MODEL_ID;
     const metaPillar = el("div", "bft-pillar-item");
     metaPillar.append(createMetaLogo());
     const metaDetails = el("div", "bft-pillar-details");
@@ -2039,7 +2040,7 @@ function renderSettings(view: HTMLElement): void {
     const localPillar = el("div", "bft-pillar-item");
     localPillar.append(createMetaLogo());
     const localDetails = el("div", "bft-pillar-details");
-    localDetails.append(el("div", "bft-pillar-title", "Meta Llama 3.2 1B (INT4 WebGPU)"));
+    localDetails.append(el("div", "bft-pillar-title", "Meta Muse Glimmer 30B (Q4_K_M via Ollama)"));
     localDetails.append(el("div", "bft-pillar-sub", "On-Device Zero-Egress Fallback \u00B7 Offline & Divergence Guard"));
     localPillar.append(localDetails);
     localPillar.append(el("span", "status-badge is-ok", "Local Fallback"));
@@ -2085,7 +2086,7 @@ function renderSettings(view: HTMLElement): void {
     modelInput.id = "warden-model-input";
     modelInput.type = "text";
     modelInput.value = activeCloudModel;
-    modelInput.placeholder = "llama-3.3-70b-instruct";
+    modelInput.placeholder = DEFAULT_META_API_MODEL_ID;
     modelInput.autocomplete = "off";
     modelInput.addEventListener("input", () => {
       wardenDraft = { ...wardenDraft, model: modelInput.value };
@@ -2112,8 +2113,8 @@ function renderSettings(view: HTMLElement): void {
     const card = el("div", "builtin-ai-card");
     const head = el("div", "builtin-ai-head");
     const info = el("div", "");
-    info.append(el("div", "builtin-ai-title", "Llama 3.2 1B Instruct (INT4 WebGPU)"));
-    info.append(el("div", "builtin-ai-desc", "Compact ~680 MB edge model running locally via WebGPU on Direct3D 12 / Vulkan. Zero network egress."));
+    info.append(el("div", "builtin-ai-title", "Meta Muse Glimmer 30B (official Q4_K_M via Ollama)"));
+    info.append(el("div", "builtin-ai-desc", "~18 GB open-weight Meta model served by local Ollama (muse-glimmer:30b). Request metadata never leaves this device."));
     head.append(info);
 
     const isDownloading = builtinAiProgress?.state === "downloading" || builtinAiProgress?.state === "verifying";
@@ -2133,7 +2134,7 @@ function renderSettings(view: HTMLElement): void {
       badgeText = "\u25CF Ready \u00B7 Cached";
     } else {
       badgeClass = "status-badge";
-      badgeText = "\u25CB Download Available (~680 MB)";
+      badgeText = "\u25CB Download Available (~18 GB)";
     }
 
     head.append(el("span", badgeClass, badgeText));
@@ -2166,7 +2167,7 @@ function renderSettings(view: HTMLElement): void {
       card.append(prog);
     } else if (resolverState === "missing") {
       const actions = el("div", "builtin-ai-actions");
-      const dlBtn = el("button", "action btn-approve", "Download Model (~680 MB)") as HTMLButtonElement;
+      const dlBtn = el("button", "action btn-approve", "Download Model (~18 GB, via Ollama)") as HTMLButtonElement;
       dlBtn.type = "button";
       dlBtn.disabled = settingsBusy;
       dlBtn.addEventListener("click", () => {
@@ -2178,10 +2179,10 @@ function renderSettings(view: HTMLElement): void {
       });
       actions.append(dlBtn);
       card.append(actions);
-      card.append(el("p", "settings-copy", "Model files will be cached locally in your user profile for fast on-device inference."));
+      card.append(el("p", "settings-copy", "Ollama pulls muse-glimmer:30b into its own model store. Ollama 0.32.7+ must be running."));
     } else {
       const pathText = builtinAiStatus?.resolverStatus.path ?? "Default storage location";
-      const infoP = el("p", "settings-copy", "Local model weights are verified and ready for WebGPU execution.");
+      const infoP = el("p", "settings-copy", "Muse Glimmer is pulled and ready in Ollama.");
       const pathLine = el("p", "settings-status mono", `Path: ${pathText}`);
       card.append(infoP, pathLine);
     }
@@ -2222,7 +2223,7 @@ function renderSettings(view: HTMLElement): void {
     modelInput.id = "warden-model-input";
     modelInput.type = "text";
     modelInput.value = wardenDraft.model;
-    modelInput.placeholder = wardenDraft.provider === "meta-api" ? "Meta API model id" : "llama3.2:3b";
+    modelInput.placeholder = wardenDraft.provider === "meta-api" ? "Meta API model id" : DEFAULT_WARDEN_SETTINGS.model;
     modelInput.autocomplete = "off";
     modelInput.addEventListener("input", () => {
       wardenDraft = { ...wardenDraft, model: modelInput.value };
