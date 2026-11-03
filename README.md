@@ -292,7 +292,7 @@ Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come fro
 
 | Gate | Result |
 |---|---|
-| Tests / typecheck / lint | Node 22: 503 passed, 3 skipped; Node 24: 504 passed, 2 skipped / exit 0 / exit 0 |
+| Tests / typecheck / lint | Node 22 (CI, Ubuntu + Windows): 521 passed, 3 skipped; Node 24: 522 passed, 2 skipped / exit 0 / exit 0 |
 | Brain eval (fake / live) | fake: safety 100%, gate PASS / live Muse Glimmer 30B: no committed result |
 | Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |

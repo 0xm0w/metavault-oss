@@ -64,7 +64,7 @@
         <article class="pg-card">
           <span class="n">vaultd</span>
           <h3>The dumb vault</h3>
-          <p class="pg-note"><span class="buzz">AES-256-GCM</span>, OS keychain, the <span class="buzz">policy floor</span>, single-use grants. Keys are decrypted here for one call — never persisted, never logged.</p>
+          <p class="pg-note"><span class="buzz">AES-256-GCM</span> under a passphrase-wrapped key (scrypt or Argon2id), the <span class="buzz">policy floor</span>, single-use grants. Keys are decrypted here for one call — never persisted, never logged.</p>
         </article>
         <article class="pg-card">
           <span class="n">Edges</span>
@@ -105,7 +105,7 @@
       <span class="caption-mono-sm pg-kicker">The floor</span>
       <h2>These do not depend on the model</h2>
       <div class="pg-grid">
-        <article class="pg-card"><h3>No secret in the transcript</h3><p class="pg-note">MCP, HTTP, logs, the UI, and the model prompt. A canary covers <a href="https://github.com/0xm0w/metavault-oss/blob/main/test/security/canary.test.ts">27 surfaces</a> and fails the build on a hit.</p></article>
+        <article class="pg-card"><h3>No secret in the transcript</h3><p class="pg-note">MCP, HTTP, audit rows, the UI, and the model prompt. A canary covers <a href="https://github.com/0xm0w/metavault-oss/blob/main/test/security/canary.test.ts">27 surfaces</a> and fails the build on a hit.</p></article>
         <article class="pg-card"><h3>Plaintext stays in memory</h3><p class="pg-note">Decrypted at call time for one grant. The app never writes it to disk and never logs it.</p></article>
         <article class="pg-card"><h3>Narrow, never widen</h3><p class="pg-note">The warden can shrink a scope. It cannot step past the alias ceiling.</p></article>
         <article class="pg-card"><h3>Grants expire</h3><p class="pg-note">After the call, after the TTL, or the moment you revoke.</p></article>
@@ -146,7 +146,7 @@
       <span class="caption-mono-sm pg-kicker">Next</span>
       <h2>Air-gap is a package, not a rewrite</h2>
       <div class="pg-grid">
-        <article class="pg-card"><h3>Air-gapped vault</h3><p class="pg-note">No network path at all. The vault is already isolated from everything except localhost.</p></article>
+        <article class="pg-card"><h3>Air-gapped vault</h3><p class="pg-note">Today only the listener is localhost-only: the daemon calls api.meta.ai and the connectors you add. An air-gapped package would use a local endpoint and no connectors.</p></article>
         <article class="pg-card"><h3>Enclave and device</h3><p class="pg-note">The same daemon boundary, on hardened hardware.</p></article>
         <article class="pg-card"><h3>Browser approval</h3><p class="pg-note">The same human decision, outside the desktop app.</p></article>
         <article class="pg-card"><h3>Team policy packs</h3><p class="pg-note">Ceilings you share. The floor still cannot be widened by a model.</p></article>

@@ -122,7 +122,7 @@
   <section class="hack-slide rs" id="gap" data-label="The gap">
     <div class="hack-slide-inner is-wide">
       <span class="caption-mono-sm pg-kicker neon-rainbow-text">Benchmark · 28 risky requests the rules never saw</span>
-      <h2 class="rs-h2">Rules catch the attacks you expect.<br><span>Muse Spark catches the ones you don't.</span></h2>
+      <h2 class="rs-h2">Rules catch the patterns you wrote.<br><span>Muse Spark catches most of the rest (25/28 alone, 27/28 together).</span></h2>
       <div class="rs-duel">
         <div class="rs-tile" data-verdict="percent" data-better="higher" data-value="42.9">
           <div class="rs-label">Rules alone</div>
@@ -136,7 +136,7 @@
           <p class="rs-what">Only <b>1</b> slips through.</p>
         </div>
       </div>
-      <p class="rs-lede" style="margin-top:22px">Attackers don't use the words a rule looks for. <strong>Muse Spark reads what the request is for</strong>, so a reworded attack still gets stopped.</p>
+      <p class="rs-lede" style="margin-top:22px">Attackers don't use the words a rule looks for. <strong>Muse Spark reads what the request is for</strong>, so 21 of 22 reworded attacks were still stopped (rules alone: 6).</p>
       <details class="rs-how">
         <summary>How we counted</summary>
         <ul>
@@ -160,7 +160,7 @@
             <div data-verdict="percent" data-better="higher" data-value="100"><div class="rs-num" data-verdict-num>28<small>/ 28</small></div></div>
             <div class="rs-vs">vs <b>19 / 28</b> with rules alone</div>
           </div>
-          <p class="rs-what">Muse Spark lets every safe request through. Rules stop 9 for words like <em>keys</em> or <em>export</em>.</p>
+          <p class="rs-what">Muse Spark lets every safe request through. Rules stop 9 for words like <em>password</em>, <em>token</em>, <em>refund</em>, or <em>webhook</em>.</p>
           <p class="rs-foot">Why it matters: users clicked through <strong>70.2%</strong> of Chrome's SSL warnings. (Akhawe &amp; Felt, USENIX Security 2013 · 25M+ real warnings)</p>
         </div>
         <div class="rs-tile">
@@ -170,7 +170,7 @@
             <div class="rs-vs">per checked request</div>
           </div>
           <p class="rs-what">Each check takes <strong>8–9 seconds</strong> with Muse Spark. The rules answer in microseconds.</p>
-          <p class="rs-foot">Measured $0.0052–0.0053 per request from token usage and <a href="https://dev.meta.ai/docs/pricing-rate-limits" style="color:inherit">Meta pricing</a>. Medians 8.2–8.9 s; rules 6.8 µs.</p>
+          <p class="rs-foot">Measured $0.0052–0.0053 per request from token usage and <a href="https://dev.meta.ai/docs/pricing-rate-limits" style="color:inherit">Meta pricing</a>. Medians 8.2–8.9 s; rules 6.8 µs (rules-only run).</p>
         </div>
       </div>
       <div class="pg-chart-card rs-chart">
@@ -361,7 +361,7 @@ META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live --provider met
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker neon-rainbow-text">Next step</span>
       <h2>Integrate now</h2>
-      <p class="pg-lead">Drop in the 5-tool MCP server for Meta Muse, Cursor, Claude Code, Codex, or VS Code. Secure credentials on-device in under two minutes.</p>
+      <p class="pg-lead">Drop in the 5-tool MCP server for Cursor, Claude Code, Codex, or VS Code. Setup is one config block per IDE (see docs).</p>
       <div class="pg-row pg-cta">
         <a class="mb-btn-primary" href="/docs/">Read the docs</a>
       </div>

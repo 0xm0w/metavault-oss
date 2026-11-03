@@ -1,7 +1,7 @@
 # MetaVault OSS: OWASP LLM Top 10 Compliance Audit & Post-Quantum Cryptography Specification
 
 **Document Version:** 1.0.0  
-**Status:** Certified & Verified  
+**Status:** Internal self-assessment, 2026-11-03  
 **Issue Reference:** [#27](https://github.com/0xm0w/metavault-oss/issues/27)  
 
 ---
@@ -10,10 +10,10 @@
 
 MetaVault OSS implements a **non-possessory secret management architecture** for autonomous AI coding agents (Cursor, Claude Code, Codex, VS Code). In this model:
 - Agents never receive raw plaintext credentials.
-- All credential actions are transformed into ephemeral, scoped capability grants executed strictly inside the OS-sandboxed daemon (`vaultd`).
+- All credential actions are transformed into ephemeral, scoped capability grants executed strictly inside the local daemon (`vaultd`).
 - A local or cloud Meta Large Language Model (the Warden) provides advisory risk scoring and scope narrowing based on request metadata only.
 
-This document formally details MetaVault OSS's architectural compliance with the **OWASP Top 10 for Large Language Model Applications (2025)** and specifies the **Post-Quantum Cryptographic (PQC) hybrid key encapsulation mechanism** implemented to guarantee long-term secrecy against quantum adversaries.
+This document formally details MetaVault OSS's architectural compliance with the **OWASP Top 10 for Large Language Model Applications (2025)** and specifies the **Post-Quantum Cryptographic (PQC) hybrid key encapsulation module**. That module exists and is tested, but it is not yet used for storage or exports.
 
 ---
 
@@ -25,11 +25,11 @@ This document formally details MetaVault OSS's architectural compliance with the
 | **LLM02** | **Insecure Output Handling** | Strict Effect Schema decoding (`MarshalDecisionSchema`), markdown fence stripping, and fail-safe scope clamping (`enforceScopeSafety`). Any attempt by the model to propose wildcards (`*`), root, or cross-resource scopes is clamped to the requested scope and escalated to `high` risk. | [`packages/brain/src/schema.ts`](../packages/brain/src/schema.ts)<br>[`packages/brain/src/brain.ts`](../packages/brain/src/brain.ts) | `test/security/owasp-llm-top10.test.ts` (LLM02 suite) |
 | **LLM03** | **Training Data Poisoning** | The Meta Model API (`api.meta.ai`, default `muse-spark-1.3`), or a model the user serves on their own local endpoint (Muse Glimmer recommended; MetaVault ships and downloads no model, so the user owns that model's provenance). The official Muse Glimmer GGUF sha256 is recorded in `docs/verification/muse-glimmer-model-verification.md` for users who choose it. System prompts are immutable and baked into compiled TypeScript. | [`packages/brain/src/ollama.ts`](../packages/brain/src/ollama.ts) | Official GGUF sha256 in `docs/verification/muse-glimmer-model-verification.md` (docs/SECURITY.md does not exist) |
 | **LLM04** | **Model Denial of Service** | Strict per-tier execution timeouts (Fast: 10s, Standard: 30s, Deep: 60s via `EFFORT_TIMEOUT_MS`). Untrusted rationale payloads are length-bounded and non-blocking in daemon threads. | [`packages/brain/src/brain.ts`](../packages/brain/src/brain.ts) | `test/security/owasp-llm-top10.test.ts` (LLM04 suite) |
-| **LLM05** | **Supply Chain Vulnerabilities** | Hermetic npm dependencies locked via `bun.lock` with zero native binary shims outside standard `node:crypto` and audited `@noble/post-quantum`. Air-gapped offline-first daemon operation. | [`package.json`](../package.json) | CI dependency audit & canary verification |
-| **LLM06** | **Sensitive Information Disclosure** | The LLM context **never** contains secrets, tokens, passwords, environment variable values, or filesystem paths. Continuous canary integration tests scan 27 external surfaces (prompts, logs, IPC, audit rows) and fail CI on a single hit. | [`packages/brain/src/prompt.ts`](../packages/brain/src/prompt.ts) | [`test/security/canary.test.ts`](../test/security/canary.test.ts) |
+| **LLM05** | **Supply Chain Vulnerabilities** | npm dependencies locked via `package-lock.json` and `bun.lock`. One native addon (`better-sqlite3`); crypto uses `node:crypto` and audited `@noble/post-quantum`. The daemon listens only on 127.0.0.1; its outbound calls are the warden (api.meta.ai, or your local endpoint) and the connectors you add. | [`package.json`](../package.json) | CI dependency audit & canary verification |
+| **LLM06** | **Sensitive Information Disclosure** | The LLM context **never** contains secrets, tokens, passwords, environment variable values, or filesystem paths. Continuous canary integration tests scan 27 external surfaces (prompts, IPC, audit rows, MCP and HTTP results) and fail CI on a single hit. | [`packages/brain/src/prompt.ts`](../packages/brain/src/prompt.ts) | [`test/security/canary.test.ts`](../test/security/canary.test.ts) |
 | **LLM07** | **Insecure Plugin Design** | The Model Context Protocol (MCP) server exposes only five strictly typed tools (`request_capability`, `list_aliases`, `request_enrollment`, `enrollment_status`, `revoke`). MCP contains **no approve tool**; approval routes require an OS bearer token held only by the desktop app. | [`packages/mcp/src/server.ts`](../packages/mcp/src/server.ts) | [`test/e2e/mcp-daemon.e2e.test.ts`](../test/e2e/mcp-daemon.e2e.test.ts) |
 | **LLM08** | **Excessive Agency** | The LLM operates purely in an advisory capacity. It cannot execute code, issue grants, or approve requests. The deterministic policy engine and human-in-the-loop authorization hold the ultimate veto. Agent self-approval is rejected with HTTP 401. | [`packages/daemon/src/service.ts`](../packages/daemon/src/service.ts) | `test/security/owasp-llm-top10.test.ts` (LLM08 suite) |
-| **LLM09** | **Overreliance** | Hard deterministic policy ceilings (`packages/core/src/policy.ts`) form an unbreakable floor. Even if an LLM is deceived or unavailable (`MarshalUnavailable`), the system fails closed or falls back to human manual approval. | [`packages/core/src/policy.ts`](../packages/core/src/policy.ts) | [`packages/core/test/policy.test.ts`](../packages/core/test/policy.test.ts) |
+| **LLM09** | **Overreliance** | Hard deterministic policy ceilings (`packages/core/src/policy.ts`) form a deterministic floor; 4/4 policy-floor cases held in every arm of the held-out benchmark. Even if an LLM is deceived or unavailable (`MarshalUnavailable`), the system fails closed or falls back to human manual approval. | [`packages/core/src/policy.ts`](../packages/core/src/policy.ts) | [`packages/core/test/policy.test.ts`](../packages/core/test/policy.test.ts) |
 | **LLM10** | **Model Theft** | MetaVault holds no model weights. A local model lives in the user's own Ollama or OpenAI-compatible server, under that server's permissions. | Local host OS permissions | System architecture review |
 
 ---
@@ -39,7 +39,7 @@ This document formally details MetaVault OSS's architectural compliance with the
 ### 3.1 Threat Model: The "Harvest Now, Decrypt Later" Attack
 Adversaries with quantum capabilities utilizing **Shor's algorithm** can solve discrete logarithms and integer factorization in polynomial time, rendering standard public-key cryptosystems (RSA, ECDH, X25519, ECDSA) vulnerable. Conversely, **Grover's algorithm** provides only a quadratic speedup against symmetric ciphers; therefore, **AES-256** retains an effective security margin of 128 bits, which remains computationally intractable.
 
-To protect vault exports, master keys, and inter-daemon synchronizations against future quantum decryption, MetaVault OSS introduces a **hybrid Key Encapsulation Mechanism (KEM)**.
+MetaVault OSS includes a **hybrid Key Encapsulation Mechanism (KEM)** module for future quantum-resistant envelopes. A hybrid ML-KEM-768 + X25519 module exists and is tested; it is not yet used for storage or exports. Nothing in production imports it today.
 
 ### 3.2 Hybrid Architecture: NIST FIPS 203 (ML-KEM-768) + X25519
 Implemented in [`packages/core/src/pqc.ts`](../packages/core/src/pqc.ts):
@@ -52,7 +52,7 @@ Implemented in [`packages/core/src/pqc.ts`](../packages/core/src/pqc.ts):
 - **Payload Encryption**: Symmetric payload is encrypted with **AES-256-GCM** using a fresh 12-byte initialization vector (IV) and a 16-byte authentication tag.
 
 ### 3.3 Envelope Wire Format
-PQC envelopes sealed via `sealWithHybridKEM` use the versioned format:
+PQC envelopes sealed via `sealWithHybridKEM` use the versioned format below. The module is not yet wired into storage or exports, so no vault data uses this format today:
 ```
 OV-PQC-v1.<salt>.<encapsulatedCiphertext>.<iv>.<authTag>.<ciphertext>
 ```
@@ -86,7 +86,7 @@ In a local AI agent development environment:
 | **Layer 1: Cryptographic Identity Tokens** | Registered agents possess persistent tokens (`ov_agent_<id>_<hex32>`). The daemon sets `agentId` strictly from the token lookup in SQLite; payload `agentId` is overwritten. | Eliminates arbitrary name spoofing. Invalid tokens return 401 Unauthorized. | [`packages/daemon/src/server.ts`](../packages/daemon/src/server.ts)<br>[`packages/core/src/storage.ts`](../packages/core/src/storage.ts) | `test/security/pentest.test.ts` (Probe 6) |
 | **Layer 2: Standing Approval Hardening** | Standing approvals created for verified agents enforce `verifiedOnly: true`. | Unverified callers can never inherit or execute standing approvals. | [`packages/core/src/policy.ts`](../packages/core/src/policy.ts) | `packages/core/test/policy.test.ts`<br>`test/security/pentest.test.ts` |
 | **Layer 3: Strict Agent Verification Mode** | Configurable toggle in Settings > Security (`strictMode: boolean`). Rejects unverified callers with 403 Forbidden. | Zero-trust enforcement. Blocks unauthenticated scripts from even queuing approval prompts. | [`packages/daemon/src/server.ts`](../packages/daemon/src/server.ts)<br>[`packages/app/src/renderer/main.ts`](../packages/app/src/renderer/main.ts) | `test/security/pentest.test.ts` (Probe 6) |
-| **Layer 4: OS Process & Binary Inspection** | Configurable toggle in Settings > Security (`verifyCallerProcess: boolean`). Inspects client PID and binary executable. | Blocks unauthorized binaries (`python.exe`, `curl.exe`, `powershell.exe`) even if they hold a valid stolen token. | [`packages/daemon/src/process-inspector.ts`](../packages/daemon/src/process-inspector.ts) | `test/security/pentest.test.ts` (Probe 6) |
+| **Layer 4: OS Process & Binary Inspection** | Configurable toggle in Settings > Security (`verifyCallerProcess: boolean`). Inspects client PID and binary executable. | Opt-in (off by default). Checks the executable at a caller-reported PID (request body `clientPid` or `X-MetaVault-Client-PID` header); raises the bar for naive scripts but cannot stop a caller that lies about its PID. | [`packages/daemon/src/process-inspector.ts`](../packages/daemon/src/process-inspector.ts) | `test/security/pentest.test.ts` (Probe 6) |
 | **Layer 5: UI Integrity & Alerts** | Policies table shows `Verified` vs `⚠️ Unverified` status badges. Approval modal shows prominent security warning for unverified callers. | Transparent visibility prevents user deception. | [`packages/app/src/renderer/main.ts`](../packages/app/src/renderer/main.ts) | `packages/app/test/model.test.ts` |
 
 ---

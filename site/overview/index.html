@@ -47,7 +47,7 @@
       <span class="caption-mono-sm" style="color:var(--muted-foreground);font-size:12px;letter-spacing:0.4px;text-transform:none">By Keythings · Securing Keys Since 2025</span>
     </div>
     <h1 class="mb-hero-title x-hero-enter-2">Your agent asked for Stripe.<br>You pasted the live key.</h1>
-    <p class="mb-hero-sub x-hero-enter-3">MetaVault keeps the key on this machine. The agent asks for a capability, a local model scores it, you approve, and the secret never enters the chat.</p>
+    <p class="mb-hero-sub x-hero-enter-3">MetaVault keeps the key on this machine. The agent asks for a capability, Muse Spark 1.3 scores it via the Meta API (or a local model you bring), you approve, and the secret never enters the chat.</p>
     <div class="mb-hero-actions x-hero-enter-4">
       <a class="mb-btn-primary" href="#download">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg>
@@ -130,7 +130,7 @@
         <div>
           <div class="mb-bento-head" style="margin-bottom:16px">
             <span class="caption-mono-sm" style="color:var(--muted-foreground)">02 // What leaks</span>
-            <span class="mb-chip ink">Zero keys</span>
+            <span class="mb-chip ink">0/27 canary surfaces leaked</span>
           </div>
           <div class="mb-split">
             <article class="dim">
@@ -141,7 +141,7 @@
             <article>
               <div class="caption-mono-sm" style="color:var(--green);font-size:10px;margin-bottom:4px">Asked as a capability</div>
               <div style="margin-bottom:6px">The agent receives the tool result. The key stayed inside vaultd for that one call.</div>
-              <div class="caption-mono-sm" style="color:var(--green);font-size:10px">Nothing to leak</div>
+              <div class="caption-mono-sm" style="color:var(--green);font-size:10px">0 keys in the chat</div>
             </article>
           </div>
         </div>
@@ -284,7 +284,7 @@
           <li><span>—</span> Default warden Muse Spark 1.3 via the Meta API</li>
           <li><span>—</span> Or bring your own local endpoint (Ollama or OpenAI-compatible); Muse Glimmer recommended</li>
           <li><span>—</span> Human approval stays in the app. An agent that tries to approve itself gets 401</li>
-          <li><span>—</span> Air-gap is a packaging choice. The vault already refuses every other network</li>
+          <li><span>—</span> Only the listener is localhost-only. The daemon calls out to api.meta.ai (the warden) and the connectors you add</li>
         </ul>
         <a class="mb-btn-primary" href="https://github.com/0xm0w/metavault-oss/releases/download/v0.1.0/MetaVault-OSS-0.1.0-win-x64.exe">Download for Windows</a>
       </article>
@@ -296,7 +296,7 @@
     <div class="mb-reveal" style="text-align:center;margin-bottom:36px">
       <span class="caption-mono-sm mb-section-kicker">05 // Real GitHub Timeline</span>
       <h2 class="mb-section-title">From Wallet Security to Agentic Vaults</h2>
-      <p class="mb-section-lead">Verified shipping milestones across our repositories since 2025.</p>
+      <p class="mb-section-lead">Milestones.</p>
     </div>
 
     <div class="mb-timeline-wrap mb-reveal">
@@ -305,11 +305,10 @@
         <div class="mb-timeline-dot"></div>
         <div class="mb-timeline-card">
           <div class="mb-timeline-header">
-            <span class="mb-timeline-date">2025 · Pre-fable &amp; Pre-opus 5 era</span>
-            <span class="mb-chip ok">Production Verified</span>
+            <span class="mb-timeline-date">2025</span>
           </div>
           <h3 class="mb-timeline-title">Crypto Wallet Security Audits &amp; Keythings Wallet</h3>
-          <p class="mb-timeline-desc">Work history in crypto wallet bug bounty hunting and protocol vulnerability research. Engineered Keythings Wallet — securing daily non-custodial transactions in production with 0 security incidents.</p>
+          <p class="mb-timeline-desc">Work history in crypto wallet bug bounty hunting and protocol vulnerability research. Engineered Keythings Wallet — securing daily non-custodial transactions.</p>
         </div>
       </div>
 
@@ -344,11 +343,11 @@
         <div class="mb-timeline-dot"></div>
         <div class="mb-timeline-card">
           <div class="mb-timeline-header">
-            <span class="mb-timeline-date" style="font-weight:700">2026-11-02 · Current Sprint</span>
+            <span class="mb-timeline-date" style="font-weight:700">2026-11-02 – 11-03 · Current Sprint</span>
             <span class="neon-rainbow-badge"><span class="neon-rainbow-text">Active Hackathon Sprint</span></span>
           </div>
-          <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Muse Glimmer Marshal &amp; 5-Tool MCP</h3>
-          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Added on-device Meta Muse Glimmer via Ollama as a warden option, hardened adversarial prompt defenses, and caller process quarantine.</p>
+          <h3 class="mb-timeline-title neon-rainbow-text" style="font-size:17px">Muse Spark Warden &amp; Bring-Your-Own Local Model</h3>
+          <p class="mb-timeline-desc">Launched the Meta Hackathon (Indie track) interactive pitch deck at <a href="https://metahackathon.whativedone.xyz" class="buzz" target="_blank" rel="noopener">metahackathon.whativedone.xyz</a>. Hardened adversarial prompt defenses (11-02). Made Muse Spark 1.3 via the Meta API the default warden, with a bring-your-own local endpoint, Muse Glimmer recommended (11-03). The caller-process check is opt-in and off by default.</p>
         </div>
       </div>
     </div>
