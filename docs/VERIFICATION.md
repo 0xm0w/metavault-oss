@@ -29,6 +29,21 @@ Re-run any gate with the commands shown.
 Raw outputs: `eval-fake.txt`, `eval-live-PENDING.md`, `rehearsal.txt`,
 `mcp-two-host.txt` in this directory.
 
+## Research thesis benchmark (`packages/brain/eval/run-thesis.ts`)
+
+Four arms on the same vault policy: always-ask, rules-only (`packages/brain/src/rules.ts`,
+frozen in `793371d` before the held-out set in `702bb2b`), warden, rules+warden.
+Box run (Linux, commit `342f39f`), held-out set, 60 cases:
+
+| arm | high-risk read recall | policy floor | FPR all | FPR hard | FPR plain | median / p95 |
+|-----|-----|-----|-----|-----|-----|-----|
+| always-ask | 28/28 | 4/4 | 28/28 | 20/20 | 8/8 | - |
+| rules | 12/28 (42.9%) | 4/4 | 9/28 (32.1%) | 9/20 | 0/8 | 6.8 us / 21.3 us |
+| warden, rules+warden | **pending** (`scripts/thesis-windows.ps1`) | | | | | |
+
+Dev set (20 cases): rules 10/10 recall, 0/10 FPR. Oracle runs (`--oracle`) are harness
+checks only. Raw: `verification/thesis-*.txt|json`. Review: `research/thesis-review.md`.
+
 ## Coverage baseline (Task 7, measured before thresholds)
 
 Measured with `npm run test:coverage` (Vitest + `@vitest/coverage-v8`,
