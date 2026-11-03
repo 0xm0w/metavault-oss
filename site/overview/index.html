@@ -609,6 +609,7 @@
   function fitIde() {
     if (!reduce) ideSlot.style.width = ideWord.offsetWidth + "px";
   }
+  window.addEventListener("resize", fitIde);
   fitIde();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitIde);
 
