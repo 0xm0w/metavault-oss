@@ -266,6 +266,14 @@
     dots.forEach(function (dot, i) {
       dot.addEventListener("click", function () { go(i); });
     });
+    scroller.querySelectorAll('a[href^="#"]').forEach(function (link) {
+      var target = slides.findIndex(function (slide) { return "#" + slide.id === link.getAttribute("href"); });
+      if (target < 0) return;
+      link.addEventListener("click", function (event) {
+        event.preventDefault();
+        go(target);
+      });
+    });
     if (up) up.addEventListener("click", function () { go(index - 1); });
     if (down) down.addEventListener("click", function () { go(index + 1); });
 
