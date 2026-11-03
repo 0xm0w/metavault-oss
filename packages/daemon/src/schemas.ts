@@ -100,6 +100,16 @@ export const AgentRecordSchema = Schema.Struct({
   revoked: Schema.Boolean,
 });
 
+// GET /policies is an open route, so its agent rows never carry the bearer
+// token: the token is the credential that authenticates an agent, and it is
+// served only via the token-guarded GET /agents route.
+export const PublicAgentRecordSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  createdAt: Schema.String,
+  revoked: Schema.Boolean,
+});
+
 export const PoliciesResponseSchema = Schema.Struct({
   ceilings: Schema.Record({ key: Schema.String, value: Schema.String }),
   standingApprovals: Schema.Array(
@@ -109,7 +119,7 @@ export const PoliciesResponseSchema = Schema.Struct({
       scope: Schema.String,
     }),
   ),
-  agents: Schema.optional(Schema.Array(AgentRecordSchema)),
+  agents: Schema.optional(Schema.Array(PublicAgentRecordSchema)),
 });
 
 export const AgentSecuritySettingsSchema = Schema.Struct({

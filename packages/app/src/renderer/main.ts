@@ -17,6 +17,7 @@ import {
   marshalStatusLine,
   normalizeWebsite,
   projectAliasesResponse,
+  projectAgentsResponse,
   projectAuditResponse,
   projectCredentialsResponse,
   projectPendingResponse,
@@ -95,6 +96,7 @@ let aliases: string[] = [];
 let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
+let agentsData: RegisteredAgent[] = [];
 let agentSecuritySettings: AgentSecuritySettingsLike = { strictMode: false, verifyCallerProcess: false };
 let securityPosture: SecurityPostureReportLike | null = null;
 let selectedGrantId: string | null = null;
@@ -2580,7 +2582,7 @@ function renderSettings(view: HTMLElement): void {
   let configPath = "";
 
   const findAgentToken = (id: string): string => {
-    const found = policiesData.agents?.find((a: RegisteredAgent) => a.id === id);
+    const found = agentsData.find((a) => a.id === id);
     return found?.token ?? "<token-generated-on-start>";
   };
 
@@ -3175,11 +3177,12 @@ async function refresh(): Promise<void> {
       render();
       return;
     }
-    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw, secRaw] = await Promise.all([
+    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, agentsRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw, secRaw] = await Promise.all([
       window.metavault.pending(),
       window.metavault.aliases(),
       window.metavault.audit(),
       window.metavault.policies(),
+      window.metavault.agents().catch(() => null),
       window.metavault.getWardenSettings().catch(() => null),
       window.metavault.wardenKeyStatus().catch(() => null),
       window.metavault.getSecurityPosture().catch(() => null),
@@ -3210,6 +3213,7 @@ async function refresh(): Promise<void> {
     credentialMeta = projectCredentialsResponse(aliasesRaw);
     auditEvents = projectAuditResponse(auditRaw);
     policiesData = projectPoliciesResponse(policiesRaw);
+    agentsData = projectAgentsResponse(agentsRaw);
     securityPosture = projectSecurityPosture(postureRaw);
     const projAuth = projectLocalAuthStatus(localAuthRaw);
     if (projAuth !== null) {
