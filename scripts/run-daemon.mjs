@@ -2,11 +2,11 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { startVaultDaemon } from "../dist/packages/daemon/src/server.js";
 
-const port = Number(process.env.METAVAULT_PORT || process.env.OPENVAULT_PORT || 7077);
-const keyFile = "openvault.key";
+const port = Number(process.env.METAVAULT_PORT || process.env.METAVAULT_PORT || 7077);
+const keyFile = "metavault.key";
 
 let masterKey;
-const masterKeyEnv = process.env.METAVAULT_MASTER_KEY || process.env.OPENVAULT_MASTER_KEY;
+const masterKeyEnv = process.env.METAVAULT_MASTER_KEY || process.env.METAVAULT_MASTER_KEY;
 if (masterKeyEnv) {
   masterKey = Buffer.from(masterKeyEnv, "base64");
 } else if (existsSync(keyFile)) {

@@ -1,20 +1,20 @@
-# OpenVault Hardening + Release Implementation Plan
+# MetaVault OSS Hardening + Release Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship OpenVault v0.1.0-alpha.1: deployable MCP server, Settings page with warden provider/model/effort + encrypted Meta API key path, structured AI audit trails in the Audit page, hardened test suite with coverage gates, CI/CD + OSS rules, a documented security audit + pen-test pass, docs with real screenshots/flows, and a tagged Windows release.
+**Goal:** Ship MetaVault OSS v0.1.0-alpha.1: deployable MCP server, Settings page with warden provider/model/effort + encrypted Meta API key path, structured AI audit trails in the Audit page, hardened test suite with coverage gates, CI/CD + OSS rules, a documented security audit + pen-test pass, docs with real screenshots/flows, and a tagged Windows release.
 
 **Architecture:** Unchanged core split — dumb encrypted vault (`vaultd`, 127.0.0.1:7077) + smart marshal. New: a `WardenSettings` record persisted by the daemon (provider, model, effort, key alias only — never a raw key), a `Brain` provider layer with Ollama and Meta-API implementations behind the existing `Brain` Effect tag, and structured audit fields (`requestId`, `risk`, `recommendedScope`, `decisionSource`, `latencyMs`) appended to `AuditEvent` as optional fields so old DBs keep working. Settings mutations ride the existing daemon-token guard; the Meta API key is stored as an ordinary encrypted credential under alias `warden-meta-api` and is only ever decrypted inside the daemon at call time.
 
 **Tech Stack:** TypeScript, Effect (core/daemon/brain), plain-TS Electron renderer, Vitest, ESLint flat config, GitHub Actions, electron-builder (Windows NSIS).
 
-**Spec:** User brief 2026-10-31 (this session) + `docs/superpowers/specs/2026-10-31-openvault-design.md`.
+**Spec:** User brief 2026-10-31 (this session) + `docs/superpowers/specs/2026-10-31-metavault-design.md`.
 
 ## Global Constraints
 
 - Secrets never reach agents, the marshal prompt, the renderer after save, logs, or audit rows. Audit stores verdict metadata only.
 - Deterministic policy is law: the marshal may narrow or escalate, never widen. Settings change *who judges*, never *the rules*.
-- All human-mutation routes require header `x-openvault-token`; MCP/agent routes must never accept it.
+- All human-mutation routes require header `x-metavault-token`; MCP/agent routes must never accept it.
 - Windows first. macOS DMG/signing parked.
 - Baseline before Task 1: `npm run test` = 191 passed, `npm run typecheck` exit 0, `npm run lint` exit 0. No task may drop below its own new baseline.
 - Semantic charting of data flow is explicitly deferred until after this plan (user instruction).
@@ -25,21 +25,21 @@
 
 **Files:**
 - Modify: `packages/mcp/src/server.ts` (server version reads from a single `VERSION` export)
-- Create: `packages/mcp/package.json` (`bin: openvault-mcp`, `main`, build script mirroring app pattern)
+- Create: `packages/mcp/package.json` (`bin: metavault-mcp`, `main`, build script mirroring app pattern)
 - Create: `docs/MCP.md` (host config snippets: Claude Code, Cursor, VS Code, Codex, OpenCode)
 - Modify: `scripts/check-mcp-hosts.mjs` (also assert `tools/list` returns exactly 5 tools)
 - Test: `packages/mcp/test/mcp.test.ts` (extend)
 
 **Interfaces:**
 - Produces: `export const MCP_VERSION: string` in `packages/mcp/src/server.ts`; hosts launch `node dist/packages/mcp/src/server.js` (documented) or the packaged bin.
-- Consumes: daemon HTTP API only; env `OPENVAULT_DAEMON_URL`, `OPENVAULT_AGENT_ID`, `OPENVAULT_IDE`.
+- Consumes: daemon HTTP API only; env `METAVAULT_DAEMON_URL`, `METAVAULT_AGENT_ID`, `METAVAULT_IDE`.
 
 - [ ] Write failing test: handshake reports `serverInfo.version === MCP_VERSION` and tools list is exactly `request_capability, list_aliases, request_enrollment, enrollment_status, revoke`.
 - [ ] Run `npx vitest run packages/mcp/test/mcp.test.ts` — expect FAIL on `MCP_VERSION` import.
 - [ ] Implement `MCP_VERSION = "0.1.0-alpha.1"`, use it in the `Server` constructor; add `packages/mcp/package.json` bin.
-- [ ] Write `docs/MCP.md` with one copy-paste config block per host; each block sets `OPENVAULT_AGENT_ID` per IDE.
+- [ ] Write `docs/MCP.md` with one copy-paste config block per host; each block sets `METAVAULT_AGENT_ID` per IDE.
 - [ ] Extend `scripts/check-mcp-hosts.mjs` tool-name assertion; run it against a live daemon.
-- [ ] Run full gates; commit `feat(mcp): package openvault-mcp for IDE hosts + host config docs`.
+- [ ] Run full gates; commit `feat(mcp): package metavault-mcp for IDE hosts + host config docs`.
 
 ### Task 2: Warden settings store + encrypted Meta API key path (daemon)
 
@@ -185,10 +185,10 @@
 
 **Interfaces — probe list (each asserts the secure outcome):**
 1. Approve/deny/settings/credential-mutation without token ⇒ 401; with a wrong token ⇒ 401.
-2. MCP-side request attempting `x-openvault-token` header injection ⇒ daemon still treats it as agent traffic (settings read denied).
+2. MCP-side request attempting `x-metavault-token` header injection ⇒ daemon still treats it as agent traffic (settings read denied).
 3. Scope escalation: request above ceiling, marshal stub recommending above ceiling ⇒ denied `scope-above-ceiling`.
 4. Standing-approval abuse: write scope, unknown alias, after credential delete+re-add ⇒ approval required again.
-5. Deeplink fuzz: `openvault://add` with `../`, `%00`, 10k-char alias, duplicate params ⇒ clean 400/no modal crash.
+5. Deeplink fuzz: `metavault://add` with `../`, `%00`, 10k-char alias, duplicate params ⇒ clean 400/no modal crash.
 6. Enrollment flood: 200 rapid creates ⇒ bounded registry (expired eviction holds), no 500s.
 7. Malformed percent-encoding + oversized JSON body on every route ⇒ 400/413, never 500.
 8. Secret canary: run probes 1–7 with a canary credential stored; grep daemon stdout, audit JSON, and HTTP responses for the canary ⇒ absent.
@@ -212,7 +212,7 @@
 4. Settings page: provider/model/effort + Meta key status (key field empty).
 
 - [ ] Capture screenshots from the real running app (no mockups); wire them into docs + README.
-- [ ] Redeploy site (`npx -y wrangler pages deploy site --project-name openvault --branch main --commit-dirty=true`); verify `/`, `/docs/`, `/architecture/`, `/hackathon/` return 200.
+- [ ] Redeploy site (`npx -y wrangler pages deploy site --project-name metavault --branch main --commit-dirty=true`); verify `/`, `/docs/`, `/architecture/`, `/hackathon/` return 200.
 - [ ] Commit `docs: screenshots and end-to-end agent flows`.
 
 ### Task 11: Release v0.1.0-alpha.1

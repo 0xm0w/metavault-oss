@@ -33,7 +33,7 @@ const FakeConnector = Layer.succeed(Connector, {
   execute: (_a, _s, secret) => Effect.succeed({ echoedLength: secret.length }),
 });
 
-const workDir = mkdtempSync(join(tmpdir(), "openvault-cli-"));
+const workDir = mkdtempSync(join(tmpdir(), "metavault-cli-"));
 const dbPath = join(workDir, "vault.db");
 
 let service: VaultServiceService;
@@ -60,7 +60,7 @@ const cliFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<R
   const body: unknown =
     typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
   const headers = (init?.headers ?? {}) as Record<string, string>;
-  const providedToken = headers["x-openvault-token"];
+  const providedToken = headers["x-metavault-token"];
   const out = await handleVaultRequest(service, method, url.pathname, body, {
     daemonToken: DAEMON_TOKEN,
     ...(providedToken !== undefined ? { providedToken } : {}),
@@ -129,7 +129,7 @@ async function requestPending(): Promise<string> {
 }
 
 beforeAll(async () => {
-  writeFileSync(join(workDir, "openvault.token"), DAEMON_TOKEN, "utf8");
+  writeFileSync(join(workDir, "metavault.token"), DAEMON_TOKEN, "utf8");
   service = await Effect.runPromise(
     Effect.gen(function* () {
       return yield* VaultService;
@@ -150,7 +150,7 @@ afterAll(() => {
   }
 });
 
-describe("openvault CLI (in-process daemon wire)", () => {
+describe("metavault CLI (in-process daemon wire)", () => {
   it("add stores the credential locally; GET /aliases then shows the alias", async () => {
     const cap = capture();
     const callsBefore = daemonCalls;
@@ -296,7 +296,7 @@ describe("openvault CLI (in-process daemon wire)", () => {
   });
 
   it("init creates the vault and shows a fresh master key exactly once", async () => {
-    const initDir = mkdtempSync(join(tmpdir(), "openvault-cli-init-"));
+    const initDir = mkdtempSync(join(tmpdir(), "metavault-cli-init-"));
     const initDb = join(initDir, "vault.db");
     try {
       const cap = capture({ dbPath: initDb, masterKey: undefined });
@@ -330,7 +330,7 @@ describe("openvault CLI (in-process daemon wire)", () => {
       daemonToken: "cli-deps-token",
       fetchFn: (_input, init) => {
         const headers = init?.headers as Record<string, string> | undefined;
-        seenToken = headers?.["x-openvault-token"];
+        seenToken = headers?.["x-metavault-token"];
         return Promise.resolve(
           new Response(JSON.stringify({ status: "executed", result: {} }), {
             status: 200,
@@ -345,16 +345,16 @@ describe("openvault CLI (in-process daemon wire)", () => {
   });
 
   it("approve falls back to the token file next to the DB path", async () => {
-    const saved = process.env["OPENVAULT_DAEMON_TOKEN"];
-    delete process.env["OPENVAULT_DAEMON_TOKEN"];
-    const tokenPath = join(workDir, "openvault.token");
+    const saved = process.env["METAVAULT_DAEMON_TOKEN"];
+    delete process.env["METAVAULT_DAEMON_TOKEN"];
+    const tokenPath = join(workDir, "metavault.token");
     writeFileSync(tokenPath, "file-token-value", "utf8");
     try {
       let seenToken: string | undefined;
       const cap = capture({
         fetchFn: (_input, init) => {
           const headers = init?.headers as Record<string, string> | undefined;
-          seenToken = headers?.["x-openvault-token"];
+          seenToken = headers?.["x-metavault-token"];
           return Promise.resolve(
             new Response(JSON.stringify({ status: "executed", result: {} }), {
               status: 200,
@@ -373,9 +373,9 @@ describe("openvault CLI (in-process daemon wire)", () => {
         // best effort
       }
       if (saved === undefined) {
-        delete process.env["OPENVAULT_DAEMON_TOKEN"];
+        delete process.env["METAVAULT_DAEMON_TOKEN"];
       } else {
-        process.env["OPENVAULT_DAEMON_TOKEN"] = saved;
+        process.env["METAVAULT_DAEMON_TOKEN"] = saved;
       }
     }
   });
@@ -414,7 +414,7 @@ describe("openvault CLI (in-process daemon wire)", () => {
     expect(echoed).not.toContain(CANARY);
   });
 
-  it("openvault import imports .env file into encrypted vault storage (#17)", async () => {
+  it("metavault import imports .env file into encrypted vault storage (#17)", async () => {
     const envFile = join(workDir, "test.env");
     writeFileSync(
       envFile,
@@ -452,7 +452,7 @@ OPENAI_API_KEY=sk-proj-import-openai-888
     expect(decrypted).toBe("sk_test_import_stripe_999");
   });
 
-  it("openvault run injects decrypted secrets in-memory into child process (#17)", async () => {
+  it("metavault run injects decrypted secrets in-memory into child process (#17)", async () => {
     let capturedEnv: NodeJS.ProcessEnv | undefined;
     let commandSpawned = "";
 

@@ -317,7 +317,7 @@ describe("warden settings routes", () => {
       expect(noToken.status).toBe(401);
       const put = await fetch(`${base}/settings/warden/key`, {
         method: "PUT",
-        headers: { "content-type": "application/json", "x-openvault-token": TOKEN },
+        headers: { "content-type": "application/json", "x-metavault-token": TOKEN },
         body: JSON.stringify({ key: META_KEY }),
       });
       expect(put.status).toBe(200);

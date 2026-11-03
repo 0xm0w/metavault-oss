@@ -29,7 +29,7 @@ describe("preload is a thin IPC bridge (no fs, no fetch)", () => {
   it("uses ipcRenderer.invoke to the single daemon-call channel", () => {
     expect(preloadSource).toContain("ipcRenderer.invoke");
     expect(preloadSource).toContain(DAEMON_CALL_CHANNEL);
-    expect(DAEMON_CALL_CHANNEL).toBe("openvault:daemon-call");
+    expect(DAEMON_CALL_CHANNEL).toBe("metavault:daemon-call");
   });
 
   it("imports only electron (plus erased types)", () => {
@@ -112,7 +112,7 @@ describe("main-process daemon whitelist", () => {
     expect(mainSource).toContain("callDaemon");
     const handleCount = (mainSource.match(/ipcMain\.handle/g) ?? []).length;
     expect(handleCount).toBe(1);
-    expect(mainSource).not.toContain("OPENVAULT_DAEMON_TOKEN");
+    expect(mainSource).not.toContain("METAVAULT_DAEMON_TOKEN");
   });
 
   it("daemon client owns token, base URL, and header in main", () => {
@@ -120,8 +120,8 @@ describe("main-process daemon whitelist", () => {
     expect(clientSource).toContain("metavaultEnv");
     expect(clientSource).toContain("http://127.0.0.1:7077");
     expect(clientSource).toContain("./env.js");
-    expect(clientSource).toContain("openvault.token");
-    expect(clientSource).toContain("x-openvault-token");
+    expect(clientSource).toContain("metavault.token");
+    expect(clientSource).toContain("x-metavault-token");
     expect(clientSource).not.toContain("electron");
   });
 });
@@ -155,7 +155,7 @@ describe("warden settings IPC whitelist (Task 6)", () => {
   });
 
   it("forwards warden calls to the daemon with the token header (token stays in main)", async () => {
-    process.env["OPENVAULT_DAEMON_TOKEN"] = "test-token-warden";
+    process.env["METAVAULT_DAEMON_TOKEN"] = "test-token-warden";
     const seen: { url: string; init: RequestInit }[] = [];
     const originalFetch = globalThis.fetch;
     const mockFetch = async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -173,7 +173,7 @@ describe("warden settings IPC whitelist (Task 6)", () => {
       await callDaemon({ method: "POST", path: "/settings/warden/test" });
     } finally {
       globalThis.fetch = originalFetch;
-      delete process.env["OPENVAULT_DAEMON_TOKEN"];
+      delete process.env["METAVAULT_DAEMON_TOKEN"];
     }
     expect(seen.map((s) => s.url)).toEqual([
       "http://127.0.0.1:7077/settings/warden",
@@ -186,7 +186,7 @@ describe("warden settings IPC whitelist (Task 6)", () => {
     expect(seen.map((s) => s.init.method)).toEqual(["GET", "PATCH", "PUT", "GET", "DELETE", "POST"]);
     for (const call of seen) {
       const headers = call.init.headers as Record<string, string>;
-      expect(headers["x-openvault-token"]).toBe("test-token-warden");
+      expect(headers["x-metavault-token"]).toBe("test-token-warden");
     }
     expect(JSON.parse(seen[2]?.init.body as string)).toEqual({ key: "meta-key-12345678" });
   });
@@ -202,8 +202,8 @@ describe("warden settings IPC whitelist (Task 6)", () => {
     expect(preload).toContain('"/settings/warden/test"');
     expect(preload).toContain('"/settings/warden"');
     expect(preload).toContain('"/settings/warden/key"');
-    expect(preload).not.toContain("x-openvault-token");
-    expect(preload).not.toContain("OPENVAULT_DAEMON_TOKEN");
-    expect(preload).not.toContain("openvault.token");
+    expect(preload).not.toContain("x-metavault-token");
+    expect(preload).not.toContain("METAVAULT_DAEMON_TOKEN");
+    expect(preload).not.toContain("metavault.token");
   });
 });

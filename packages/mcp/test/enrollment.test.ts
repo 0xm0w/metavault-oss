@@ -21,7 +21,7 @@ describe("MCP enrollment tools (fake daemon)", () => {
     const fetchFn: DaemonFetch = (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       calls.push({ method: init?.method ?? "GET", url, body: typeof init?.body === "string" ? JSON.parse(init.body) as unknown : undefined });
-      const payload = url.includes("/enrollments/enr-1") ? { status: "completed", alias: "stripe", scope: "charges.read" } : { enrollmentId: "enr-1", deeplink: "openvault://add?alias=stripe&scope=charges.read&enrollment=enr-1" };
+      const payload = url.includes("/enrollments/enr-1") ? { status: "completed", alias: "stripe", scope: "charges.read" } : { enrollmentId: "enr-1", deeplink: "metavault://add?alias=stripe&scope=charges.read&enrollment=enr-1" };
       return Promise.resolve(new Response(JSON.stringify(payload), { status: 201, headers: { "content-type": "application/json" } }));
     };
     const client = await makeClient(fetchFn);
@@ -31,7 +31,7 @@ describe("MCP enrollment tools (fake daemon)", () => {
       expect(listed.tools.map((t) => t.name)).toContain("enrollment_status");
       const created = (await client.callTool({ name: "request_enrollment", arguments: { alias: "stripe", scope: "charges.read", reason: "need it" } })) as ToolResult;
       expect(created.isError).not.toBe(true);
-      expect(textOf(created)).toContain("openvault://add?");
+      expect(textOf(created)).toContain("metavault://add?");
       expect(textOf(created)).toContain("Show this deeplink");
       expect(JSON.stringify(created)).not.toContain("sk-");
       expect(calls[0]?.body).toMatchObject({ alias: "stripe", scope: "charges.read", reason: "need it" });

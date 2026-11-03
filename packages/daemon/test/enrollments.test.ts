@@ -25,7 +25,7 @@ describe("enrollments", () => {
     const created = await handleVaultRequest(service, "POST", "/enrollments", { alias: "stripe", scope: "charges.read", website: "stripe.com" });
     expect(created.status).toBe(201);
     const body = created.body as { enrollmentId: string; deeplink: string };
-    expect(body.deeplink).toContain("openvault://add?");
+    expect(body.deeplink).toContain("metavault://add?");
     expect(body.deeplink).toContain("alias=stripe");
     expect(body.deeplink).toContain(`enrollment=${body.enrollmentId}`);
     expect(JSON.stringify(created.body)).not.toContain(SECRET);

@@ -1,14 +1,14 @@
-# OpenVault Implementation Plan
+# MetaVault OSS Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build OpenVault — a local-first Electron wallet where AI agents request scoped capabilities via MCP, a local Llama 3.2 3B marshal vets each request, the human approves, and the daemon injects the secret into one tool call that then expires.
+**Goal:** Build MetaVault OSS — a local-first Electron wallet where AI agents request scoped capabilities via MCP, a local Llama 3.2 3B marshal vets each request, the human approves, and the daemon injects the secret into one tool call that then expires.
 
 **Architecture:** One TypeScript repo. `vaultd` (daemon) is the only component that holds secrets: AES-256-GCM ciphertext in SQLite, master key in the OS keychain. Deterministic `policy` gates everything; the `brain` (Ollama, Llama 3.2 3B Q4) advises in strict JSON and can narrow or escalate, never widen. MCP, CLI, and the Electron app are thin surfaces over the daemon API.
 
 **Tech Stack:** TypeScript, Node 20+, Effect TS (`effect`, `@effect/platform`, `@effect/platform-node`) + Effect Schema in daemon-side packages, plain TypeScript (no Effect) in the Electron renderer, Vitest + `@effect/vitest`, SQLite (`better-sqlite3`), Ollama local HTTP API, Electron, MCP TypeScript SDK (`@modelcontextprotocol/sdk`), ESLint typescript-eslint strict-type-checked.
 
-**Spec:** [OpenVault design spec](/C:/Users/Mowreez.DESKTOP-D1GHS6J/openvault/docs/superpowers/specs/2026-10-31-openvault-design.md)
+**Spec:** [MetaVault OSS design spec](/C:/Users/Mowreez.DESKTOP-D1GHS6J/metavault-oss/docs/superpowers/specs/2026-10-31-metavault-design.md)
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - `vaultd` binds to localhost only. Secrets are plaintext only inside `vaultd` during one connector call.
 - Standing approvals ("Always allow") are allowed only for read-only, marshal-rated low-risk scopes inside policy ceilings.
 - UI is Direction B (Marshal Light): `#FFFFFF`/`#F8FAFC` surfaces, navy `#1E3A5F`, approve `#16A34A`, warn `#D97706`, deny `#DC2626`; system UI font, JetBrains Mono for scopes/aliases/audit.
-- Work happens only in `openvault/`. Every task ends green on its own tests before the next starts.
+- Work happens only in `metavault/`. Every task ends green on its own tests before the next starts.
 - Effect discipline (daemon-side packages only): services are `Context.Tag`s composed with `Layer`s; public methods return `Effect.Effect<A, E>` with tagged error types (`PolicyDenied`, `UnknownAlias`, `MarshalUnavailable`, `MarshalInvalidOutput`, `GrantExpired`, `GrantRevoked`, `ConnectorFailed`, `StorageError`). No `throw` across module boundaries; defects only for programmer bugs. The three places Effects are converted to Promises/values are the daemon HTTP handler, the MCP adapter, and the CLI entry — the system edges. The Electron renderer contains no `effect` imports.
 - Effect Schema (`Schema.decodeUnknown` / `decodeUnknownEffect`) validates every untrusted boundary: marshal model output, MCP tool inputs, daemon HTTP payloads. Hand-rolled JSON validation is a review failure.
 - Super-strict gates run on every task: `tsc` with `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`, `noFallthroughCasesInSwitch`; ESLint strict-type-checked + `no-floating-promises`; `no-explicit-any` outside test fakes; `no-console` in `packages/core|brain|connectors|daemon|mcp|cli`. A task is not done while `npm run typecheck` or `npm run lint` reports any error.
@@ -25,7 +25,7 @@
 ## File Structure
 
 ```text
-openvault/
+metavault/
   package.json, tsconfig.json, vitest.config.ts
   packages/
     core/        # vaultd domain: storage, crypto, policy, grants, audit (no I/O surfaces)
@@ -40,7 +40,7 @@ openvault/
       src/server.ts, src/service.ts, test/service.test.ts
     mcp/         # MCP server: request_capability, list_aliases, revoke
       src/server.ts, test/mcp.test.ts
-    cli/         # openvault CLI: init/add/approve/audit/revoke/model
+    cli/         # metavault CLI: init/add/approve/audit/revoke/model
       src/cli.ts, test/cli.test.ts
     app/         # Electron shell, Direction B UI (vault home, approval, audit, policies)
       src/main.ts, src/renderer/
@@ -63,7 +63,7 @@ openvault/
 ```json
 // package.json
 {
-  "name": "openvault", "private": true, "type": "module",
+  "name": "metavault", "private": true, "type": "module",
   "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit", "lint": "eslint . --max-warnings 0" },
   "dependencies": { "effect": "^3", "@effect/platform": "^0", "@effect/platform-node": "^0", "better-sqlite3": "^11" },
   "devDependencies": { "typescript": "^5", "vitest": "^2", "@effect/vitest": "^0", "eslint": "^9", "typescript-eslint": "^8" }
@@ -101,7 +101,7 @@ Expected: PASS with "no test files found" replaced by a trivial smoke test you a
 - [ ] **Step 4: Commit**
 
 ```bash
-git add . && git commit -m "chore: scaffold openvault monorepo"
+git add . && git commit -m "chore: scaffold metavault monorepo"
 ```
 
 ---
@@ -355,7 +355,7 @@ First create `packages/core/src/connector.ts`: `class Connector extends Context.
 
 - [ ] **Step 3: Expose `vaultd` over localhost HTTP**
 
-Endpoints: `POST /request`, `POST /approve`, `POST /deny`, `POST /revoke`, `GET /aliases`, `GET /audit`. Bind `127.0.0.1` only. This HTTP handler is a system edge: request bodies are decoded with Effect Schema, the composed `VaultService` Effect is run with `Effect.runPromiseExit`, and tagged errors map to HTTP statuses (`GrantExpired`/`GrantRevoked` → 409, `PolicyDenied`/`UnknownAlias` → 403, `ConnectorFailed` → 502) with an error body containing only the tag and message — never payloads or secrets. Master key: read from OS keychain via the platform command in production; `OPENVAULT_MASTER_KEY` env (base64, 32 bytes) for dev/tests.
+Endpoints: `POST /request`, `POST /approve`, `POST /deny`, `POST /revoke`, `GET /aliases`, `GET /audit`. Bind `127.0.0.1` only. This HTTP handler is a system edge: request bodies are decoded with Effect Schema, the composed `VaultService` Effect is run with `Effect.runPromiseExit`, and tagged errors map to HTTP statuses (`GrantExpired`/`GrantRevoked` → 409, `PolicyDenied`/`UnknownAlias` → 403, `ConnectorFailed` → 502) with an error body containing only the tag and message — never payloads or secrets. Master key: read from OS keychain via the platform command in production; `METAVAULT_MASTER_KEY` env (base64, 32 bytes) for dev/tests.
 
 - [ ] **Step 4: Run the tests**
 
@@ -438,12 +438,12 @@ Expected: PASS.
 
 **Interfaces:**
 - Consumes: `vaultd` HTTP API (Task 5) plus local key generation for `init`.
-- Produces: `openvault init | add <alias> --scope <s> | approve <grantId> | audit | revoke <target> | model pull`. `add` reads the secret from a hidden stdin prompt, encrypts it via the daemon or locally with the master key, and never echoes it.
+- Produces: `metavault init | add <alias> --scope <s> | approve <grantId> | audit | revoke <target> | model pull`. `add` reads the secret from a hidden stdin prompt, encrypts it via the daemon or locally with the master key, and never echoes it.
 
 - [ ] **Step 1: Write tests** for `add` then `GET /aliases` showing the alias, and for `audit` printing marshal decisions with model IDs.
 - [ ] **Step 2: Implement** with `node:readline` hidden input for the secret and HTTP calls for the rest. The CLI is an edge: `init`/`add` build small Effects (key generation via `Effect.sync`, encryption via core) and run them with `Effect.runPromiseExit`, printing only tagged-error names on failure. No business logic lives in the CLI; it composes core Effects and daemon calls.
 - [ ] **Step 3: Run** — `npx vitest run packages/cli/test/cli.test.ts` — Expected: PASS.
-- [ ] **Step 4: Commit** — `git commit -m "feat: openvault CLI"`
+- [ ] **Step 4: Commit** — `git commit -m "feat: metavault CLI"`
 
 ---
 

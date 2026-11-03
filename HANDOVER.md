@@ -1,7 +1,7 @@
-# MetaVault OSS — Handover (2026-10-31, repo renamed from openvault)
+# MetaVault OSS — Handover (2026-10-31, repo renamed from metavault)
 
-Read this first when resuming. Repo: `C:\Users\Mowreez.DESKTOP-D1GHS6J\openvault`
-Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/openvault; old URL redirects)
+Read this first when resuming. Repo: `C:\Users\Mowreez.DESKTOP-D1GHS6J\metavault`
+Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/metavault; old URL redirects)
 
 ## Where things stand
 
@@ -10,17 +10,17 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/ope
 - CI/CD verified green on GitHub Actions:
   - CI: https://github.com/0xm0w/metavault-oss/actions/runs/41223410981 (Windows + Ubuntu exit 0)
   - CodeQL: https://github.com/0xm0w/metavault-oss/actions/runs/41223410962 (exit 0)
-- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-openvault-hardening-release.md`
+- Hardening plan (11 tasks) + Final Review Fix Wave are implemented: Tasks 1–11 all built and reviewed, plus must-fix #1, must-fix #3, and Low issues resolved and verified. Plan: `docs/superpowers/plans/2026-10-31-metavault-hardening-release.md`
 - SDD ledger (task-by-task record, deferred minors, rulings):
-  `.superpowers/sdd/2026-10-31-openvault-hardening-release/progress.md`
+  `.superpowers/sdd/2026-10-31-metavault-hardening-release/progress.md`
   Per-task reports + review diffs are in the same folder (`task-N-report.md`, `task-N-review.md`).
 - Last verified gates: **271 tests passed**,
   `npm run test:coverage` at plan targets, `npm run typecheck` exit 0, `npm run lint` exit 0.
   Coverage baseline: core 97.46%, daemon 89.94%, brain 96.34%, mcp 87.98%, renderer model 95.13%.
 - Windows installer built locally (unpacked-launch smoke passed):
-  `packages/app/release/OpenVault-0.1.0-alpha.1-win-x64.exe` — 121,250,505 bytes,
+  `packages/app/release/MetaVault OSS-0.1.0-alpha.1-win-x64.exe` — 121,250,505 bytes,
   SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`.
-- Site already redeployed (Task 10): `https://openvault-4dn.pages.dev/` plus
+- Site already redeployed (Task 10): `https://metavault-4dn.pages.dev/` plus
   `/docs/`, `/architecture/`, `/hackathon/` all verified HTTP 200.
 
 ## What was built in this hardening round
@@ -78,7 +78,7 @@ model/baseUrl free text (bounded in practice by 64 KiB body cap); key draft
 retained on ambiguous save response; completed enrollments never purged from
 memory; MCP bin unshebanged/monorepo-relative (documented `node dist/...` path
 works); release.yml marks a tag as a prerelease only when its name contains a hyphen;
-stale `OpenVault-0.1.0-win-x64.exe` name in the old VERIFICATION installer section;
+stale `MetaVault OSS-0.1.0-win-x64.exe` name in the old VERIFICATION installer section;
 settings/brain double-read race (self-healing next request); provider-`none`
 skip lives only at the service layer; standard/deep timeouts asserted as
 constants, not clock-tested; Meta API model ids user-editable, not docs-verified.
@@ -87,7 +87,7 @@ constants, not clock-tested; Meta API model ids user-editable, not docs-verified
 
 - Secrets never reach agents, the marshal prompt, audit rows, logs, or the
   renderer after save. Policy is law; the model may narrow/escalate, never widen.
-- Human-mutation routes require `x-openvault-token`; agent/MCP traffic must never carry it.
+- Human-mutation routes require `x-metavault-token`; agent/MCP traffic must never carry it.
 - Windows first. Effect TS in core/daemon/brain; plain TypeScript UI.
 - Versioning: `0.1.0` is the first public release (2026-11-01). The Windows
   installer is still unsigned, and there is still no macOS build.

@@ -175,7 +175,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-openvault-token": TOKEN,
+            "x-metavault-token": TOKEN,
           },
           body: JSON.stringify({ grantId }),
         }),
@@ -219,7 +219,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-openvault-token": TOKEN,
+            "x-metavault-token": TOKEN,
           },
           body: JSON.stringify({ grantId }),
         }),
@@ -227,7 +227,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-openvault-token": TOKEN,
+            "x-metavault-token": TOKEN,
           },
           body: JSON.stringify({ target: "agent-to-revoke" }),
         }),
@@ -242,7 +242,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-token": TOKEN,
+          "x-metavault-token": TOKEN,
         },
         body: JSON.stringify({ grantId }),
       });
@@ -277,7 +277,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-openvault-token": TOKEN,
+            "x-metavault-token": TOKEN,
           },
           body: JSON.stringify({ grantId: data.grantId }),
         });

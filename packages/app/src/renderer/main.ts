@@ -376,7 +376,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   approveBtn.disabled = busy;
   approveBtn.addEventListener("click", () => {
     const executeApproval = () => {
-      void runAction(() => window.openvault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
+      void runAction(() => window.metavault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
     };
     if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
       void confirmLocalPresence("Authenticate to approve capability", executeApproval);
@@ -388,7 +388,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   denyBtn.type = "button";
   denyBtn.disabled = busy;
   denyBtn.addEventListener("click", () => {
-    void runAction(() => window.openvault.deny(hero.grantId), "Denied — the agent was told no, with the allowed ceiling.");
+    void runAction(() => window.metavault.deny(hero.grantId), "Denied — the agent was told no, with the allowed ceiling.");
   });
   const blockBtn = el("button", "action btn-deny", "Block agent") as HTMLButtonElement;
   blockBtn.type = "button";
@@ -396,7 +396,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   blockBtn.title = `Block ${hero.agentId} and cancel all its pending requests`;
   blockBtn.addEventListener("click", () => {
     void runAction(
-      () => window.openvault.revoke(hero.agentId),
+      () => window.metavault.revoke(hero.agentId),
       `Blocked ${hero.agentId} — pending grants cancelled, all future requests denied.`,
     );
   });
@@ -409,7 +409,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     alwaysBtn.disabled = busy;
     alwaysBtn.addEventListener("click", () => {
       void runAction(
-        () => window.openvault.approveAlways(hero.grantId),
+        () => window.metavault.approveAlways(hero.grantId),
         `Standing approval saved for ${hero.agentId} · ${hero.allowedScope}. Read-only low-risk only; writes still ask every time.`,
       );
     });
@@ -587,7 +587,7 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
       cancelBtn.disabled = true;
       errorBox.hidden = true;
       try {
-        await window.openvault.addCredential(
+        await window.metavault.addCredential(
           nameInput.value.trim(),
           scopeInput.value.trim(),
           secretInput.value,
@@ -799,7 +799,7 @@ function openCredentialDetail(card: { alias: string; website: string; scopes: re
       cancelBtn.disabled = true;
       errorBox.hidden = true;
       try {
-        await window.openvault.deleteCredential(card.alias);
+        await window.metavault.deleteCredential(card.alias);
         closeCredentialModal(false);
         await refresh();
         document.querySelector<HTMLElement>(".vault-add-btn")?.focus();
@@ -820,7 +820,7 @@ function openCredentialDetail(card: { alias: string; website: string; scopes: re
       deleteBtn.disabled = true;
       errorBox.hidden = true;
       try {
-        await window.openvault.updateCredential(
+        await window.metavault.updateCredential(
           card.alias,
           buildEditPayload({ scope: scopeInput.value, website: websiteInput.value, secret: secretInput.value }),
         );
@@ -883,7 +883,7 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
     bioBtn.addEventListener("click", () => {
       void (async () => {
         bioBtn.disabled = true;
-        const res = await window.openvault.verifyWindowsHello("unlock");
+        const res = await window.metavault.verifyWindowsHello("unlock");
         if (res.ok) {
           close();
           onVerified();
@@ -908,7 +908,7 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
     if (!pin) return;
     confirmBtn.disabled = true;
     try {
-      const res = (await window.openvault.verifyLocalPin(pin)) as { ok?: boolean } | null;
+      const res = (await window.metavault.verifyLocalPin(pin)) as { ok?: boolean } | null;
       if (res?.ok) {
         close();
         onVerified();
@@ -939,7 +939,7 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
 
 async function confirmLocalPresence(title: string, onVerified: () => void): Promise<void> {
   if (isBiometricsActive(localAuthStatus)) {
-    const result = await window.openvault.verifyWindowsHello("unlock");
+    const result = await window.metavault.verifyWindowsHello("unlock");
     if (result.ok) {
       onVerified();
       return;
@@ -954,7 +954,7 @@ async function confirmLocalPresence(title: string, onVerified: () => void): Prom
 }
 
 async function tryEnableWindowsHello(): Promise<"on" | "unavailable" | "canceled"> {
-  const availability = await window.openvault.windowsHelloAvailability();
+  const availability = await window.metavault.windowsHelloAvailability();
   if (!availability.available) {
     localAuthNotice = {
       text: "Windows Hello is not set up on this PC. Add a Windows Hello PIN in Windows Settings, or set an app PIN below.",
@@ -963,14 +963,14 @@ async function tryEnableWindowsHello(): Promise<"on" | "unavailable" | "canceled
     render();
     return "unavailable";
   }
-  const verified = await window.openvault.verifyWindowsHello("setup");
+  const verified = await window.metavault.verifyWindowsHello("setup");
   if (!verified.ok) {
     localAuthNotice = { text: "Windows Hello was not confirmed.", ok: false };
     render();
     return verified.reason === "canceled" ? "canceled" : "unavailable";
   }
   await runSettingsAction(async () => {
-    const raw = await window.openvault.updateLocalAuthSettings({ enabled: true, biometricEnabled: true });
+    const raw = await window.metavault.updateLocalAuthSettings({ enabled: true, biometricEnabled: true });
     const projected = projectLocalAuthStatus(raw);
     if (projected !== null) localAuthStatus = projected;
     localAuthNotice = { text: "Windows Hello is on. MetaVault never sees that PIN.", ok: true };
@@ -1052,7 +1052,7 @@ function openPinModal(onSuccess?: () => void): void {
     }
     saveBtn.disabled = true;
     try {
-      const res = (await window.openvault.setLocalPin(newPin, curInput?.value.trim())) as { ok?: boolean } | null;
+      const res = (await window.metavault.setLocalPin(newPin, curInput?.value.trim())) as { ok?: boolean } | null;
       if (res?.ok) {
         close();
         onSuccess?.();
@@ -1258,7 +1258,7 @@ function openDotEnvModal(): void {
       let count = 0;
       for (const item of toImport) {
         try {
-          await window.openvault.addCredential(
+          await window.metavault.addCredential(
             item.alias,
             item.scope,
             item.value,
@@ -1635,7 +1635,7 @@ function renderAudit(view: HTMLElement): void {
           blockAgentBtn.disabled = busy;
           blockAgentBtn.addEventListener("click", () => {
             void runAction(
-              () => window.openvault.revoke(group.agentId),
+              () => window.metavault.revoke(group.agentId),
               `Revoked ${group.agentId} — pending grants cancelled, new requests denied.`,
             );
           });
@@ -1787,8 +1787,8 @@ function openSettings(tab?: SettingsTab): void {
   if (tab !== undefined) settingsTab = tab;
   settingsFocusOnOpen = !settingsOpen;
   settingsOpen = true;
-  if (typeof window.openvault.getBuiltinAiStatus === "function") {
-    void window.openvault.getBuiltinAiStatus().then((s) => {
+  if (typeof window.metavault.getBuiltinAiStatus === "function") {
+    void window.metavault.getBuiltinAiStatus().then((s) => {
       builtinAiStatus = s;
       render();
     });
@@ -2156,7 +2156,7 @@ function renderSettings(view: HTMLElement): void {
       const cancelBtn = el("button", "action btn-deny", "Cancel") as HTMLButtonElement;
       cancelBtn.type = "button";
       cancelBtn.addEventListener("click", () => {
-        void window.openvault.cancelBuiltinAiDownload().then(() => {
+        void window.metavault.cancelBuiltinAiDownload().then(() => {
           builtinAiProgress = null;
           render();
         });
@@ -2170,7 +2170,7 @@ function renderSettings(view: HTMLElement): void {
       dlBtn.type = "button";
       dlBtn.disabled = settingsBusy;
       dlBtn.addEventListener("click", () => {
-        void window.openvault.startBuiltinAiDownload().then((started) => {
+        void window.metavault.startBuiltinAiDownload().then((started) => {
           if (started) {
             render();
           }
@@ -2277,7 +2277,7 @@ function renderSettings(view: HTMLElement): void {
   saveBtn.addEventListener("click", () => {
     const doSave = () => {
       void runSettingsAction(async () => {
-        const raw = await window.openvault.updateWardenSettings(buildWardenPatch(wardenDraft));
+        const raw = await window.metavault.updateWardenSettings(buildWardenPatch(wardenDraft));
         const projected = projectWardenSettings(raw);
         if (projected !== null) {
           wardenDraft = projected;
@@ -2331,7 +2331,7 @@ function renderSettings(view: HTMLElement): void {
     const doSaveKey = () => {
       void runSettingsAction(async () => {
         const key = settingsKeyDraft;
-        const raw = await window.openvault.setWardenKey(key);
+        const raw = await window.metavault.setWardenKey(key);
         const projected = projectWardenKeyStatus(raw);
         if (projected !== null) wardenKeyStatusState = projected;
         // Clear the field and never repopulate it from the daemon response.
@@ -2352,7 +2352,7 @@ function renderSettings(view: HTMLElement): void {
   testBtn.disabled = settingsBusy;
   testBtn.addEventListener("click", () => {
     void runSettingsAction(async () => {
-      const raw = await window.openvault.testWarden();
+      const raw = await window.metavault.testWarden();
       const projected = projectWardenTestResult(raw);
       if (projected === null) {
         settingsMessage = { text: "Warden test failed \u2014 vaultd returned an unexpected response.", ok: false };
@@ -2368,7 +2368,7 @@ function renderSettings(view: HTMLElement): void {
   deleteKeyBtn.addEventListener("click", () => {
     const doDeleteKey = () => {
       void runSettingsAction(async () => {
-        const raw = await window.openvault.deleteWardenKey();
+        const raw = await window.metavault.deleteWardenKey();
         const projected = projectWardenKeyStatus(raw);
         wardenKeyStatusState = projected ?? { configured: false, last4: null };
         settingsKeyDraft = "";
@@ -2420,7 +2420,7 @@ function renderSettings(view: HTMLElement): void {
     offBtn.type = "button";
     offBtn.addEventListener("click", () => {
       void runSettingsAction(async () => {
-        const raw = await window.openvault.updateLocalAuthSettings(
+        const raw = await window.metavault.updateLocalAuthSettings(
           localAuthStatus.configured
             ? { biometricEnabled: false }
             : { biometricEnabled: false, enabled: false },
@@ -2458,7 +2458,7 @@ function renderSettings(view: HTMLElement): void {
         if (outcome === "on" || outcome === "canceled" || localAuthStatus.configured) return;
         openPinModal(() => {
           void runSettingsAction(async () => {
-            const raw = await window.openvault.updateLocalAuthSettings({ enabled: true });
+            const raw = await window.metavault.updateLocalAuthSettings({ enabled: true });
             const projected = projectLocalAuthStatus(raw);
             if (projected !== null) localAuthStatus = projected;
             render();
@@ -2469,7 +2469,7 @@ function renderSettings(view: HTMLElement): void {
       return;
     }
     void runSettingsAction(async () => {
-      const raw = await window.openvault.updateLocalAuthSettings({ enabled: authToggle.checked });
+      const raw = await window.metavault.updateLocalAuthSettings({ enabled: authToggle.checked });
       const projected = projectLocalAuthStatus(raw);
       if (projected !== null) localAuthStatus = projected;
       render();
@@ -2491,7 +2491,7 @@ function renderSettings(view: HTMLElement): void {
     launchToggle.checked = localAuthStatus.requireOnLaunch;
     launchToggle.addEventListener("change", () => {
       void runSettingsAction(async () => {
-        const raw = await window.openvault.updateLocalAuthSettings({ requireOnLaunch: launchToggle.checked });
+        const raw = await window.metavault.updateLocalAuthSettings({ requireOnLaunch: launchToggle.checked });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -2511,7 +2511,7 @@ function renderSettings(view: HTMLElement): void {
     apprToggle.checked = localAuthStatus.requireOnApproval;
     apprToggle.addEventListener("change", () => {
       void runSettingsAction(async () => {
-        const raw = await window.openvault.updateLocalAuthSettings({ requireOnApproval: apprToggle.checked });
+        const raw = await window.metavault.updateLocalAuthSettings({ requireOnApproval: apprToggle.checked });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -2531,7 +2531,7 @@ function renderSettings(view: HTMLElement): void {
     settingsToggle.checked = localAuthStatus.requireOnSettings;
     settingsToggle.addEventListener("change", () => {
       void runSettingsAction(async () => {
-        const raw = await window.openvault.updateLocalAuthSettings({ requireOnSettings: settingsToggle.checked });
+        const raw = await window.metavault.updateLocalAuthSettings({ requireOnSettings: settingsToggle.checked });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -2562,7 +2562,7 @@ function renderSettings(view: HTMLElement): void {
     lockSelect.addEventListener("change", () => {
       const mins = Number(lockSelect.value);
       void runSettingsAction(async () => {
-        const raw = await window.openvault.updateLocalAuthSettings({ autoLockMinutes: mins });
+        const raw = await window.metavault.updateLocalAuthSettings({ autoLockMinutes: mins });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -2755,7 +2755,7 @@ function renderSettings(view: HTMLElement): void {
       "# Add Secret to MetaVault OSS (Agent Workflow)",
       "When you need an API key or token not in MetaVault OSS:",
       "1. Call MCP request_enrollment(alias, scope, reason)",
-      "2. Present deeplink (openvault://add?...) to the user",
+      "2. Present deeplink (metavault://add?...) to the user",
       "3. Only the user types the secret in the MetaVault OSS window",
       "4. Poll enrollment_status(enrollmentId) until completed",
       "5. Call request_capability to verify granted access",
@@ -2826,7 +2826,7 @@ function renderSettings(view: HTMLElement): void {
   strictToggle.checked = agentSecuritySettings.strictMode;
   strictToggle.addEventListener("change", () => {
     void runSettingsAction(async () => {
-      await window.openvault.updateAgentSecuritySettings({ strictMode: strictToggle.checked });
+      await window.metavault.updateAgentSecuritySettings({ strictMode: strictToggle.checked });
       agentSecuritySettings = { ...agentSecuritySettings, strictMode: strictToggle.checked };
       render();
     });
@@ -2845,7 +2845,7 @@ function renderSettings(view: HTMLElement): void {
   procToggle.checked = agentSecuritySettings.verifyCallerProcess;
   procToggle.addEventListener("change", () => {
     void runSettingsAction(async () => {
-      await window.openvault.updateAgentSecuritySettings({ verifyCallerProcess: procToggle.checked });
+      await window.metavault.updateAgentSecuritySettings({ verifyCallerProcess: procToggle.checked });
       agentSecuritySettings = { ...agentSecuritySettings, verifyCallerProcess: procToggle.checked };
       render();
     });
@@ -2887,8 +2887,8 @@ function renderSettings(view: HTMLElement): void {
   checkUpdateBtn.addEventListener("click", () => {
     updaterStatus = { status: "checking" };
     render();
-    if (typeof window.openvault.checkForUpdates === "function") {
-      void window.openvault.checkForUpdates();
+    if (typeof window.metavault.checkForUpdates === "function") {
+      void window.metavault.checkForUpdates();
     }
   });
   updateBtns.append(checkUpdateBtn);
@@ -2897,8 +2897,8 @@ function renderSettings(view: HTMLElement): void {
     const installBtn = el("button", "action btn-always", "Restart & install update") as HTMLButtonElement;
     installBtn.type = "button";
     installBtn.addEventListener("click", () => {
-      if (typeof window.openvault.quitAndInstallUpdate === "function") {
-        void window.openvault.quitAndInstallUpdate();
+      if (typeof window.metavault.quitAndInstallUpdate === "function") {
+        void window.metavault.quitAndInstallUpdate();
       }
     });
     updateBtns.append(installBtn);
@@ -2979,7 +2979,7 @@ function renderPolicies(view: HTMLElement): void {
       revokeBtn.type = "button";
       revokeBtn.disabled = busy;
       revokeBtn.addEventListener("click", () => {
-        void runAction(() => window.openvault.revoke(row.agentId), `Revoked ${row.agentId} — pending grants cancelled, new requests denied.`);
+        void runAction(() => window.metavault.revoke(row.agentId), `Revoked ${row.agentId} — pending grants cancelled, new requests denied.`);
       });
       action.append(revokeBtn);
       tr.append(action);
@@ -3129,7 +3129,7 @@ function render(): void {
       helloBtn.addEventListener("click", () => {
         void (async () => {
           helloBtn.disabled = true;
-          const res = await window.openvault.verifyWindowsHello("unlock");
+          const res = await window.metavault.verifyWindowsHello("unlock");
           if (res.ok) {
             vaultLocked = false;
             lastUserActivityTs = Date.now();
@@ -3163,7 +3163,7 @@ function render(): void {
         if (!pin) return;
         unlockBtn.disabled = true;
         try {
-          const res = (await window.openvault.verifyLocalPin(pin)) as { ok?: boolean } | null;
+          const res = (await window.metavault.verifyLocalPin(pin)) as { ok?: boolean } | null;
           if (res?.ok) {
             vaultLocked = false;
             lastUserActivityTs = Date.now();
@@ -3226,15 +3226,15 @@ function render(): void {
 async function refresh(): Promise<void> {
   try {
     const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw, secRaw] = await Promise.all([
-      window.openvault.pending(),
-      window.openvault.aliases(),
-      window.openvault.audit(),
-      window.openvault.policies(),
-      window.openvault.getWardenSettings().catch(() => null),
-      window.openvault.wardenKeyStatus().catch(() => null),
-      window.openvault.getSecurityPosture().catch(() => null),
-      window.openvault.getLocalAuthStatus().catch(() => null),
-      window.openvault.getAgentSecuritySettings().catch(() => null),
+      window.metavault.pending(),
+      window.metavault.aliases(),
+      window.metavault.audit(),
+      window.metavault.policies(),
+      window.metavault.getWardenSettings().catch(() => null),
+      window.metavault.wardenKeyStatus().catch(() => null),
+      window.metavault.getSecurityPosture().catch(() => null),
+      window.metavault.getLocalAuthStatus().catch(() => null),
+      window.metavault.getAgentSecuritySettings().catch(() => null),
     ]);
     
     if (secRaw !== null && typeof secRaw === "object") {
@@ -3253,7 +3253,7 @@ async function refresh(): Promise<void> {
       if (soonest !== undefined) {
         selectedGrantId = soonest.grantId;
       }
-      window.openvault.bringToFront();
+      window.metavault.bringToFront();
     }
     approvals = nextApprovals;
     aliases = projectAliasesResponse(aliasesRaw);
@@ -3321,7 +3321,7 @@ function tickExpiryLabels(): void {
 }
 
 function start(): void {
-  document.body.classList.toggle("is-simple-mode", uiMode === "simple");  window.openvault.onDeeplinkAdd((params) => {
+  document.body.classList.toggle("is-simple-mode", uiMode === "simple");  window.metavault.onDeeplinkAdd((params) => {
     // Sequenced by runDeeplinkAddFlow: the prefilled Add modal opens only
     // after the Vault render (and any refresh already in flight) has fully
     // completed, replacing any modal that is open. A failure surfaces in
@@ -3407,11 +3407,11 @@ function start(): void {
     });
   }
   void refreshTracked();
-  if (typeof window.openvault.onBuiltinAiProgress === "function") {
-    window.openvault.onBuiltinAiProgress((progress) => {
+  if (typeof window.metavault.onBuiltinAiProgress === "function") {
+    window.metavault.onBuiltinAiProgress((progress) => {
       builtinAiProgress = progress;
       if (progress.state === "completed" || progress.state === "idle") {
-        void window.openvault.getBuiltinAiStatus().then((s) => {
+        void window.metavault.getBuiltinAiStatus().then((s) => {
           builtinAiStatus = s;
           render();
         });
@@ -3420,8 +3420,8 @@ function start(): void {
       }
     });
   }
-  if (typeof window.openvault.onUpdaterStatus === "function") {
-    window.openvault.onUpdaterStatus((status) => {
+  if (typeof window.metavault.onUpdaterStatus === "function") {
+    window.metavault.onUpdaterStatus((status) => {
       updaterStatus = status;
       render();
     });

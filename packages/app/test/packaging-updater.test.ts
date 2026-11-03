@@ -14,9 +14,9 @@ const appRoot = join(here, "..");
 
 describe("Packaging & Installer Wizard Specifications (#16)", () => {
   it("defines auto-updater status and IPC channels correctly", () => {
-    expect(UPDATER_STATUS_CHANNEL).toBe("openvault:updater-status");
-    expect(CHECK_UPDATES_CHANNEL).toBe("openvault:check-for-updates");
-    expect(QUIT_AND_INSTALL_CHANNEL).toBe("openvault:quit-and-install");
+    expect(UPDATER_STATUS_CHANNEL).toBe("metavault:updater-status");
+    expect(CHECK_UPDATES_CHANNEL).toBe("metavault:check-for-updates");
+    expect(QUIT_AND_INSTALL_CHANNEL).toBe("metavault:quit-and-install");
     expect(getCurrentUpdaterStatus()).toEqual({ status: "idle" });
   });
 
@@ -39,12 +39,12 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
     // Must provide clean uninstaller data wipe prompt
     expect(nshContent).toContain("customUnInstall");
     expect(nshContent).toContain("MessageBox MB_YESNO");
-    expect(nshContent).toContain("openvault.db");
+    expect(nshContent).toContain("metavault.db");
   });
 
   it("provides CLI launcher wrappers in bin/ for immediate terminal access", () => {
-    const cmdPath = join(appRoot, "bin", "openvault.cmd");
-    const ps1Path = join(appRoot, "bin", "openvault.ps1");
+    const cmdPath = join(appRoot, "bin", "metavault.cmd");
+    const ps1Path = join(appRoot, "bin", "metavault.ps1");
     const daemonCmdPath = join(appRoot, "bin", "vaultd.cmd");
 
     expect(existsSync(cmdPath)).toBe(true);

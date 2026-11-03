@@ -21,18 +21,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const preloadPath = join(here, PRELOAD_FILE_NAME);
 const rendererPath = join(here, "renderer", "index.html");
 
-// Register as the openvault:// handler. In dev (running via the Electron
+// Register as the metavault:// handler. In dev (running via the Electron
 // binary) the execPath/argv form is required so Windows launches this app.
 if (process.defaultApp) {
   const script = process.argv[1];
   if (script !== undefined) {
-    app.setAsDefaultProtocolClient("openvault", process.execPath, [script]);
+    app.setAsDefaultProtocolClient("metavault", process.execPath, [script]);
   } else {
     app.setAsDefaultProtocolClient("metavault");
-  app.setAsDefaultProtocolClient("openvault");
+  app.setAsDefaultProtocolClient("metavault");
   }
 } else {
-  app.setAsDefaultProtocolClient("openvault");
+  app.setAsDefaultProtocolClient("metavault");
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -179,7 +179,7 @@ if (!hasLock) {
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
     registerBuiltinAiIpc(() => mainWindow);
     registerWindowsHelloIpc();
-    ipcMain.on("openvault:bring-to-front", () => {
+    ipcMain.on("metavault:bring-to-front", () => {
       bringWindowToFront();
     });
     createWindow();

@@ -50,7 +50,7 @@ async function run() {
   console.log("[+] Configuring Warden to Ollama llama3.2:3b...");
   const wardenCfgRes = await api("/settings/warden", {
     method: "PATCH",
-    headers: { "x-openvault-token": DAEMON_TOKEN },
+    headers: { "x-metavault-token": DAEMON_TOKEN },
     body: {
       provider: "ollama",
       model: "llama3.2:3b",
@@ -66,7 +66,7 @@ async function run() {
   console.log("[+] Seeding test credentials (stripe, github)...");
   await api("/credentials", {
     method: "POST",
-    headers: { "x-openvault-token": DAEMON_TOKEN },
+    headers: { "x-metavault-token": DAEMON_TOKEN },
     body: {
       alias: "stripe",
       scope: "charges.read",
@@ -76,7 +76,7 @@ async function run() {
 
   await api("/credentials", {
     method: "POST",
-    headers: { "x-openvault-token": DAEMON_TOKEN },
+    headers: { "x-metavault-token": DAEMON_TOKEN },
     body: {
       alias: "github",
       scope: "repos.read",
@@ -86,7 +86,7 @@ async function run() {
 
   // 4. Retrieve auto-provisioned agent identities & tokens
   const policiesRes = await api("/policies", {
-    headers: { "x-openvault-token": DAEMON_TOKEN },
+    headers: { "x-metavault-token": DAEMON_TOKEN },
   });
   const agents = policiesRes.json?.agents || [];
   const cursorAgent = agents.find((a) => a.id === "cursor");
@@ -109,7 +109,7 @@ async function run() {
   {
     const res = await api("/request", {
       method: "POST",
-      headers: { "x-openvault-agent-token": "ov_agent_cursor_forged_fake_token_0000000000000000" },
+      headers: { "x-metavault-agent-token": "ov_agent_cursor_forged_fake_token_0000000000000000" },
       body: {
         agentId: "cursor",
         ide: "Cursor",
@@ -133,7 +133,7 @@ async function run() {
   {
     await api("/request", {
       method: "POST",
-      headers: { "x-openvault-agent-token": codexAgent?.token },
+      headers: { "x-metavault-agent-token": codexAgent?.token },
       body: {
         agentId: "cursor", // Maliciously claiming Cursor's ID!
         ide: "Cursor",
@@ -145,7 +145,7 @@ async function run() {
     });
 
     // Check audit log for authoritative agent identity
-    const auditRes = await api("/audit", { headers: { "x-openvault-token": DAEMON_TOKEN } });
+    const auditRes = await api("/audit", { headers: { "x-metavault-token": DAEMON_TOKEN } });
     const auditEvents = auditRes.json?.events || [];
     const reqEvent = auditEvents.find((e) => e.stage === "requested" && e.alias === "stripe");
     const actualAgent = reqEvent?.agentId;
@@ -165,7 +165,7 @@ async function run() {
     // First, legitimate Cursor creates request and gets human "always-allow" (standing approval)
     const legRes = await api("/request", {
       method: "POST",
-      headers: { "x-openvault-agent-token": cursorAgent?.token },
+      headers: { "x-metavault-agent-token": cursorAgent?.token },
       body: {
         agentId: "cursor",
         ide: "Cursor",
@@ -179,7 +179,7 @@ async function run() {
     if (legGrantId) {
       await api("/approve-always", {
         method: "POST",
-        headers: { "x-openvault-token": DAEMON_TOKEN },
+        headers: { "x-metavault-token": DAEMON_TOKEN },
         body: { grantId: legGrantId },
       });
     }
@@ -197,7 +197,7 @@ async function run() {
       },
     });
     // Attacker MUST NOT be auto-executed! It must be routed to awaiting-approval with verified: false
-    const pendingRes = await api("/pending", { headers: { "x-openvault-token": DAEMON_TOKEN } });
+    const pendingRes = await api("/pending", { headers: { "x-metavault-token": DAEMON_TOKEN } });
     const unverifiedApproval = (pendingRes.json?.approvals || []).find((p) => p.reason === "Attacker attempting to silently ride Cursor's standing approval");
     const passed = spoofRes.json?.status === "awaiting-approval" && unverifiedApproval?.verified === false;
     results.spoofing.push({
@@ -214,7 +214,7 @@ async function run() {
     // Enable verifyCallerProcess via /settings/security
     const patchSecRes = await api("/settings/security", {
       method: "PATCH",
-      headers: { "x-openvault-token": DAEMON_TOKEN },
+      headers: { "x-metavault-token": DAEMON_TOKEN },
       body: { verifyCallerProcess: true },
     });
     if (patchSecRes.status !== 200) {
@@ -226,7 +226,7 @@ async function run() {
 
     const procRes = await api("/request", {
       method: "POST",
-      headers: { "x-openvault-agent-token": cursorAgent?.token },
+      headers: { "x-metavault-agent-token": cursorAgent?.token },
       body: {
         agentId: "cursor",
         ide: "Cursor",
@@ -250,7 +250,7 @@ async function run() {
     // Revert setting
     await api("/settings/security", {
       method: "PATCH",
-      headers: { "x-openvault-token": DAEMON_TOKEN },
+      headers: { "x-metavault-token": DAEMON_TOKEN },
       body: { verifyCallerProcess: false },
     });
   }
@@ -262,7 +262,7 @@ async function run() {
       body: { grantId: "fake-grant-id" },
     });
     const fakeTokenRes = await api("/settings/warden", {
-      headers: { "x-openvault-token": "attacker-wrong-daemon-token" },
+      headers: { "x-metavault-token": "attacker-wrong-daemon-token" },
     });
     const passed = noTokenRes.status === 401 && fakeTokenRes.status === 401;
     results.spoofing.push({
@@ -355,13 +355,13 @@ async function run() {
     console.log(`    Requested Scope: ${sc.scope} on '${sc.alias}'`);
     console.log(`    Disguised Reason: "${sc.reason}"`);
 
-    const preAuditRes = await api("/audit", { headers: { "x-openvault-token": DAEMON_TOKEN } });
+    const preAuditRes = await api("/audit", { headers: { "x-metavault-token": DAEMON_TOKEN } });
     const preCount = (preAuditRes.json?.events || []).length;
 
     const startTime = Date.now();
     const res = await api("/request", {
       method: "POST",
-      headers: { "x-openvault-agent-token": cursorAgent?.token },
+      headers: { "x-metavault-agent-token": cursorAgent?.token },
       body: {
         agentId: "cursor",
         ide: "Cursor",
@@ -374,7 +374,7 @@ async function run() {
     const elapsed = Date.now() - startTime;
 
     // Fetch the audit log to inspect the marshal's exact verdict and policy outcome for THIS call
-    const auditRes = await api("/audit", { headers: { "x-openvault-token": DAEMON_TOKEN } });
+    const auditRes = await api("/audit", { headers: { "x-metavault-token": DAEMON_TOKEN } });
     const allAuditRows = auditRes.json?.events || [];
     const newEvents = allAuditRows.slice(preCount);
 

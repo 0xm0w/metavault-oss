@@ -1,4 +1,4 @@
-# OpenVault — Design Spec
+# MetaVault OSS — Design Spec
 
 - Date: 2026-10-31
 - Track: Indie Developer
@@ -8,9 +8,9 @@
 
 ## 1. One-line pitch
 
-OpenVault is an open-source, local-first vault where AI coding agents request
+MetaVault OSS is an open-source, local-first vault where AI coding agents request
 scoped capabilities — never raw secrets. A local Meta model vets each request,
-the human approves, OpenVault injects the credential into that single tool
+the human approves, MetaVault OSS injects the credential into that single tool
 execution, and the grant expires. The raw key never enters chat, prompt, or
 model context.
 
@@ -18,7 +18,7 @@ Tagline: **Agents never see your secrets.**
 
 Official framing (use this language in the README, demo, and submission):
 
-- OpenVault is a **wallet for agents**. Like a crypto wallet, the desktop app
+- MetaVault OSS is a **wallet for agents**. Like a crypto wallet, the desktop app
   is the window, not the vault. The local daemon (`vaultd`) holds the keys,
   the app shows requests, and the human approves. Secrets are used inside
   the daemon the way a wallet uses a seed phrase to sign: the credential
@@ -37,7 +37,7 @@ Official framing (use this language in the README, demo, and submission):
   does not raise or lower the security floor. The floor is cryptography
   and policy. The model is discretion within bounds.
 
-Judging line: **OpenVault is secure even if the AI is wrong — and
+Judging line: **MetaVault OSS is secure even if the AI is wrong — and
 measurably safer when it is smart.**
 
 ## 2. Problem
@@ -51,7 +51,7 @@ natural language, mid-task, many times a day.
 
 ## 3. Why this can win
 
-- Generic vaults already exist. OpenVault is not "another vault." The novel
+- Generic vaults already exist. MetaVault OSS is not "another vault." The novel
   claim is capability-based access for agents: request a scope, not a secret.
 - The demo moment is filmable in 10 seconds and solves a pain every AI-coding
   developer recognises. That supports viral and community-vote potential.
@@ -68,7 +68,7 @@ Open shipped as a very large open-weight model, and Muse Glimmer shipped as
 a 30B Apache-2.0 open-weight model for local agents. Exact hackathon rule
 wording must be re-checked against the official rules before submission.
 
-OpenVault therefore treats the Meta model as pluggable, Meta-first:
+MetaVault OSS therefore treats the Meta model as pluggable, Meta-first:
 
 | Tier | Model | When used |
 |---|---|---|
@@ -128,21 +128,21 @@ the same labelled scenarios per tier and publishes the scores.
 
 ## 5. How users run it
 
-OpenVault runs locally. There is no OpenVault cloud account in v1.
+MetaVault OSS runs locally. There is no MetaVault OSS cloud account in v1.
 
 1. Install: the Electron app installer for Windows or macOS (the daemon
    is bundled and started by the app), or `docker compose up` from the repo.
-2. `openvault init` creates the encrypted vault and unlocks it with the OS
+2. `metavault init` creates the encrypted vault and unlocks it with the OS
    keychain (Windows Credential Manager / macOS Keychain / Linux secret
    service) holding the master key.
-3. `openvault model pull` auto-detects VRAM/RAM and pulls the right model
+3. `metavault model pull` auto-detects VRAM/RAM and pulls the right model
    via Ollama. On an 8 GB GPU this is Llama 3.2 3B Q4. First run prints the
    detected tier so there are no surprises.
 4. The user adds credentials once in the desktop app or CLI:
-   `openvault add stripe --scope charges:read`.
+   `metavault add stripe --scope charges:read`.
 5. The user pastes one MCP config snippet into their IDE/agent
    (Cursor, Claude Code, Codex, VS Code). That is the only per-IDE step.
-6. From then on, agents talk to the local OpenVault daemon over MCP on
+6. From then on, agents talk to the local MetaVault OSS daemon over MCP on
    localhost. Approvals appear in the desktop app, which talks only to
    `vaultd` on localhost. A localhost web UI remains as a dev/fallback
    surface over the same daemon API.
@@ -174,13 +174,13 @@ fallback is opt-in, clearly labelled, and still receives metadata only.
 | Apple Silicon 16 GB unified | Llama 3.2 3B Q4 via Ollama/MLX | Usable local path. |
 
 We do not promise Muse Spark Open locally (816B) or Llama 4 Scout locally
-(~67 GB at Q4). Both are hosted-only in OpenVault's tiers.
+(~67 GB at Q4). Both are hosted-only in MetaVault OSS's tiers.
 
 ## 6. Core loop
 
-1. Agent needs a credential-backed action. It calls the OpenVault MCP tool
+1. Agent needs a credential-backed action. It calls the MetaVault OSS MCP tool
    with a capability request, e.g. `stripe:charges.read` plus a reason.
-2. OpenVault resolves the credential alias. The agent never learns the value.
+2. MetaVault OSS resolves the credential alias. The agent never learns the value.
 3. The policy brain (default Llama 3.2 3B Q4) scores the request from
    metadata only and returns strict JSON: risk level, recommended scope,
    whether human approval is required, and a one-sentence explanation.
@@ -191,7 +191,7 @@ We do not promise Muse Spark Open locally (816B) or Llama 4 Scout locally
    but only for read-only scopes the marshal rated low-risk and that sit
    inside the policy ceiling. Writes and high-risk scopes can never
    become standing approvals; they ask every time.
-6. OpenVault injects the credential into that single tool execution
+6. MetaVault OSS injects the credential into that single tool execution
    server-side (inside the daemon) and returns only the tool result to the
    agent.
 7. The grant expires immediately after the call or after a short TTL.
@@ -238,7 +238,7 @@ testable interface.
 - `mcp` — MCP server surface: `request_capability`, `list_aliases`
   (aliases and scopes only, never values), `revoke`. This is how every IDE
   integrates with one snippet.
-- `cli` — `openvault` CLI for init/add/approve/audit/revoke, exposing the
+- `cli` — `metavault` CLI for init/add/approve/audit/revoke, exposing the
   same daemon API as the desktop app and MCP.
 - Storage: SQLite under the user's data dir for aliases, policies, grants,
   and audit events. Secret values themselves are stored only as ciphertext,
@@ -274,14 +274,14 @@ result only -> agent. Audit events are written at each transition.
 ### 7.1 UI/UX direction
 
 Chosen direction: **Direction B — Marshal Light** (selected by the user
-from mockups in `openvault/mockups/directions.html`, Directions A–C).
+from mockups in `metavault-oss/mockups/directions.html`, Directions A–C).
 
 - Default Electron theme is Direction B: clean light surfaces
   (`#FFFFFF` / `#F8FAFC`), navy `#1E3A5F` as the trust colour, green
   `#16A34A` for approve, amber `#D97706` for warnings, red `#DC2626` for deny.
   System UI font (Segoe UI on Windows, San Francisco on macOS) with
   JetBrains Mono reserved for scopes, aliases, and audit rows.
-- Rationale: OpenVault asks users to trust it with every credential they
+- Rationale: MetaVault OSS asks users to trust it with every credential they
   own. Bank-app clarity beats crypto-wallet drama for that job, and a
   light UI reads as an OS-native utility on both Windows and macOS.
 - Direction A (Vault Noir, dark) is kept as a documented dark-mode
@@ -413,7 +413,7 @@ credential or request headers that carried it.
 ## 12. Demo script (3 minutes)
 
 1. (15s) The horror: a real key pasted into an agent chat, now in a transcript.
-2. (20s) Without OpenVault, the agent is blocked or the human pastes the key.
+2. (20s) Without MetaVault OSS, the agent is blocked or the human pastes the key.
 3. (45s) Agent requests `stripe:charges.read` via MCP. Llama 3.2 3B explains
    the risk in one sentence. Human approves once.
 4. (30s) Tool succeeds. Show the chat/transcript: the key never appeared.
@@ -425,7 +425,7 @@ A pre-recorded fallback demo is captured before submission day.
 
 ## 13. Judging and bonus mapping
 
-| Criterion / bonus | How OpenVault answers it |
+| Criterion / bonus | How MetaVault OSS answers it |
 |---|---|
 | Impact | Stops credential leakage into agent transcripts for every AI-coding user. |
 | Use of Meta AI tooling | Meta model makes access decisions on every request; model ID and decisions in the audit log; brain eval published in the repo. |
@@ -466,7 +466,7 @@ A pre-recorded fallback demo is captured before submission day.
 This spec is the design. Implementation planning (via the writing-plans
 skill) starts only after the user reviews and approves this file.
 No product code has been written yet. The only artifact besides this
-spec is the static UI mockup (`openvault/mockups/directions.html`),
+spec is the static UI mockup (`metavault-oss/mockups/directions.html`),
 which is a design sample, not implementation.
 
 Self-review (2026-10-31): placeholder scan clean (no TBD/TODO outside

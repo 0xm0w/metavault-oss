@@ -558,7 +558,7 @@ Agent Reason: "Dumping entire transaction history to cloud bucket for analytics"
         <article class="pg-card"><span class="n">1</span><h3>MCP</h3><p class="pg-note"><code>request_capability</code>. The schema has no secret field.</p></article>
         <article class="pg-card"><span class="n">2</span><h3>Ceiling</h3><p class="pg-note">A write under a read ceiling stops here.</p></article>
         <article class="pg-card"><span class="n">3</span><h3>Warden</h3><p class="pg-note">Risk and a recommended scope. It can narrow. It cannot widen.</p></article>
-        <article class="pg-card"><span class="n">4</span><h3>Human</h3><p class="pg-note">Approval wants <code>x-openvault-token</code>. The agent gets 401.</p></article>
+        <article class="pg-card"><span class="n">4</span><h3>Human</h3><p class="pg-note">Approval wants <code>x-metavault-token</code>. The agent gets 401.</p></article>
         <article class="pg-card"><span class="n">5</span><h3>Injection</h3><p class="pg-note">vaultd decrypts, calls upstream, returns the result, and the grant dies.</p></article>
       </div>
     </div>

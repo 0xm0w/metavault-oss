@@ -33,10 +33,10 @@ describe("Built-in AI Model Resolver & Downloader Specifications", () => {
   });
 
   it("defines standard IPC channels for built-in AI", () => {
-    expect(BUILTIN_AI_STATUS_CHANNEL).toBe("openvault:builtin-ai-status");
-    expect(START_BUILTIN_AI_DOWNLOAD_CHANNEL).toBe("openvault:start-builtin-ai-download");
-    expect(CANCEL_BUILTIN_AI_DOWNLOAD_CHANNEL).toBe("openvault:cancel-builtin-ai-download");
-    expect(BUILTIN_AI_PROGRESS_CHANNEL).toBe("openvault:builtin-ai-progress");
+    expect(BUILTIN_AI_STATUS_CHANNEL).toBe("metavault:builtin-ai-status");
+    expect(START_BUILTIN_AI_DOWNLOAD_CHANNEL).toBe("metavault:start-builtin-ai-download");
+    expect(CANCEL_BUILTIN_AI_DOWNLOAD_CHANNEL).toBe("metavault:cancel-builtin-ai-download");
+    expect(BUILTIN_AI_PROGRESS_CHANNEL).toBe("metavault:builtin-ai-progress");
   });
 
   it("reports 'missing' when neither bundled nor cached model exists", () => {

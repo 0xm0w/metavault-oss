@@ -29,7 +29,7 @@ import {
 // the build. The connector's in-daemon view of the secret is asserted
 // separately (and never scanned as a payload) to prove the secret really
 // flowed through the loop — otherwise a leak-free scan would be vacuous.
-const CANARY = "OPENVAULT-CANARY-9f27c41a-this-string-must-never-leak";
+const CANARY = "METAVAULT-CANARY-9f27c41a-this-string-must-never-leak";
 const MASTER_KEY = Buffer.alloc(32, 7);
 
 function assertNoCanary(label: string, value: unknown): void {

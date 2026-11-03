@@ -21,7 +21,7 @@ MetaVault OSS implements multi-tiered, defense-in-depth protections to prevent a
 
 1. **Authoritative Cryptographic Enrollment Tokens**:
    - Registered agents (Cursor, Claude Code, VS Code, Codex) receive persistent bearer tokens (`ov_agent_<id>_<hex32>`).
-   - The daemon (`vaultd`) resolves the agent identity **authoritatively from the token** (`x-openvault-agent-token` header or Authorization bearer token). Any `agentId` self-reported in untrusted JSON bodies is overwritten by the registered identity.
+   - The daemon (`vaultd`) resolves the agent identity **authoritatively from the token** (`x-metavault-agent-token` header or Authorization bearer token). Any `agentId` self-reported in untrusted JSON bodies is overwritten by the registered identity.
    - Requests presenting an invalid token are immediately rejected with HTTP `401 Unauthorized`.
 
 2. **Standing Approval Isolation**:

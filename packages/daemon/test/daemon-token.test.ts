@@ -140,31 +140,31 @@ describe("daemon token guard (handler level)", () => {
 });
 
 describe("resolveDaemonToken", () => {
-  const saved = process.env["OPENVAULT_DAEMON_TOKEN"];
+  const saved = process.env["METAVAULT_DAEMON_TOKEN"];
   afterEach(() => {
     if (saved === undefined) {
-      delete process.env["OPENVAULT_DAEMON_TOKEN"];
+      delete process.env["METAVAULT_DAEMON_TOKEN"];
     } else {
-      process.env["OPENVAULT_DAEMON_TOKEN"] = saved;
+      process.env["METAVAULT_DAEMON_TOKEN"] = saved;
     }
   });
 
-  it("prefers OPENVAULT_DAEMON_TOKEN from the environment", () => {
-    process.env["OPENVAULT_DAEMON_TOKEN"] = "env-token-value";
-    const dir = mkdtempSync(join(tmpdir(), "openvault-token-"));
+  it("prefers METAVAULT_DAEMON_TOKEN from the environment", () => {
+    process.env["METAVAULT_DAEMON_TOKEN"] = "env-token-value";
+    const dir = mkdtempSync(join(tmpdir(), "metavault-token-"));
     try {
-      expect(resolveDaemonToken(join(dir, "openvault.db"))).toBe("env-token-value");
-      expect(existsSync(daemonTokenFilePath(join(dir, "openvault.db")))).toBe(false);
+      expect(resolveDaemonToken(join(dir, "metavault.db"))).toBe("env-token-value");
+      expect(existsSync(daemonTokenFilePath(join(dir, "metavault.db")))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("generates a random token and writes it next to the DB file otherwise", () => {
-    delete process.env["OPENVAULT_DAEMON_TOKEN"];
-    const dir = mkdtempSync(join(tmpdir(), "openvault-token-"));
+    delete process.env["METAVAULT_DAEMON_TOKEN"];
+    const dir = mkdtempSync(join(tmpdir(), "metavault-token-"));
     try {
-      const dbPath = join(dir, "openvault.db");
+      const dbPath = join(dir, "metavault.db");
       const token = resolveDaemonToken(dbPath);
       expect(token.length).toBeGreaterThanOrEqual(32);
       expect(readFileSync(daemonTokenFilePath(dbPath), "utf8")).toBe(token);

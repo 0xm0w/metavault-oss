@@ -2,10 +2,10 @@ import { createWriteStream, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { BUILTIN_MODEL_DIR_NAME, BUILTIN_MODEL_REQUIRED_BYTES } from "./model-resolver.js";
 
-export const BUILTIN_AI_STATUS_CHANNEL = "openvault:builtin-ai-status";
-export const START_BUILTIN_AI_DOWNLOAD_CHANNEL = "openvault:start-builtin-ai-download";
-export const CANCEL_BUILTIN_AI_DOWNLOAD_CHANNEL = "openvault:cancel-builtin-ai-download";
-export const BUILTIN_AI_PROGRESS_CHANNEL = "openvault:builtin-ai-progress";
+export const BUILTIN_AI_STATUS_CHANNEL = "metavault:builtin-ai-status";
+export const START_BUILTIN_AI_DOWNLOAD_CHANNEL = "metavault:start-builtin-ai-download";
+export const CANCEL_BUILTIN_AI_DOWNLOAD_CHANNEL = "metavault:cancel-builtin-ai-download";
+export const BUILTIN_AI_PROGRESS_CHANNEL = "metavault:builtin-ai-progress";
 
 export interface DownloadProgressPayload {
   readonly state: "idle" | "downloading" | "verifying" | "completed" | "error" | "cancelled";

@@ -288,6 +288,6 @@ export interface VaultApi {
 
 declare global {
   interface Window {
-    readonly openvault: VaultApi;
+    readonly metavault: VaultApi;
   }
 }

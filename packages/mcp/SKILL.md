@@ -14,7 +14,7 @@ you need, or `request_capability` was denied with `unknown-alias`.
 1. **Request an enrollment.** Call `request_enrollment` with the `alias` and
    `scope` you need (and a short `reason` explaining why). It returns an
    `enrollmentId` and a `deeplink` like
-   `openvault://add?alias=stripe&scope=charges.read&enrollment=<id>`.
+   `metavault://add?alias=stripe&scope=charges.read&enrollment=<id>`.
    Creating an enrollment grants nothing — it only pre-fills a form.
 
 2. **Present the deeplink to the user.** Show the exact deeplink to the

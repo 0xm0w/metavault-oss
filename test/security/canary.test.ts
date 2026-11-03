@@ -31,7 +31,7 @@ import { createMetavaultMcpServer, type DaemonFetch } from "../../packages/mcp/s
 // (including warden key status), and renderer IPC payloads — is grepped
 // for the full canary string. The connector's in-daemon view is asserted
 // separately to prove the secret really flowed (non-vacuous scan).
-const CANARY = "OPENVAULT-CANARY-9f27c41a-this-string-must-never-leak";
+const CANARY = "METAVAULT-CANARY-9f27c41a-this-string-must-never-leak";
 const MASTER_KEY = Buffer.alloc(32, 7);
 const TOKEN = "canary-sweep-daemon-token";
 const withToken = { daemonToken: TOKEN, providedToken: TOKEN };
