@@ -226,6 +226,15 @@ Log "GET /aliases -> $($aliases | ConvertTo-Json -Compress)"
 Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "credential alias listed"
 $setup = $null; $add = $null
 
+# Actual identified IDE host proof, no model account or external connector call.
+$hostAgent = Invoke-Daemon "POST" "/agents" @{id='vscode';name='VS Code'}
+if ($null -eq $hostAgent.token) { throw 'Unable to mint synthetic host agent' }
+& (Join-Path $PSScriptRoot 'windows-vscode-smoke.ps1') -InstallDir $installDir -AgentToken $hostAgent.token -LogPath $LogPath
+$hostAgent = $null
+$hostPending = Invoke-Daemon "GET" "/pending"
+Check (@($hostPending.approvals | Where-Object { $_.agentId -eq 'vscode' -and $_.verified -eq $true }).Count -gt 0) "VS Code capability reached daemon as verified synthetic agent"
+Invoke-Daemon "POST" "/agents/revoke" @{id='vscode'} | Out-Null
+
 # === 3. deliberate uninstall wipes only the fixed app-owned profile ====
 Stop-App
 $outside = Join-Path $env:RUNNER_TEMP "unrelated-vault-sentinel.txt"

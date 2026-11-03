@@ -1,0 +1,1 @@
+{"name":"metavault-host-smoke","version":"0.0.1","publisher":"metavault-local-test","engines":{"vscode":"^1.100.0"},"main":"extension.cjs","activationEvents":["*"],"enabledApiProposals":[]}
