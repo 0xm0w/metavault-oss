@@ -855,6 +855,43 @@ body:has(.hack-deck) {
 .pg-sub strong { color: var(--foreground); }
 .pg-duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 12px; }
 @media (max-width: 720px) { .pg-duo { grid-template-columns: 1fr; } }
-#gap-fpr .pg-big { font-size: 28px; }
 #warden-latency .pg-big small { display: block; margin-top: 2px; }
 .pg-chart-src { margin-top: 12px; }
+
+/* Plain-language benchmark slides (research #gap, #gap-fpr): one type scale, tiles, a "How we counted" disclosure. */
+.rs h2.rs-h2 { font-size: 40px; font-weight: 400; line-height: 1.15; letter-spacing: -0.02em; margin: 10px auto 12px; max-width: 900px; }
+.rs h2.rs-h2 span { color: var(--accent); }
+.rs .rs-lede { font-size: 17px; line-height: 1.5; color: var(--muted-foreground); max-width: 760px; margin: 0 auto; text-wrap: balance; }
+.rs .rs-lede strong { color: var(--foreground); font-weight: 600; }
+.rs .rs-src { margin-top: 14px; font-size: 12px; color: var(--muted-foreground); text-align: center; }
+.rs .rs-src a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.rs .rs-label { font-size: 12px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted-foreground); }
+.rs .rs-tile { background: var(--card); border: 1px solid var(--border, #e5e7eb); border-radius: 16px; padding: 20px 24px; text-align: left; }
+.rs .rs-num { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; font-size: 56px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.rs .rs-num small { font-size: 20px; font-weight: 500; letter-spacing: 0; color: var(--muted-foreground); }
+.rs .rs-num .v-icon { width: 30px; height: 30px; }
+.rs .rs-what { font-size: 15px; line-height: 1.45; color: var(--foreground); margin: 6px 0 0; }
+.rs details.rs-how { max-width: 720px; margin: 14px auto 0; text-align: left; font-size: 13.5px; color: var(--muted-foreground); }
+.rs details.rs-how summary { cursor: pointer; text-align: center; font-weight: 500; color: var(--accent); list-style: none; }
+.rs details.rs-how summary::-webkit-details-marker { display: none; }
+.rs details.rs-how summary::after { content: " +"; }
+.rs details.rs-how[open] summary::after { content: " –"; }
+.rs details.rs-how ul { margin: 10px 0 0; padding-left: 18px; line-height: 1.55; }
+.rs .rs-chart { margin-top: 18px; padding: 18px 24px 16px; gap: 12px; text-align: left; }
+#gap .rs-duel { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 16px; max-width: 760px; margin: 24px auto 0; }
+#gap .rs-tile.is-win { border-color: color-mix(in srgb, var(--v-good) 40%, transparent); }
+#gap .rs-arrow { align-self: center; font-size: 22px; color: var(--muted-foreground); }
+#gap-fpr .rs-tiles { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin-top: 20px; }
+#gap-fpr .rs-pair { display: flex; align-items: baseline; gap: 16px; }
+#gap-fpr .rs-pair .rs-num { margin-bottom: 0; }
+#gap-fpr .rs-vs { font-size: 15px; color: var(--muted-foreground); }
+#gap-fpr .rs-vs b { color: var(--v-mid-text); font-weight: 600; }
+#gap-fpr .rs-foot { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted-foreground); }
+#gap-fpr .rs-num.is-plain { color: var(--foreground); }
+@media (max-width: 720px) {
+  .rs h2.rs-h2 { font-size: 30px; }
+  .rs .rs-num { font-size: 44px; }
+  #gap .rs-duel, #gap-fpr .rs-tiles { grid-template-columns: minmax(0, 1fr); }
+  #gap .rs-arrow { transform: rotate(90deg); justify-self: center; }
+  #gap-fpr .rs-pair { flex-wrap: wrap; }
+}
