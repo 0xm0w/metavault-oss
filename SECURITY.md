@@ -139,8 +139,11 @@ These are not fixed, and the code doesn't claim to fix them:
   process environment or the file.
 - **Daemon token.** Any local process that can read `metavault.token` can
   call the daemon, including `/unlock` (rate-limited), `/lock` and
-  `POST /cards`. It can't read a secret or card value back, and it can't
-  approve a card use without the human approval step.
+  `POST /cards`, and the human-decision routes `/approve`,
+  `/approve-always` and `/deny`. It can't read a secret or card value
+  back. It can approve a pending card use; that use then fails only
+  because no payment connector ships yet (`ConnectorFailed`), not
+  because the token is refused.
 - **Offline guessing.** A copied `metavault.key.json` can be attacked
   offline. The KDF slows each guess down; a weak passphrase is still weak.
 

@@ -110,7 +110,7 @@ An infostealer (Lumma, RedLine and similar) runs as the logged-in user. It can r
 1. **Keylogging** of the passphrase, followed by an offline unwrap of `metavault.key.json`.
 2. **Process memory reads while unlocked**: the master key, and each secret during its brokered call. Node.js exposes no `mlock`, `MADV_DONTDUMP`, `PR_SET_DUMPABLE` or `CryptProtectMemory` from JavaScript; none is applied.
 3. **Legacy key modes** (OS keychain, env var, dev plaintext file) have no passphrase and no auto-lock.
-4. **Daemon token theft** (`metavault.token`) lets a local process call unlock (rate-limited), lock and add-card. It cannot read a secret or card number, or approve a card use.
+4. **Daemon token theft** (`metavault.token`) lets a local process call unlock (rate-limited), lock, add-card and the human-decision routes (`/approve`, `/approve-always`, `/deny`). It cannot read a secret or card number back. It can approve a pending card use; that use fails only because no payment connector exists yet (`ConnectorFailed`).
 5. **Weak passphrases** fall to offline guessing; the KDF only raises the cost per guess.
 
 Windows Hello (`UserConsentVerifier`), macOS `LAContext` and Linux polkit were researched as unlock gates and are not implemented for the master key. Sources and migration steps: [`SECURITY.md#master-key-protection`](../SECURITY.md#master-key-protection).

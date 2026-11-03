@@ -22,7 +22,7 @@ Re-run any gate with the commands shown.
 | Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (re-run 2026-11-03) |
 | Brain eval, live marshal (Muse Glimmer 30B) | `scripts\eval-windows.ps1 -Compare` | no committed result (raw output not in the repo) |
 | Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS** (previous local model) |
-| Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (4.3 s / 4.8 s incl. model call) |
+| Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (366 ms / 378 ms, [`mcp-two-host.txt`](verification/mcp-two-host.txt)) |
 | Electron GUI | manual CDP-driven run, screenshots below | Approval, Audit, Vault verified live |
 | Windows installer | `npx electron-builder --win nsis` | built, 115.6 MB, unsigned |
 | Demo walkthrough video | ffmpeg from live screenshots | 21 s, 1280x720, h264 |

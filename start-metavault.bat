@@ -6,5 +6,7 @@ set /p METAVAULT_DAEMON_TOKEN=<metavault.token
 if exist "packages\app\release\win-unpacked\MetaVault OSS.exe" (
   start "" "packages\app\release\win-unpacked\MetaVault OSS.exe"
 ) else (
-  start "" "packages\app\release\win-unpacked\MetaVault OSS.exe"
+  rem No packaged build yet: build from source and run it with Electron.
+  if not exist "packages\app\dist\main.js" call npm run build
+  call npx electron packages\app\dist\main.js
 )
