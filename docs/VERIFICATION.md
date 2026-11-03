@@ -7,9 +7,9 @@ Re-run any gate with the commands shown.
 
 > **#70 (2026-11-03):** the local warden is now Meta **Muse Glimmer 30B
 > Q4_K_M** (`muse-glimmer:30b`). The fake-brain eval was re-run on the agent
-> box (`eval-fake.txt`). The live eval for the new model is **pending**: run
-> `scripts\eval-windows.ps1` on the Windows desktop; see
-> `verification/eval-live-PENDING.md`. The old live output was removed.
+> box (`eval-fake.txt`). The live 17-scenario eval was run on the Windows
+> desktop for three quants; see `verification/eval-live-muse-glimmer-quants.md`.
+> The old live output was removed.
 
 ## Gate results
 
@@ -19,14 +19,14 @@ Re-run any gate with the commands shown.
 | Typecheck (strict) | `npm run typecheck` | exit 0 |
 | Lint (max-warnings 0) | `npm run lint` | exit 0 |
 | Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (re-run 2026-11-03) |
-| Brain eval, live marshal (Muse Glimmer 30B) | `scripts\eval-windows.ps1` | **pending** |
+| Brain eval, live marshal (Muse Glimmer 30B) | `scripts\eval-windows.ps1 -Compare` | Q4_K_M risk 58.8%, approval 82.4%, **safety 100%**; UD-Q3_K_XL and UD-IQ2_XXS risk 11.8%, approval 88.2%, **safety 100%**; UD-IQ3_XXS not run |
 | Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS**, 3.6 s wall |
 | Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (4.3 s / 4.8 s incl. model call) |
 | Electron GUI | manual CDP-driven run, screenshots below | Approval, Audit, Vault verified live |
 | Windows installer | `npx electron-builder --win nsis` | built, 115.6 MB, unsigned |
 | Demo walkthrough video | ffmpeg from live screenshots | 21 s, 1280x720, h264 |
 
-Raw outputs: `eval-fake.txt`, `eval-live-PENDING.md`, `rehearsal.txt`,
+Raw outputs: `eval-fake.txt`, `eval-live-muse-glimmer-quants.md`, `rehearsal.txt`,
 `mcp-two-host.txt` in this directory.
 
 ## Research thesis benchmark (`packages/brain/eval/run-thesis.ts`)
@@ -39,7 +39,21 @@ Box run (Linux, commit `342f39f`), held-out set, 60 cases:
 |-----|-----|-----|-----|-----|-----|-----|
 | always-ask | 28/28 | 4/4 | 28/28 | 20/20 | 8/8 | - |
 | rules | 12/28 (42.9%) | 4/4 | 9/28 (32.1%) | 9/20 | 0/8 | 6.8 us / 21.3 us |
-| warden, rules+warden | **pending** (`scripts/thesis-windows.ps1`) | | | | | |
+| warden: Muse Spark 1.3, Meta API (2 runs) | 26/28 (92.9%) both runs | 4/4 | 0/28 (0%) | 0/20 | 0/8 | 8,940 / 17,320 ms; 8,209 / 14,751 ms |
+| rules + Muse Spark 1.3 (2 runs) | 28/28 (100%) both runs | 4/4 | 9/28 (32.1%) | 9/20 | 0/8 | 8,940 / 17,321 ms; 8,209 / 14,754 ms |
+| warden, rules+warden: Muse Glimmer, local | not run | | | | | |
+
+Muse Spark runs: `verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-14-24-236Z.*` and
+`...T08-25-08-673Z.*` (16:14 and 16:25 PHT), `max_tokens` 2048, JSON mode, one repeat each.
+Each run had 1/60 warden failures, both at the 2,048-token output cap (invalid JSON in run 1,
+empty content in run 2); a failure goes to a human, so it counts as caught. Counting only real
+decisions: warden 25/28, rules + warden 27/28 in both runs. The warden alone missed both
+history-only anomalies (`ho-burst`, `ho-denied-retry`) in both runs; rules catch them. The rules
+latencies in those files (40-42 us median) are from the same box under network load; the table
+row above is the dedicated rules-only run. Muse Glimmer is not offered by the Meta API
+(`GET https://api.meta.ai/v1/models` on 2026-11-03 listed muse-wonder-1.0, sam-3.1,
+muse-spark-1.3, muse-spark-1.3-contributor, muse-spark-1.2, muse-spark-1.2-contributor,
+muse-spark-1.1, muse-voice-transcribe-1.0, muse-image-1.0), so it was not run there.
 
 Dev set (20 cases): rules 10/10 recall, 0/10 FPR. Oracle runs (`--oracle`) are harness
 checks only. Raw: `verification/thesis-*.txt|json`. Review: `research/thesis-review.md`.
@@ -82,9 +96,15 @@ pass the cap.
 | tier | price source | $ per gated request | tokens per gated request |
 |---|---|---|---|
 | Policy only | none | $0 (no model) | 0 |
-| Muse Glimmer quants, local | none | $0 in API fees (electricity excluded) | pending (Windows run) |
-| Free baselines (Zen) | https://opencode.ai/docs/zen lists them as Free | $0 | pending (quota refused every call) |
-| Muse Spark 1.3, Meta API | https://dev.meta.ai/docs/pricing-rate-limits: $1.25 in / $4.25 out / $0.15 cached per 1M | pending `META_API_KEY` | pending |
+| Muse Glimmer quants, local | none | $0 in API fees (electricity excluded) | not measured (held-out run not done) |
+| Free baselines (Zen) | https://opencode.ai/docs/zen lists them as Free | $0 | not measured (quota refused every call) |
+| Muse Spark 1.3, Meta API | https://dev.meta.ai/docs/pricing-rate-limits: $1.25 in / $4.25 out / $0.15 cached per 1M | $0.005309 (run 1), $0.005159 (run 2) | 1,537.2 (run 1), 1,505.2 (run 2); about 397 prompt + 1,108-1,140 completion |
+
+Meta API spend on 2026-11-03, from `usage`: run 1 $0.318518 (92,232 tokens), run 2 $0.309563
+(90,313 tokens), $0.628081 measured. An earlier run was stopped after 18 calls before it wrote
+its report, so its `usage` was not kept; the same 18 cases cost $0.120539 in run 1, and their
+ceiling at `max_tokens` 2048 is $0.165757. Total Meta API spend: about $0.749, at most $0.794.
+Per-call logs (`*.calls.jsonl`, no key) now record spend as it happens.
 
 Meta run, once a key is set: `META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live
 --provider meta-api` (defaults: `muse-spark-1.3`, `https://api.meta.ai/v1`, $0.50 cap).

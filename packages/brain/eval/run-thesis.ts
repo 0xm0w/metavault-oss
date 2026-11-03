@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, platform, release, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -12,7 +12,7 @@ import { assessFromSettings } from "../src/brain.js";
 import type { HistorySummary } from "../src/prompt.js";
 import { assessByRules, stricterDecision } from "../src/rules.js";
 import { DEFAULT_META_API_BASE_URL, DEFAULT_META_API_MODEL } from "../src/meta-api.js";
-import { openAICompatWarden, type CostSummary, type OpenAICompatRun, type Pricing } from "./openai-compat.js";
+import { openAICompatWarden, type CallLog, type CostSummary, type OpenAICompatRun, type Pricing } from "./openai-compat.js";
 
 // Research benchmark: does the model warden catch high-risk agent requests
 // that a strong rules-only engine misses, and at what false-positive and
@@ -357,6 +357,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   let set = "heldout";
   let repeats = 1;
   let outDir: string | undefined;
+  let callLog: string | undefined;
   let baseUrl: string | undefined;
   let apiKeyEnv: string | undefined;
   let priceIn: number | undefined;
@@ -383,6 +384,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     else if (arg === "--set" && next !== undefined) { set = next; i += 1; }
     else if (arg === "--repeats" && next !== undefined) { repeats = Math.max(1, Number.parseInt(next, 10) || 1); i += 1; }
     else if (arg === "--out" && next !== undefined) { outDir = next; i += 1; }
+    else if (arg === "--call-log" && next !== undefined) { callLog = next; i += 1; }
     else if (arg === "--base-url" && next !== undefined) { baseUrl = next; i += 1; }
     else if (arg === "--api-key-env" && next !== undefined) { apiKeyEnv = next; i += 1; }
     else if (arg === "--price-in" && numArg(next) !== undefined) { priceIn = numArg(next); i += 1; }
@@ -451,6 +453,13 @@ export async function main(argv: readonly string[]): Promise<number> {
       minIntervalMs,
       maxOutputTokens,
       jsonMode,
+      ...(callLog === undefined
+        ? {}
+        : {
+            onCall: (log: CallLog, spentUsd: number) => {
+              appendFileSync(callLog, `${JSON.stringify({ ...log, spentUsd })}\n`);
+            },
+          }),
     });
     warden = remote.warden;
     wardenLine = `warden: ${provider} ${model} at ${baseUrl} (key from $${apiKeyEnv}, never logged), single pass, buildMarshalPrompt + parseMarshalDecision + enforceScopeSafety, max_tokens=${String(

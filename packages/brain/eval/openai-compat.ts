@@ -50,6 +50,8 @@ export interface OpenAICompatOptions {
   readonly jsonMode?: boolean;
   readonly fetchFn?: typeof fetch;
   readonly sleep?: (ms: number) => Promise<void>;
+  // Called after every recorded call (sent or refused), so spend survives an interrupted run.
+  readonly onCall?: (log: CallLog, spentUsd: number) => void;
 }
 
 export interface CostSummary {
@@ -134,6 +136,7 @@ export function openAICompatWarden(opts: OpenAICompatOptions): OpenAICompatRun {
 
   const record = (log: CallLog): null => {
     calls.push(log);
+    opts.onCall?.(log, spent);
     return null;
   };
 
@@ -228,7 +231,9 @@ export function openAICompatWarden(opts: OpenAICompatOptions): OpenAICompatRun {
     if (decoded._tag === "Left") {
       return record({ caseId: c.id, attempts, status, ok: false, ...usageFields, latencyMs, error: decoded.left.message });
     }
-    calls.push({ caseId: c.id, attempts, status, ok: true, ...usageFields, latencyMs, error: null });
+    const okLog: CallLog = { caseId: c.id, attempts, status, ok: true, ...usageFields, latencyMs, error: null };
+    calls.push(okLog);
+    opts.onCall?.(okLog, spent);
     return enforceScopeSafety(decoded.right, c.request.requestedScope, c.request.reason);
   };
 

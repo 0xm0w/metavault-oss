@@ -16,6 +16,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `run-thesis.ts --provider openai-compat|meta-api`: OpenAI-compatible warden for comparison runs (polite pacing, 429/5xx retry with `Retry-After`, quota refusal aborts the run, per-call `usage` tokens, dollars per gated request from published prices, `--budget-usd` cap, default $0.50). `meta-api` reads `META_API_KEY` and defaults to `muse-spark-1.3` at `https://api.meta.ai/v1`.
 - Docs Warden slide reworked into tiers (policy only, Muse Glimmer quants, Muse Spark via Meta API, BFT quorum) with measured-only charts for high-risk recall, false-alarm rate, and latency and cost; unmeasured tiers show as pending.
 
+- Measured Muse Spark 1.3 (Meta API) on the 60-case held-out set, two runs: warden 26/28 recall, 0/28 false alarms; rules + warden 28/28 recall, 9/28 false alarms; median 8.2-8.9 s; $0.0052-$0.0053 and about 1.5k tokens per gated request. Local Muse Glimmer quant results (17-scenario eval) recorded in `docs/verification/eval-live-muse-glimmer-quants.md`; UD-IQ3_XXS and the local held-out run were not run. `run-thesis.ts --call-log` writes per-call usage and spend as it happens.
+
 ### Changed
 
 - `METAVAULT_MASTER_KEY` is ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1`. The dev plaintext key in `scripts/run-daemon.mjs` needs `METAVAULT_DEV_PLAINTEXT_KEY=1`.
