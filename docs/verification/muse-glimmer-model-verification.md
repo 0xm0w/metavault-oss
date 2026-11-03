@@ -1,5 +1,11 @@
 # #70 model verification notes (Muse Glimmer Q4_K_M), checked 2026-11-03
 
+> **Superseded 2026-11-03 (v0.1.0-alpha):** MetaVault no longer ships, bundles or downloads a
+> local model, and there is no built-in engine or Settings download. The default warden is Muse
+> Spark via the Meta API. Muse Glimmer stays the recommended model for a user's own local
+> endpoint (Ollama or OpenAI-compatible, set in Settings). The model facts below are kept as
+> the record behind that recommendation; the implementation notes describe the removed engine.
+
 Status: implemented in #70 (see "Implementation status" below). Live Muse Glimmer eval: **no committed result** (Windows desktop run, `scripts/eval-windows.ps1`; see `eval-live-muse-glimmer-quants.md`).
 
 ## Model checks
@@ -28,15 +34,14 @@ Status: implemented in #70 (see "Implementation status" below). Live Muse Glimme
   (Muse Spark Open is 816B-A42B). SAM / V-JEPA 2 are not text LLMs.
 
 ## Findings (from the handoff) and how they were resolved
-- Hardware: Q4_K_M needs ~17 GB of weights (24 GB VRAM or >= 32 GB RAM target), far more than the
-  previous ~0.7-2 GB local models. UI copy says "~18 GB, via Ollama".
+- Hardware: no longer MetaVault's concern. The model runs on the user's own server, so its
+  hardware needs are that server's (see the Ollama library page above).
 - Glimmer always reasons (cannot be turned off): requests now carry the system prompt
   "Reasoning strength: low. Think briefly, then reply with the strict JSON object only." and the
   Ollama timeout is 120 s (local effort timeouts 60 / 120 / 240 s; cloud stays 10 / 30 / 60 s).
-- The built-in engine expected ONNX/WebGPU and was never registered: it now runs Muse Glimmer through
-  local Ollama by default (`ollamaBuiltinHandler`), the Settings download pulls `muse-glimmer:30b`
-  through Ollama `/api/pull` (ONNX stub files removed), and mocked-HTTP tests prove the model's
-  decision scores a request through `BrainFromSettings`.
+- The built-in engine and its Settings download were removed on 2026-11-03. Mocked-HTTP tests
+  now prove a user's local endpoint (Ollama `/api/chat` or OpenAI-compatible `/chat/completions`)
+  scores a request through `BrainFromSettings`, and that no reachable warden fails closed.
 - Live eval cannot run on the agent box (15 GB RAM, no GPU): moved to `scripts/eval-windows.ps1`.
 - Cloud path: default moved to the Meta Model API (`https://api.meta.ai/v1`, `muse-spark-1.3`,
   per https://dev.meta.ai/docs/models). `response_format: {type: "json_object"}` is accepted: both

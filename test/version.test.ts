@@ -21,7 +21,7 @@ describe("release version consistency", () => {
     const rootVersion = readVersion("../package.json");
     const appVersion = readVersion("../packages/app/package.json");
     const mcpPkgVersion = readVersion("../packages/mcp/package.json");
-    expect(rootVersion).toBe("0.1.0");
+    expect(rootVersion).toBe("0.1.0-alpha");
     expect(appVersion).toBe(rootVersion);
     expect(mcpPkgVersion).toBe(rootVersion);
     expect(MCP_VERSION).toBe(rootVersion);

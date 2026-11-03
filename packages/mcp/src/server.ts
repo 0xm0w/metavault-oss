@@ -11,7 +11,7 @@ import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
 import { metavaultEnv } from "../../core/src/env.js";
 
-export const MCP_VERSION: string = "0.1.0";
+export const MCP_VERSION: string = "0.1.0-alpha";
 
 export type DaemonFetch = typeof fetch;
 

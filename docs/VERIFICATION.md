@@ -24,7 +24,7 @@ Re-run any gate with the commands shown.
 | Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS** (previous local model) |
 | Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (366 ms / 378 ms, [`mcp-two-host.txt`](verification/mcp-two-host.txt)) |
 | Electron GUI | manual CDP-driven run, screenshots below | Approval, Audit, Vault verified live |
-| Windows installer | `npx electron-builder --win nsis` | built, 115.6 MB, unsigned |
+| Windows installer | CI `Windows installer` workflow (`electron-builder --win --publish never`) | `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,486 bytes, unsigned; clean-install smoke test PASS ([log](verification/windows-installer-smoke.txt)) |
 | Demo walkthrough video | ffmpeg from live screenshots | 21 s, 1280x720, h264 |
 
 Raw outputs: `eval-fake.txt`, `rehearsal.txt`,
@@ -199,8 +199,13 @@ client moved to the main process behind a whitelisted IPC channel).
 
 ## Installer
 
-`MetaVault OSS-0.1.0-win-x64.exe` (NSIS, 115.6 MB) builds cleanly and is
-unsigned (no certificate in this environment). The macOS DMG config is
+`MetaVault-OSS-0.1.0-alpha-win-x64.exe` (NSIS, x64, 121,940,486 bytes,
+SHA256 `79a76ca029bbcbf774e830ff4ca8094a35c15f8f0e9c6a778ad9411bdfac7f78`)
+is built by CI run
+[41627209888](https://github.com/0xm0w/metavault-oss/actions/runs/41627209888)
+and attached to the draft `v0.1.0-alpha` release. It is unsigned (no
+certificate). The same run's clean-install smoke test passed:
+[`verification/windows-installer-smoke.txt`](verification/windows-installer-smoke.txt). The macOS DMG config is
 declared but building it requires a Mac; it is the one remaining
 packaging item, along with code signing.
 
@@ -236,8 +241,9 @@ The same four images are wired into the site docs page
 site docs and README gained an MCP install section (five hosts, five
 tools), a Settings/warden section, and a security-levels table aligned
 with the Task 3 tiers (at the time: `none`, three local sizes, and Meta
-API cloud; effort Fast 10s / Standard 30s / Deep 60s). Since #70 the only
-local model is `muse-glimmer:30b` and local timeouts are 60 / 120 / 240 s. Semantic data-flow charting stays
+API cloud; effort Fast 10s / Standard 30s / Deep 60s). Since 2026-11-03 MetaVault
+ships and downloads no model: the default is Muse Spark via the Meta API, a local model is the
+user's own endpoint (Muse Glimmer recommended), and local timeouts are 60 / 120 / 240 s. Semantic data-flow charting stays
 deferred, per the plan.
 
 Gates for this task (run in-session, 2026-10-31; historical): `npm run test` — **268 passed**

@@ -58,6 +58,7 @@ describe("main-process daemon whitelist", () => {
       { method: "POST", path: "/cards" },
       { method: "GET", path: "/key/status" },
       { method: "POST", path: "/unlock" },
+      { method: "POST", path: "/setup" },
       { method: "POST", path: "/lock" },
       { method: "GET", path: "/settings/warden" },
       { method: "PATCH", path: "/settings/warden" },

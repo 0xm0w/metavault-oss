@@ -16,6 +16,7 @@ import type {
   SecurityPostureReportLike,
   LocalAuthStatusLike,
   StandingApproval,
+  LocalApiStyle,
   WardenEffort,
   WardenKeyStatusLike,
   WardenProvider,
@@ -42,17 +43,19 @@ export const TOKENS = {
 export const DISPLAY_FONT = "Georgia, 'Times New Roman', serif";
 export const BODY_FONT = "'Segoe UI', -apple-system, 'San Francisco', system-ui, sans-serif";
 
-export const MARSHAL_DEFAULT_LINE = "Marshal · Muse Glimmer 30B · On-device";
+export const MARSHAL_DEFAULT_LINE = "Marshal · muse-spark-1.3 · Meta API";
 
+// The out-of-box warden is Muse Spark on the Meta API. Any other model id
+// comes from a provider the user set up (for example their own local
+// endpoint), so the line names the model and nothing more.
 export function marshalStatusLine(modelId?: string): string {
-  if (modelId === undefined || modelId === "") {
+  if (modelId === undefined || modelId.trim() === "") {
     return MARSHAL_DEFAULT_LINE;
   }
-  const lower = modelId.toLowerCase();
-  if (lower.includes("glimmer")) {
-    return MARSHAL_DEFAULT_LINE;
+  if (modelId.toLowerCase().startsWith("muse-spark") || modelId.toLowerCase().startsWith("muse-wonder")) {
+    return `Marshal · ${modelId} · Meta API`;
   }
-  return `Marshal · ${modelId} · On-device`;
+  return `Marshal · ${modelId}`;
 }
 
 const WRITE_MARKERS = [".write", ".create", ".update", ".delete"] as const;
@@ -1076,32 +1079,36 @@ export async function runDeeplinkAddFlow(
 }
 
 // ---------------------------------------------------------------------------
-// Warden settings (Task 6). The renderer mirrors the daemon catalogue in
-// packages/brain/src/ollama.ts (OLLAMA_MODELS) and the effort semantics in
+// Warden settings. The renderer mirrors the daemon defaults in
+// packages/core/src/settings.ts and the effort semantics in
 // packages/brain/src/brain.ts; it cannot import those modules (they pull in
 // Effect/daemon code), so the values are duplicated here as data only.
 // ---------------------------------------------------------------------------
 
+// Out-of-box default is Muse Spark on the Meta Model API. Nothing is
+// downloaded. A local warden is bring-your-own: the user points Settings at
+// their own Ollama or OpenAI-compatible server.
 export const DEFAULT_WARDEN_SETTINGS: WardenSettingsLike = {
-  provider: "builtin",
-  model: "muse-glimmer:30b",
+  provider: "meta-api",
+  model: "muse-spark-1.3",
   effort: "standard",
   metaApiBaseUrl: "https://api.meta.ai/v1",
+  localBaseUrl: "",
+  localApi: "ollama",
+  localModel: "",
 };
 
-export interface OllamaModelOption {
-  readonly id: string;
-  readonly tier: "Medium" | "High" | "Maximum-local";
-  readonly label: string;
-}
+// Placeholders only (never saved unless the user types them): a Meta open
+// model and the usual local ports.
+export const SUGGESTED_LOCAL_MODEL = "muse-glimmer:30b";
+export const SUGGESTED_LOCAL_BASE_URL: Readonly<Record<LocalApiStyle, string>> = {
+  ollama: "http://localhost:11434",
+  openai: "http://localhost:8000/v1",
+};
 
-export const OLLAMA_MODEL_OPTIONS: readonly OllamaModelOption[] = [
-  { id: "muse-glimmer:30b", tier: "High", label: "Muse Glimmer 30B Q4_K_M \u2014 local (~18 GB, 24 GB VRAM)" },
-  {
-    id: "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS",
-    tier: "Medium",
-    label: "Muse Glimmer 30B UD-IQ3_XXS (unsloth) \u2014 local (13.1 GB file, not yet benchmarked)",
-  },
+export const LOCAL_API_OPTIONS: readonly { id: LocalApiStyle; label: string }[] = [
+  { id: "ollama", label: "Ollama (/api/chat)" },
+  { id: "openai", label: "OpenAI-compatible (/chat/completions)" },
 ];
 
 export interface MetaApiModelOption {
@@ -1135,32 +1142,45 @@ export const EFFORT_OPTIONS: readonly EffortOption[] = [
 ];
 
 export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
-  { id: "bft", label: "Meta BFT Consensus (Cloud API + Local Fallback)" },
-  { id: "meta-api", label: "Meta API (Cloud) — Muse Spark 1.3" },
-  { id: "builtin", label: "On-Device — Muse Glimmer 30B via Ollama (Private)" },
-  { id: "ollama", label: "Local — Ollama (Self-Hosted)" },
+  { id: "meta-api", label: "Meta API (Cloud) — Muse Spark 1.3 (default)" },
+  { id: "local", label: "Your local endpoint (Ollama or OpenAI-compatible)" },
+  { id: "bft", label: "Meta BFT Consensus (Meta API + your local endpoint)" },
   { id: "none", label: "None (policy only)" },
 ];
 
 export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
 export const VAULT_PATH_DISPLAY = "metavault.db (in vaultd's working directory; METAVAULT_DB_PATH can override it)";
-export const APP_VERSION_DISPLAY = "0.1.0";
+export const APP_VERSION_DISPLAY = "0.1.0-alpha";
 
-const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "ollama", "meta-api", "builtin", "bft"];
+const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "meta-api", "local", "bft"];
+const LOCAL_API_LIST: readonly LocalApiStyle[] = ["ollama", "openai"];
+
+// Older daemons reported "ollama" / "builtin"; both are now the local provider.
+function normalizeProvider(raw: unknown): WardenProvider | null {
+  if (typeof raw !== "string") return null;
+  if (raw === "ollama" || raw === "builtin") return "local";
+  return (WARDEN_PROVIDERS_LIST as readonly string[]).includes(raw) ? (raw as WardenProvider) : null;
+}
 const WARDEN_EFFORTS_LIST: readonly WardenEffort[] = ["fast", "standard", "deep"];
 
 export function projectWardenSettings(raw: unknown): WardenSettingsLike | null {
   if (!isRecord(raw) || findSecretLikeKeys(raw).length > 0) {
     return null;
   }
-  const provider = raw["provider"];
+  const provider = normalizeProvider(raw["provider"]);
   const effort = raw["effort"];
   const model = raw["model"];
   const metaApiBaseUrl = raw["metaApiBaseUrl"];
-  if (typeof provider !== "string" || !(WARDEN_PROVIDERS_LIST as readonly string[]).includes(provider)) return null;
+  if (provider === null) return null;
   if (typeof effort !== "string" || !(WARDEN_EFFORTS_LIST as readonly string[]).includes(effort)) return null;
   if (typeof model !== "string" || typeof metaApiBaseUrl !== "string") return null;
-  return { provider: provider as WardenProvider, model, effort: effort as WardenEffort, metaApiBaseUrl };
+  // Local fields are optional so an older daemon still projects.
+  const localBaseUrl = typeof raw["localBaseUrl"] === "string" ? raw["localBaseUrl"] : "";
+  const localModel = typeof raw["localModel"] === "string" ? raw["localModel"] : "";
+  const rawApi = raw["localApi"];
+  const localApi: LocalApiStyle =
+    typeof rawApi === "string" && (LOCAL_API_LIST as readonly string[]).includes(rawApi) ? (rawApi as LocalApiStyle) : "ollama";
+  return { provider, model, effort: effort as WardenEffort, metaApiBaseUrl, localBaseUrl, localApi, localModel };
 }
 
 export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null {
@@ -1188,18 +1208,35 @@ export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPa
     model: settings.model.trim(),
     effort: settings.effort,
     metaApiBaseUrl: settings.metaApiBaseUrl.trim(),
+    localBaseUrl: settings.localBaseUrl.trim(),
+    localApi: settings.localApi,
+    localModel: settings.localModel.trim(),
   };
+}
+
+export function isLocalBaseUrlValid(raw: string): boolean {
+  const value = raw.trim();
+  if (value === "") return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
 }
 
 export function isWardenFormComplete(settings: WardenSettingsLike): boolean {
   if (settings.provider === "none") return true;
+  if (settings.provider === "local") {
+    return isLocalBaseUrlValid(settings.localBaseUrl) && settings.localModel.trim() !== "";
+  }
   if (settings.model.trim() === "") return false;
-  if ((settings.provider === "meta-api" || settings.provider === "bft") && settings.metaApiBaseUrl.trim() === "") return false;
+  if (settings.metaApiBaseUrl.trim() === "") return false;
+  // BFT's local leg is optional; if a URL is typed it must be valid and named.
+  if (settings.provider === "bft" && settings.localBaseUrl.trim() !== "") {
+    return isLocalBaseUrlValid(settings.localBaseUrl) && settings.localModel.trim() !== "";
+  }
   return true;
-}
-
-export function isKnownOllamaModel(model: string): boolean {
-  return OLLAMA_MODEL_OPTIONS.some((option) => option.id === model);
 }
 
 export interface WardenTestResult {
@@ -1218,11 +1255,12 @@ export function projectWardenTestResult(raw: unknown): WardenTestResultLike | nu
   const latencyMs = raw["latencyMs"];
   const detail = raw["detail"];
   if (typeof ok !== "boolean") return null;
-  if (typeof provider !== "string" || !(WARDEN_PROVIDERS_LIST as readonly string[]).includes(provider)) return null;
+  const normalized = normalizeProvider(provider);
+  if (normalized === null) return null;
   if (typeof model !== "string") return null;
   if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) return null;
   if (typeof detail !== "string" || detail === "") return null;
-  return { ok, provider: provider as WardenProvider, model, latencyMs, detail };
+  return { ok, provider: normalized, model, latencyMs, detail };
 }
 
 export function wardenTestMessage(result: WardenTestResultLike): WardenTestResult {
@@ -1234,10 +1272,10 @@ export function wardenTestMessage(result: WardenTestResultLike): WardenTestResul
   if (result.provider === "none" || result.detail === "policy-only") {
     return { ok: result.ok, message: "Policy-only mode: no warden provider to test \u2014 deterministic policy is deciding requests." };
   }
-  if (result.provider === "builtin") {
+  if (result.provider === "local") {
     return result.ok
-      ? { ok: true, message: `On-device warden OK \u2014 Muse Glimmer via Ollama responded in ${String(Math.round(result.latencyMs))} ms.` }
-      : { ok: false, message: `On-device warden not ready \u2014 ${result.detail}. Start Ollama and pull muse-glimmer:30b (Settings \u2192 Download Model).` };
+      ? { ok: true, message: `Local endpoint OK \u2014 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` }
+      : { ok: false, message: `Local endpoint not reachable \u2014 ${result.detail}. Check the base URL and model name, and that your server is running. Until it answers, requests go to you for approval.` };
   }
   if (result.ok) {
     return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };
@@ -1351,4 +1389,43 @@ export function isAutoLockDue(status: LocalAuthStatusLike, lastActivityTs: numbe
 
 export function canLockSessionNow(status: LocalAuthStatusLike): boolean {
   return status.enabled && hasLocalFactor(status);
+}
+
+// Vault-key gate for the desktop app. A fresh install starts the bundled
+// daemon in first-run mode ("uninitialized"): the user must create a
+// passphrase before anything else. A passphrase vault that is locked must
+// be unlocked. Anything else (unlocked, legacy keychain, env key, or an
+// unreadable response) shows the normal app.
+export type KeyGate = "setup" | "unlock" | null;
+
+export const MIN_PASSPHRASE_LENGTH = 12;
+
+export function projectKeyGate(raw: unknown): KeyGate {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const mode = record["mode"];
+  if (mode === "uninitialized") return "setup";
+  if (mode === "passphrase" && record["locked"] === true) return "unlock";
+  return null;
+}
+
+// Client-side check before POST /setup. The daemon enforces the same rule.
+export function passphraseSetupError(passphrase: string, confirm: string): string | null {
+  // Same count as the daemon: user-perceived characters after NFKC.
+  const length = Array.from(new Intl.Segmenter().segment(passphrase.normalize("NFKC"))).length;
+  if (length < MIN_PASSPHRASE_LENGTH) {
+    return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;
+  }
+  if (passphrase !== confirm) return "The two passphrases do not match.";
+  return null;
+}
+
+// Plain words for the daemon's tagged setup/unlock errors.
+export function keyGateErrorMessage(message: string): string {
+  if (message.includes("WrongPassphrase")) return "Wrong passphrase.";
+  if (message.includes("UnlockThrottled")) return "Too many tries. Wait a moment and try again.";
+  if (message.includes("PassphraseTooShort")) return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;
+  if (message.includes("AlreadyInitialized")) return "This vault already has a passphrase. Unlock it instead.";
+  if (message.includes("unreachable")) return "MetaVault could not reach its background service. Try again in a moment.";
+  return "That did not work. Try again.";
 }

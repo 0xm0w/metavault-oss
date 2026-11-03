@@ -1,48 +1,33 @@
-; MetaVault OSS Custom NSIS Installer & Uninstaller Script
-; Manages User PATH registration, desktop shortcuts, background auto-start, and data wipe prompts.
+; MetaVault OSS NSIS hooks (electron-builder `nsis.include`).
+; electron-builder itself creates the desktop and Start menu shortcuts
+; (createDesktopShortcut / createStartMenuShortcut) and removes them on
+; uninstall, so this file only adds what it does not do: the CLI folder on
+; the user PATH, start-at-login, and the vault-data question on uninstall.
+; No model is downloaded or installed.
 
 !macro customInstall
-  DetailPrint "Configuring MetaVault OSS Environment and CLI Path..."
-
-  ; Register $INSTDIR\bin in User PATH
-  ReadRegStr $0 HKCU "Environment" "Path"
-  ${If} $0 == ""
-    WriteRegExpandStr HKCU "Environment" "Path" "$INSTDIR\bin"
-  ${Else}
-    ; Direct append if not already present
-    WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR\bin"
-  ${EndIf}
-
-  ; Broadcast environment variable change to running shells and explorer
+  DetailPrint "Adding $INSTDIR\bin to your user PATH..."
+  ; Idempotent: add the folder only if it is not already on the user PATH.
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d = '$INSTDIR\bin'; $$k = Get-Item 'HKCU:\Environment'; $$p = [string]$$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); $$parts = @($$p -split ';' | Where-Object { $$_ -ne '' }); if ($$parts -notcontains $$d) { Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Type ExpandString -Value (($$parts + $$d) -join ';') }"`
+  Pop $0
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=3000
-
-  ; Create Start Menu and Desktop shortcuts
-  CreateDirectory "$SMPROGRAMS\MetaVault OSS"
-  CreateShortcut "$SMPROGRAMS\MetaVault OSS\MetaVault OSS.lnk" "$INSTDIR\MetaVault OSS.exe" "" "$INSTDIR\MetaVault OSS.exe" 0
-  CreateShortcut "$DESKTOP\MetaVault OSS.lnk" "$INSTDIR\MetaVault OSS.exe" "" "$INSTDIR\MetaVault OSS.exe" 0
-
-  ; Configure background auto-start on user login (minimized to system tray)
+  ; Start minimised in the tray at login so approval prompts can surface.
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MetaVault OSS" '"$INSTDIR\MetaVault OSS.exe" --minimized'
-
-  DetailPrint "MetaVault OSS environment and background startup configured successfully."
 !macroend
 
 !macro customUnInstall
-  DetailPrint "Cleaning up MetaVault OSS Shortcuts and Environment..."
-
-  ; Remove auto-start Run key
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MetaVault OSS"
-
-  ; Clean uninstaller data prompt: ask user whether to wipe local encrypted vault data
-  MessageBox MB_YESNO|MB_ICONQUESTION "Do you want to completely erase your encrypted vault data (metavault.db) and credentials?$\n$\nSelect 'Yes' to purge local vault databases.$\nSelect 'No' to preserve your encrypted vault for future use." IDNO skip_purge
-    RMDir /r "$APPDATA\MetaVault OSS"
-    RMDir /r "$LOCALAPPDATA\metavault"
-    RMDir /r "$PROFILE\.metavault"
-    DetailPrint "Purged encrypted vault databases."
-  skip_purge:
-
-  ; Broadcast environment update
+  DetailPrint "Removing $INSTDIR\bin from your user PATH..."
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d = '$INSTDIR\bin'; $$k = Get-Item 'HKCU:\Environment'; $$p = [string]$$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); $$parts = @($$p -split ';' | Where-Object { $$_ -ne '' }); if ($$parts -contains $$d) { Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Type ExpandString -Value ((@($$parts | Where-Object { $$_ -ne $$d })) -join ';') }"`
+  Pop $0
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=3000
 
-  DetailPrint "MetaVault OSS uninstalled."
+  ; Updates run the uninstaller too; never ask about data then.
+  ${ifNot} ${isUpdated}
+    ; Silent uninstall (/S) answers No, so vault data is kept.
+    MessageBox MB_YESNO|MB_ICONQUESTION "Also delete your encrypted vault data (metavault.db, key file and token)?$\n$\nYes: delete it from this computer. This cannot be undone.$\nNo: keep it for a later install." /SD IDNO IDNO skip_purge
+      RMDir /r "$APPDATA\MetaVault OSS"
+      DetailPrint "Deleted vault data in $APPDATA\MetaVault OSS."
+    skip_purge:
+  ${endIf}
 !macroend

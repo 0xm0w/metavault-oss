@@ -137,7 +137,7 @@ if (-not $api) {
   if (-not $api) { Fail "ollama serve did not come up within 30 s" }
 }
 Say ("ollama:   {0} (server at {1})" -f $api.version, $OllamaUrl)
-$env:METAVAULT_OLLAMA_URL = $OllamaUrl
+$env:METAVAULT_EVAL_OLLAMA_URL = $OllamaUrl
 
 # ---- Build ---------------------------------------------------------------------
 if (-not $SkipBuild) {

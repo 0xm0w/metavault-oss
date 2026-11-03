@@ -76,10 +76,9 @@ MetaVault OSS therefore treats the Meta model as pluggable, Meta-first:
 
 | Tier | Model | When used |
 |---|---|---|
-| Default local (this project) | Muse Glimmer 30B Q4_K_M via Ollama (`muse-glimmer:30b`, ~18 GB) | On-device warden. Default for the hackathon build and demo. |
-| Smaller local quants | Third-party Muse Glimmer 30B GGUF quants (e.g. unsloth UD-Q3_K_XL, UD-IQ2_XXS) | Only if a measured eval in `docs/verification/` shows minimal loss. Not shipped as default. |
-| Hosted default | Muse Spark via Meta Model API (`muse-spark-1.3`) | Zero-GPU users and demo-day backup. Metadata only, off by default. |
-| Two-warden quorum | Muse Spark + on-device Muse Glimmer | Stricter verdict wins; if one is unavailable the other decides alone. |
+| Default (since 2026-11-03) | Muse Spark via Meta Model API (`muse-spark-1.3`) | Out of the box. Needs a Meta API key. Metadata only. |
+| Bring your own local endpoint | The user's model on their own Ollama or OpenAI-compatible server (Muse Glimmer recommended) | Opt-in in Settings. MetaVault ships and downloads no model. |
+| Two-warden quorum | Muse Spark + the user's local endpoint | Stricter verdict wins; if one is unavailable the other decides alone. |
 
 Rules that hold for every tier:
 
@@ -92,87 +91,25 @@ Rules that hold for every tier:
 4. Model ID, provider, prompt template version, and decision are recorded
    in the audit log for every request, so Meta-model use is provable to judges.
 
-### 4.1 Why Muse Glimmer 30B Q4_K_M is the default
+### 4.1 Why Muse Spark is the default and local is bring-your-own
 
-- It is a Meta open-weight model built for local agents, so the on-device
-  warden is a qualifying Meta model with no cloud dependency.
-- Q4_K_M is the smallest quant Meta publishes for it
-  (`meta-models/Muse-Glimmer-30B-GGUF`) and is the Ollama `30b` tag
-  (~18 GB). Ollama 0.32.7 or later is required.
-- Policy-brain work is small and structured: classify intent, score risk,
-  recommend a scope, write a short explanation. Prompts ask for low
-  reasoning effort and strict JSON, with a 120 s local timeout.
-- Trade-off accepted: the download and memory footprint are large.
-  Mitigations are fail-closed deterministic rules underneath, human
-  approval on anything sensitive, and the hosted Muse Spark option. Peak
-  RAM is measured by `scripts/eval-windows.ps1`, not asserted. See Section 9.
+(Superseded 2026-11-03. The earlier plan made an on-device Muse Glimmer the
+default and downloaded it for the user; that was dropped for v0.1.0-alpha.)
 
-### 4.2 Marshal seniority (what a bigger model actually buys)
+- The installer stays small and has no model download step.
+- A local model is a server the user already runs and points Settings at.
+  We recommend a Meta open model such as Muse Glimmer.
+- With no warden reachable, requests fail closed to the human.
+The Meta API sees request metadata only, never a secret value, and the
+Settings page says so plainly.
 
-Models are marshals of different seniority enforcing the same law. A more
-capable model improves judgement quality — risk accuracy, resistance to a
-request phrased to sound safer than it is, pattern-spotting across request
-history, fewer false interruptions, better explanations. It does not
-change the guarantees: policy ceilings, human approval, expiry, and
-secret-injection inside `vaultd` hold identically on every tier.
-
-| Tier | Marshal equivalent | Practical difference |
-|---|---|---|
-| No model (rules only) | Locked door + checklist | Safe, but blunt: sensitive requests always interrupt the human. |
-| Muse Glimmer 30B Q4_K_M (default, on-device) | Senior investigator | Reads history for slow scope-creep; strongest local explanations. |
-| Muse Spark (hosted, opt-in) | Chief of security | Strongest reasoning; can audit local decisions. |
-
-Even a fully compromised or prompt-injected marshal cannot exfiltrate a
-secret it never receives. Its worst failures are a bad recommendation
-(still bounded by policy and the human's click) or needless denials.
-Seniority is measured, not asserted: the brain eval in Section 11 runs
-the same labelled scenarios per tier and publishes the scores.
-
-## 5. How users run it
-
-MetaVault OSS runs locally. There is no MetaVault OSS cloud account in v1.
-
-1. Install: the Electron app installer for Windows or macOS (the daemon
-   is bundled and started by the app), or `docker compose up` from the repo.
-2. `metavault init` creates the encrypted vault. (Superseded 2026-11-03:
-   the master key is now wrapped with a user passphrase in
-   `metavault.key.json`, the daemon starts locked and auto-locks; the OS
-   keychain is a legacy mode. See `SECURITY.md#master-key-protection`.)
-3. `metavault model pull` auto-detects VRAM/RAM and pulls the right model
-   via Ollama. The default is Muse Glimmer 30B Q4_K_M (`muse-glimmer:30b`). First
-   run prints the detected tier so there are no surprises.
-4. The user adds credentials once in the desktop app or CLI:
-   `metavault add stripe --scope charges:read`.
-5. The user pastes one MCP config snippet into their IDE/agent
-   (Cursor, Claude Code, Codex, VS Code). That is the only per-IDE step.
-6. From then on, agents talk to the local MetaVault OSS daemon over MCP on
-   localhost. Approvals appear in the desktop app, which talks only to
-   `vaultd` on localhost. A localhost web UI remains as a dev/fallback
-   surface over the same daemon API.
-
-Packaging: the desktop app is an Electron shell over `vaultd`, like a
-crypto-wallet app over its signing core. Electron is the first build
-because one TypeScript codebase ships on Windows, macOS, and Linux with
-no per-platform UI development: Chromium renders the same UI everywhere
-and Node talks to the local daemon. Platform differences are confined to
-packaging (installer, code signing, tray/menu conventions) and to
-`vaultd`'s OS-keychain backend, not to the app itself. A Tauri port is a
-post-hackathon option for a smaller binary; it would reuse the same UI
-and daemon API. Docker (`docker compose up`) is an alternative
-distribution for Linux/dev users, not the default on Windows/macOS,
-because it makes OS-keychain access and desktop approval prompts awkward.
-The daemon is identical in every distribution; only packaging changes.
-
-Nothing leaves the machine in the default configuration. Hosted model
-fallback is opt-in, clearly labelled, and still receives metadata only.
-
-### 5.1 Hardware tiers (honest promises)
+### 5.1 Warden tiers (honest promises)
 
 | Hardware | Default model | Experience |
 |---|---|---|
-| Enough RAM/VRAM for an ~18 GB model | Muse Glimmer 30B Q4_K_M (local) | Target config. Measured numbers live in `docs/verification/`. |
-| Not enough memory for the local model | Muse Spark via Meta Model API (opt-in) | Metadata only. |
-| No model available | Rules only | Fail-closed: sensitive scopes are denied or need human approval. |
+| Any machine that runs the app, with a Meta API key | Muse Spark via Meta Model API | Default. Metadata only. |
+| The user runs their own model server | The user's local endpoint | Opt-in. Metadata goes only to the user's URL. |
+| No warden reachable | Rules only | Fail-closed: sensitive scopes are denied or need human approval. |
 
 We do not promise Muse Spark Open locally (816B). It is hosted-only in
 MetaVault OSS's tiers.

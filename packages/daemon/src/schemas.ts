@@ -65,11 +65,16 @@ export const EnrollmentRequestSchema = Schema.Struct({
 
 export const EnrollmentIdSchema = Schema.Struct({ enrollmentId: Schema.String });
 
+// "ollama" and "builtin" are accepted from older clients and stored as the
+// bring-your-own "local" provider.
 export const WardenSettingsPatchSchema = Schema.Struct({
-  provider: Schema.optional(Schema.Literal("none", "ollama", "meta-api", "builtin", "bft")),
+  provider: Schema.optional(Schema.Literal("none", "meta-api", "local", "bft", "ollama", "builtin")),
   model: Schema.optional(Schema.String),
   effort: Schema.optional(Schema.Literal("fast", "standard", "deep")),
   metaApiBaseUrl: Schema.optional(Schema.String),
+  localBaseUrl: Schema.optional(Schema.String),
+  localApi: Schema.optional(Schema.Literal("ollama", "openai")),
+  localModel: Schema.optional(Schema.String),
 });
 
 export const WardenKeyPutSchema = Schema.Struct({

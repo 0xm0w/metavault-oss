@@ -46,7 +46,7 @@
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker neon-rainbow-text">Meta hackathon · Indie track</span>
       <h1>Stop pasting live keys into coding agents.</h1>
-      <p class="pg-lead">One local vault. Agents in Meta Muse, Cursor, Claude Code, Codex, and VS Code ask for a <span class="buzz">capability</span>. An on-device Meta Muse Glimmer 30B scores the request. You approve. The secret never enters the chat.</p>
+      <p class="pg-lead">One local vault. Agents in Meta Muse, Cursor, Claude Code, Codex, and VS Code ask for a <span class="buzz">capability</span>. A Meta model (Muse Spark by default) scores the request. You approve. The secret never enters the chat.</p>
       <div class="pg-row">
         <a class="mb-btn-primary" href="/#download"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M0 0h7.3v7.3H0V0zm8.7 0H16v7.3H8.7V0zM0 8.7h7.3V16H0V8.7zm8.7 0H16V16H8.7V8.7z"/></svg><span>Download for Windows</span></a>
         <a class="mb-btn-secondary" href="/architecture/"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>The proofs</span></a>
@@ -73,7 +73,7 @@
       <h2>Broker the call. Do not hand over the key.</h2>
       <div class="pg-grid">
         <article class="pg-card"><span class="n">Vault</span><h3>Local and deliberately dumb</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. Master key in the vault you own. Hard ceilings. Secure even with no model at all.</p></article>
-        <article class="pg-card"><span class="n">Warden</span><h3>A Meta model on guard</h3><p class="pg-note">Default <span class="buzz">Muse Glimmer 30B (Q4_K_M via Ollama)</span> on this machine. It sees the request, never the key.</p></article>
+        <article class="pg-card"><span class="n">Warden</span><h3>A Meta model on guard</h3><p class="pg-note">Default <span class="buzz">Muse Spark 1.3 via the Meta API</span>, or a model on your own local endpoint. It sees the request, never the key.</p></article>
         <article class="pg-card"><span class="n">Tripwire</span><h3>The grant expires</h3><p class="pg-note">After the call, after 60 seconds, or on one revoke. Standing approval is a low read only.</p></article>
       </div>
     </div>
@@ -114,8 +114,8 @@
         </article>
       </div>
       <div class="pg-row">
-        <span class="pg-pill">Muse Glimmer 30B (Q4_K_M via Ollama) · default</span>
-        <span class="pg-pill">Meta API, opt-in</span>
+        <span class="pg-pill">Muse Spark via Meta API · default</span>
+        <span class="pg-pill">Your local endpoint, opt-in</span>
         <span class="pg-pill">Meta BFT, opt-in</span>
       </div>
     </div>

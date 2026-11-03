@@ -22,14 +22,26 @@ context, an audit row, or the desktop UI.
 
 ### Windows Installer (v0.1.0)
 
-Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned. A Windows Store (MSIX) build is also available for a Windows-verified install path — see `docs/MICROSOFT_STORE.md`.
+Download the Windows NSIS installer (`MetaVault-OSS-0.1.0-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0). The installer is unsigned.
 
-To build the installer locally from source:
+**v0.1.0 is the older build.** It bundled a local model. `0.1.0-alpha` (below) is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. Version numbers sort v0.1.0 above 0.1.0-alpha, so the app's update check never offers v0.1.0 to an alpha install.
+
+### Windows Installer (v0.1.0-alpha, draft)
+
+The `0.1.0-alpha` installer (`MetaVault-OSS-0.1.0-alpha-win-x64.exe`) is built by the `Windows installer` workflow on `windows-latest`. Each run uploads it as a workflow artifact, and a tag or manual run attaches it to a **draft** prerelease. It is not published yet.
+
+- Assisted install: you accept the alpha terms (`packages/app/TERMS.txt`), choose the folder, and get a desktop shortcut and a Start menu shortcut. `bin\` is added to your user PATH (`metavault`, `vaultd`).
+- The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
+- No model is bundled or downloaded.
+- Uninstall (Apps & features) removes the program, shortcuts, PATH entry and start-at-login entry, and asks whether to delete your vault data. A silent uninstall (`/S`) keeps it.
+- Every CI run does a clean-install smoke test: silent install, launch, `/health`, silent uninstall. It then checks that the uninstall removed the program, shortcuts, registry entries and PATH entry, and that it kept the vault data in `%APPDATA%\MetaVault OSS` (by design). Log from the run that built the draft exe: [`docs/verification/windows-installer-smoke.txt`](docs/verification/windows-installer-smoke.txt) ([run 41627209888](https://github.com/0xm0w/metavault-oss/actions/runs/41627209888)).
+
+To build the installer locally from source (on Windows):
 
 ```powershell
+npm ci
 cd packages/app
-npm run build
-npx electron-builder --win
+npm run pack:win    # build + bundle + electron-builder --win --publish never
 ```
 
 ### From source (works today)
@@ -43,8 +55,14 @@ npm test            # full suite (see docs/VERIFICATION.md for current counts)
 
 ## Setup
 
-1. **Install Ollama** (the marshal's runtime): <https://ollama.com/download>.
-   Nothing leaves your machine in the default configuration.
+1. **Pick a warden (optional).** The default warden is Muse Spark
+   (`muse-spark-1.3`) on the Meta API: add your Meta API key in Settings and
+   there is nothing to download. Without a key, policy still decides and
+   anything that needs judgement comes to you. If you would rather keep
+   request metadata on your own hardware, point Settings at a local Ollama or
+   OpenAI-compatible server you already run (see
+   [Settings](#settings-the-warden-settings-page)). MetaVault ships no model
+   and downloads none.
 2. **Create the vault.** This generates a master key, asks for a passphrase
    (at least 12 characters), wraps the key with it (scrypt by default,
    `--kdf argon2id` on request) in `metavault.key.json` next to the database,
@@ -65,22 +83,10 @@ npm test            # full suite (see docs/VERIFICATION.md for current counts)
    ```
 
    (Build first with `npx tsc -p tsconfig.json --outDir dist`.)
-3. **Pull the marshal model.** The on-device marshal is Meta's open-weight
-   **Muse Glimmer 30B, Q4_K_M** (`muse-glimmer:30b`, ~18 GB download; needs
-   Ollama 0.32.7 or newer). Source: the official GGUF at
-   <https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF>
-   (`Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf`) and the Ollama library tag
-   <https://ollama.com/library/muse-glimmer>:
-
-   ```powershell
-   node dist/packages/cli/src/cli.js model pull          # pulls muse-glimmer:30b
-   # equivalent direct Ollama call:  ollama pull muse-glimmer:30b
-   ```
-
-   The model runs with a low reasoning-strength system prompt and a 120 s
-   local timeout (Fast/Standard/Deep: 60 s / 120 s / 240 s). The guarantees
-   do not change with the model, only judgement quality does: if Ollama is
-   down or the model times out, the request fails closed to your approval.
+3. **If no warden answers, you decide.** A missing Meta API key, an empty or
+   unreachable local endpoint, or a timeout all fail closed: the request
+   waits for your approval. The guarantees come from deterministic policy and
+   do not change with the model; only judgement quality does.
 4. **Add a credential once** (the secret is read with echo disabled and is
    stored only as AES-256-GCM ciphertext):
 
@@ -134,8 +140,9 @@ Tools exposed to agents (exactly five): `request_capability({alias, scope, reaso
 
 The desktop app's **Settings** page chooses who judges capability requests. Deterministic policy stays the floor in every configuration: the warden can narrow or escalate, never widen.
 
-- **Warden provider:** `None (policy only)` / `Local — Ollama` / `Meta API (cloud)`. Meta API sends request metadata (agent, alias, scope, reason — never secrets) off-device; the page says so plainly.
-- **Model:** for Ollama, the catalogue below (or any free-text model id); for Meta API, the API model id (default `muse-spark-1.3`; also `muse-spark-1.2`, `muse-wonder-1.0`, per <https://dev.meta.ai/docs/models>) plus an editable base URL (default `https://api.meta.ai/v1`).
+- **Warden provider:** `Meta API` (the default) / `Your local endpoint` / `Meta BFT` / `None (policy only)`. Meta API sends request metadata (agent, alias, scope, reason — never secrets) off-device; the page says so plainly.
+- **Model:** for Meta API, the API model id (default `muse-spark-1.3`; also `muse-spark-1.2`, `muse-wonder-1.0`, per <https://dev.meta.ai/docs/models>) plus an editable base URL (default `https://api.meta.ai/v1`).
+- **Your local endpoint (bring your own):** an API style (`Ollama` → `POST {base}/api/chat`, or `OpenAI-compatible` → `POST {base}/chat/completions`), a base URL (for example `http://localhost:11434` for Ollama or `http://localhost:8000/v1` for an OpenAI-compatible server) and a model name. We recommend a Meta open model such as Muse Glimmer (`muse-glimmer:30b` in Ollama, <https://ollama.com/library/muse-glimmer>); any model your server runs works. MetaVault does not install, download or start the model. The base URL must be `http` or `https` with no username or password in it. Empty means no local warden, and requests fail closed to you.
 - **Effort:** `Fast` (one marshal pass; 10s cloud / 60s local timeout), `Standard` (one pass; 30s / 120s), `Deep` (two passes — assess + verify — 60s / 240s; on disagreement it escalates to you and keeps the narrower scope). Effort never changes policy ceilings.
 - **Meta API key:** paste once and Save; the field clears and is never repopulated. Status shows only `Not configured` or `Configured ••••last4`. The key is stored as an ordinary encrypted credential (alias `warden-meta-api`) and decrypted only inside the daemon at call time. **Test connection** runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.
 - **Daemon / Security defaults:** read-only daemon URL, vault path and version, plus a policy-floor summary with a jump to Policies. Settings apply on the next request — no daemon restart needed. All settings routes require the daemon token; agents cannot read or change them.
@@ -144,13 +151,14 @@ The desktop app's **Settings** page chooses who judges capability requests. Dete
 
 These are the tiers supported by the daemon and Settings UI. Higher tiers buy independent judgment, not permission:
 
-| Tier | Mode & Warden Architecture | Hardware Profile & Requirements |
+| Tier | Warden | What it needs |
 |---|---|---|
-| **Meta BFT (two-warden quorum)** | **Cloud + local** | Muse Spark (`muse-spark-1.3`, Meta API) and on-device Muse Glimmer 30B both score the request and the stricter verdict wins (higher risk, narrower scope, approval if either asks); if one leg is unavailable the other decides alone. Two wardens, not a Byzantine fault-tolerant cluster. |
-| **Meta API (Cloud)** | **Muse Spark** (`muse-spark-1.3`) | Any machine (no model download). Sends request metadata (never secrets) to `https://api.meta.ai/v1`. |
-| **On-Device (Built-in)** | **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b`, via Ollama) | ~18 GB model download; needs enough RAM/VRAM for a 30B Q4 model. Nothing about the request leaves the machine. |
-| Self-Hosted | `muse-glimmer:30b` (your Ollama) | Same model through a local Ollama you manage (`METAVAULT_OLLAMA_URL`). |
-| Policy Only | Provider one | Deterministic policy rules alone; all non-trivial operations escalate to human. |
+| **Meta API (default)** | **Muse Spark** (`muse-spark-1.3`) | A Meta API key. Sends request metadata (never secrets) to `https://api.meta.ai/v1`. |
+| **Meta BFT (two-warden quorum)** | Muse Spark + your local endpoint | A Meta API key, plus your local endpoint if you set one. Both score the request and the stricter verdict wins (higher risk, narrower scope, approval if either asks); if one leg is unavailable the other decides alone. Two wardens, not a Byzantine fault-tolerant cluster. |
+| **Your local endpoint** | The model you name (Muse Glimmer recommended) | An Ollama or OpenAI-compatible server you run. Request metadata goes only to the URL you set. |
+| Policy Only | None | Nothing. Deterministic policy rules alone; anything non-trivial escalates to you. |
+
+The desktop app itself needs Windows x64. It bundles no model.
 
 ## End-to-end agent flows (real screenshots)
 
@@ -236,7 +244,7 @@ Run it:
 ```powershell
 npx tsc -p tsconfig.json --outDir dist
 node dist/packages/brain/eval/run-eval.js --fake   # deterministic fake brain (mechanics proof)
-node dist/packages/brain/eval/run-eval.js --live   # live Ollama marshal (default muse-glimmer:30b)
+node dist/packages/brain/eval/run-eval.js --live   # live marshal against your own Ollama (muse-glimmer:30b)
 ```
 
 The fake-brain run proves the harness mechanics only (the fake marshal's
@@ -246,7 +254,7 @@ below 100% by construction; safety is the gate).
 **Live Muse Glimmer 30B: no committed result.** The earlier live numbers in this
 README were measured against the previous local model, which is no longer shipped, and have
 been removed. `scripts/eval-windows.ps1` produces the live eval for `muse-glimmer:30b`
-(accuracy, safety gate, latency, and the Ollama process's peak RAM); no figures are quoted
+(accuracy, safety gate, latency, and Ollama process memory); no figures are quoted
 here until its raw output is committed under `docs/verification/`.
 
 **Held-out thesis benchmark (Muse Spark 1.3 via the Meta API, 2 runs, 60 cases):** on the 28
@@ -258,7 +266,7 @@ the 2,048-token output cap) counts as a miss. See [docs/VERIFICATION.md](docs/VE
 
 1. (15s) The horror: a real key pasted into an agent chat, now in a transcript.
 2. (20s) Without MetaVault OSS, the agent is blocked or the human pastes the key.
-3. (45s) Agent requests `stripe:charges.read` via MCP. Muse Glimmer 30B explains
+3. (45s) Agent requests `stripe:charges.read` via MCP. Muse Spark explains
    the risk in one sentence. Human approves once.
 4. (30s) Tool succeeds. Show the chat/transcript: the key never appeared.
 5. (30s) Revoke the agent mid-task. Its next request fails safely.
@@ -280,7 +288,7 @@ fail-closed whitelist before rendering.
 
 ## Verification
 
-Tests were re-run on 2026-11-03; the rehearsal, MCP, GUI, installer and video rows were run on 2026-10-31 on the demo-class machine (RTX 3070 8 GB) with the previous local model. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
+Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come from an earlier run on the demo-class machine (RTX 3070 8 GB) with the previous local model. The Windows installer row is now checked by CI: every PR runs the clean-install smoke test on `windows-latest`. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 | Gate | Result |
 |---|---|
@@ -289,7 +297,7 @@ Tests were re-run on 2026-11-03; the rehearsal, MCP, GUI, installer and video ro
 | Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |
 | Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
-| Windows installer | NSIS built, 115.6 MB, unsigned |
+| Windows installer | NSIS `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,486 bytes, unsigned; clean-install smoke test PASS in CI |
 | Demo walkthrough video | docs/verification/demo-walkthrough.mp4 (21 s) |
 
 Known limitations, honestly:

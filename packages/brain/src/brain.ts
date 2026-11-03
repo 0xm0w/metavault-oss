@@ -8,11 +8,10 @@ import {
 } from "../../core/src/errors.js";
 import type { WardenSettings } from "../../core/src/settings.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
-import { requestBuiltinDecision } from "./builtin.js";
 import { assessBftQuorum } from "./bft.js";
 import { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
 import { requestMetaApiDecision } from "./meta-api.js";
-import { DEFAULT_MARSHAL_MODEL, requestOllamaDecision } from "./ollama.js";
+import { DEFAULT_MARSHAL_MODEL, requestLocalDecision, requestOllamaDecision } from "./ollama.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 
 export { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
@@ -21,15 +20,17 @@ export { MarshalDecisionSchema, parseMarshalDecision } from "./schema.js";
 export { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
 export {
   DEFAULT_MARSHAL_MODEL,
+  DEFAULT_OLLAMA_BASE_URL,
   DEFAULT_OLLAMA_TIMEOUT_MS,
-  MUSE_GLIMMER_GGUF_FILE,
-  MUSE_GLIMMER_GGUF_REPO,
-  MUSE_GLIMMER_QUANT,
   MUSE_GLIMMER_SYSTEM_PROMPT,
   OLLAMA_CHAT_URL,
-  OLLAMA_MODELS,
+  httpLocalHandler,
+  requestLocalDecision,
   requestOllamaDecision,
-  type OllamaModelInfo,
+  requestOpenAiCompatibleDecision,
+  setLocalInferenceHandler,
+  type LocalEndpoint,
+  type LocalInferenceHandler,
 } from "./ollama.js";
 export {
   DEFAULT_META_API_BASE_URL,
@@ -38,16 +39,6 @@ export {
   requestMetaApiDecision,
   type MetaApiRequest,
 } from "./meta-api.js";
-export {
-  BUILTIN_MODELS,
-  DEFAULT_BUILTIN_MODEL,
-  getBuiltinInferenceHandler,
-  ollamaBuiltinHandler,
-  requestBuiltinDecision,
-  setBuiltinInferenceHandler,
-  type BuiltinInferenceHandler,
-  type BuiltinModelInfo,
-} from "./builtin.js";
 export {
   assessBftQuorum,
   type BftConsensusDecision,
@@ -75,9 +66,9 @@ export const EFFORT_TIMEOUT_MS: Record<WardenSettings["effort"], number> = {
   deep: 60_000,
 };
 
-// Local providers run Muse Glimmer 30B, a reasoning model that always thinks
-// before answering. On consumer hardware a single pass takes tens of seconds,
-// so local providers get a longer budget per effort level. Cloud budgets are
+// A bring-your-own local endpoint usually runs on the user's own machine,
+// where one pass can take far longer than a hosted API, so the local
+// provider gets a longer budget per effort level. Cloud budgets are
 // unchanged. Effort still never changes policy ceilings.
 export const LOCAL_EFFORT_TIMEOUT_MS: Record<WardenSettings["effort"], number> = {
   fast: 60_000,
@@ -86,7 +77,7 @@ export const LOCAL_EFFORT_TIMEOUT_MS: Record<WardenSettings["effort"], number> =
 };
 
 export function effortTimeoutMs(settings: Pick<WardenSettings, "provider" | "effort">): number {
-  return settings.provider === "ollama" || settings.provider === "builtin"
+  return settings.provider === "local"
     ? LOCAL_EFFORT_TIMEOUT_MS[settings.effort]
     : EFFORT_TIMEOUT_MS[settings.effort];
 }
@@ -127,9 +118,6 @@ function singlePass(
             ),
     ).pipe(Effect.provide(FetchHttpClient.layer));
   }
-  if (settings.provider === "builtin") {
-    return requestBuiltinDecision(settings.model, prompt, timeoutMs);
-  }
   if (settings.provider === "bft") {
     return Effect.fail(
       new MarshalUnavailable({ message: "MarshalUnavailable: BFT provider evaluates via assessBftQuorum" }),
@@ -140,8 +128,10 @@ function singlePass(
       new MarshalUnavailable({ message: "MarshalUnavailable: marshal provider is none" }),
     );
   }
-  return requestOllamaDecision(settings.model, prompt, timeoutMs).pipe(
-    Effect.provide(FetchHttpClient.layer),
+  return requestLocalDecision(
+    { baseUrl: settings.localBaseUrl, api: settings.localApi, model: settings.localModel },
+    prompt,
+    timeoutMs,
   );
 }
 
@@ -164,6 +154,7 @@ export function assessFromSettings(
           metaModel: settings.model,
           timeoutMs: totalMs,
           localTimeoutMs: LOCAL_EFFORT_TIMEOUT_MS[settings.effort],
+          localEndpoint: { baseUrl: settings.localBaseUrl, api: settings.localApi, model: settings.localModel },
         }),
     ).pipe(Effect.provide(FetchHttpClient.layer));
   }
@@ -212,10 +203,10 @@ export function BrainFromSettings(
   });
 }
 
-export function BrainOllamaLive(model: string = DEFAULT_MARSHAL_MODEL): Layer.Layer<Brain> {
+export function BrainOllamaLive(model: string = DEFAULT_MARSHAL_MODEL, baseUrl?: string): Layer.Layer<Brain> {
   return Layer.succeed(Brain, {
     assess: (req, historySummary, policyDigest) =>
-      requestOllamaDecision(model, buildMarshalPrompt(req, historySummary, policyDigest)).pipe(
+      requestOllamaDecision(model, buildMarshalPrompt(req, historySummary, policyDigest), undefined, baseUrl).pipe(
         Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope)),
         Effect.provide(FetchHttpClient.layer),
       ),

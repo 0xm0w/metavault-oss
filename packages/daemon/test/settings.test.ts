@@ -40,10 +40,13 @@ async function makeService(brain: Layer.Layer<Brain> = BrainLowRisk): Promise<Va
 }
 
 const DEFAULTS = {
-  provider: "builtin",
-  model: "muse-glimmer:30b",
+  provider: "meta-api",
+  model: "muse-spark-1.3",
   effort: "standard",
   metaApiBaseUrl: "https://api.meta.ai/v1",
+  localBaseUrl: "",
+  localApi: "ollama",
+  localModel: "",
 };
 
 describe("warden settings routes", () => {
@@ -86,6 +89,7 @@ describe("warden settings routes", () => {
     );
     expect(patched.status).toBe(200);
     expect(patched.body).toEqual({
+      ...DEFAULTS,
       provider: "meta-api",
       model: "muse-spark-1.2",
       effort: "deep",
@@ -351,8 +355,8 @@ describe("warden settings routes", () => {
     expect(Object.keys(res.body as object).sort()).toEqual(["detail", "latencyMs", "model", "ok", "provider"]);
     const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
     expect(body.ok).toBe(true);
-    expect(body.provider).toBe("builtin");
-    expect(body.model).toBe("muse-glimmer:30b");
+    expect(body.provider).toBe("meta-api");
+    expect(body.model).toBe("muse-spark-1.3");
     expect(typeof body.latencyMs).toBe("number");
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(body.detail).toBe("ok");
@@ -373,7 +377,7 @@ describe("warden settings routes", () => {
     expect(res.status).toBe(200);
     const body = res.body as { ok: boolean; provider: string; model: string; latencyMs: number; detail: string };
     expect(body.ok).toBe(false);
-    expect(body.provider).toBe("builtin");
+    expect(body.provider).toBe("meta-api");
     expect(body.detail).toBe("warden unavailable");
     expect(JSON.stringify(res.body)).not.toContain("canary");
     expect(JSON.stringify(res.body)).not.toContain("provider exploded");

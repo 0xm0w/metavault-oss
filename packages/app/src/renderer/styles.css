@@ -1441,76 +1441,6 @@ body.is-simple-mode .verbose-note {
 .status-badge.is-danger { background: #fde8e8; color: #dc2626; }
 .status-badge.is-warn { background: #fff6e0; color: #d97706; }
 
-/* Built-in AI (on-device Muse Glimmer via Ollama) Component */
-.builtin-ai-card {
-  border: 1px solid var(--border);
-  background: #ffffff;
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.builtin-ai-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.builtin-ai-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.builtin-ai-desc {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.45;
-  margin-top: 2px;
-}
-
-.builtin-ai-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.builtin-ai-progress-track {
-  width: 100%;
-  height: 8px;
-  background: var(--input-bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.builtin-ai-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary) 0%, #ff8cb2 100%);
-  border-radius: 999px;
-  transition: width 0.2s ease;
-}
-
-.builtin-ai-progress-stats {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
-.builtin-ai-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .vault-modal, .settings-dialog { animation: none; }
   .vault-add-btn, .vault-modal-close, .vault-btn, button.action { transition: none; }
@@ -1601,57 +1531,13 @@ body.is-simple-mode .verbose-note {
   color: var(--muted);
 }
 
-/* Hardware Capacity & Profile Recommendation */
-.capacity-card {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 
-.capacity-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.vault-key-gate input {
+  width: min(360px, 100%);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d0d4dc);
+  font: inherit;
 }
-
-.capacity-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.capacity-details {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.capacity-specs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.capacity-pill {
-  font-size: 11px;
-  padding: 2px 8px;
-  background: var(--field);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--ink);
-}
-
-.capacity-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
+.vault-key-gate p { max-width: 460px; }
+.vault-key-gate .field-error { color: #c0392b; min-height: 1.2em; margin: 0; }

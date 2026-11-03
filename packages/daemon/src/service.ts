@@ -20,6 +20,7 @@ import {
   VaultLockedError,
   type KeySession,
   type KeySessionStatus,
+  type SetupResult,
   type UnlockResult,
 } from "../../core/src/key-session.js";
 import {
@@ -46,8 +47,8 @@ import {
   WARDEN_KEY_SCOPE,
   generatePinSalt,
   hashPin,
-  defaultModelForProvider,
-  resolveDefaultWardenModel,
+  DEFAULT_META_API_WARDEN_MODEL,
+  effectiveWardenModel,
   verifyPin,
   type AgentSecuritySettings,
   type LocalAuthStatus,
@@ -176,6 +177,8 @@ export interface VaultServiceService {
   readonly keyStatus: () => Effect.Effect<KeySessionStatus>;
   readonly unlockVault: (passphrase: string) => Effect.Effect<UnlockResult, StorageError>;
   readonly lockVault: () => Effect.Effect<void>;
+  // First-run only: create, wrap and store a new master key.
+  readonly setupVault: (passphrase: string) => Effect.Effect<SetupResult | "not-supported", StorageError>;
   readonly requestCapability: (
     req: CapabilityRequest,
   ) => Effect.Effect<CapabilityResult, StorageError>;
@@ -282,7 +285,7 @@ export function makeVaultServiceLive(
   const grantTtlMs = options.grantTtlMs ?? DEFAULT_GRANT_TTL_MS;
   const rateLimitPerHour = options.rateLimitPerHour ?? DEFAULT_RATE_LIMIT_PER_HOUR;
   const initialStandingApprovals = options.standingApprovals ?? [];
-  const modelId = options.modelId ?? resolveDefaultWardenModel();
+  const modelId = options.modelId ?? DEFAULT_META_API_WARDEN_MODEL;
   const enrollmentTtlMs = options.enrollmentTtlMs ?? DEFAULT_ENROLLMENT_TTL_MS;
 
   return Layer.effect(
@@ -737,6 +740,12 @@ export function makeVaultServiceLive(
             keySession.lock();
           }),
 
+        setupVault: (passphrase) =>
+          Effect.tryPromise({
+            try: async () => (keySession.setup === undefined ? "not-supported" : keySession.setup(passphrase)),
+            catch: () => new StorageError({ message: "vault setup failed", operation: "setup" }),
+          }),
+
         requestCapability: (req) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
@@ -805,8 +814,8 @@ export function makeVaultServiceLive(
             // decision for evaluatePolicy, with an audit event saying so.
             const wardenSettings = yield* store.getWardenSettings();
             const marshalRan = wardenSettings.provider !== "none";
-            const marshalModelId =
-              wardenSettings.model.trim() !== "" ? wardenSettings.model : modelId;
+            const effectiveModel = effectiveWardenModel(wardenSettings);
+            const marshalModelId = effectiveModel.trim() !== "" ? effectiveModel : modelId;
             let decision: MarshalDecision | null = null;
             let latencyMs: number | undefined;
             if (marshalRan) {
@@ -1047,10 +1056,9 @@ export function makeVaultServiceLive(
             const grants = yield* registry.listGrants();
             const wardenSettings = yield* store.getWardenSettings();
             const hasMarshal = wardenSettings.provider !== "none";
+            const pendingEffective = effectiveWardenModel(wardenSettings);
             const pendingModelId =
-              hasMarshal && wardenSettings.model.trim() !== ""
-                ? wardenSettings.model
-                : modelId;
+              hasMarshal && pendingEffective.trim() !== "" ? pendingEffective : modelId;
             const decisionMap = yield* Ref.get(decisions);
             const pending: PendingApproval[] = [];
             for (const grant of grants) {
@@ -1112,38 +1120,35 @@ export function makeVaultServiceLive(
         updateWardenSettings: (patch) =>
           Effect.gen(function* () {
             const current = yield* store.getWardenSettings();
-            const provider = patch.provider ?? current.provider;
-            // Switching provider without naming a model resets the model to
-            // that provider's default, so a meta-api switch never keeps a
-            // local Ollama tag the Meta API can't serve.
-            const model =
-              patch.model !== undefined
-                ? patch.model.trim()
-                : provider !== current.provider
-                  ? defaultModelForProvider(provider)
-                  : current.model;
+            // The Meta API model and the local endpoint model are separate
+            // fields, so switching provider never carries a local tag to
+            // the Meta API (or the reverse).
             const next: WardenSettings = {
-              provider,
-              model,
+              provider: patch.provider ?? current.provider,
+              model: patch.model !== undefined ? patch.model.trim() : current.model,
               effort: patch.effort ?? current.effort,
               metaApiBaseUrl:
-                patch.metaApiBaseUrl !== undefined
-                  ? patch.metaApiBaseUrl.trim()
-                  : current.metaApiBaseUrl,
+                patch.metaApiBaseUrl !== undefined ? patch.metaApiBaseUrl.trim() : current.metaApiBaseUrl,
+              localBaseUrl: patch.localBaseUrl !== undefined ? patch.localBaseUrl.trim() : current.localBaseUrl,
+              localApi: patch.localApi ?? current.localApi,
+              localModel: patch.localModel !== undefined ? patch.localModel.trim() : current.localModel,
             };
             yield* store.setWardenSettings(next);
             if (
               patch.provider !== undefined ||
               patch.model !== undefined ||
               patch.effort !== undefined ||
-              patch.metaApiBaseUrl !== undefined
+              patch.metaApiBaseUrl !== undefined ||
+              patch.localBaseUrl !== undefined ||
+              patch.localApi !== undefined ||
+              patch.localModel !== undefined
             ) {
               yield* audit(
                 "human",
                 "warden",
                 "",
                 "settings-changed",
-                `warden settings changed: provider=${next.provider} model=${next.model}`,
+                `warden settings changed: provider=${next.provider} model=${effectiveWardenModel(next)}`,
                 false,
               );
             }
@@ -1190,7 +1195,8 @@ export function makeVaultServiceLive(
         testWarden: () =>
           Effect.gen(function* () {
             const settings = yield* store.getWardenSettings();
-            const model = settings.model.trim() !== "" ? settings.model : modelId;
+            const effective = effectiveWardenModel(settings);
+            const model = effective.trim() !== "" ? effective : modelId;
             if (settings.provider === "none") {
               return { ok: true, provider: settings.provider, model, latencyMs: 0, detail: "policy-only" } as const;
             }

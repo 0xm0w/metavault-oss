@@ -9,7 +9,6 @@ import {
   effortTimeoutMs,
   LOCAL_EFFORT_TIMEOUT_MS,
   META_API_DOCS_URL,
-  OLLAMA_MODELS,
   type WardenSettings,
 } from "../src/brain.js";
 
@@ -28,6 +27,9 @@ const settings = {
   model: "muse-spark-1.3",
   effort: "standard" as const,
   metaApiBaseUrl: "https://api.meta.ai/v1",
+  localBaseUrl: "",
+  localApi: "ollama" as const,
+  localModel: "",
 };
 const getKey = () => Effect.succeed<string | null>(META_KEY);
 
@@ -138,10 +140,10 @@ describe("effort levels", () => {
     expect(EFFORT_TIMEOUT_MS).toEqual({ fast: 10_000, standard: 30_000, deep: 60_000 });
   });
 
-  it("gives local Muse Glimmer (ollama/builtin) a longer budget than the cloud", () => {
+  it("gives a bring-your-own local endpoint a longer budget than the cloud", () => {
     expect(LOCAL_EFFORT_TIMEOUT_MS).toEqual({ fast: 60_000, standard: 120_000, deep: 240_000 });
-    expect(effortTimeoutMs({ ...settings, provider: "ollama", effort: "standard" })).toBe(120_000);
-    expect(effortTimeoutMs({ ...settings, provider: "builtin", effort: "fast" })).toBe(60_000);
+    expect(effortTimeoutMs({ ...settings, provider: "local", effort: "standard" })).toBe(120_000);
+    expect(effortTimeoutMs({ ...settings, provider: "local", effort: "fast" })).toBe(60_000);
     expect(effortTimeoutMs({ ...settings, provider: "meta-api", effort: "standard" })).toBe(30_000);
   });
 
@@ -248,13 +250,6 @@ describe("effort levels", () => {
       requireApproval: false,
       explanation: "ok",
     });
-  });
-});
-
-describe("OLLAMA_MODELS catalogue", () => {
-  it("lists Muse Glimmer 30B Q4_K_M first (default) plus the optional UD-IQ3_XXS quant", () => {
-    expect(OLLAMA_MODELS.map((m) => m.id)).toEqual(["muse-glimmer:30b", "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"]);
-    expect(OLLAMA_MODELS.map((m) => m.tier)).toEqual(["High", "Medium"]);
   });
 });
 

@@ -454,7 +454,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const scenarios = loadScenarios(scenariosPath);
   const brainLayer =
-    mode === "fake" ? makeFakeBrain(scenarios) : BrainOllamaLive(model);
+    mode === "fake" ? makeFakeBrain(scenarios) : BrainOllamaLive(model, process.env["METAVAULT_EVAL_OLLAMA_URL"]);
   const report = await runEval(scenarios, brainLayer);
   process.stdout.write(
     formatReport(report, mode, mode === "fake" ? "fake-brain" : (model ?? DEFAULT_MARSHAL_MODEL)),

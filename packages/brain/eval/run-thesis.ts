@@ -413,7 +413,15 @@ export async function main(argv: readonly string[]): Promise<number> {
     wardenLine = "warden: not run (rules-only mode). warden and rules+warden rows show the no-warden fallback (null -> human).";
   } else if (provider === "ollama") {
     model ??= "muse-glimmer:30b";
-    warden = liveWarden({ provider: "ollama", model, effort, metaApiBaseUrl: DEFAULT_META_API_BASE_URL });
+    warden = liveWarden({
+      provider: "local",
+      model: DEFAULT_META_API_MODEL,
+      effort,
+      metaApiBaseUrl: DEFAULT_META_API_BASE_URL,
+      localBaseUrl: process.env["METAVAULT_EVAL_OLLAMA_URL"] ?? "http://localhost:11434",
+      localApi: "ollama",
+      localModel: model,
+    });
     wardenLine = `warden: ollama ${model}, effort=${effort} (assessFromSettings + enforceScopeSafety)`;
   } else {
     const isMeta = provider === "meta-api";

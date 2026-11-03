@@ -7,7 +7,7 @@ import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
 import { assessFromSettings, Brain, MarshalUnavailable } from "../../brain/src/brain.js";
 import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
 import { Connector } from "../../core/src/connector.js";
-import { DEFAULT_AGENT_SECURITY_SETTINGS, WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, type AgentSecuritySettings } from "../../core/src/settings.js";
+import { DEFAULT_AGENT_SECURITY_SETTINGS, WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, normalizeWardenProvider, type AgentSecuritySettings } from "../../core/src/settings.js";
 import { inspectProcess } from "./process-inspector.js";
 import { decryptSecret } from "../../core/src/crypto.js";
 import { metavaultEnv } from "../../core/src/env.js";
@@ -34,9 +34,11 @@ import {
   VAULT_LOCKED_OPERATION,
   VaultService,
   type VaultServiceService,
+  type WardenSettingsPatch,
 } from "./service.js";
 import {
   autoLockMsFromEnv,
+  createFirstRunKeySession,
   createKeySession,
   envMasterKeyIfAllowed,
   type KeySession,
@@ -240,6 +242,7 @@ function isTokenProtected(method: string, path: string): boolean {
       path === "/credentials" ||
       path === "/cards" ||
       path === "/unlock" ||
+      path === "/setup" ||
       path === "/lock")
   ) {
     return true;
@@ -299,6 +302,11 @@ export async function handleVaultRequest(
       !tokenMatches(options.daemonToken, options.providedToken))
   ) {
     return UNAUTHORIZED;
+  }
+  // Liveness probe for the desktop app and the installer smoke test. It
+  // is open (no token) and says nothing about the vault's contents.
+  if (method === "GET" && path === "/health") {
+    return { status: 200, body: { status: "ok", service: "vaultd" } };
   }
   if (method === "GET" && path === "/aliases") {
     return run(
@@ -377,16 +385,18 @@ export async function handleVaultRequest(
     if (decoded.metaApiBaseUrl !== undefined && decoded.metaApiBaseUrl.trim() === "") {
       return BAD_REQUEST;
     }
-    const patch: {
-      provider?: "none" | "ollama" | "meta-api" | "builtin" | "bft";
-      model?: string;
-      effort?: "fast" | "standard" | "deep";
-      metaApiBaseUrl?: string;
-    } = {};
-    if (decoded.provider !== undefined) patch.provider = decoded.provider;
-    if (decoded.model !== undefined) patch.model = decoded.model;
-    if (decoded.effort !== undefined) patch.effort = decoded.effort;
-    if (decoded.metaApiBaseUrl !== undefined) patch.metaApiBaseUrl = decoded.metaApiBaseUrl;
+    if (decoded.localBaseUrl !== undefined && !isLocalBaseUrlAcceptable(decoded.localBaseUrl)) {
+      return BAD_REQUEST;
+    }
+    const patch: WardenSettingsPatch = {
+      ...(decoded.provider !== undefined ? { provider: normalizeWardenProvider(decoded.provider) ?? "local" } : {}),
+      ...(decoded.model !== undefined ? { model: decoded.model } : {}),
+      ...(decoded.effort !== undefined ? { effort: decoded.effort } : {}),
+      ...(decoded.metaApiBaseUrl !== undefined ? { metaApiBaseUrl: decoded.metaApiBaseUrl } : {}),
+      ...(decoded.localBaseUrl !== undefined ? { localBaseUrl: decoded.localBaseUrl } : {}),
+      ...(decoded.localApi !== undefined ? { localApi: decoded.localApi } : {}),
+      ...(decoded.localModel !== undefined ? { localModel: decoded.localModel } : {}),
+    };
     return run(service.updateWardenSettings(patch));
   }
   if (method === "POST" && path === "/settings/warden/test") {
@@ -502,8 +512,30 @@ export async function handleVaultRequest(
         return { status: 401, body: { error: { _tag: "WrongPassphrase", message: "wrong passphrase" } } };
       case "throttled":
         return { status: 429, body: { error: { _tag: "UnlockThrottled", message: "too many failed attempts; wait and retry" } } };
+      case "not-initialized":
+        return { status: 409, body: { error: { _tag: "VaultNotInitialized", message: "no vault key yet; create a passphrase first" } } };
       default:
         return { status: 409, body: { error: { _tag: "NotPassphraseMode", message: "vault key is not passphrase-protected; run `metavault key protect`" } } };
+    }
+  }
+  if (method === "POST" && path === "/setup") {
+    const decoded = await decode(UnlockSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const result = await run(service.setupVault(decoded.passphrase));
+    if (result.status !== 200) {
+      return result;
+    }
+    switch (result.body) {
+      case "initialized":
+        return { status: 200, body: { status: "initialized" } };
+      case "too-short":
+        return { status: 400, body: { error: { _tag: "PassphraseTooShort", message: "passphrase must be at least 12 characters" } } };
+      case "already-initialized":
+        return { status: 409, body: { error: { _tag: "AlreadyInitialized", message: "the vault already has a key" } } };
+      default:
+        return { status: 409, body: { error: { _tag: "SetupUnavailable", message: "first-run setup is not enabled for this daemon" } } };
     }
   }
   if (method === "POST" && path === "/cards") {
@@ -817,7 +849,32 @@ export function createVaultHttpServer(
 //   2. METAVAULT_MASTER_KEY, only with METAVAULT_ALLOW_ENV_MASTER_KEY=1.
 //   3. A raw key in the OS keychain (legacy `metavault init` before
 //      passphrase protection). Accepted with a migration warning.
-export function resolveDaemonKeySession(dbPath: string, warn: (line: string) => void = (l) => process.stderr.write(`${l}\n`)): KeySession {
+// METAVAULT_FIRST_RUN_SETUP=1 (set by the desktop app when it starts its
+// bundled daemon) lets a daemon with no key start in "uninitialized" mode
+// so the app can walk the user through creating a passphrase. Without it
+// a keyless daemon refuses to start, as before.
+// The local endpoint is the user's own server. Empty clears it; otherwise it
+// must be an http(s) URL with no embedded credentials.
+export function isLocalBaseUrlAcceptable(raw: string): boolean {
+  const value = raw.trim();
+  if (value === "") return true;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
+}
+
+export function firstRunSetupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env["METAVAULT_FIRST_RUN_SETUP"] === "1";
+}
+
+export function resolveDaemonKeySession(
+  dbPath: string,
+  warn: (line: string) => void = (l) => process.stderr.write(`${l}\n`),
+  allowFirstRun: boolean = firstRunSetupEnabled(),
+): KeySession {
   const wrapped = readWrappedKeyFile(wrappedKeyFilePath(dbPath));
   if (wrapped !== null) {
     const autoLockMs = autoLockMsFromEnv();
@@ -832,6 +889,13 @@ export function resolveDaemonKeySession(dbPath: string, warn: (line: string) => 
   if (fromKeychain !== null) {
     warn("warning: master key read unwrapped from the OS keychain (legacy mode; no auto-lock). Run `metavault key protect` to migrate.");
     return createKeySession({ mode: "keychain-legacy", key: fromKeychain });
+  }
+  if (allowFirstRun) {
+    const autoLockMs = autoLockMsFromEnv();
+    return createFirstRunKeySession({
+      wrappedKeyPath: wrappedKeyFilePath(dbPath),
+      ...(autoLockMs !== undefined ? { autoLockMs } : {}),
+    });
   }
   throw new Error(
     "master key unavailable: run `metavault init` (passphrase-protected key), or `metavault key protect` to migrate a legacy key",
@@ -853,7 +917,7 @@ export interface VaultDaemonOptions {
 
 export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promise<Server> {
   const port = options.port ?? Number(metavaultEnv("PORT") ?? "7077");
-  const dbPath = options.dbPath ?? join(process.cwd(), "metavault.db");
+  const dbPath = options.dbPath ?? metavaultEnv("DB_PATH") ?? join(process.cwd(), "metavault.db");
   const keySession =
     options.keySession ??
     (options.masterKey !== undefined

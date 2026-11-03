@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
-import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, defaultWardenSettings, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
+import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, LEGACY_LOCAL_PROVIDERS, SUGGESTED_LOCAL_BASE_URL, defaultWardenSettings, normalizeWardenProvider, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
 import type { AuditEvent, DecisionSource, Risk } from "./types.js";
 import { CARD_KIND, SECRET_KIND, type CredentialKind } from "./card.js";
 
@@ -105,11 +105,43 @@ interface AliasRow {
   readonly alias: string;
 }
 
-interface WardenSettingsRow {
+export interface WardenSettingsRow {
   readonly provider: string;
   readonly model: string;
   readonly effort: string;
   readonly meta_api_base_url: string;
+  readonly local_base_url: string;
+  readonly local_api: string;
+  readonly local_model: string;
+}
+
+// Rows written by earlier builds use provider "ollama" or "builtin" with the
+// local tag in `model` and no local_* columns. They migrate to the
+// bring-your-own endpoint at the Ollama address those builds always used.
+export function wardenSettingsFromRow(row: WardenSettingsRow): WardenSettings {
+  const legacyLocal = (LEGACY_LOCAL_PROVIDERS as readonly string[]).includes(row.provider);
+  const provider = normalizeWardenProvider(row.provider) ?? DEFAULT_WARDEN_SETTINGS.provider;
+  const localApi: WardenSettings["localApi"] = row.local_api === "openai" ? "openai" : "ollama";
+  if (legacyLocal && row.local_model === "") {
+    return {
+      provider,
+      model: DEFAULT_WARDEN_SETTINGS.model,
+      effort: row.effort as WardenSettings["effort"],
+      metaApiBaseUrl: row.meta_api_base_url,
+      localBaseUrl: row.local_base_url !== "" ? row.local_base_url : SUGGESTED_LOCAL_BASE_URL.ollama,
+      localApi,
+      localModel: row.model,
+    };
+  }
+  return {
+    provider,
+    model: row.model,
+    effort: row.effort as WardenSettings["effort"],
+    metaApiBaseUrl: row.meta_api_base_url,
+    localBaseUrl: row.local_base_url,
+    localApi,
+    localModel: row.local_model,
+  };
 }
 
 interface AuditRow {
@@ -276,8 +308,19 @@ function makeStore(db: Database.Database): VaultStoreService {
   const selectSecuritySettings = db.prepare(
     "SELECT strict_mode, verify_caller_process FROM agent_security_settings WHERE id = 1"
   );
+  for (const [name, def] of [
+    ["local_base_url", "TEXT NOT NULL DEFAULT ''"],
+    ["local_api", "TEXT NOT NULL DEFAULT 'ollama'"],
+    ["local_model", "TEXT NOT NULL DEFAULT ''"],
+  ] as const) {
+    try {
+      db.exec(`ALTER TABLE warden_settings ADD COLUMN ${name} ${def}`);
+    } catch {
+      // Column already exists
+    }
+  }
   const upsertSettings = db.prepare(
-    "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url",
+    "INSERT INTO warden_settings (id, provider, model, effort, meta_api_base_url, local_base_url, local_api, local_model) VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model, effort = excluded.effort, meta_api_base_url = excluded.meta_api_base_url, local_base_url = excluded.local_base_url, local_api = excluded.local_api, local_model = excluded.local_model",
   );
   try {
     db.exec("ALTER TABLE local_auth_settings ADD COLUMN biometric_enabled INTEGER NOT NULL DEFAULT 0");
@@ -296,7 +339,7 @@ function makeStore(db: Database.Database): VaultStoreService {
     "SELECT enabled, pin_hash, salt, biometric_enabled, require_on_approval, require_on_launch, require_on_settings, auto_lock_minutes FROM local_auth_settings WHERE id = 1",
   );
   const selectSettings = db.prepare(
-    "SELECT provider, model, effort, meta_api_base_url FROM warden_settings WHERE id = 1",
+    "SELECT provider, model, effort, meta_api_base_url, local_base_url, local_api, local_model FROM warden_settings WHERE id = 1",
   );
   const selectAudit = db.prepare(
     "SELECT ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process FROM audit ORDER BY rowid ASC",
@@ -413,12 +456,7 @@ function makeStore(db: Database.Database): VaultStoreService {
           if (row === undefined) {
             return defaultWardenSettings();
           }
-          return {
-            provider: row.provider as WardenSettings["provider"],
-            model: row.model,
-            effort: row.effort as WardenSettings["effort"],
-            metaApiBaseUrl: row.meta_api_base_url,
-          };
+          return wardenSettingsFromRow(row);
         },
         catch: toStorageError("getWardenSettings"),
       }),
@@ -461,7 +499,15 @@ function makeStore(db: Database.Database): VaultStoreService {
     setWardenSettings: (settings) =>
       Effect.try({
         try: () => {
-          upsertSettings.run(settings.provider, settings.model, settings.effort, settings.metaApiBaseUrl);
+          upsertSettings.run(
+            settings.provider,
+            settings.model,
+            settings.effort,
+            settings.metaApiBaseUrl,
+            settings.localBaseUrl,
+            settings.localApi,
+            settings.localModel,
+          );
         },
         catch: toStorageError("setWardenSettings"),
       }),

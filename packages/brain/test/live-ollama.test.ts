@@ -4,20 +4,23 @@
 //   ollama pull muse-glimmer:30b
 // Run:
 //   METAVAULT_LIVE_OLLAMA=1 npx vitest run packages/brain/test/live-ollama.test.ts
-// METAVAULT_OLLAMA_URL overrides http://localhost:11434.
+// METAVAULT_LIVE_OLLAMA_URL overrides http://localhost:11434 (test-only).
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { Brain, BrainFromSettings, DEFAULT_BUILTIN_MODEL } from "../src/brain.js";
+import { Brain, BrainFromSettings, DEFAULT_MARSHAL_MODEL } from "../src/brain.js";
 import type { WardenSettings } from "../../core/src/settings.js";
 
 const LIVE = process.env["METAVAULT_LIVE_OLLAMA"] === "1";
 
-describe.skipIf(!LIVE)("live: on-device warden scores a request with Muse Glimmer via Ollama", () => {
+describe.skipIf(!LIVE)("live: your local endpoint scores a request with Muse Glimmer via Ollama", () => {
   const settings: WardenSettings = {
-    provider: "builtin",
-    model: DEFAULT_BUILTIN_MODEL,
+    provider: "local",
+    model: "muse-spark-1.3",
     effort: "standard",
     metaApiBaseUrl: "https://api.meta.ai/v1",
+    localBaseUrl: process.env["METAVAULT_LIVE_OLLAMA_URL"] ?? "http://localhost:11434",
+    localApi: "ollama",
+    localModel: DEFAULT_MARSHAL_MODEL,
   };
 
   const assess = (requestedScope: string, reason: string) =>

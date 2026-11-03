@@ -9,9 +9,21 @@
 // passphrase to re-derive the key, so they never auto-lock. That is the
 // main reason to migrate (see docs/SECURITY.md#master-key-protection).
 
-import { unwrapMasterKey, WrongPassphrase, type WrappedMasterKey } from "./keywrap.js";
+import { randomBytes } from "node:crypto";
+import {
+  checkPassphraseStrength,
+  readWrappedKeyFile,
+  unwrapMasterKey,
+  wrapMasterKey,
+  writeWrappedKeyFile,
+  WrongPassphrase,
+  type WrappedMasterKey,
+} from "./keywrap.js";
 
-export type KeyMode = "passphrase" | "keychain-legacy" | "env" | "injected";
+// "uninitialized" is the first-run state of a fresh desktop install: no
+// key exists yet, every decrypt fails as locked, and the only way forward
+// is setup(passphrase) (or `metavault init` writing the wrapped key file).
+export type KeyMode = "passphrase" | "keychain-legacy" | "env" | "injected" | "uninitialized";
 
 export const DEFAULT_AUTO_LOCK_MS = 15 * 60_000;
 export const UNLOCK_FREE_ATTEMPTS = 5;
@@ -33,7 +45,15 @@ export interface KeySessionStatus {
   readonly lockedUntilRetryMs: number | null;
 }
 
-export type UnlockResult = "unlocked" | "already-unlocked" | "wrong-passphrase" | "throttled" | "not-passphrase-mode";
+export type UnlockResult =
+  | "unlocked"
+  | "already-unlocked"
+  | "wrong-passphrase"
+  | "throttled"
+  | "not-passphrase-mode"
+  | "not-initialized";
+
+export type SetupResult = "initialized" | "already-initialized" | "too-short";
 
 export interface KeySession {
   readonly mode: KeyMode;
@@ -43,6 +63,8 @@ export interface KeySession {
   readonly unlock: (passphrase: string) => Promise<UnlockResult>;
   readonly status: () => KeySessionStatus;
   readonly dispose: () => void;
+  // Only first-run sessions can create a key; other modes omit it.
+  readonly setup?: (passphrase: string) => Promise<SetupResult>;
 }
 
 export interface KeySessionOptions {
@@ -174,4 +196,91 @@ export function autoLockMsFromEnv(env: NodeJS.ProcessEnv = process.env): number 
     throw new Error("METAVAULT_AUTO_LOCK_MINUTES must be between 1 and 1440");
   }
   return Math.round(minutes * 60_000);
+}
+
+export interface FirstRunKeySessionOptions {
+  // Where the passphrase-wrapped key lives (wrappedKeyFilePath(dbPath)).
+  readonly wrappedKeyPath: string;
+  readonly autoLockMs?: number;
+  readonly now?: () => number;
+  readonly sweepMs?: number;
+  // Seams for tests; production uses the real keywrap helpers.
+  readonly readWrapped?: (path: string) => WrappedMasterKey | null;
+  readonly writeWrapped?: (path: string, wrapped: WrappedMasterKey) => void;
+  readonly wrap?: (key: Buffer, passphrase: string) => Promise<WrappedMasterKey>;
+}
+
+// A session for a vault that has no key yet. It reports mode
+// "uninitialized" until a wrapped key file appears, either from setup()
+// here or from `metavault init` in a terminal, and from then on behaves
+// exactly like a passphrase session (auto-lock, throttled unlock). The
+// fresh master key is wrapped and written before it is ever used, so no
+// unwrapped copy touches disk.
+export function createFirstRunKeySession(options: FirstRunKeySessionOptions): KeySession {
+  const readWrapped = options.readWrapped ?? readWrappedKeyFile;
+  const writeWrapped = options.writeWrapped ?? writeWrappedKeyFile;
+  const wrap = options.wrap ?? ((key: Buffer, passphrase: string) => wrapMasterKey(key, passphrase));
+  const base = {
+    ...(options.autoLockMs !== undefined ? { autoLockMs: options.autoLockMs } : {}),
+    ...(options.now !== undefined ? { now: options.now } : {}),
+    ...(options.sweepMs !== undefined ? { sweepMs: options.sweepMs } : {}),
+  };
+  let inner: KeySession | null = null;
+  let settingUp = false;
+
+  const current = (): KeySession | null => {
+    if (inner !== null) return inner;
+    const wrapped = readWrapped(options.wrappedKeyPath);
+    if (wrapped !== null) {
+      inner = createKeySession({ mode: "passphrase", wrapped, ...base });
+    }
+    return inner;
+  };
+
+  return {
+    get mode(): KeyMode {
+      return current()?.mode ?? "uninitialized";
+    },
+    key: () => {
+      const session = current();
+      if (session === null) throw new VaultLockedError();
+      return session.key();
+    },
+    isLocked: () => current()?.isLocked() ?? true,
+    lock: () => {
+      current()?.lock();
+    },
+    unlock: async (passphrase) => {
+      const session = current();
+      return session === null ? "not-initialized" : session.unlock(passphrase);
+    },
+    status: () =>
+      current()?.status() ?? {
+        mode: "uninitialized",
+        locked: true,
+        autoLockMs: null,
+        kdf: null,
+        lockedUntilRetryMs: null,
+      },
+    dispose: () => {
+      inner?.dispose();
+    },
+    setup: async (passphrase) => {
+      if (current() !== null || settingUp) return "already-initialized";
+      if (checkPassphraseStrength(passphrase) !== "ok") return "too-short";
+      settingUp = true;
+      const key = randomBytes(32);
+      try {
+        const wrapped = await wrap(key, passphrase);
+        // Another writer (e.g. `metavault init`) may have won the race.
+        if (current() !== null) return "already-initialized";
+        writeWrapped(options.wrappedKeyPath, wrapped);
+        inner = createKeySession({ mode: "passphrase", wrapped, key, ...base });
+        return "initialized";
+      } finally {
+        key.fill(0);
+        settingUp = false;
+      }
+    },
+  };
 }

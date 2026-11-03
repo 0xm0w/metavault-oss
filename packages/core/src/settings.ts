@@ -23,68 +23,81 @@ export const AgentSecuritySettingsPatchSchema = Schema.Struct({
   verifyCallerProcess: Schema.optional(Schema.Boolean),
 });
 
-export type WardenProvider = "none" | "ollama" | "meta-api" | "builtin" | "bft";
+// "local" is a bring-your-own endpoint: Ollama or any OpenAI-compatible
+// server the user already runs. MetaVault ships and downloads no model.
+export type WardenProvider = "none" | "meta-api" | "local" | "bft";
+export type LocalEndpointApi = "ollama" | "openai";
 
 export interface WardenSettings {
   readonly provider: WardenProvider;
+  // Meta Model API model id (used by meta-api and the cloud half of bft).
   readonly model: string;
   readonly effort: "fast" | "standard" | "deep";
   readonly metaApiBaseUrl: string;
+  // Bring-your-own local endpoint (used by local and the local half of bft).
+  // Empty means "not configured": the warden is unavailable and policy
+  // asks the human.
+  readonly localBaseUrl: string;
+  readonly localApi: LocalEndpointApi;
+  readonly localModel: string;
 }
 
+// Out-of-box default: Muse Spark on the Meta Model API. No model is bundled
+// or downloaded; a local model is the user's own endpoint, set in Settings.
 export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
-  provider: "builtin",
-  model: "muse-glimmer:30b",
+  provider: "meta-api",
+  model: "muse-spark-1.3",
   effort: "standard",
   metaApiBaseUrl: "https://api.meta.ai/v1",
+  localBaseUrl: "",
+  localApi: "ollama",
+  localModel: "",
 };
 
-// Meta Muse Glimmer 30B (official Q4_K_M), served by local Ollama.
-// This is the SHIPPED default. It does not change until a smaller quant
-// has measured eval numbers on real hardware.
-export const DEFAULT_BUILTIN_MODEL = "muse-glimmer:30b";
-export const SHIPPED_DEFAULT_WARDEN_MODEL = DEFAULT_BUILTIN_MODEL;
-
-// Optional smaller quant (third-party unsloth "UD" dynamic build), selectable
-// but NOT the default. Source:
-// https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF/blob/main/Muse-Glimmer-30B-UD-IQ3_XXS.gguf
-// (13,130,658,848 bytes per the Hugging Face tree API, checked 2026-11-03).
-export const MUSE_GLIMMER_IQ3_XXS_TAG = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS";
-export const MUSE_GLIMMER_IQ3_XXS_BYTES = 13_130_658_848;
-
-const MODEL_TAG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
-
-// Default warden model, overridable with METAVAULT_WARDEN_MODEL (e.g. the
-// IQ3_XXS tag above) so a machine can run a different quant without a code
-// change. Invalid values are ignored and the shipped default is used.
-export function resolveDefaultWardenModel(env: NodeJS.ProcessEnv = process.env): string {
-  const raw = env["METAVAULT_WARDEN_MODEL"]?.trim();
-  return raw !== undefined && MODEL_TAG_PATTERN.test(raw) && !raw.includes("..") ? raw : SHIPPED_DEFAULT_WARDEN_MODEL;
-}
-
-// Meta Model API id used when the provider is switched to meta-api without
-// an explicit model. Ollama tags (e.g. "muse-glimmer:30b") are not served there.
 export const DEFAULT_META_API_WARDEN_MODEL = "muse-spark-1.3";
 
-// The model a provider should use when none is given. Local providers
-// (builtin, ollama, and the local half of bft) take the local default;
-// meta-api takes the Meta Model API default.
-export function defaultModelForProvider(
-  provider: WardenProvider,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  return provider === "meta-api" ? DEFAULT_META_API_WARDEN_MODEL : resolveDefaultWardenModel(env);
+// Suggestions shown as placeholders for the bring-your-own local endpoint.
+// A Meta open model is recommended; nothing here is downloaded by MetaVault.
+export const SUGGESTED_LOCAL_BASE_URL: Record<LocalEndpointApi, string> = {
+  ollama: "http://localhost:11434",
+  openai: "http://localhost:8000/v1",
+};
+export const SUGGESTED_LOCAL_MODEL = "muse-glimmer:30b";
+
+// Earlier builds stored "ollama" (BYO Ollama) or "builtin" (MetaVault-managed
+// Ollama download). Both map to the bring-your-own local endpoint now.
+export const LEGACY_LOCAL_PROVIDERS = ["ollama", "builtin"] as const;
+export type LegacyLocalProvider = (typeof LEGACY_LOCAL_PROVIDERS)[number];
+
+export function normalizeWardenProvider(raw: string): WardenProvider | null {
+  if (raw === "none" || raw === "meta-api" || raw === "local" || raw === "bft") return raw;
+  if ((LEGACY_LOCAL_PROVIDERS as readonly string[]).includes(raw)) return "local";
+  return null;
 }
 
-export function defaultWardenSettings(env: NodeJS.ProcessEnv = process.env): WardenSettings {
-  return { ...DEFAULT_WARDEN_SETTINGS, model: resolveDefaultWardenModel(env) };
+export function localEndpointConfigured(settings: Pick<WardenSettings, "localBaseUrl" | "localModel">): boolean {
+  return settings.localBaseUrl.trim() !== "" && settings.localModel.trim() !== "";
+}
+
+// The model id that will actually answer for the selected provider.
+export function effectiveWardenModel(settings: WardenSettings): string {
+  if (settings.provider === "local") return settings.localModel;
+  if (settings.provider === "none") return "";
+  return settings.model;
+}
+
+export function defaultWardenSettings(): WardenSettings {
+  return { ...DEFAULT_WARDEN_SETTINGS };
 }
 
 export const WardenSettingsSchema = Schema.Struct({
-  provider: Schema.Literal("none", "ollama", "meta-api", "builtin", "bft"),
+  provider: Schema.Literal("none", "meta-api", "local", "bft"),
   model: Schema.String,
   effort: Schema.Literal("fast", "standard", "deep"),
   metaApiBaseUrl: Schema.String,
+  localBaseUrl: Schema.String,
+  localApi: Schema.Literal("ollama", "openai"),
+  localModel: Schema.String,
 });
 
 export const WARDEN_KEY_ALIAS = "warden-meta-api";

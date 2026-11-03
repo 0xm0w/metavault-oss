@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assessBftQuorum,
   assessFromSettings,
-  setBuiltinInferenceHandler,
+  setLocalInferenceHandler,
 } from "../src/brain.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 import type { WardenSettings } from "../../core/src/settings.js";
@@ -19,31 +19,42 @@ const testRequest: CapabilityRequest = {
 
 const historySummary = { requests24h: 3, denials24h: 0 };
 const policyDigest = "stripe ceiling=charges.read";
+const localEndpoint = { baseUrl: "http://127.0.0.1:11434", api: "ollama" as const, model: "muse-glimmer:30b" };
 
 describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    setBuiltinInferenceHandler(null);
+    setLocalInferenceHandler(null);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    setBuiltinInferenceHandler(null);
+    setLocalInferenceHandler(null);
   });
 
-  it("fails with MarshalUnavailable when no wardens are available", async () => {
-    // No Meta API key, and the default on-device engine (local Ollama) is down.
+  it("fails with MarshalUnavailable when no local endpoint is configured and there is no key", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.reject(new Error("ECONNREFUSED")));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await Effect.runPromiseExit(
+      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null }),
+    );
+    expect(result._tag).toBe("Failure");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails with MarshalUnavailable when no wardens are reachable", async () => {
+    // No Meta API key, and the user's local endpoint is down.
     vi.stubGlobal(
       "fetch",
       vi.fn<typeof fetch>(() => Promise.reject(new Error("ECONNREFUSED"))),
     );
     const result = await Effect.runPromiseExit(
-      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null }),
+      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null, localEndpoint }),
     );
     expect(result._tag).toBe("Failure");
   });
 
-  it("succeeds with on-device Muse Glimmer fallback as sole warden", async () => {
+  it("succeeds with your local endpoint as sole warden", async () => {
     const metaDecision: MarshalDecision = {
       risk: "low",
       recommendedScope: "charges.read",
@@ -51,15 +62,15 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
       explanation: "Safe read operation",
     };
 
-    setBuiltinInferenceHandler(() => Effect.succeed(metaDecision));
+    setLocalInferenceHandler(() => Effect.succeed(metaDecision));
 
     const decision = await Effect.runPromise(
-      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null }),
+      assessBftQuorum(testRequest, historySummary, policyDigest, { metaApiKey: null, localEndpoint }),
     );
 
     expect(decision.risk).toBe("low");
     expect(decision.recommendedScope).toBe("charges.read");
-    expect(decision.explanation).toContain("Local Co-Auditor (Muse Glimmer 30B On-Device Fallback)");
+    expect(decision.explanation).toContain("Local Co-Auditor (muse-glimmer:30b via your endpoint)");
   });
 
   it("uses Meta API when valid key is provided in BFT options", async () => {
@@ -91,6 +102,7 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
     const decision = await Effect.runPromise(
       assessBftQuorum(testRequest, historySummary, policyDigest, {
         metaApiKey: "test-meta-key-12345",
+        localEndpoint,
       }),
     );
 
@@ -168,11 +180,12 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
       ),
     );
 
-    setBuiltinInferenceHandler(() => Effect.succeed(localDecision));
+    setLocalInferenceHandler(() => Effect.succeed(localDecision));
 
     const decision = await Effect.runPromise(
       assessBftQuorum(testRequest, historySummary, policyDigest, {
         metaApiKey: "test-meta-key-12345",
+        localEndpoint,
       }),
     );
 
@@ -215,11 +228,12 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
       ),
     );
 
-    setBuiltinInferenceHandler(() => Effect.succeed(localDecision));
+    setLocalInferenceHandler(() => Effect.succeed(localDecision));
 
     const decision = await Effect.runPromise(
       assessBftQuorum(testRequest, historySummary, policyDigest, {
         metaApiKey: "test-meta-key-12345",
+        localEndpoint,
       }),
     );
 
@@ -234,6 +248,9 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
       model: "muse-spark-1.3",
       effort: "standard",
       metaApiBaseUrl: "https://api.meta.ai/v1",
+      localBaseUrl: localEndpoint.baseUrl,
+      localApi: "ollama",
+      localModel: localEndpoint.model,
     };
 
     const mockDecision: MarshalDecision = {
@@ -243,7 +260,7 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
       explanation: "Local Muse Glimmer verified",
     };
 
-    setBuiltinInferenceHandler(() => Effect.succeed(mockDecision));
+    setLocalInferenceHandler(() => Effect.succeed(mockDecision));
 
     const decision = await Effect.runPromise(
       assessFromSettings(settings, () => Effect.succeed(null), testRequest, historySummary, policyDigest),

@@ -39,7 +39,6 @@ const dbPath = join(workDir, "vault.db");
 
 let service: VaultServiceService;
 let daemonCalls = 0;
-const ollamaCalls: { url: string; body: unknown }[] = [];
 
 // In-process stand-in for the vaultd HTTP wire: routes fetch calls to the
 // exact handler the node:http server delegates to, so no socket is needed
@@ -47,15 +46,6 @@ const ollamaCalls: { url: string; body: unknown }[] = [];
 const cliFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const url = new URL(raw);
-  if (url.port === "11434") {
-    const body: unknown =
-      typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
-    ollamaCalls.push({ url: raw, body });
-    return new Response(JSON.stringify({ status: "success" }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  }
   daemonCalls += 1;
   const method = init?.method ?? "GET";
   const body: unknown =
@@ -192,7 +182,8 @@ describe("metavault CLI (in-process daemon wire)", () => {
     expect(code).toBe(0);
     const text = cap.out();
     expect(text).toContain("marshal");
-    expect(text).toContain("muse-glimmer:30b");
+    // Out-of-box warden: Muse Spark on the Meta API.
+    expect(text).toContain("muse-spark-1.3");
     expect(text).toContain("ok");
     expect(text).not.toContain(CANARY);
     expect(cap.err()).not.toContain(CANARY);
@@ -233,26 +224,11 @@ describe("metavault CLI (in-process daemon wire)", () => {
     expect(after.body["status"]).toBe("denied");
   });
 
-  it("model pull asks Ollama for the default marshal model", async () => {
-    const before = ollamaCalls.length;
+  it("has no model download command (bring your own local endpoint instead)", async () => {
     const cap = capture();
     const code = await runCli(["model", "pull"], cap.deps);
-    expect(code).toBe(0);
-    expect(cap.out()).toContain("muse-glimmer:30b");
-    expect(ollamaCalls.length).toBe(before + 1);
-    const call = ollamaCalls[ollamaCalls.length - 1];
-    expect(call?.url).toContain("/api/pull");
-    expect(JSON.stringify(call?.body)).toContain("muse-glimmer:30b");
-  });
-
-  it("model pull failure prints only the tagged error name", async () => {
-    const cap = capture({
-      fetchFn: () => Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:11434")),
-    });
-    const code = await runCli(["model", "pull"], cap.deps);
-    expect(code).toBe(1);
-    expect(cap.err().trim()).toBe("error: MarshalUnavailable");
-    expect(cap.err()).not.toContain("ECONNREFUSED");
+    expect(code).not.toBe(0);
+    expect(cap.err()).not.toContain("pulled");
   });
 
   it("an unreachable daemon prints only the tagged error name", async () => {

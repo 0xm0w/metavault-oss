@@ -2,8 +2,7 @@ import { FetchHttpClient } from "@effect/platform";
 import { Effect } from "effect";
 import { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
-import { resolveDefaultWardenModel } from "../../core/src/settings.js";
-import { requestBuiltinDecision } from "./builtin.js";
+import { requestLocalDecision, type LocalEndpoint } from "./ollama.js";
 import { DEFAULT_META_API_BASE_URL, DEFAULT_META_API_MODEL, requestMetaApiDecision } from "./meta-api.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 import { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
@@ -27,14 +26,17 @@ export interface BftExecutionOptions {
   readonly metaApiBaseUrl?: string;
   readonly metaModel?: string;
   readonly timeoutMs?: number;
-  // Budget for the on-device Muse Glimmer leg (defaults to timeoutMs).
+  // Budget for the local-endpoint leg (defaults to timeoutMs).
   readonly localTimeoutMs?: number;
+  // The user's own local endpoint. Unset means the local leg is skipped.
+  readonly localEndpoint?: LocalEndpoint;
 }
 
 /**
  * Assesses a capability request using the Meta BFT Consensus Engine:
  * 1. Meta Model API (Cloud Chief Justice) — Muse Spark 1.3 by default
- * 2. Meta Local Fallback (On-Device Co-Auditor) — Muse Glimmer 30B Q4_K_M
+ * 2. Local Co-Auditor — the user's own local endpoint (a Meta open model
+ *    such as Muse Glimmer is suggested), when configured
  *
  * Byzantine fault-tolerant consensus between cloud and local edge models.
  */
@@ -78,17 +80,20 @@ export function assessBftQuorum(
       }
     }
 
-    // 2. Local Fallback / Edge Co-Auditor: Meta Muse Glimmer 30B (Q4_K_M)
-    const builtinResult = yield* Effect.either(
-      requestBuiltinDecision(resolveDefaultWardenModel(), prompt, options.localTimeoutMs ?? timeoutMs),
-    );
-    if (builtinResult._tag === "Right") {
-      const builtinVerdict = enforceScopeSafety(builtinResult.right, req.requestedScope, req.reason);
-      verdicts.push({
-        name: "Meta Family of AIs",
-        role: "Local Co-Auditor (Muse Glimmer 30B On-Device Fallback)",
-        decision: builtinVerdict,
-      });
+    // 2. Local Co-Auditor: the user's own local endpoint, if configured.
+    const local = options.localEndpoint;
+    if (local !== undefined && local.baseUrl.trim() !== "" && local.model.trim() !== "") {
+      const localResult = yield* Effect.either(
+        requestLocalDecision(local, prompt, options.localTimeoutMs ?? timeoutMs),
+      );
+      if (localResult._tag === "Right") {
+        const localVerdict = enforceScopeSafety(localResult.right, req.requestedScope, req.reason);
+        verdicts.push({
+          name: "Meta Family of AIs",
+          role: `Local Co-Auditor (${local.model.trim()} via your endpoint)`,
+          decision: localVerdict,
+        });
+      }
     }
 
     // If no wardens returned a decision, fail with MarshalUnavailable
@@ -96,12 +101,12 @@ export function assessBftQuorum(
       return yield* Effect.fail(
         new MarshalUnavailable({
           message:
-            "MarshalUnavailable: No BFT wardens available (Meta API unreachable and local Muse Glimmer offline)",
+            "MarshalUnavailable: No BFT wardens available (Meta API unreachable and local endpoint unavailable)",
         }),
       );
     }
 
-    // If only 1 warden participated (e.g. cloud unreachable or local Ollama offline), return its verdict
+    // If only 1 warden participated (e.g. cloud unreachable or local endpoint offline), return its verdict
     if (verdicts.length === 1) {
       const single = verdicts[0];
       if (single === undefined) {
@@ -145,7 +150,7 @@ export function assessBftQuorum(
 
     let explanation: string;
     if (isUnanimous) {
-      explanation = `[Meta BFT Quorum ${String(verdicts.length)}/${String(verdicts.length)} Unanimous] ${breakdown}. Cross-verified across Cloud & Local Muse Glimmer.`;
+      explanation = `[Meta BFT Quorum ${String(verdicts.length)}/${String(verdicts.length)} Unanimous] ${breakdown}. Cross-verified across the Meta API and your local endpoint.`;
     } else {
       explanation = `[Meta BFT Consensus Divergence] ${breakdown}. Clamped to narrowest scope '${finalScope}' and escalated risk to '${highestRisk}'.`;
     }
