@@ -3,7 +3,25 @@ import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from
 import { Brain, DEFAULT_MARSHAL_MODEL } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
-import { metavaultEnv } from "../../core/src/env.js";
+import {
+  CARD_KIND,
+  DEFAULT_CARD_SCOPE,
+  isCardSecretPayload,
+  parseCardInput,
+  parseCardPublicMeta,
+  serializeCardSecret,
+  type CardInput,
+  type CardPublicMeta,
+  type CredentialKind,
+} from "../../core/src/card.js";
+import {
+  createKeySession,
+  envMasterKeyIfAllowed,
+  VaultLockedError,
+  type KeySession,
+  type KeySessionStatus,
+  type UnlockResult,
+} from "../../core/src/key-session.js";
 import {
   ConnectorFailed,
   GrantExpired,
@@ -13,6 +31,7 @@ import {
 } from "../../core/src/errors.js";
 import { createGrant, makeGrantRegistry, type Grant } from "../../core/src/grants.js";
 import {
+  escalateFinancialDecision,
   evaluatePolicy,
   isAgentRateLimited,
   isWriteScope,
@@ -111,6 +130,15 @@ export interface EnrollmentRecord {
   readonly agentId?: string;
 }
 
+// What callers outside the daemon may see about a stored credential.
+export interface PublicCredentialMeta {
+  readonly alias: string;
+  readonly scopeCeiling: string;
+  readonly website: string;
+  readonly kind: CredentialKind;
+  readonly card?: CardPublicMeta;
+}
+
 export interface VaultServiceService {
   readonly seedCredential: (
     alias: string,
@@ -134,10 +162,18 @@ export interface VaultServiceService {
     patch: { readonly scope?: string; readonly website?: string; readonly secret?: string },
   ) => Effect.Effect<{ readonly scopeCeiling: string; readonly website: string } | null, StorageError>;
   readonly deleteCredential: (alias: string) => Effect.Effect<boolean, StorageError>;
-  readonly listCredentialMeta: () => Effect.Effect<
-    readonly { readonly alias: string; readonly scopeCeiling: string; readonly website: string }[],
-    StorageError
-  >;
+  readonly listCredentialMeta: () => Effect.Effect<readonly PublicCredentialMeta[], StorageError>;
+  // Payment card: validated (Luhn, expiry, CVV), stored encrypted as one
+  // blob. Only brand + last 4 are returned or ever listed.
+  readonly seedCardCredential: (
+    alias: string,
+    card: CardInput,
+    scope?: string,
+    website?: string,
+  ) => Effect.Effect<CardPublicMeta, StorageError>;
+  readonly keyStatus: () => Effect.Effect<KeySessionStatus>;
+  readonly unlockVault: (passphrase: string) => Effect.Effect<UnlockResult, StorageError>;
+  readonly lockVault: () => Effect.Effect<void>;
   readonly requestCapability: (
     req: CapabilityRequest,
   ) => Effect.Effect<CapabilityResult, StorageError>;
@@ -197,7 +233,10 @@ export interface VaultServiceService {
 export class VaultService extends Context.Tag("VaultService")<VaultService, VaultServiceService>() {}
 
 export interface VaultServiceOptions {
+  // An always-unlocked key (tests, embedded use). Production daemons pass
+  // keySession instead so the key can be locked and re-unlocked.
   readonly masterKey?: Buffer;
+  readonly keySession?: KeySession;
   readonly grantTtlMs?: number;
   readonly rateLimitPerHour?: number;
   readonly standingApprovals?: PolicyConfig["standingApprovals"];
@@ -214,22 +253,25 @@ const DEFAULT_RATE_LIMIT_PER_HOUR = 20;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
-function resolveMasterKey(options: VaultServiceOptions): Buffer {
+function resolveKeySession(options: VaultServiceOptions): KeySession {
+  if (options.keySession !== undefined) return options.keySession;
   if (options.masterKey !== undefined) {
     if (options.masterKey.length !== 32) {
       throw new Error("masterKey must be 32 bytes");
     }
-    return options.masterKey;
+    return createKeySession({ mode: "injected", key: options.masterKey });
   }
-  const fromEnv = metavaultEnv("MASTER_KEY");
-  if (fromEnv !== undefined && fromEnv !== "") {
-    const decoded = Buffer.from(fromEnv, "base64");
-    if (decoded.length !== 32) {
-      throw new Error("METAVAULT_MASTER_KEY (or legacy METAVAULT_MASTER_KEY) must be base64-encoded 32 bytes");
-    }
-    return decoded;
-  }
-  return randomBytes(32);
+  const fromEnv = envMasterKeyIfAllowed();
+  if (fromEnv !== undefined) return createKeySession({ mode: "env", key: fromEnv });
+  // Ephemeral key: nothing persisted can be decrypted after restart.
+  return createKeySession({ mode: "injected", key: randomBytes(32) });
+}
+
+export const VAULT_LOCKED_OPERATION = "locked";
+export const CARD_INVALID_OPERATION = "card-invalid";
+
+function lockedError(): StorageError {
+  return new StorageError({ message: "VaultLocked: vault is locked; unlock it with your passphrase", operation: VAULT_LOCKED_OPERATION });
 }
 
 export function makeVaultServiceLive(
@@ -247,7 +289,17 @@ export function makeVaultServiceLive(
       const store = yield* VaultStore;
       const brain = yield* Brain;
       const connector = yield* Connector;
-      const masterKey = yield* Effect.sync(() => resolveMasterKey(options));
+      const keySession = yield* Effect.sync(() => resolveKeySession(options));
+      // Every use of the master key goes through the session, so a locked
+      // (or auto-locked) vault fails closed with VaultLocked.
+      const withKey = <A>(f: (key: Buffer) => A): Effect.Effect<A, StorageError> =>
+        Effect.try({
+          try: () => f(keySession.key()),
+          catch: (err) =>
+            err instanceof VaultLockedError
+              ? lockedError()
+              : new StorageError({ message: "key operation failed", operation: "crypto" }),
+        });
       const registry = yield* makeGrantRegistry();
       const sleepers = yield* Ref.make(new Map<string, Fiber.Fiber<void, StorageError>>());
       const aliases = yield* Ref.make(new Set<string>());
@@ -381,9 +433,11 @@ export function makeVaultServiceLive(
 
       const decrypt = (ciphertext: string): Effect.Effect<string, StorageError> =>
         Effect.try({
-          try: () => decryptSecret(masterKey, ciphertext),
-          catch: () =>
-            new StorageError({ message: "failed to decrypt credential", operation: "decrypt" }),
+          try: () => decryptSecret(keySession.key(), ciphertext),
+          catch: (err) =>
+            err instanceof VaultLockedError
+              ? lockedError()
+              : new StorageError({ message: "failed to decrypt credential", operation: "decrypt" }),
         });
 
       const executeGrant = (
@@ -392,7 +446,16 @@ export function makeVaultServiceLive(
         ciphertext: string,
       ): Effect.Effect<unknown, ConnectorFailed | StorageError> =>
         Effect.flatMap(decrypt(ciphertext), (secret) =>
-          connector.execute(req.alias, allowedScope, secret),
+          // No payment connector ships. A decrypted card never reaches the
+          // generic HTTP connector (which would put it in a header).
+          isCardSecretPayload(secret)
+            ? Effect.fail(
+                new ConnectorFailed({
+                  message: "no payment connector is configured for card credentials",
+                  alias: req.alias,
+                }),
+              )
+            : connector.execute(req.alias, allowedScope, secret),
         );
 
       // Shared tail of approve / approve-always: consume the pending grant
@@ -455,7 +518,11 @@ export function makeVaultServiceLive(
             ? Effect.fail(
                 new StorageError({ message: "reserved alias", operation: "seedCredential" }),
               )
-            : Effect.flatMap(Effect.sync(() => encryptSecret(masterKey, plaintextSecret)), (blob) =>
+            : isCardSecretPayload(plaintextSecret)
+              ? Effect.fail(
+                  new StorageError({ message: "use add-card for payment cards", operation: CARD_INVALID_OPERATION }),
+                )
+            : Effect.flatMap(withKey((key) => encryptSecret(key, plaintextSecret)), (blob) =>
             Effect.flatMap(store.addCredential(alias, ceiling, blob, website ?? ""), () =>
               Effect.flatMap(
                 Ref.update(aliases, (set) => {
@@ -559,9 +626,17 @@ export function makeVaultServiceLive(
             const scopeCeiling =
               patch.scope !== undefined && patch.scope.trim() !== "" ? patch.scope.trim() : existing.scopeCeiling;
             const website = patch.website !== undefined ? patch.website.trim() : existing.website;
+            if (existing.kind === CARD_KIND && patch.secret !== undefined && patch.secret.trim() !== "") {
+              return yield* Effect.fail(
+                new StorageError({
+                  message: "card credentials are replaced with add-card, not a raw secret",
+                  operation: CARD_INVALID_OPERATION,
+                }),
+              );
+            }
             const ciphertext =
               patch.secret !== undefined && patch.secret.trim() !== ""
-                ? yield* Effect.sync(() => encryptSecret(masterKey, patch.secret as string))
+                ? yield* withKey((key) => encryptSecret(key, patch.secret as string))
                 : existing.ciphertext;
             yield* store.updateCredential(alias, scopeCeiling, ciphertext, website);
             return { scopeCeiling, website };
@@ -591,8 +666,74 @@ export function makeVaultServiceLive(
 
         listCredentialMeta: () =>
           Effect.map(store.listCredentials(), (metas) =>
-            metas.filter((m) => m.alias !== WARDEN_KEY_ALIAS),
+            metas
+              .filter((m) => m.alias !== WARDEN_KEY_ALIAS)
+              .map((m): PublicCredentialMeta => {
+                const kind = m.kind ?? "secret";
+                const card = kind === CARD_KIND ? parseCardPublicMeta(m.publicMeta ?? "") : null;
+                return {
+                  alias: m.alias,
+                  scopeCeiling: m.scopeCeiling,
+                  website: m.website,
+                  kind,
+                  ...(card !== null ? { card } : {}),
+                };
+              }),
           ),
+
+        seedCardCredential: (alias, card, scope, website) =>
+          Effect.gen(function* () {
+            const trimmedAlias = alias.trim();
+            if (trimmedAlias === "" || trimmedAlias === WARDEN_KEY_ALIAS) {
+              return yield* Effect.fail(
+                new StorageError({ message: "invalid alias", operation: CARD_INVALID_OPERATION }),
+              );
+            }
+            const now = yield* Clock.currentTimeMillis;
+            const parsed = parseCardInput(card, new Date(now));
+            if (!parsed.ok) {
+              return yield* Effect.fail(
+                new StorageError({
+                  message: `invalid card: ${parsed.issues.join(", ")}`,
+                  operation: CARD_INVALID_OPERATION,
+                }),
+              );
+            }
+            const ceiling = scope !== undefined && scope.trim() !== "" ? scope.trim() : DEFAULT_CARD_SCOPE;
+            if (!isWriteScope(ceiling)) {
+              return yield* Effect.fail(
+                new StorageError({
+                  message: "card scopes must be write scopes (e.g. card.payment:write)",
+                  operation: CARD_INVALID_OPERATION,
+                }),
+              );
+            }
+            const blob = yield* withKey((key) => encryptSecret(key, serializeCardSecret(parsed.card)));
+            yield* store.addCredential(trimmedAlias, ceiling, blob, website?.trim() ?? "", CARD_KIND, JSON.stringify(parsed.meta));
+            yield* Ref.update(aliases, (set) => new Set(set).add(trimmedAlias));
+            yield* audit(
+              "human",
+              trimmedAlias,
+              ceiling,
+              "credential-added",
+              `card added: ${trimmedAlias} (${parsed.meta.brand} ${parsed.meta.masked})`,
+              false,
+            );
+            return parsed.meta;
+          }),
+
+        keyStatus: () => Effect.sync(() => keySession.status()),
+
+        unlockVault: (passphrase) =>
+          Effect.tryPromise({
+            try: () => keySession.unlock(passphrase),
+            catch: () => new StorageError({ message: "unlock failed", operation: "unlock" }),
+          }),
+
+        lockVault: () =>
+          Effect.sync(() => {
+            keySession.lock();
+          }),
 
         requestCapability: (req) =>
           Effect.gen(function* () {
@@ -634,7 +775,8 @@ export function makeVaultServiceLive(
             const ceilings: Record<string, string> =
               credential === undefined ? {} : { [req.alias]: credential.scopeCeiling };
             const standingNow = yield* Ref.get(standing);
-            const cfg: PolicyConfig = { ceilings, standingApprovals: standingNow, rateLimitPerHour };
+            const financialAliases = credential?.kind === CARD_KIND ? [req.alias] : [];
+            const cfg: PolicyConfig = { ceilings, standingApprovals: standingNow, rateLimitPerHour, financialAliases };
 
             // Policy pre-check: unknown alias / rate limit deny before the marshal runs.
             const preCheck = evaluatePolicy(req, null, cfg, historyCount);
@@ -714,6 +856,12 @@ export function makeVaultServiceLive(
             const finalDecisionSource: AuditEvent["decisionSource"] =
               decision !== null ? "marshal+policy" : "policy";
 
+            // Card use is a financial write: whatever the warden said, the
+            // stored decision is escalated to high risk, so neither policy
+            // nor approve-always can treat it as low.
+            if (credential.kind === CARD_KIND) {
+              decision = escalateFinancialDecision(decision);
+            }
             const result = evaluatePolicy(req, decision, cfg, historyCount);
             yield* audit(
               req.agentId,
@@ -792,7 +940,13 @@ export function makeVaultServiceLive(
             // Standing approvals are only ever created for read-only scopes
             // the marshal rated low-risk — re-checked here, server-side, so
             // no client can widen them. Writes ask every time.
-            if (decision === null || decision.risk !== "low" || isWriteScope(grant.allowedScope)) {
+            const grantCredential = yield* store.getCredential(grant.request.alias);
+            if (
+              decision === null ||
+              decision.risk !== "low" ||
+              isWriteScope(grant.allowedScope) ||
+              grantCredential?.kind === CARD_KIND
+            ) {
               return yield* Effect.fail(
                 new PolicyDenied({
                   message: "always-allow requires a read-only low-risk grant",
@@ -992,7 +1146,7 @@ export function makeVaultServiceLive(
                 new StorageError({ message: "warden key too short", operation: "setWardenKey" }),
               );
             }
-            const blob = yield* Effect.sync(() => encryptSecret(masterKey, trimmed));
+            const blob = yield* withKey((key) => encryptSecret(key, trimmed));
             yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, blob, "");
             return { configured: true, last4: trimmed.slice(-4) } as const;
           }),

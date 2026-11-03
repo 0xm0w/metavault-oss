@@ -4,6 +4,10 @@ export interface PolicyConfig {
   ceilings: Record<string, string>;
   standingApprovals: { agentId: string; alias: string; scope: string; verifiedOnly?: boolean }[];
   rateLimitPerHour: number;
+  // Aliases whose use moves money (payment cards). Every request on one is
+  // a high-risk financial write: it always needs a human, standing
+  // approvals never apply, and no marshal verdict can auto-approve it.
+  financialAliases?: readonly string[];
 }
 
 export interface AgentVelocityConfig {
@@ -99,6 +103,18 @@ function resourcePrefix(scope: string): string {
   return index > 0 ? scope.slice(0, index) : scope;
 }
 
+// A marshal verdict on a financial alias is escalated, never trusted
+// downward: risk is forced to high and approval is always required.
+export function escalateFinancialDecision(decision: MarshalDecision | null): MarshalDecision | null {
+  if (decision === null) return null;
+  return {
+    ...decision,
+    risk: "high",
+    requireApproval: true,
+    explanation: `Payment card: financial write, human approval required. Warden said: ${decision.explanation}`,
+  };
+}
+
 export function evaluatePolicy(
   req: CapabilityRequest,
   decision: MarshalDecision | null,
@@ -146,8 +162,12 @@ export function evaluatePolicy(
   }
 
 
-  const hasStandingApproval =
+  const financial = cfg.financialAliases?.includes(req.alias) === true;
+  if (financial) {
+    return { allowedScope, requireApproval: true, reason: "financial-approval-required" };
+  }
 
+  const hasStandingApproval =
     decision !== null &&
     decision.risk === "low" &&
     !isWriteScope(allowedScope) &&

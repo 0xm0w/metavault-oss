@@ -38,6 +38,23 @@ export const CredentialSchema = Schema.Struct({
   enrollmentId: Schema.optional(SafeIdentifier),
 });
 
+// POST /cards. The card fields are the only place a PAN/CVV crosses the
+// local HTTP boundary, from the token-holding app or CLI into the daemon.
+export const CardCredentialSchema = Schema.Struct({
+  alias: SafeIdentifier,
+  number: Schema.String.pipe(Schema.maxLength(32)),
+  name: Schema.String.pipe(Schema.maxLength(128)),
+  expMonth: Schema.Number,
+  expYear: Schema.Number,
+  cvv: Schema.String.pipe(Schema.maxLength(8)),
+  scope: Schema.optional(SafeIdentifier),
+  website: Schema.optional(Schema.String),
+});
+
+export const UnlockSchema = Schema.Struct({
+  passphrase: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(1024)),
+});
+
 export const EnrollmentRequestSchema = Schema.Struct({
   alias: Schema.String,
   scope: Schema.String,

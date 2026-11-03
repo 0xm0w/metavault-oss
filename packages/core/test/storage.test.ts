@@ -81,7 +81,7 @@ describe("vault storage", () => {
         const store = yield* VaultStore;
         return yield* store.getCredential("github");
       }).pipe(Effect.provide(VaultStoreLive(dbPath, key)));
-      expect(got).toEqual({ scopeCeiling: "repo.read", ciphertext: blob, website: "" });
+      expect(got).toEqual({ scopeCeiling: "repo.read", ciphertext: blob, website: "", kind: "secret", publicMeta: "" });
       expect(got === undefined ? undefined : decryptSecret(key, got.ciphertext)).toBe(
         "persisted-secret",
       );
@@ -110,8 +110,8 @@ describe("vault storage", () => {
       expect((yield* store.getCredential("legacy"))?.website).toBe("");
       const metas = yield* store.listCredentials();
       expect(metas).toEqual([
-        { alias: "cf", scopeCeiling: "dns.read", website: "cloudflare.com" },
-        { alias: "legacy", scopeCeiling: "repo.read", website: "" },
+        { alias: "cf", scopeCeiling: "dns.read", website: "cloudflare.com", kind: "secret", publicMeta: "" },
+        { alias: "legacy", scopeCeiling: "repo.read", website: "", kind: "secret", publicMeta: "" },
       ]);
       yield* store.updateCredential("cf", "dns.write", encryptSecret(key, "new"), "example.com");
       expect((yield* store.getCredential("cf"))?.website).toBe("example.com");

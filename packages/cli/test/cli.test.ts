@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
 import { decryptSecret } from "../../core/src/crypto.js";
+import { unwrapMasterKey } from "../../core/src/keywrap.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import { handleVaultRequest } from "../../daemon/src/server.js";
 import {
@@ -295,26 +296,33 @@ describe("metavault CLI (in-process daemon wire)", () => {
     }
   });
 
-  it("init creates the vault and shows a fresh master key exactly once", async () => {
+  it("init seals a fresh master key with a passphrase and never prints it", async () => {
     const initDir = mkdtempSync(join(tmpdir(), "metavault-cli-init-"));
     const initDb = join(initDir, "vault.db");
+    const noKeychain = { retrieve: () => null, store: () => false, remove: () => false };
     try {
-      const cap = capture({ dbPath: initDb, masterKey: undefined });
+      const cap = capture({
+        dbPath: initDb,
+        masterKey: undefined,
+        keychain: noKeychain,
+        readSecret: () => Promise.resolve("correct horse battery staple"),
+        keyWrapOptions: { params: { N: 2 ** 12, r: 8, p: 1 }, allowWeakParams: true },
+      });
       const code = await runCli(["init"], cap.deps);
       expect(code).toBe(0);
       expect(cap.out()).toContain("initialized");
+      expect(cap.out()).toContain("sealed with your passphrase (scrypt)");
+      expect(cap.out()).not.toContain("shown once");
       expect(existsSync(initDb)).toBe(true);
-      const match = /master key \(shown once\): ([A-Za-z0-9+/]+={0,2})/.exec(cap.out());
-      expect(match).not.toBeNull();
-      expect(Buffer.from(match?.[1] ?? "", "base64").length).toBe(32);
-      expect(cap.out()).not.toContain(CANARY);
+      const keyFile = join(initDir, "metavault.key.json");
+      expect(existsSync(keyFile)).toBe(true);
+      const wrapped = JSON.parse(readFileSync(keyFile, "utf8")) as { kdf: string };
+      expect(wrapped.kdf).toBe("scrypt");
 
-      // With an existing key, init reuses it and never prints it.
-      const again = capture({ dbPath: initDb });
-      const second = await runCli(["init"], again.deps);
-      expect(second).toBe(0);
-      expect(again.out()).toContain("initialized");
-      expect(again.out()).not.toContain(MASTER_KEY.toString("base64"));
+      // Second init reuses the protected key and asks nothing.
+      const again = capture({ dbPath: initDb, masterKey: undefined, keychain: noKeychain });
+      expect(await runCli(["init"], again.deps)).toBe(0);
+      expect(again.out()).toContain("existing passphrase-protected key reused");
     } finally {
       try {
         rmSync(initDir, { recursive: true, force: true });
@@ -322,6 +330,90 @@ describe("metavault CLI (in-process daemon wire)", () => {
         // best effort, as above
       }
     }
+  });
+
+  it("init --legacy-keychain keeps the old shown-once behaviour", async () => {
+    const initDir = mkdtempSync(join(tmpdir(), "metavault-cli-init-legacy-"));
+    const initDb = join(initDir, "vault.db");
+    let stored: Buffer | null = null;
+    try {
+      const cap = capture({
+        dbPath: initDb,
+        masterKey: undefined,
+        keychain: { retrieve: () => stored, store: (k) => { stored = Buffer.from(k); return true; }, remove: () => true },
+      });
+      expect(await runCli(["init", "--legacy-keychain"], cap.deps)).toBe(0);
+      const match = /master key \(shown once\): ([A-Za-z0-9+/]+={0,2})/.exec(cap.out());
+      expect(match).not.toBeNull();
+      expect(Buffer.from(match?.[1] ?? "", "base64").length).toBe(32);
+      expect(existsSync(join(initDir, "metavault.key.json"))).toBe(false);
+    } finally {
+      rmSync(initDir, { recursive: true, force: true });
+    }
+  });
+
+  it("key protect migrates a legacy keychain key and deletes the keychain copy", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "metavault-cli-protect-"));
+    const db = join(dir, "vault.db");
+    let stored: Buffer | null = Buffer.alloc(32, 5);
+    const legacy = Buffer.alloc(32, 5);
+    const phrase = "migration passphrase 1";
+    const keychain = { retrieve: () => stored, store: () => true, remove: () => { stored = null; return true; } };
+    const fast = { params: { N: 2 ** 12, r: 8, p: 1 }, allowWeakParams: true } as const;
+    try {
+      const cap = capture({ dbPath: db, masterKey: undefined, keychain, readSecret: () => Promise.resolve(phrase), keyWrapOptions: fast });
+      expect(await runCli(["key", "protect"], cap.deps)).toBe(0);
+      expect(cap.out()).toContain("legacy unwrapped keychain copy deleted");
+      expect(stored).toBeNull();
+      const wrapped = JSON.parse(readFileSync(join(dir, "metavault.key.json"), "utf8")) as Parameters<typeof unwrapMasterKey>[0];
+      expect((await unwrapMasterKey(wrapped, phrase)).equals(legacy)).toBe(true);
+
+      const status = capture({ dbPath: db, masterKey: undefined, keychain });
+      expect(await runCli(["key", "status"], status.deps)).toBe(0);
+      expect(status.out()).toContain("passphrase-protected key: yes (scrypt");
+      expect(status.out()).toContain("legacy keychain key present: no");
+
+      const twice = capture({ dbPath: db, masterKey: undefined, keychain, readSecret: () => Promise.resolve(phrase), keyWrapOptions: fast });
+      expect(await runCli(["key", "protect"], twice.deps)).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("init rejects mismatched or short passphrases", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "metavault-cli-short-"));
+    const noKeychain = { retrieve: () => null, store: () => false, remove: () => false };
+    try {
+      const short = capture({ dbPath: join(dir, "a.db"), masterKey: undefined, keychain: noKeychain, readSecret: () => Promise.resolve("short") });
+      expect(await runCli(["init"], short.deps)).toBe(2);
+      let n = 0;
+      const mismatch = capture({
+        dbPath: join(dir, "b.db"),
+        masterKey: undefined,
+        keychain: noKeychain,
+        readSecret: () => Promise.resolve(n++ === 0 ? "first passphrase ok" : "second passphrase ok"),
+      });
+      expect(await runCli(["init"], mismatch.deps)).toBe(2);
+      expect(existsSync(join(dir, "metavault.key.json"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("add-card sends the card to the daemon and prints only brand + last 4", async () => {
+    const answers = ["4242 4242 4242 4242", "Ada Lovelace", "12/39", "123"];
+    let i = 0;
+    const cap = capture({ readSecret: () => Promise.resolve(answers[i++] ?? "") });
+    expect(await runCli(["add-card", "corp-visa"], cap.deps)).toBe(0);
+    expect(cap.out()).toContain("added card corp-visa: visa •••• 4242");
+    expect(cap.out()).not.toContain("4242 4242");
+    expect(cap.out()).not.toContain("Ada");
+    const aliases = await daemonJson("GET", "/aliases");
+    const text = JSON.stringify(aliases.body);
+    expect(text).toContain("corp-visa");
+    expect(text).not.toContain("4242424242424242");
+    expect(text).not.toContain("Ada Lovelace");
+    expect(text).not.toContain("2039");
   });
 
   it("approve sends the daemon token header from deps", async () => {

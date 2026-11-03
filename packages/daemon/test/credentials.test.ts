@@ -188,7 +188,7 @@ describe("website + PATCH/DELETE /credentials/:alias", () => {
     const aliases = await handleVaultRequest(service, "GET", "/aliases");
     const body = aliases.body as { aliases: string[]; credentials: { alias: string; website: string }[] };
     expect(body.aliases).toContain("cf");
-    expect(body.credentials).toEqual([{ alias: "cf", website: "cloudflare.com" }]);
+    expect(body.credentials).toEqual([{ alias: "cf", website: "cloudflare.com", kind: "secret" }]);
     expect(JSON.stringify(aliases.body)).not.toContain(SECRET);
   });
 

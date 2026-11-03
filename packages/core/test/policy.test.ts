@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePolicy } from "../src/policy.js";
+import { escalateFinancialDecision, evaluatePolicy } from "../src/policy.js";
 
 const cfg = { ceilings: { stripe: "charges.read" }, standingApprovals: [], rateLimitPerHour: 20 };
 const req = { agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: "charges.read", reason: "list" };
@@ -93,5 +93,23 @@ describe("evaluatePolicy", () => {
     const d = { risk: "low" as const, recommendedScope: "charges.write", requireApproval: false, explanation: "x" };
     const result = evaluatePolicy(req, d, c2, 0);
     expect(result.allowedScope).toBe("charges.read");
+  });
+});
+
+describe("financial (payment card) aliases", () => {
+  const card = { ceilings: { visa: "card.payment:write" }, standingApprovals: [{ agentId: "cursor", alias: "visa", scope: "card.payment:write" }], rateLimitPerHour: 20, financialAliases: ["visa"] };
+  const cardReq = { ...req, alias: "visa", requestedScope: "card.payment:write" };
+  it("always requires approval even with a low-risk marshal verdict and a standing approval", () => {
+    const d = { risk: "low" as const, recommendedScope: "card.payment:write", requireApproval: false, explanation: "x" };
+    const r = evaluatePolicy(cardReq, d, card, 0);
+    expect(r.requireApproval).toBe(true);
+    expect(r.reason).toBe("financial-approval-required");
+  });
+  it("escalates the marshal decision to high risk", () => {
+    const d = { risk: "low" as const, recommendedScope: "card.payment:write", requireApproval: false, explanation: "fine" };
+    const e = escalateFinancialDecision(d);
+    expect(e?.risk).toBe("high");
+    expect(e?.requireApproval).toBe(true);
+    expect(escalateFinancialDecision(null)).toBeNull();
   });
 });
