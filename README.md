@@ -38,7 +38,7 @@ npx electron-builder --win
 git clone <this repo> metavault-oss
 cd metavault-oss
 npm install
-npm test            # full suite (268/268 at Task 10 verification)
+npm test            # full suite (see docs/VERIFICATION.md for current counts)
 ```
 
 ## Setup
@@ -243,12 +243,16 @@ The fake-brain run proves the harness mechanics only (the fake marshal's
 canned decisions include deliberately fooled ones, so its risk accuracy is
 below 100% by construction; safety is the gate).
 
-**Live Muse Glimmer 30B results: pending.** The earlier live numbers in this
+**Live Muse Glimmer 30B: no committed result.** The earlier live numbers in this
 README were measured against the previous local model, which is no longer shipped, and have
-been removed. The live eval for `muse-glimmer:30b` (accuracy, safety gate,
-latency, and the Ollama process's peak RAM) is produced by
-`scripts/eval-windows.ps1` and saved under `docs/verification/`; no figures
-are quoted here until that run exists.
+been removed. `scripts/eval-windows.ps1` produces the live eval for `muse-glimmer:30b`
+(accuracy, safety gate, latency, and the Ollama process's peak RAM); no figures are quoted
+here until its raw output is committed under `docs/verification/`.
+
+**Held-out thesis benchmark (Muse Spark 1.3 via the Meta API, 2 runs, 60 cases):** on the 28
+high-risk reads the warden alone caught 25/28 and rules + warden 27/28 in both runs, with 0/28
+warden false alarms (rules + warden 9/28). Counting rule: a failed warden call (one per run, at
+the 2,048-token output cap) counts as a miss. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Demo script (3 minutes)
 
@@ -274,15 +278,15 @@ every boundary; the Electron renderer is plain TypeScript (Effect imports
 are lint-banned there) and projects every daemon payload through a
 fail-closed whitelist before rendering.
 
-## Verification (measured 2026-10-31)
+## Verification
 
-These gates were run on 2026-10-31 on the demo-class machine (RTX 3070 8 GB) with the previous local model; the live brain eval is being re-run for Muse Glimmer 30B (pending). Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
+Tests were re-run on 2026-11-03; the rehearsal, MCP, GUI, installer and video rows were run on 2026-10-31 on the demo-class machine (RTX 3070 8 GB) with the previous local model. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 | Gate | Result |
 |---|---|
-| Tests / typecheck / lint | 268 passed / exit 0 / exit 0 |
-| Brain eval (fake / live) | fake: safety 100%, gate PASS / live Muse Glimmer 30B: pending |
-| Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS in 3.6 s |
+| Tests / typecheck / lint | Node 22: 503 passed, 3 skipped; Node 24: 504 passed, 2 skipped / exit 0 / exit 0 |
+| Brain eval (fake / live) | fake: safety 100%, gate PASS / live Muse Glimmer 30B: no committed result |
+| Demo rehearsal (scripts/rehearse-demo.mjs) | 7/7 PASS |
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |
 | Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
 | Windows installer | NSIS built, 115.6 MB, unsigned |
@@ -290,6 +294,6 @@ These gates were run on 2026-10-31 on the demo-class machine (RTX 3070 8 GB) wit
 
 Known limitations, honestly:
 
-- Live marshal accuracy for Muse Glimmer 30B is pending the Windows eval run. Safety comes from deterministic policy, not the model.
+- Live marshal accuracy for Muse Glimmer 30B has no committed result yet. Safety comes from deterministic policy, not the model.
 - Standing approvals (Always allow) live in daemon memory and do not persist across vaultd restarts - fail-safe, but a known limitation.
 - The macOS DMG and code signing still need a Mac and a certificate. The full 3-minute demo video should be re-recorded live on demo day; the walkthrough above is assembled from real screenshots.

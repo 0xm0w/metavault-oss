@@ -1,6 +1,6 @@
 # MetaVault OSS — Handover (2026-10-31, repo renamed from metavault)
 
-Read this first when resuming. Repo: `C:\Users\Mowreez.DESKTOP-D1GHS6J\metavault`
+Read this first when resuming. Repo: your local clone
 Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/metavault; old URL redirects)
 
 ## Where things stand
@@ -22,9 +22,10 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 - SDD ledger (task-by-task record, deferred minors, rulings):
   `.superpowers/sdd/2026-10-31-metavault-hardening-release/progress.md`
   Per-task reports + review diffs are in the same folder (`task-N-report.md`, `task-N-review.md`).
-- Last verified gates: **271 tests passed**,
+- Gates at v0.1.0-alpha.1 (2026-10-31, historical): 271 tests passed,
   `npm run test:coverage` at plan targets, `npm run typecheck` exit 0, `npm run lint` exit 0.
-  Coverage baseline: core 97.46%, daemon 89.94%, brain 96.34%, mcp 87.98%, renderer model 95.13%.
+  Coverage at that time: core 97.46%, daemon 89.94%, brain 96.34%, mcp 87.98%, renderer model 95.13%.
+  Current counts (2026-11-03, `feat/cards-hardening`): Node 22 503 passed / 3 skipped, Node 24 504 / 2; see `docs/VERIFICATION.md`.
 - Windows installer built locally (unpacked-launch smoke passed):
   `packages/app/release/MetaVault OSS-0.1.0-alpha.1-win-x64.exe` — 121,250,505 bytes,
   SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`.
@@ -60,7 +61,7 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 - **Must-fix #1 (phantom `modelId`)**: Fixed in `packages/daemon/src/service.ts`. Stamped `modelId` only when marshal actually ran (`marshalRan`). Dropped `modelId` from policy-only chains (pre-check denials, revoked denials, provider-`none` chains) and policy-only pendings in `listPendingApprovals`. Regression tests added in `packages/daemon/test/audit-trail.test.ts`.
 - **Must-fix #3 (version test surface)**: Added fifth surface `packages/mcp/package.json` to `test/version.test.ts`.
 - **Low (phantom Policies rows)**: Updated `derivePolicies` in `packages/app/src/renderer/model.ts` to skip administrative/lifecycle events (`settings-changed`, `enrollment-created`, `enrollment-completed`). Regression test added in `packages/app/test/model.test.ts`.
-- **Full gates & rebuild**: 271 tests passing, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
+- **Full gates & rebuild** (2026-10-31): 271 tests passing at the time, coverage targets met, typecheck/lint exit 0, Windows installer rebuilt (121,250,505 bytes, SHA256 `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a`).
 - **Release v0.1.0-alpha.1 published**: Tag `v0.1.0-alpha.1` pushed. GitHub Release created at https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.0-alpha.1 with NSIS installer and SHA256SUMS attached. Site and README links updated and redeployed.
 
 ## Remaining tasks (in order)

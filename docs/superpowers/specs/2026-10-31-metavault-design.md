@@ -1,5 +1,7 @@
 # MetaVault OSS — Design Spec
 
+> **Historical spec (2026-10-31).** References to a 3B local model describe the original plan and are kept as history; they are not the current design.
+>
 > **Updated for #70 (2026-11-03):** the local warden is Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) and the cloud default is **Muse Spark** (`muse-spark-1.3` at `https://api.meta.ai/v1`). Model sections below were rewritten to match; sources are in `docs/verification/muse-glimmer-model-verification.md`.
 
 - Date: 2026-10-31

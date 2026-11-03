@@ -555,30 +555,6 @@ body:has(.hack-deck) {
   border-radius: 9999px;
   overflow: hidden;
 }
-.pg-chart-bar-1b {
-  height: 100%;
-  width: 5%;
-  background: linear-gradient(90deg, #8629ff, #a855f7);
-  border-radius: 9999px;
-}
-.pg-chart-bar-3b {
-  height: 100%;
-  width: 100%;
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-.pg-chart-bar-1b-ram {
-  height: 100%;
-  width: 23%;
-  background: linear-gradient(90deg, #10b981, #059669);
-  border-radius: 9999px;
-}
-.pg-chart-bar-3b-ram {
-  height: 100%;
-  width: 100%;
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
 .pg-chart-insight {
   font-size: 13px;
   color: var(--muted-foreground);

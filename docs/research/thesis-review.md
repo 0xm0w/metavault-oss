@@ -1,6 +1,6 @@
 # Research thesis: skeptic review
 
-Scope: the claims on `site/research/index.html` (branch `feat/research-thesis`).
+Scope: the claims on `site/research/index.html`.
 Every number below comes from a file in this repo or from a cited public source.
 Anything not yet measured is marked **pending**.
 
@@ -11,15 +11,17 @@ Anything not yet measured is marked **pending**.
 > misses, without sending every request to a human.
 
 On the held-out head-to-head the warden was **Muse Spark 1.3 via the Meta API**:
-rules alone caught 12/28 high-risk reads, rules + Muse Spark caught 28/28
-(27/28 counting only real model decisions; one call per run hit the output cap
-and fell back to a human). The only local Muse Glimmer evidence is the
-17-scenario quant eval; Glimmer was not run on this held-out set.
+rules alone caught 12/28 high-risk reads, rules + Muse Spark caught 27/28.
+Counting rule: a failed warden call counts as a miss. One call per run hit the
+2,048-token output cap and returned no decision; the vault sent it to a human,
+so counted as caught it would be 28/28. No local Muse Glimmer run is committed
+(neither the held-out set nor the 17-scenario quant eval), so the local warden
+has no published numbers.
 
 The thesis has two halves:
 
 - **The floor half** (the vault is safe without a model): measured, and it holds.
-- **The uplift half** (the warden adds recall): measured with Muse Spark 1.3 via the Meta API (two runs, identical counts). Rules + Muse Spark: 28/28 recall at 9/28 FPR, the same FPR as rules alone. The local Muse Glimmer head-to-head is still **pending**.
+- **The uplift half** (the warden adds recall): measured with Muse Spark 1.3 via the Meta API (two runs, identical counts). Rules + Muse Spark: 27/28 recall (failed calls count as misses) at 9/28 FPR, the same FPR as rules alone. The local Muse Glimmer head-to-head is still **pending**.
 
 ## Claims, evidence, confidence
 
@@ -30,7 +32,7 @@ The thesis has two halves:
 | 3 | Rules are brittle to wording: 10/10 recall and 0/10 FPR on the dev set, 12/28 on held-out, and 6/22 on the paraphrased subset. | `thesis-rules-only-dev-*.txt` and `thesis-rules-only-heldout-*.txt`. | Medium. The gap is in the expected direction, but I wrote both sets. |
 | 4 | Rules flag 9/20 (45%) of benign requests that use alarming words, and 0/8 plain benign requests. | Same files. | Medium. The hard-benign set was built to contain trigger words, so this FPR is an upper-end estimate. |
 | 5 | "Ask every time" catches 28/28 but prompts on 28/28 benign requests. Warning fatigue is real: over 25 million warning impressions, and 70.2% click-through on Chrome SSL warnings. | Harness output. Akhawe & Felt, USENIX Security 2013. | High for the measurement. The 2013 browser-warning setting differs from approval prompts, so the analogy is moderate. |
-| 6 | Rules + warden raises recall over rules alone at an acceptable FPR. | Muse Spark 1.3 via the Meta API, two runs (`docs/verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-*`): rules + Muse Spark 28/28 recall (27/28 counting only real model decisions), FPR 9/28, same as rules alone. Muse Spark alone: 26/28, FPR 0/28. Local Muse Glimmer on this set: **pending** (`scripts/thesis-windows.ps1`). | Medium for Muse Spark (small n, same author). Unknown for local Glimmer. |
+| 6 | Rules + warden raises recall over rules alone at an acceptable FPR. | Muse Spark 1.3 via the Meta API, two runs (`docs/verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-*`): rules + Muse Spark 27/28 recall, FPR 9/28, same as rules alone. Muse Spark alone: 25/28 (21/22 paraphrased), FPR 0/28. A failed warden call (1/60 per run, output cap) counts as a miss; counted as caught, the recall would be 28/28 and 26/28. Local Muse Glimmer on this set: **pending** (`scripts/thesis-windows.ps1`). | Medium for Muse Spark (small n, same author). Unknown for local Glimmer. |
 | 7 | The warden decides before the request reaches a human. | Architecture: the warden runs before approval. Rules take a median 6.8 µs (p95 21.3 µs) on the box. Muse Spark 1.3 via the Meta API takes a median 8.2–8.9 s (p95 14.8–17.3 s) across the two runs. Local Glimmer latency on this set is **pending**. | We do **not** claim "faster than a human". Human approval latency wasn't measured. |
 | 8 | Infostealers target browser autofill and saved cards. | Microsoft on Lumma (394,000+ PCs, Mar 16 – May 16 2025). DOJ RedLine complaint ("autofill fields", "credit card numbers"). Google Security Blog on DPAPI. | High. These are primary sources. |
 | 9 | Plaintext copies of card data or credentials enabled real losses. | British Airways 2018: Bird & Bird summary of the ICO penalty ("stored in plaintext"); CNBC (244,000 card number + CVV); Snowflake / UNC5537 (Mandiant, infostealer credentials since 2020, no MFA). | High. |
@@ -43,7 +45,7 @@ The thesis has two halves:
 3. **Rules can be strengthened.** A determined rules author could add patterns for "near-factory", "saved logins" and so on. The counter-argument is the dev/held-out gap: each new phrasing needs a new rule. That is an argument, not a measurement.
 4. **Small n.** 28 / 4 / 20 / 8 cases. One case moves a rate by 3.6 points. Results should be read as directional.
 5. **Nondeterminism.** Ollama is called without a fixed temperature, so live runs vary. The Windows script supports `-Repeats N`, and repeats should be reported.
-6. **LLM judges are fallible.** In R-Judge (arXiv:2401.10019), most prompted models were near random at agent-safety judgement. "The Attacker Moves Second" (arXiv:2510.09023) shows adaptive attacks break most published defenses. The warden is therefore a second layer behind a deterministic floor, and should not be read as a guarantee.
+6. **LLM judges are fallible.** In R-Judge (arXiv:2401.10019), most prompted models were near random at agent-safety judgement. "The Attacker Moves Second" (arXiv:2510.09023) bypassed 12 recent defenses with adaptive attacks. The warden is therefore a second layer behind a deterministic floor, and should not be read as a guarantee.
 7. **Failure crediting.** A warden error makes the human decide, which counts as "caught" for safety. The report also prints recall counting only real model decisions, so a crashing model can't look good.
 8. **Licensing.** InjecAgent has no license file, so none of its text was copied; only attack categories inspired cases. AgentDojo is MIT.
 

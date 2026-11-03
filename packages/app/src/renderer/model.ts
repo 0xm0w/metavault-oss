@@ -1136,7 +1136,7 @@ export const EFFORT_OPTIONS: readonly EffortOption[] = [
 
 export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] = [
   { id: "bft", label: "Meta BFT Consensus (Cloud API + Local Fallback)" },
-  { id: "meta-api", label: "Meta API (Cloud) — Lightweight / Zero-Download" },
+  { id: "meta-api", label: "Meta API (Cloud) — Muse Spark 1.3" },
   { id: "builtin", label: "On-Device — Muse Glimmer 30B via Ollama (Private)" },
   { id: "ollama", label: "Local — Ollama (Self-Hosted)" },
   { id: "none", label: "None (policy only)" },

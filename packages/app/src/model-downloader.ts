@@ -1,5 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { metavaultEnv } from "./env.js";
 import {
   BUILTIN_MODEL_REQUIRED_BYTES,
   configuredBuiltinModel,
@@ -25,7 +26,7 @@ export type ProgressListener = (payload: DownloadProgressPayload) => void;
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export function ollamaBaseUrl(): string {
-  const raw = process.env["METAVAULT_OLLAMA_URL"]?.trim();
+  const raw = metavaultEnv("OLLAMA_URL")?.trim();
   return raw !== undefined && raw !== "" ? raw.replace(/\/+$/, "") : "http://localhost:11434";
 }
 

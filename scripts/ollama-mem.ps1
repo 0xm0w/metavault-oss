@@ -4,8 +4,8 @@
   thesis-windows.ps1.
 
 .DESCRIPTION
-  Why this exists: an earlier eval reported 0.09 GiB "peak ollama RAM" while
-  `ollama ps` showed a 17 GB model loaded. Two things caused the gap:
+  Why this exists: process-name-only RAM sums can miss almost all of the
+  memory a loaded model uses. Two things cause the gap:
     1. Only processes named ollama* were summed. The model is served by a
        child runner process that Ollama spawns. Depending on the Ollama build
        the child can have a different image name, so name matching alone can

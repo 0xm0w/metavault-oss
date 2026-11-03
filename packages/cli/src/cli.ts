@@ -539,8 +539,8 @@ function keyStatusProgram(deps: CliDeps): Effect.Effect<string, CliFailure> {
     try: () => {
       const path = wrappedKeyFilePath(resolveDbPath(deps));
       const wrapped = readWrappedKeyFile(path);
-      const envSet = (process.env["METAVAULT_MASTER_KEY"] ?? "") !== "";
-      const envAllowed = process.env["METAVAULT_ALLOW_ENV_MASTER_KEY"] === "1";
+      const envSet = (metavaultEnv("MASTER_KEY") ?? "") !== "";
+      const envAllowed = metavaultEnv("ALLOW_ENV_MASTER_KEY") === "1";
       const keychain = keychainOf(deps).retrieve() !== null;
       const lines = [
         wrapped !== null

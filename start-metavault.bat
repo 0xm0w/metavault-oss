@@ -1,5 +1,6 @@
 @echo off
-cd /d "C:\Users\Mowreez.DESKTOP-D1GHS6J\metavault"
+rem Run from the repo root (the folder this file is in).
+cd /d "%~dp0"
 set METAVAULT_DAEMON_URL=http://127.0.0.1:7077
 set /p METAVAULT_DAEMON_TOKEN=<metavault.token
 if exist "packages\app\release\win-unpacked\MetaVault OSS.exe" (

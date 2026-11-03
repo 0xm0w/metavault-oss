@@ -46,6 +46,7 @@ import {
   WARDEN_KEY_SCOPE,
   generatePinSalt,
   hashPin,
+  defaultModelForProvider,
   resolveDefaultWardenModel,
   verifyPin,
   type AgentSecuritySettings,
@@ -1111,9 +1112,19 @@ export function makeVaultServiceLive(
         updateWardenSettings: (patch) =>
           Effect.gen(function* () {
             const current = yield* store.getWardenSettings();
+            const provider = patch.provider ?? current.provider;
+            // Switching provider without naming a model resets the model to
+            // that provider's default, so a meta-api switch never keeps a
+            // local Ollama tag the Meta API can't serve.
+            const model =
+              patch.model !== undefined
+                ? patch.model.trim()
+                : provider !== current.provider
+                  ? defaultModelForProvider(provider)
+                  : current.model;
             const next: WardenSettings = {
-              provider: patch.provider ?? current.provider,
-              model: patch.model !== undefined ? patch.model.trim() : current.model,
+              provider,
+              model,
               effort: patch.effort ?? current.effort,
               metaApiBaseUrl:
                 patch.metaApiBaseUrl !== undefined

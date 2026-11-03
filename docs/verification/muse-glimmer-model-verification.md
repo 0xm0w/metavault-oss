@@ -1,6 +1,6 @@
 # #70 model verification notes (Muse Glimmer Q4_K_M), checked 2026-11-03
 
-Status: implemented on branch `fix/70-muse-glimmer-fallback` (see "Implementation status" below). Live eval: **pending** (Windows desktop run, `scripts/eval-windows.ps1`).
+Status: implemented in #70 (see "Implementation status" below). Live Muse Glimmer eval: **no committed result** (Windows desktop run, `scripts/eval-windows.ps1`; see `eval-live-muse-glimmer-quants.md`).
 
 ## Model checks
 - Exists, official Meta open weights, Apache 2.0: https://huggingface.co/meta-models/Muse-Glimmer-30B ,
@@ -15,7 +15,7 @@ Status: implemented on branch `fix/70-muse-glimmer-fallback` (see "Implementatio
   https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF , apache-2.0, base_model meta-models/Muse-Glimmer-30B):
   UD-Q3_K_XL 13,360,983,072 bytes; UD-IQ3_XXS 13,130,658,848; UD-Q2_K_XL 12,444,212,256;
   UD-IQ2_M 12,255,421,472; UD-IQ2_XS 11,513,104,416; UD-IQ2_XXS 10,746,373,152.
-  Not adopted: IQ2_XXS is only allowed if a measured eval shows minimal loss, and that eval is pending.
+  Not adopted: IQ2_XXS is only allowed if a measured eval shows minimal loss, and no such eval result is committed.
   `scripts/eval-windows.ps1 -Compare` measures UD-Q3_K_XL and UD-IQ2_XXS against Q4_K_M.
 - Ollama library tags (https://ollama.com/library/muse-glimmer/tags, 2026-11-03): 30b, 30b-q4_K_M, 30b-q8_0,
   30b-bf16, 30b-mxfp8, 30b-nvfp4, 30b-mlx(-bf16) and -dflash variants. No smaller-than-Q4 GGUF tag.
@@ -39,7 +39,8 @@ Status: implemented on branch `fix/70-muse-glimmer-fallback` (see "Implementatio
   decision scores a request through `BrainFromSettings`.
 - Live eval cannot run on the agent box (15 GB RAM, no GPU): moved to `scripts/eval-windows.ps1`.
 - Cloud path: default moved to the Meta Model API (`https://api.meta.ai/v1`, `muse-spark-1.3`,
-  per https://dev.meta.ai/docs/models). Unverified: whether that API honours
-  `response_format: {type: "json_object"}` (no key available; the endpoint returns 401 without one).
+  per https://dev.meta.ai/docs/models). `response_format: {type: "json_object"}` is accepted: both
+  2026-11-03 held-out runs sent it (`json_mode=true` in the thesis-muse-spark-1.3-*.json headers) and
+  got HTTP 200 on every call. 1 of 60 calls per run still hit the 2,048-token cap with no valid JSON.
 - The name check is a case-insensitive PCRE search for the retired model-family name ("ollama" minus its leading "o"), with a `(?<!o)` lookbehind so "ollama" itself does not match. Expected result: zero matches repo-wide.
-- Local CI note: better-sqlite3 has no Node 24 prebuild here; use Node 22 (as CI does).
+- CI runs Node 22. Measured 2026-11-03: Node 22.23.4 gives 503 passed / 3 skipped, Node 24.22.1 gives 504 passed / 2 skipped. The difference is the argon2id keywrap test, which needs Node 24's `crypto.argon2`.

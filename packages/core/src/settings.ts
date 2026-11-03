@@ -62,6 +62,20 @@ export function resolveDefaultWardenModel(env: NodeJS.ProcessEnv = process.env):
   return raw !== undefined && MODEL_TAG_PATTERN.test(raw) && !raw.includes("..") ? raw : SHIPPED_DEFAULT_WARDEN_MODEL;
 }
 
+// Meta Model API id used when the provider is switched to meta-api without
+// an explicit model. Ollama tags (e.g. "muse-glimmer:30b") are not served there.
+export const DEFAULT_META_API_WARDEN_MODEL = "muse-spark-1.3";
+
+// The model a provider should use when none is given. Local providers
+// (builtin, ollama, and the local half of bft) take the local default;
+// meta-api takes the Meta Model API default.
+export function defaultModelForProvider(
+  provider: WardenProvider,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return provider === "meta-api" ? DEFAULT_META_API_WARDEN_MODEL : resolveDefaultWardenModel(env);
+}
+
 export function defaultWardenSettings(env: NodeJS.ProcessEnv = process.env): WardenSettings {
   return { ...DEFAULT_WARDEN_SETTINGS, model: resolveDefaultWardenModel(env) };
 }

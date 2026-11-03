@@ -250,17 +250,17 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden · high-risk recall</span>
       <h2>How many risky reads reach you</h2>
-      <div class="pg-chart" role="img" aria-label="High-risk read recall: always-ask 28 of 28, rules 12 of 28, Muse Spark warden 26 of 28, rules plus Muse Spark 28 of 28">
+      <div class="pg-chart" role="img" aria-label="High-risk read recall, failed warden calls counted as misses: always-ask 28 of 28, rules 12 of 28, Muse Spark warden 25 of 28, rules plus Muse Spark 27 of 28">
         <div class="pg-bar-row"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
         <div class="pg-bar-row"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Muse Spark 1.3 warden · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:92.9%"></span></span><span class="pg-bar-value">26/28 · 92.9%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Rules + Muse Spark 1.3</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+        <div class="pg-bar-row"><span class="pg-bar-label">Muse Spark 1.3 warden · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
+        <div class="pg-bar-row"><span class="pg-bar-label">Rules + Muse Spark 1.3</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · local thesis run</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">Muse Glimmer · Meta API</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not offered by the API</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
         <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">blocked: quota (429)</span></div>
       </div>
-      <p class="pg-note">Policy floor: 4/4 in every arm. One call per run (1/60) hit the 2,048-token output cap and returned no decision; it went to you, which counts as caught. Counting only real decisions: Muse Spark 25/28, rules + Muse Spark 27/28. Muse Spark alone missed both history-only anomalies (burst, retry after deny); the rules catch those.</p>
+      <p class="pg-note">Counting rule: a warden call that fails counts as a miss. In each run one call (1/60) hit the 2,048-token output cap and returned no decision. The vault still sent that request to you (fail closed), so if you count it as caught the numbers are 26/28 and 28/28. Muse Spark alone also missed both history-only anomalies (burst, retry after deny); the rules catch those. Policy floor: 4/4 in every arm.</p>
       <p class="pg-note pg-chart-src">Held-out set, 60 cases (28 high-risk reads, 4 policy-floor, 28 benign: 20 hard, 8 plain). Rules: box run, commit <code>342f39f</code>. Muse Spark 1.3: two live runs via the Meta API on 2026-11-03, 16:14 and 16:25 PHT, identical counts in both. Raw: <code>docs/verification/thesis-rules-only-heldout-*</code>, <code>docs/verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-*</code>. Striped bars have no measurement.</p>
     </div>
   </section>
@@ -309,18 +309,14 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
   <section class="hack-slide" id="warden-local" data-label="Local quants">
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">05 · Warden · local quants</span>
-      <h2>Local AI works; smaller quants lose risk accuracy</h2>
-      <div class="pg-chart" role="img" aria-label="17-scenario live eval: Q4_K_M risk 58.8 percent, approval 82.4 percent, safety 100 percent; UD-Q3_K_XL and UD-IQ2_XXS risk 11.8 percent, approval 88.2 percent, safety 100 percent">
-        <div class="pg-bar-row"><span class="pg-bar-label">Q4_K_M · risk accuracy</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:58.8%"></span></span><span class="pg-bar-value">58.8%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">UD-Q3_K_XL · risk accuracy</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:11.8%"></span></span><span class="pg-bar-value">11.8%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">UD-IQ2_XXS · risk accuracy</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:11.8%"></span></span><span class="pg-bar-value">11.8%</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-IQ3_XXS</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Q4_K_M · approval</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:82.4%"></span></span><span class="pg-bar-value">82.4%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">UD-Q3_K_XL · approval</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:88.2%"></span></span><span class="pg-bar-value">88.2%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">UD-IQ2_XXS · approval</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:88.2%"></span></span><span class="pg-bar-value">88.2%</span></div>
-        <div class="pg-bar-row"><span class="pg-bar-label">Safety · all three quants</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">100%</span></div>
+      <h2>Local quants: no published numbers yet</h2>
+      <div class="pg-chart" role="img" aria-label="Local Muse Glimmer quants: no committed result for Q4_K_M, UD-IQ3_XXS, UD-Q3_K_XL or UD-IQ2_XXS">
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Q4_K_M · shipped default</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-IQ3_XXS</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-Q3_K_XL</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
+        <div class="pg-bar-row is-pending"><span class="pg-bar-label">UD-IQ2_XXS</span><span class="pg-bar-track"><span class="pg-bar-pending">no committed result</span></span><span class="pg-bar-value">—</span></div>
       </div>
-      <p class="pg-note">Muse Glimmer 30B through Ollama 0.34.4 on a Windows desktop (Ryzen 7 5700G, RX 7600 XT), 17-scenario live eval (<code>scripts\eval-windows.ps1</code>). This is a different benchmark from the 60-case held-out set above; the local held-out head-to-head was not run.</p>
+      <p class="pg-note">Muse Glimmer 30B runs locally through Ollama. We only publish numbers whose raw output is committed under <code>docs/verification/</code>, and no local quant run is committed yet, so this chart has no numbers. To measure on your own machine: <code>scripts\eval-windows.ps1 -Compare</code> (17 scenarios) or <code>scripts\thesis-windows.ps1</code> (the 60-case held-out set above).</p>
     </div>
   </section>
 

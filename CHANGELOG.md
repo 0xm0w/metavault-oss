@@ -6,6 +6,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking
+
+- **Legacy env var prefix dropped.** Only `METAVAULT_*` variables are read. The pre-rebrand `OPENVAULT_*` names (`OPENVAULT_MASTER_KEY`, `OPENVAULT_OLLAMA_URL`, `OPENVAULT_DB_PATH`, `OPENVAULT_DAEMON_URL`, `OPENVAULT_DAEMON_TOKEN` and the rest) are ignored. Rename them to `METAVAULT_*` in shells, IDE MCP configs and scripts. The fallback was documented but had silently stopped working after the rename; it is now removed on purpose and pinned by `packages/core/test/env.test.ts`.
+
 ### Added
 
 - Payment-card credential type: `metavault add-card`, `POST /cards`, and an app add form. Luhn-checked number, name, expiry and CVV, sealed as one AES-256-GCM ciphertext; agents and the app see only brand, last 4 and a masked number. Every card use needs a human approval, can't be standing-approved, and execute is refused because no payment connector exists.
@@ -14,9 +18,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Optional `hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS` (13,130,658,848 bytes) in the model lists, `-Quant` and `-Compare` in `scripts/eval-windows.ps1` and `scripts/thesis-windows.ps1`. Not benchmarked yet.
 
 - `run-thesis.ts --provider openai-compat|meta-api`: OpenAI-compatible warden for comparison runs (polite pacing, 429/5xx retry with `Retry-After`, quota refusal aborts the run, per-call `usage` tokens, dollars per gated request from published prices, `--budget-usd` cap, default $0.50). `meta-api` reads `META_API_KEY` and defaults to `muse-spark-1.3` at `https://api.meta.ai/v1`.
-- Docs Warden slide reworked into tiers (policy only, Muse Glimmer quants, Muse Spark via Meta API, BFT quorum) with measured-only charts for high-risk recall, false-alarm rate, and latency and cost; unmeasured tiers show as pending.
+- Docs Warden slide reworked into tiers (policy only, Muse Glimmer quants, Muse Spark via Meta API, BFT quorum) with measured-only charts for high-risk recall, false-alarm rate, and latency and cost; unmeasured tiers show as "not run".
 
-- Measured Muse Spark 1.3 (Meta API) on the 60-case held-out set, two runs: warden 26/28 recall, 0/28 false alarms; rules + warden 28/28 recall, 9/28 false alarms; median 8.2-8.9 s; $0.0052-$0.0053 and about 1.5k tokens per gated request. Local Muse Glimmer quant results (17-scenario eval) recorded in `docs/verification/eval-live-muse-glimmer-quants.md`; UD-IQ3_XXS and the local held-out run were not run. `run-thesis.ts --call-log` writes per-call usage and spend as it happens.
+- Measured Muse Spark 1.3 (Meta API) on the 60-case held-out set, two runs: warden 25/28 recall (21/22 paraphrased), 0/28 false alarms; rules + warden 27/28 recall, 9/28 false alarms (a failed warden call, one per run, counts as a miss); median 8.2-8.9 s; $0.0052-$0.0053 and about 1.5k tokens per gated request. No local Muse Glimmer eval output is committed, so no local quant numbers are published; the local held-out run was not run. `run-thesis.ts --call-log` writes per-call usage and spend as it happens.
 
 ### Changed
 
@@ -33,7 +37,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - `site/research/` and every link to it (#70).
-- `docs/verification/eval-live.txt` (old model); live Muse Glimmer eval pending via `scripts/eval-windows.ps1` (#70).
+- `docs/verification/eval-live.txt` (old model); the live Muse Glimmer eval (`scripts/eval-windows.ps1`) has no committed result yet (#70).
 
 ## [0.1.1-hackathon.sprint] — 2026-11-02
 
