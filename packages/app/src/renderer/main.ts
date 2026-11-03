@@ -2716,6 +2716,8 @@ function renderSettings(view: HTMLElement): void {
 
   const pre = el("pre", "");
   pre.textContent = codeSnippet;
+  pre.tabIndex = 0;
+  pre.setAttribute("aria-label", "MCP configuration, scroll horizontally to view long lines");
   codeBox.append(copyBtn, pre);
   agentSection.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
   agentSection.append(codeBox);
