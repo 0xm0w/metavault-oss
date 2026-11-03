@@ -297,12 +297,23 @@ $topWindows = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windo
 foreach ($window in $topWindows) { Log ("UIA_WINDOW name=" + $window.Current.Name + " type=" + $window.Current.ControlType.ProgrammaticName) }
 if ($null -eq $warning) { throw "No interactive warning; stopping before data wipe" }
 
-$parent = [Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($warning)
-while ($null -ne $parent -and $parent.Current.ControlType -ne [Windows.Automation.ControlType]::Window) { $parent = [Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($parent) }
-$cancelCondition = [Windows.Automation.AndCondition]::new([Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,"Cancel"),[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Button))
-$cancel = $parent.FindFirst([Windows.Automation.TreeScope]::Descendants,$cancelCondition)
-if ($null -eq $cancel) { throw "Destructive warning has no Cancel button" }
-([Windows.Automation.InvokePattern]$cancel.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)).Invoke()
+# Native MessageBox has visible Cancel (IDCANCEL=2); hosted-runner UIA does
+# not expose its button subtree consistently. Send the same native command to
+# the exact observed uninstaller window, never a screen-coordinate guess.
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class UninstallDialog {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string windowName);
+  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr parent, int id);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+}
+'@
+$dialog = [UninstallDialog]::FindWindow('#32770','MetaVault OSS Uninstall')
+if ($dialog -eq [IntPtr]::Zero) { throw 'Exact warning dialog not found' }
+$cancelHandle = [UninstallDialog]::GetDlgItem($dialog,2)
+if ($cancelHandle -eq [IntPtr]::Zero) { throw 'Warning has no native IDCANCEL control' }
+[void][UninstallDialog]::SendMessage($dialog,0x0111,[IntPtr]2,$cancelHandle)
 Start-Sleep -Seconds 3
 Check (Test-Path $exe) "Cancel retains installed program"
 Check-VaultDataKept "interactive Cancel"
