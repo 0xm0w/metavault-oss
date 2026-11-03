@@ -48,4 +48,4 @@ Status: implemented in #70 (see "Implementation status" below). Live Muse Glimme
   2026-11-03 held-out runs sent it (`json_mode=true` in the thesis-muse-spark-1.3-*.json headers) and
   got HTTP 200 on every call. 1 of 60 calls per run still hit the 2,048-token cap with no valid JSON.
 - The name check is a case-insensitive PCRE search for the retired model-family name ("ollama" minus its leading "o"), with a `(?<!o)` lookbehind so "ollama" itself does not match. Expected result: zero matches repo-wide.
-- CI runs Node 22. Measured 2026-11-03: Node 22.23.4 gives 503 passed / 3 skipped, Node 24.22.1 gives 504 passed / 2 skipped. The difference is the argon2id keywrap test, which needs Node 24's `crypto.argon2`.
+- CI runs Node 22. Measured 2026-11-03: Node 22.23.4 gives 521 passed / 3 skipped (CI run 41659945365), Node 24.22.1 gives 522 passed / 2 skipped. The difference is the argon2id keywrap test, which needs Node 24's `crypto.argon2`.

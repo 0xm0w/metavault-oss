@@ -16,7 +16,7 @@ Re-run any gate with the commands shown.
 
 | Gate | Command | Result |
 |---|---|---|
-| Unit + integration tests | `npm test` | Node 22.23.4 (CI version): **503 passed, 3 skipped** (64 files, 1 skipped); Node 24.22.1: **504 passed, 2 skipped**. The extra skip on Node 22 is the argon2id keywrap test (`runIf(argon2Available())`; Node 22 has no `crypto.argon2`). Re-run 2026-11-03 on the box |
+| Unit + integration tests | `npm test` | Node 22.23.4 (CI version, Ubuntu + Windows, run 41659945365 on main ccb12d1): **521 passed, 3 skipped** (65 files, 1 skipped); Node 24.22.1: **522 passed, 2 skipped**. The extra skip on Node 22 is the argon2id keywrap test (`runIf(argon2Available())`; Node 22 has no `crypto.argon2`). Re-run 2026-11-03 on the box |
 | Typecheck (strict) | `npm run typecheck` | exit 0 |
 | Lint (max-warnings 0) | `npm run lint` | exit 0 |
 | Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (re-run 2026-11-03) |

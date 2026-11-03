@@ -99,26 +99,11 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <p class="pg-lead" style="margin:0 auto 16px">Replace <code>&lt;metavault-oss&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
       <div data-tabs>
         <div class="pg-tablist" role="tablist" aria-label="IDE setup">
-          <button type="button" data-tab="muse" aria-selected="false">Meta Muse</button>
           <button type="button" data-tab="cursor" aria-selected="true">Cursor</button>
           <button type="button" data-tab="claude" aria-selected="false">Claude Code</button>
           <button type="button" data-tab="vscode" aria-selected="false">VS Code</button>
           <button type="button" data-tab="codex" aria-selected="false">Codex</button>
           <button type="button" data-tab="opencode" aria-selected="false">OpenCode</button>
-        </div>
-        <div data-panel="muse" hidden>
-          <div class="pg-snippet"><pre id="snip-muse" data-lang="json">{
-  "mcpServers": {
-    "metavault": {
-      "command": "node",
-      "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
-      "env": {
-        "METAVAULT_AGENT_ID": "muse",
-        "METAVAULT_IDE": "Meta Muse"
-      }
-    }
-  }
-}</pre><button type="button" data-copy="snip-muse">Copy</button></div>
         </div>
         <div data-panel="cursor">
           <div class="pg-snippet"><pre id="snip-cursor" data-lang="json">{
@@ -293,8 +278,8 @@ if warden_call_failed:
       <span class="caption-mono-sm pg-kicker">05 · Warden · latency and cost</span>
       <h2>What each gated request costs</h2>
       <p class="pg-sub">Lower is better. <em>Log scale: each gridline is 10×.</em></p>
-      <div class="pg-chart" role="img" aria-label="Gate latency, fastest to slowest: rules median 6.8 microseconds, rules p95 21.3 microseconds, Muse Spark median 8.2 to 8.9 seconds, Muse Spark p95 14.8 to 17.3 seconds, on one log-scale axis from 1 microsecond to 100 seconds">
-        <div class="pg-bar-row" data-verdict="latency" data-ms="0.0068"><span class="pg-bar-label">Policy only (rules) · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:10.4%"></span></span><span class="pg-bar-value">6.8 µs</span></div>
+      <div class="pg-chart" role="img" aria-label="Gate latency, fastest to slowest: rules median 6.8 microseconds and rules p95 21.3 microseconds (rules-only run), Muse Spark median 8.2 to 8.9 seconds, Muse Spark p95 14.8 to 17.3 seconds, on one log-scale axis from 1 microsecond to 100 seconds">
+        <div class="pg-bar-row" data-verdict="latency" data-ms="0.0068"><span class="pg-bar-label">Policy only (rules-only run) · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:10.4%"></span></span><span class="pg-bar-value">6.8 µs</span></div>
         <div class="pg-bar-row" data-verdict="latency" data-ms="0.0213"><span class="pg-bar-label">Policy only (rules) · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:16.6%"></span></span><span class="pg-bar-value">21.3 µs</span></div>
         <div class="pg-bar-row" data-verdict="latency" data-ms="8900"><span class="pg-bar-label">Muse Spark 1.3 · median</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:86.4%"></span><span class="pg-bar-range" style="left:86.4%;width:0.5%"></span></span><span class="pg-bar-value">8.2–8.9 s</span></div>
         <div class="pg-bar-row" data-verdict="latency" data-ms="17300"><span class="pg-bar-label">Muse Spark 1.3 · p95</span><span class="pg-bar-track pg-log"><span class="pg-bar-fill" style="width:89.6%"></span><span class="pg-bar-range" style="left:89.6%;width:0.9%"></span></span><span class="pg-bar-value">14.8–17.3 s</span></div>
