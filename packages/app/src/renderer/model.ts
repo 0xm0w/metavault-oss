@@ -1462,16 +1462,16 @@ export function passphraseSetupError(passphrase: string, confirm: string): strin
   if (length < MIN_PASSPHRASE_LENGTH) {
     return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;
   }
-  if (passphrase !== confirm) return "The two passphrases do not match.";
+  if (passphrase !== confirm) return "The two passwords do not match.";
   return null;
 }
 
 // Plain words for the daemon's tagged setup/unlock errors.
 export function keyGateErrorMessage(message: string): string {
-  if (message.includes("WrongPassphrase")) return "Wrong passphrase.";
+  if (message.includes("WrongPassphrase")) return "Wrong password or damaged key file.";
   if (message.includes("UnlockThrottled")) return "Too many tries. Wait a moment and try again.";
   if (message.includes("PassphraseTooShort")) return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;
-  if (message.includes("AlreadyInitialized")) return "This vault already has a passphrase. Unlock it instead.";
+  if (message.includes("AlreadyInitialized")) return "This vault already has a password. Unlock it instead.";
   if (message.includes("unreachable")) return "MetaVault could not reach its background service. Try again in a moment.";
   return "That did not work. Try again.";
 }

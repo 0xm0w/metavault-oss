@@ -12,6 +12,24 @@ MCP handshake; exported in code as `MCP_VERSION` from
 Tools (exactly five): `request_capability`, `list_aliases`,
 `request_enrollment`, `enrollment_status`, `revoke`.
 
+## Installed Windows app (no source checkout or separate Node required)
+
+The installed app ships `resources/vaultd/mcp.cjs`. In MetaVault OSS, open
+Settings > Agent Integration & MCP, select your host, and copy its config.
+The app supplies absolute paths to its own executable and bundled MCP server,
+plus `ELECTRON_RUN_AS_NODE=1`, so spaces in the install path and a stale PATH
+in an already-running IDE do not require a workaround. Reload the host MCP
+connection after changing config. Keep the agent token private.
+
+The installer also includes `bin/metavault-mcp.cmd` and
+`bin/metavault-mcp.ps1` for terminal use. The GUI-generated config uses the
+executable directly, not a shell wrapper. If paths change after moving the
+app, copy a fresh config. Settings also has **Copy agent instructions** for
+the static vault workflow. Prompts guide the agent; policy and human approval
+enforce access.
+
+The source-checkout examples below are for development, not installed users.
+
 ## Prerequisites
 
 1. Start the MetaVault OSS daemon / desktop app so `vaultd` is listening.

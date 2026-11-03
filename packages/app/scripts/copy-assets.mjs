@@ -22,7 +22,7 @@ for (const name of ["index.html", "styles.css", "favicon.svg", "icon.ico", "tray
 const srcBin = join(appRoot, "bin");
 const distBin = join(appRoot, "dist", "bin");
 mkdirSync(distBin, { recursive: true });
-for (const name of ["metavault.cmd", "vaultd.cmd", "metavault.ps1", "metavault.cmd", "metavault.ps1"]) {
+for (const name of ["metavault.cmd", "vaultd.cmd", "metavault.ps1", "metavault-mcp.cmd", "metavault-mcp.ps1"]) {
   const srcFile = join(srcBin, name);
   if (existsSync(srcFile)) {
     copyFileSync(srcFile, join(distBin, name));

@@ -1326,11 +1326,11 @@ describe("vault key gate", () => {
   it("checks passphrase length the way the daemon does, and that both entries match", () => {
     expect(passphraseSetupError("short", "short")).toContain(String(MIN_PASSPHRASE_LENGTH));
     expect(passphraseSetupError("twelve chars", "twelve chars")).toBeNull();
-    expect(passphraseSetupError("twelve chars", "twelve charz")).toBe("The two passphrases do not match.");
+    expect(passphraseSetupError("twelve chars", "twelve charz")).toBe("The two passwords do not match.");
   });
 
   it("turns daemon error tags into plain words", () => {
-    expect(keyGateErrorMessage("MetaVault OSS daemon error (401): WrongPassphrase")).toBe("Wrong passphrase.");
+    expect(keyGateErrorMessage("MetaVault OSS daemon error (401): WrongPassphrase")).toBe("Wrong password or damaged key file.");
     expect(keyGateErrorMessage("daemon error (429): UnlockThrottled")).toContain("Wait");
     expect(keyGateErrorMessage("daemon error (400): PassphraseTooShort")).toContain("12");
     expect(keyGateErrorMessage("daemon error (409): AlreadyInitialized")).toContain("Unlock");

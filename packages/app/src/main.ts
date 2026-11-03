@@ -8,6 +8,7 @@ import type { ChildProcess } from "node:child_process";
 import { DEEPLINK_CHANNEL, findVaultDeeplink, parseVaultDeeplink, type DeeplinkAddParams } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 import { initAutoUpdater } from "./updater.js";
+import { runtimePaths } from "./runtime-paths.js";
 import { registerWindowsHelloIpc } from "./windows-hello.js";
 
 // MetaVault OSS desktop shell: a window over vaultd, in the wallet pattern.
@@ -204,6 +205,7 @@ if (!hasLock) {
         });
     }
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
+    ipcMain.handle("metavault:runtime-paths", () => runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") }));
     registerWindowsHelloIpc();
     ipcMain.on("metavault:bring-to-front", () => {
       bringWindowToFront();

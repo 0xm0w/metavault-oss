@@ -59,6 +59,40 @@ $dbFile = Join-Path $dataDir "metavault.db"
 $keyFile = Join-Path $dataDir "metavault.key.json"
 $tokenFile = Join-Path $dataDir "metavault.token"
 
+function Test-PackagedMcp {
+  Check (Test-Path (Join-Path $binDir "metavault-mcp.cmd")) "MCP cmd launcher installed"
+  Check (Test-Path (Join-Path $binDir "metavault-mcp.ps1")) "MCP PowerShell launcher installed"
+  $info = New-Object Diagnostics.ProcessStartInfo
+  $info.FileName = $exe
+  $info.Arguments = '"' + (Join-Path $installDir "resources\vaultd\mcp.cjs") + '"'
+  $info.UseShellExecute = $false
+  $info.RedirectStandardInput = $true
+  $info.RedirectStandardOutput = $true
+  $info.RedirectStandardError = $true
+  $info.CreateNoWindow = $true
+  $info.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1"
+  $p = New-Object Diagnostics.Process
+  $p.StartInfo = $info
+  try {
+    [void]$p.Start()
+    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"installed-smoke","version":"1"}}}')
+    $read = $p.StandardOutput.ReadLineAsync()
+    if (-not $read.Wait(15000)) { throw "Installed MCP initialize timed out" }
+    $reply = $read.Result | ConvertFrom-Json
+    Check ($reply.id -eq 1 -and $null -ne $reply.result.serverInfo) "installed runtime completes MCP initialize without source checkout or Node"
+    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized"}')
+    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
+    $read = $p.StandardOutput.ReadLineAsync()
+    if (-not $read.Wait(15000)) { throw "Installed MCP tools/list timed out" }
+    $reply = $read.Result | ConvertFrom-Json
+    Check ($reply.id -eq 2 -and @($reply.result.tools).Count -eq 5) "installed MCP exposes exactly five secret-blind tools"
+    Check (@($reply.result.tools.name) -contains "request_capability") "installed MCP includes request_capability"
+  } finally {
+    if ($p.Id -and -not $p.HasExited) { $p.Kill() }
+    $p.Dispose()
+  }
+}
+
 $smokePassphrase = "smoke-ci-passphrase-7f3a"
 $smokeAlias = "smoke-ci-credential"
 $smokeSecret = "smoke-secret-value-9c81"
@@ -187,6 +221,7 @@ function Check-Cleanup {
 
 # === 1. clean install + first-run state ================================
 Install-App "clean install"
+Test-PackagedMcp
 Check-Installed-Layout
 $sizeMb = [math]::Round(((Get-ChildItem $installDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
 Log "Install folder size: $sizeMb MB"

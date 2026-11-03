@@ -1246,7 +1246,7 @@ body.is-simple-mode .verbose-note {
 .mode-option-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .mode-option-desc { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
 
-.agent-tab-btns { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; margin: 10px 0 8px; }
+.agent-tab-btns { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 8px; }
 
 .agent-tab-btn {
   font: inherit;
@@ -1541,3 +1541,4 @@ body.is-simple-mode .verbose-note {
 }
 .vault-key-gate p { max-width: 460px; }
 .vault-key-gate .field-error { color: #c0392b; min-height: 1.2em; margin: 0; }
+
