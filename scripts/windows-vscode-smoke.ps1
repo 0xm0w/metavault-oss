@@ -23,6 +23,7 @@ $code = Join-Path $root 'editor\Code.exe'
 $stdout = Join-Path $root 'stdout.log'
 $stderr = Join-Path $root 'stderr.log'
 $p = Start-Process $code -RedirectStandardOutput $stdout -RedirectStandardError $stderr -ArgumentList @('--user-data-dir',('"'+$userData+'"'),'--extensions-dir',('"'+(Join-Path $root 'extensions')+'"'),'--disable-extensions','--skip-welcome','--skip-release-notes',('--extensionDevelopmentPath="'+$extension+'"'),('--extensionTestsPath="'+(Join-Path $extension 'test.cjs')+'"'),('"'+$workspace+'"')) -PassThru
+$null = $p.Handle # Retain process handle so Framework can read its exit code.
 if (-not $p.WaitForExit(120000)) {
   Get-Content $stdout,$stderr -ErrorAction SilentlyContinue | Add-Content $LogPath
   Add-Type -AssemblyName System.Windows.Forms
@@ -36,7 +37,10 @@ if (-not $p.WaitForExit(120000)) {
   $p.Kill(); throw 'VS Code host proof timed out; inspect captured trust/UI state'
 }
 Get-Content $stdout,$stderr -ErrorAction SilentlyContinue | Add-Content $LogPath
+$p.WaitForExit()
+$p.Refresh()
 if ($p.ExitCode -ne 0) { throw ('VS Code host proof exit ' + $p.ExitCode) }
+if (-not (Select-String -Path $LogPath -SimpleMatch 'PASS actual VS Code invoked installed MCP request_capability and received awaiting-approval' -Quiet)) { throw 'VS Code exited without host proof marker' }
 Remove-Item Env:MV_HOST_LOG
 # No real profile, settings sync, model account or credentials ever loaded.
 Remove-Item $root -Recurse -Force
