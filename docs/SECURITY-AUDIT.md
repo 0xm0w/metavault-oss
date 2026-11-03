@@ -88,3 +88,29 @@ In a local AI agent development environment:
 | **Layer 3: Strict Agent Verification Mode** | Configurable toggle in Settings > Security (`strictMode: boolean`). Rejects unverified callers with 403 Forbidden. | Zero-trust enforcement. Blocks unauthenticated scripts from even queuing approval prompts. | [`packages/daemon/src/server.ts`](../packages/daemon/src/server.ts)<br>[`packages/app/src/renderer/main.ts`](../packages/app/src/renderer/main.ts) | `test/security/pentest.test.ts` (Probe 6) |
 | **Layer 4: OS Process & Binary Inspection** | Configurable toggle in Settings > Security (`verifyCallerProcess: boolean`). Inspects client PID and binary executable. | Blocks unauthorized binaries (`python.exe`, `curl.exe`, `powershell.exe`) even if they hold a valid stolen token. | [`packages/daemon/src/process-inspector.ts`](../packages/daemon/src/process-inspector.ts) | `test/security/pentest.test.ts` (Probe 6) |
 | **Layer 5: UI Integrity & Alerts** | Policies table shows `Verified` vs `⚠️ Unverified` status badges. Approval modal shows prominent security warning for unverified callers. | Transparent visibility prevents user deception. | [`packages/app/src/renderer/main.ts`](../packages/app/src/renderer/main.ts) | `packages/app/test/model.test.ts` |
+
+---
+
+## 6. Same-User Infostealer Threat Model & Master Key Protection
+
+### 6.1 Threat Model
+An infostealer (Lumma, RedLine and similar) runs as the logged-in user. It can read every file the user can read, query the user's OS keychain, read the environment of the user's processes, log keystrokes, and on all three desktop OSes read the memory of other processes owned by the same user.
+
+### 6.2 What the code does
+
+| Control | Mechanism | Implementation | Tests |
+|:---|:---|:---|:---|
+| Passphrase-wrapped master key (default) | scrypt (N=2^17, r=8, p=1) or Argon2id (19456 KiB, t=2, p=1) derives a KEK; the master key is AES-256-GCM-wrapped with the KDF parameters bound as additional data; `metavault.key.json`, mode 0600 | [`packages/core/src/keywrap.ts`](../packages/core/src/keywrap.ts) | `packages/core/test/keywrap.test.ts` |
+| Starts locked, auto-lock | Daemon starts locked; key held in memory only after `POST /unlock`; idle auto-lock after 15 min (`METAVAULT_AUTO_LOCK_MINUTES`, 1 to 1440); key Buffer zero-filled on lock; locked routes return 423 | [`packages/core/src/key-session.ts`](../packages/core/src/key-session.ts), [`packages/daemon/src/server.ts`](../packages/daemon/src/server.ts) | `packages/core/test/key-session.test.ts`, `packages/daemon/test/cards.test.ts` |
+| Unlock rate limit | 5 free attempts, then 429 with backoff from 30 s doubling to 15 min | `key-session.ts` | `key-session.test.ts` |
+| No env-var key by default | `METAVAULT_MASTER_KEY` ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1` | `packages/daemon/src/server.ts`, `packages/cli/src/cli.ts` | `packages/core/test/key-session.test.ts` |
+| Payment cards | Luhn-checked; number, name, expiry, CVV sealed together; only brand, last 4 and masked number leave the daemon; every use is a financial high-risk write needing a human; no standing approval; execute refused (no payment connector) | [`packages/core/src/card.ts`](../packages/core/src/card.ts) | `packages/core/test/card.test.ts`, `packages/daemon/test/cards.test.ts` |
+
+### 6.3 Residual exposure (not mitigated)
+1. **Keylogging** of the passphrase, followed by an offline unwrap of `metavault.key.json`.
+2. **Process memory reads while unlocked**: the master key, and each secret during its brokered call. Node.js exposes no `mlock`, `MADV_DONTDUMP`, `PR_SET_DUMPABLE` or `CryptProtectMemory` from JavaScript; none is applied.
+3. **Legacy key modes** (OS keychain, env var, dev plaintext file) have no passphrase and no auto-lock.
+4. **Daemon token theft** (`metavault.token`) lets a local process call unlock (rate-limited), lock and add-card. It cannot read a secret or card number, or approve a card use.
+5. **Weak passphrases** fall to offline guessing; the KDF only raises the cost per guess.
+
+Windows Hello (`UserConsentVerifier`), macOS `LAContext` and Linux polkit were researched as unlock gates and are not implemented for the master key. Sources and migration steps: [`SECURITY.md#master-key-protection`](../SECURITY.md#master-key-protection).

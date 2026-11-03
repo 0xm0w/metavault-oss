@@ -6,7 +6,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Payment-card credential type: `metavault add-card`, `POST /cards`, and an app add form. Luhn-checked number, name, expiry and CVV, sealed as one AES-256-GCM ciphertext; agents and the app see only brand, last 4 and a masked number. Every card use needs a human approval, can't be standing-approved, and execute is refused because no payment connector exists.
+- Passphrase-wrapped master key (`metavault.key.json`, scrypt N=2^17 r=8 p=1 by default, Argon2id 19 MiB t=2 p=1 opt-in), `metavault key status`, `key protect`, `unlock`, `lock`; daemon `/unlock`, `/lock`, `/key/status`; starts locked; 15-minute idle auto-lock (`METAVAULT_AUTO_LOCK_MINUTES`); unlock backoff after 5 failures. Migration: `SECURITY.md#master-key-protection`.
+- `METAVAULT_WARDEN_MODEL` makes the default warden model configurable. The shipped default stays `muse-glimmer:30b`.
+- Optional `hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS` (13,130,658,848 bytes) in the model lists, `-Quant` and `-Compare` in `scripts/eval-windows.ps1` and `scripts/thesis-windows.ps1`. Not benchmarked yet.
+
 ### Changed
+
+- `METAVAULT_MASTER_KEY` is ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1`. The dev plaintext key in `scripts/run-daemon.mjs` needs `METAVAULT_DEV_PLAINTEXT_KEY=1`.
+- Eval memory measurement now walks the Ollama process tree (including child runners) and records `/api/ps` size and `size_vram`, `ollama ps` SIZE and PROCESSOR (GPU/CPU split), system memory delta and NVIDIA usage (`scripts/ollama-mem.ps1`). The earlier process-name-only sum missed the runner.
+- Removed the unsupported privacy-proof wording from the research page and thesis review; copy now describes the actual encryption and key handling.
 
 - Local warden is now Meta **Muse Glimmer 30B Q4_K_M** (`muse-glimmer:30b` via Ollama) for the Ollama, built-in and BFT paths; earlier local models removed from code, settings, UI and docs (#70).
 - The built-in on-device engine is wired: it runs Muse Glimmer through local Ollama and the Settings download pulls it via `/api/pull` (previously it wrote placeholder files and always failed closed) (#70).

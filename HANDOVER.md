@@ -5,6 +5,14 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 
 ## Where things stand
 
+> **2026-11-03, branch `feat/cards-hardening` (pushed, no PR):** payment-card
+> credentials, passphrase-wrapped master key with auto-lock, configurable
+> warden model (`METAVAULT_WARDEN_MODEL`, default unchanged), optional
+> UD-IQ3_XXS quant in the eval scripts, and a fixed eval memory measurement.
+> The ps1 scripts are parse-checked only; no Windows run and no IQ3_XXS
+> numbers yet. The app has no passphrase unlock screen yet (use
+> `metavault unlock`). Exposures still open: `SECURITY.md#master-key-protection`.
+
 - Branch `main` pushed and merged via PR #1 (https://github.com/0xm0w/metavault-oss/pull/1).
 - Working tree clean. `main` is up to date with `origin/main`.
 - CI/CD verified green on GitHub Actions:

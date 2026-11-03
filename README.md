@@ -45,9 +45,12 @@ npm test            # full suite (268/268 at Task 10 verification)
 
 1. **Install Ollama** (the marshal's runtime): <https://ollama.com/download>.
    Nothing leaves your machine in the default configuration.
-2. **Create the vault.** This generates a master key (shown once — store it
-   in your OS keychain or set `METAVAULT_MASTER_KEY` to its base64 form) and
-   creates the encrypted store:
+2. **Create the vault.** This generates a master key, asks for a passphrase
+   (at least 12 characters), wraps the key with it (scrypt by default,
+   `--kdf argon2id` on request) in `metavault.key.json` next to the database,
+   and creates the encrypted store. Existing vaults with the key in the OS
+   keychain: run `metavault key protect`. See
+   [SECURITY.md#master-key-protection](SECURITY.md#master-key-protection):
 
    > Environment variables were renamed `METAVAULT_*` → `METAVAULT_*` in the
    > rebrand. The legacy `METAVAULT_*` names still work everywhere; the new
@@ -83,13 +86,23 @@ npm test            # full suite (268/268 at Task 10 verification)
 
    ```powershell
    node dist/packages/cli/src/cli.js add stripe --scope charges.read
+   # payment card (Luhn-checked; agents only ever see brand + last 4):
+   node dist/packages/cli/src/cli.js add-card visa-personal --website shop.example
    ```
+
+   Every card use needs your approval, and the daemon refuses to execute a
+   card grant because no payment connector exists yet.
 5. **Start the daemon** (binds to `127.0.0.1:7077` only):
 
    ```powershell
-   $env:METAVAULT_MASTER_KEY = "<base64 32-byte key from init>"
    node dist/packages/daemon/src/server.js
+   # in another terminal: the daemon starts locked
+   node dist/packages/cli/src/cli.js unlock
    ```
+
+   The vault auto-locks after 15 idle minutes (`METAVAULT_AUTO_LOCK_MINUTES`,
+   1 to 1440); `metavault lock` locks it now. `METAVAULT_MASTER_KEY` is
+   ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1` is set.
 6. **(Optional) Start the desktop app** for approval prompts — see
    [packages/app/README.md](packages/app/README.md). Approvals also work
    from the CLI (`approve <grantId>`, `audit`, `revoke <target>`).
@@ -187,8 +200,11 @@ The wallet/marshal framing is literal:
 - **Secret handling.** Secrets exist in plaintext only inside `vaultd`
   memory during one connector call, where the credential is injected as a
   header on the outbound request ([packages/connectors/src/http.ts](packages/connectors/src/http.ts)).
-  At rest they are AES-256-GCM ciphertext under a master key from
-  `METAVAULT_MASTER_KEY` or the OS keychain. Grants are consumed exactly
+  At rest they are AES-256-GCM ciphertext under a master key that is
+  wrapped with your passphrase and held in daemon memory only while the
+  vault is unlocked. Malware running as you can still keylog the
+  passphrase or read daemon memory while unlocked; see
+  [SECURITY.md#master-key-protection](SECURITY.md#master-key-protection). Grants are consumed exactly
   once; revoke cancels pending grants and blocks future ones for that agent
   or alias immediately.
 

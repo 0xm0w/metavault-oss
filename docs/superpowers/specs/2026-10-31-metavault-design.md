@@ -132,9 +132,10 @@ MetaVault OSS runs locally. There is no MetaVault OSS cloud account in v1.
 
 1. Install: the Electron app installer for Windows or macOS (the daemon
    is bundled and started by the app), or `docker compose up` from the repo.
-2. `metavault init` creates the encrypted vault and unlocks it with the OS
-   keychain (Windows Credential Manager / macOS Keychain / Linux secret
-   service) holding the master key.
+2. `metavault init` creates the encrypted vault. (Superseded 2026-11-03:
+   the master key is now wrapped with a user passphrase in
+   `metavault.key.json`, the daemon starts locked and auto-locks; the OS
+   keychain is a legacy mode. See `SECURITY.md#master-key-protection`.)
 3. `metavault model pull` auto-detects VRAM/RAM and pulls the right model
    via Ollama. The default is Muse Glimmer 30B Q4_K_M (`muse-glimmer:30b`). First
    run prints the detected tier so there are no surprises.
@@ -238,7 +239,8 @@ testable interface.
   same daemon API as the desktop app and MCP.
 - Storage: SQLite under the user's data dir for aliases, policies, grants,
   and audit events. Secret values themselves are stored only as ciphertext,
-  each encrypted with AES-256-GCM under a master key held in the OS keychain.
+  each encrypted with AES-256-GCM under a master key (passphrase-wrapped
+  since 2026-11-03; originally held in the OS keychain).
   The database never contains a plaintext secret.
 - Stack: TypeScript in one repo, split by discipline. The daemon-side
   packages (`core`, `brain`, `connectors`, `daemon`, `mcp`, `cli`) are

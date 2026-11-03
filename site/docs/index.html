@@ -85,7 +85,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       <span class="caption-mono-sm pg-kicker">02</span>
       <h2>Three commands, then the app</h2>
       <div class="pg-grid">
-        <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key goes to the OS keychain, not a file you can paste.</p></article>
+        <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key is wrapped with your passphrase (scrypt by default) and the daemon starts locked. Run <code>metavault unlock</code>; it auto-locks after 15 idle minutes.</p></article>
         <article class="pg-card"><span class="n">2 · model pull</span><h3>Optional warden</h3><p class="pg-note">Pulls Muse Glimmer 30B (Q4_K_M) through Ollama. Skip this and policy still holds the ceiling.</p></article>
         <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>metavault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
       </div>
