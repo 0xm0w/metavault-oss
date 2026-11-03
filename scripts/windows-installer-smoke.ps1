@@ -282,7 +282,6 @@ while ((Get-Date) -lt $deadline) {
   Start-Sleep -Milliseconds 500
 }
 Check ($null -ne $warning) "interactive uninstall displays destructive warning before removal"
-if ($null -eq $warning) { throw "No interactive warning; stopping before data wipe" }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $bounds = [Windows.Forms.SystemInformation]::VirtualScreen
@@ -293,6 +292,11 @@ $stream = New-Object IO.MemoryStream
 $bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
 Log ("WARNING_SCREENSHOT_BASE64=" + [Convert]::ToBase64String($stream.ToArray()))
 $graphics.Dispose(); $bitmap.Dispose(); $stream.Dispose()
+Get-Process | Where-Object { $_.MainWindowTitle -ne '' -or $_.ProcessName -like '*Uninstall*' } | ForEach-Object { Log ("WINDOW pid=" + $_.Id + " process=" + $_.ProcessName + " title=" + $_.MainWindowTitle + " session=" + $_.SessionId) }
+$topWindows = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,[Windows.Automation.Condition]::TrueCondition)
+foreach ($window in $topWindows) { Log ("UIA_WINDOW name=" + $window.Current.Name + " type=" + $window.Current.ControlType.ProgrammaticName) }
+if ($null -eq $warning) { throw "No interactive warning; stopping before data wipe" }
+
 $parent = [Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($warning)
 $cancel = $parent.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,"Cancel"))
 if ($null -eq $cancel) { throw "Destructive warning has no Cancel button" }
