@@ -286,6 +286,7 @@ function makeStore(db: Database.Database): VaultStoreService {
   );
   // Rebuild the legacy token table transactionally. No raw bearer is retained
   // in the logical database. Existing IDE tokens keep working until rotated.
+  db.exec("CREATE TABLE IF NOT EXISTS local_migration_state (name TEXT PRIMARY KEY, cleanup_pending INTEGER NOT NULL)");
   const agentCols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
   if (agentCols.some((c) => c.name === "token")) {
     // A consistent SQLite snapshot precedes any destructive schema change.
@@ -310,10 +311,16 @@ function makeStore(db: Database.Database): VaultStoreService {
       const put = db.prepare("INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?)");
       for (const row of rows) put.run(row.id, row.name, hashAgentToken(row.token), row.token.slice(0, 16), row.created_at, row.revoked);
       db.exec("DROP TABLE agents_legacy");
+      db.exec("INSERT OR REPLACE INTO local_migration_state VALUES ('agent-hash',1)");
     })();
-    // Remove freed legacy plaintext pages (SQLite secure_delete + compaction).
+  }
+  const pendingCleanup = db.prepare("SELECT cleanup_pending FROM local_migration_state WHERE name='agent-hash'").get() as {cleanup_pending:number} | undefined;
+  if (pendingCleanup?.cleanup_pending === 1) {
+    // A crash after the transaction must retry physical cleanup on startup.
     db.exec("PRAGMA secure_delete=ON; VACUUM");
-    db.pragma("wal_checkpoint(TRUNCATE)");
+    const result = db.pragma("wal_checkpoint(TRUNCATE)") as {busy:number}[];
+    if (result.some(row=>row.busy !== 0)) throw new Error("agent migration cleanup is busy; close other vault processes and retry");
+    db.exec("UPDATE local_migration_state SET cleanup_pending=0 WHERE name='agent-hash'");
   }
   const seedAgent = db.prepare("INSERT OR IGNORE INTO agents (id,name,token_hash,token_prefix,created_at,revoked) VALUES (?,?,NULL,'',?,1)");
   for (const [id, name] of [["cursor", "Cursor"], ["claude-code", "Claude Code"], ["vscode", "VS Code"], ["codex", "Codex"], ["opencode", "OpenCode"]]) seedAgent.run(id, name, new Date().toISOString());
