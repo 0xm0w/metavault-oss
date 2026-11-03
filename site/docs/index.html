@@ -251,13 +251,12 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       <span class="caption-mono-sm pg-kicker">05 · Warden · risky reads caught</span>
       <h2>Risky reads caught before they leak</h2>
       <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="Risky reads caught before they leak, best to worst, failed warden calls not credited: always ask 28 of 28, rules plus Muse Spark 27 of 28, Muse Spark alone 25 of 28, policy only 12 of 28">
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+      <div class="pg-chart" role="img" aria-label="Risky reads caught before they leak, best to worst, failed warden calls not credited: rules plus Muse Spark 27 of 28, Muse Spark alone 25 of 28, policy only 12 of 28. Unranked baseline, ask on every read: 28 of 28, only by asking about everything, so it lets 0 of 28 safe reads through">
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="96.4"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="89.3"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="42.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
+        <div class="pg-bar-row is-baseline"><span class="pg-bar-label">Baseline: ask on every read</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
+        <p class="pg-baseline-note">Catches 28/28 only by asking about everything: it lets 0/28 safe reads through.</p>
       </div>
       <p class="pg-legend" data-verdict-legend="percent"></p>
       <div class="pg-duo">
@@ -267,7 +266,7 @@ if warden_call_failed:
     caught = False  # fail closed, but no credit</pre></div>
         <p class="pg-tiny" style="margin:6px 0 0">1 of 60 calls per run hit the 2,048-token cap → a miss. Counted as caught: <strong>26/28</strong> and <strong>28/28</strong>. Spark alone missed both history-only anomalies; rules catch those. Policy floor: <strong>4/4</strong> in every arm.</p>
       </div>
-      <p class="pg-note pg-chart-src">Held-out set: 28 high-risk, 4 policy-floor, 28 benign. Rules: commit <code>342f39f</code>. Muse Spark 1.3: two live runs, 2026-11-03 16:14 and 16:25 PHT, same counts. Raw: <code>docs/verification/thesis-*-heldout-*</code>. Striped = no measurement.</p>
+      <p class="pg-note pg-chart-src">Held-out set: 28 high-risk, 4 policy-floor, 28 benign. Rules: commit <code>342f39f</code>. Muse Spark 1.3: two live runs, 2026-11-03 16:14 and 16:25 PHT, same counts. Raw: <code>docs/verification/thesis-*-heldout-*</code>.</p>
     </div>
   </section>
 
@@ -276,17 +275,16 @@ if warden_call_failed:
       <span class="caption-mono-sm pg-kicker">05 · Warden · safe reads that pass</span>
       <h2>Safe reads that go through without asking you</h2>
       <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="Safe reads that go through without asking you, best to worst: Muse Spark alone 28 of 28, rules plus Muse Spark 19 of 28, policy only 19 of 28, always ask 0 of 28">
+      <div class="pg-chart" role="img" aria-label="Safe reads that go through without asking you, best to worst: Muse Spark alone 28 of 28, rules plus Muse Spark 19 of 28, policy only 19 of 28. Unranked baseline, ask on every read: 0 of 28">
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
-        <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="0"><span class="pg-bar-label">Always ask (no gate)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">BFT quorum</span><span class="pg-bar-track"><span class="pg-bar-pending">not run</span></span><span class="pg-bar-value">not run</span></div>
-        <div class="pg-bar-row is-pending"><span class="pg-bar-label">Free baselines · OpenCode Zen</span><span class="pg-bar-track"><span class="pg-bar-pending">blocked</span></span><span class="pg-bar-value">quota (429)</span></div>
+        <div class="pg-bar-row is-baseline"><span class="pg-bar-label">Baseline: ask on every read</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:0%"></span></span><span class="pg-bar-value">0/28 · 0%</span></div>
+        <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
       </div>
       <p class="pg-legend" data-verdict-legend="percent"></p>
       <blockquote class="pg-pull" style="margin-top:14px">All <strong>8/8</strong> plain safe reads go straight through. The 9 that ask you are "hard" reads that mention <em>keys</em> or <em>export</em>, where <strong>the stricter verdict wins</strong>.</blockquote>
-      <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the risky-reads slide. Striped = no measurement.</p>
+      <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the risky-reads slide.</p>
     </div>
   </section>
 
@@ -312,7 +310,7 @@ cost = ((prompt - cached) * IN
         <div class="pg-stack">
           <div class="pg-big">$0.0052–0.0053 <small>Muse Spark · per gated request</small></div>
           <div class="pg-big">$0 <small>rules or your own endpoint · no API fees</small></div>
-          <p class="pg-tiny" style="margin:0">1,505–1,537 tokens per request, mostly output, from each response's <code>usage</code>. <a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>. Always ask has no gate latency: <em>it waits on you.</em></p>
+          <p class="pg-tiny" style="margin:0">1,505–1,537 tokens per request, mostly output, from each response's <code>usage</code>. <a href="https://dev.meta.ai/docs/pricing-rate-limits">Meta pricing</a>. The baseline, ask on every read, has no gate latency: <em>it waits on you.</em></p>
         </div>
       </div>
       <p class="pg-note pg-chart-src">Same runs as the risky-reads slide. Lighter segment = range across the two Muse Spark runs.</p>

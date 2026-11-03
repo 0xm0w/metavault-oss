@@ -79,6 +79,11 @@
             <div class="pg-chart-meta"><span><strong>Rules only</strong> · frozen before the test set</span><span data-verdict-num>12 / 28 · 42.9%</span></div>
             <div class="pg-chart-track"><div class="pg-chart-bar" style="width:42.9%"></div></div>
           </div>
+          <div class="pg-chart-row is-baseline">
+            <div class="pg-chart-meta"><span>Baseline: ask on every read</span><span>28 / 28 · 100%</span></div>
+            <div class="pg-chart-track"><div class="pg-chart-bar is-muted" style="width:100%"></div></div>
+          </div>
+          <p class="pg-baseline-note">Catches 28/28 only by asking about everything: it lets 0/28 safe reads through.</p>
           <p class="pg-legend" data-verdict-legend="percent"></p>
           <div class="pg-chart-insight pg-stack">
             <div>
@@ -120,14 +125,15 @@ if warden_call_failed:
             <div class="pg-chart-meta"><span><strong>Rules only</strong></span><span data-verdict-num>19 / 28 · 67.9%</span></div>
             <div class="pg-chart-track"><div class="pg-chart-bar" style="width:67.9%"></div></div>
           </div>
-          <div class="pg-chart-row" data-verdict="percent" data-better="higher" data-value="0">
-            <div class="pg-chart-meta"><span><strong>Ask every time</strong> · no warden</span><span data-verdict-num>0 / 28 · 0%</span></div>
-            <div class="pg-chart-track"><div class="pg-chart-bar" style="width:0%"></div></div>
+          <div class="pg-chart-row is-baseline">
+            <div class="pg-chart-meta"><span>Baseline: ask on every read</span><span>0 / 28 · 0%</span></div>
+            <div class="pg-chart-track"><div class="pg-chart-bar is-muted" style="width:0%"></div></div>
           </div>
+          <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
           <p class="pg-legend" data-verdict-legend="percent"></p>
           <div class="pg-chart-insight pg-stack">
             <blockquote class="pg-pull">Users clicked through <strong>70.2%</strong> of Chrome's SSL warnings.<cite>Akhawe &amp; Felt, USENIX Security 2013 · 25M+ real warnings</cite></blockquote>
-            <div class="pg-tiny"><strong>Ask every time</strong> catches everything and trains you to click Allow. With rules on, all <strong>8/8</strong> plain reads pass. The 9 that ask you are "hard" reads that mention <em>keys</em> or <em>export</em>.</div>
+            <div class="pg-tiny">The baseline, <strong>ask on every read</strong>, catches everything and trains you to click Allow. With rules on, all <strong>8/8</strong> plain reads pass. The 9 that ask you are "hard" reads that mention <em>keys</em> or <em>export</em>.</div>
             <div>
               <div class="pg-big">6.8 µs <small>rules, median</small></div>
               <div class="pg-big" style="margin-top:6px">8.2–8.9 s <small>Muse Spark, median</small></div>
@@ -169,7 +175,7 @@ cost = ((prompt - cached) * IN
       <div class="pg-grid pg-grid-4" style="margin-top:16px">
         <article class="pg-card"><span class="n">Freeze</span><h3>Rules first</h3><p class="pg-note">Rules + 20 dev cases pushed in <code>793371d</code>. The 60 held-out cases came later (<code>702bb2b</code>). Rules unchanged since.</p></article>
         <article class="pg-card"><span class="n">Ground</span><h3>Cases from the literature</h3><p class="pg-note">Patterns from InjecAgent, AgentDojo, ToolEmu, Greshake et al., HackAPrompt, EIA and real incidents. <em>No benchmark text copied.</em></p></article>
-        <article class="pg-card"><span class="n">Four arms</span><h3>Same policy, different brains</h3><p class="pg-note">Always ask · rules · warden · rules + warden (stricter wins). Risky reads caught, safe reads passed, prompts, latency.</p></article>
+        <article class="pg-card"><span class="n">Four arms</span><h3>Same policy, different brains</h3><p class="pg-note">Rules · warden · rules + warden (stricter wins), against a baseline that asks on every read. Risky reads caught, safe reads passed, prompts, latency.</p></article>
         <article class="pg-card"><span class="n">Honest failures</span><h3>A crash isn't a catch</h3><p class="pg-note">A failed warden call still reaches you, but scores as a <strong>miss</strong>.</p></article>
       </div>
       <div class="pg-table-wrap">
