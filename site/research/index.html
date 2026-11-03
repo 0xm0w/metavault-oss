@@ -84,7 +84,6 @@
             <div class="pg-chart-track"><div class="pg-chart-bar is-muted" style="width:100%"></div></div>
           </div>
           <p class="pg-baseline-note">Catches 28/28 only by asking about everything: it lets 0/28 safe reads through.</p>
-          <p class="pg-legend" data-verdict-legend="percent"></p>
           <div class="pg-chart-insight pg-stack">
             <div>
               <div class="pg-big">6 → 21 <small>of 22 paraphrased attacks</small></div>
@@ -130,7 +129,6 @@ if warden_call_failed:
             <div class="pg-chart-track"><div class="pg-chart-bar is-muted" style="width:0%"></div></div>
           </div>
           <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
-          <p class="pg-legend" data-verdict-legend="percent"></p>
           <div class="pg-chart-insight pg-stack">
             <blockquote class="pg-pull">Users clicked through <strong>70.2%</strong> of Chrome's SSL warnings.<cite>Akhawe &amp; Felt, USENIX Security 2013 · 25M+ real warnings</cite></blockquote>
             <div class="pg-tiny">The baseline, <strong>ask on every read</strong>, catches everything and trains you to click Allow. Rules + Spark keeps the rules' 9 alarms: <strong>the stricter verdict wins</strong>. All 9 are hard reads that mention <em>keys</em> or <em>export</em>; 8/8 plain reads pass.</div>

@@ -840,7 +840,6 @@ body:has(.hack-deck) {
 .pg-baseline-note { margin: -2px 0 0; font-size: 12px; color: var(--muted-foreground); text-align: left; }
 .pg-chart .pg-baseline-note { padding-left: calc(28.6% + 12px); }
 @media (max-width: 640px) { .pg-chart .pg-baseline-note { padding-left: 0; } }
-.pg-legend { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--muted-foreground); margin: 2px 0 0; text-align: left; }
 
 /* Typographic rhythm: one big line, one quiet line, a quote, a code block. */
 .pg-pull { margin: 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--accent); font-size: 19px; line-height: 1.35; font-style: italic; color: var(--foreground); text-align: left; }
@@ -856,11 +855,6 @@ body:has(.hack-deck) {
 .pg-sub strong { color: var(--foreground); }
 .pg-duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 12px; }
 @media (max-width: 720px) { .pg-duo { grid-template-columns: 1fr; } }
-.pg-legend { flex-wrap: nowrap; }
-.pg-legend-keys { display: inline-flex; gap: 12px; flex-shrink: 0; }
-.pg-legend-keys > span { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.pg-legend-why { font-weight: 400; }
-@media (max-width: 640px) { .pg-legend { flex-wrap: wrap; } }
 #gap-fpr .pg-big { font-size: 28px; }
 #warden-latency .pg-big small { display: block; margin-top: 2px; }
 .pg-chart-src { margin-top: 12px; }
