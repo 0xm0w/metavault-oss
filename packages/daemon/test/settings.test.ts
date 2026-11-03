@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { Brain, MarshalUnavailable } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
 import { encryptSecret } from "../../core/src/crypto.js";
+import { VaultLockedError, type KeySession } from "../../core/src/key-session.js";
 import { WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE } from "../../core/src/settings.js";
 import { VaultStore, VaultStoreTest } from "../../core/src/storage.js";
 import { createVaultHttpServer, handleVaultRequest } from "../src/server.js";
-import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../src/service.js";
+import { classifyWardenFailure, makeVaultServiceLive, VaultService, type VaultServiceService } from "../src/service.js";
 
 const TOKEN = "test-daemon-token-settings";
 const META_KEY = "meta-api-key-abcdef1234";
@@ -383,6 +384,92 @@ describe("warden settings routes", () => {
     expect(JSON.stringify(res.body)).not.toContain("provider exploded");
     expect(await Effect.runPromise(service.listAudit())).toHaveLength(auditBefore.length);
     expect(await Effect.runPromise(service.listPendingApprovals())).toHaveLength(0);
+  });
+
+  describe("warden test failure reasons", () => {
+    const CANARY = "canary-secret-9999";
+    const failWith = (message: string) =>
+      Layer.succeed(Brain, { assess: () => Effect.fail(new MarshalUnavailable({ message })) });
+    const NO_KEY = "MarshalUnavailable: Meta API key not configured";
+
+    async function testReason(brain: Layer.Layer<Brain>, setup?: (service: VaultServiceService) => Promise<void>) {
+      const service = await makeService(brain);
+      if (setup !== undefined) await setup(service);
+      const res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+      expect(res.status).toBe(200);
+      const body = res.body as { ok: boolean; detail: string; reason?: string };
+      expect(body.ok).toBe(false);
+      expect(body.detail).toBe("warden unavailable");
+      expect(JSON.stringify(res.body)).not.toContain(CANARY);
+      return body.reason;
+    }
+
+    it("classifies the fixed provider messages", () => {
+      expect(classifyWardenFailure(NO_KEY)).toBe("no_key");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API returned HTTP 401")).toBe("unauthorized");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API returned HTTP 403")).toBe("unauthorized");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API returned HTTP 429")).toBe("rate_limited");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API returned HTTP 400")).toBe("bad_request");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API returned HTTP 404")).toBe("bad_request");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API returned HTTP 503")).toBe("http_error");
+      expect(classifyWardenFailure("MarshalUnavailable: Meta API request timed out")).toBe("timeout");
+      expect(classifyWardenFailure("MarshalUnavailable: request to Meta API failed")).toBe("network");
+      expect(classifyWardenFailure("MarshalInvalidOutput: Meta API response was not JSON")).toBe("bad_response");
+      expect(classifyWardenFailure(`weird ${CANARY}`)).toBe("unavailable");
+    });
+
+    it("reports no_key when nothing is saved", async () => {
+      expect(await testReason(failWith(NO_KEY))).toBe("no_key");
+    });
+
+    it("reports http reasons without leaking the message", async () => {
+      expect(await testReason(failWith(`MarshalUnavailable: Meta API returned HTTP 401 ${CANARY}`))).toBe("unauthorized");
+      expect(await testReason(failWith(`MarshalUnavailable: Meta API request timed out ${CANARY}`))).toBe("timeout");
+    });
+
+    async function savedKeyResult(encryptWith: Buffer, lockBeforeTest: boolean) {
+      const masterKey = Buffer.alloc(32, 7);
+      let locked = false;
+      const session = {
+        mode: "keychain",
+        key: () => {
+          if (locked) throw new VaultLockedError();
+          return masterKey;
+        },
+        isLocked: () => locked,
+        lock: () => { locked = true; },
+        unlock: () => Promise.resolve("unlocked" as const),
+        status: () => ({ mode: "keychain", locked, autoLockMs: null, kdf: null, lockedUntilRetryMs: null }),
+        dispose: () => undefined,
+      } as unknown as KeySession;
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const store = yield* VaultStore;
+          const svc = yield* VaultService;
+          yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, encryptSecret(encryptWith, CANARY), "");
+          locked = lockBeforeTest;
+          return yield* svc.testWarden();
+        }).pipe(
+          Effect.provide(makeVaultServiceLive({ keySession: session })),
+          Effect.provide(Layer.mergeAll(VaultStoreTest(masterKey), failWith(NO_KEY), FakeConnector)),
+        ),
+      );
+    }
+
+    it("tells a saved-but-unreadable key apart from no key", async () => {
+      // Ciphertext made with a different master key cannot be decrypted.
+      const result = await savedKeyResult(Buffer.alloc(32, 9), false);
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe("key_unreadable");
+      expect(JSON.stringify(result)).not.toContain(CANARY);
+    });
+
+    it("tells a saved key in a locked vault apart from no key", async () => {
+      const result = await savedKeyResult(Buffer.alloc(32, 7), true);
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe("vault_locked");
+      expect(JSON.stringify(result)).not.toContain(CANARY);
+    });
   });
 
   it("POST /settings/warden/test returns policy-only for provider none without calling the brain", async () => {

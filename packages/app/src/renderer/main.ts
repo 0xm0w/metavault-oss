@@ -2273,7 +2273,8 @@ function renderSettings(view: HTMLElement): void {
   });
   const testBtn = el("button", "action btn-always", "Test connection") as HTMLButtonElement;
   testBtn.type = "button";
-  testBtn.disabled = settingsBusy;
+  // Test connection runs against the saved key only, so it needs one.
+  testBtn.disabled = settingsBusy || !wardenKeyStatusState.configured;
   testBtn.addEventListener("click", () => {
     void runSettingsAction(async () => {
       const raw = await window.metavault.testWarden();
@@ -2283,7 +2284,12 @@ function renderSettings(view: HTMLElement): void {
         return;
       }
       const result = wardenTestMessage(projected);
-      settingsMessage = { text: result.message, ok: result.ok };
+      // A typed-but-unsaved key is not what the test used.
+      const draftNote =
+        settingsKeyDraft.trim() !== ""
+          ? " The key typed in the field is not saved yet; this tested the saved key. Click Save key to replace it."
+          : "";
+      settingsMessage = { text: `${result.message}${draftNote}`, ok: result.ok };
     });
   });
   const deleteKeyBtn = el("button", "action btn-deny", "Delete key") as HTMLButtonElement;

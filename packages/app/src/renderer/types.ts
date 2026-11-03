@@ -168,6 +168,8 @@ export interface WardenTestResultLike {
   readonly model: string;
   readonly latencyMs: number;
   readonly detail: string;
+  // Fixed failure reason from vaultd (never a response body or key part).
+  readonly reason?: string;
 }
 
 export interface CredentialPatch {

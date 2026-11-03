@@ -932,6 +932,31 @@ describe("warden settings form state (Task 6)", () => {
     expect(isLocalBaseUrlValid("not a url")).toBe(false);
   });
 
+  it("maps warden test failure reasons to specific copy without secrets", () => {
+    const base = { ok: false, provider: "meta-api", model: "muse-spark-1.3", latencyMs: 3, detail: "warden unavailable" };
+    for (const reason of ["no_key", "vault_locked", "key_unreadable", "unauthorized", "rate_limited", "bad_request", "http_error", "timeout", "network", "bad_response", "unavailable"]) {
+      const projected = projectWardenTestResult({ ...base, reason });
+      if (projected === null) throw new Error("projection failed");
+      expect(projected.reason).toBe(reason);
+      const msg = wardenTestMessage(projected);
+      expect(msg.ok).toBe(false);
+      expect(msg.message).not.toContain("did not respond");
+    }
+    const msgFor = (reason: string): string => {
+      const projected = projectWardenTestResult({ ...base, reason });
+      if (projected === null) throw new Error("projection failed");
+      return wardenTestMessage(projected).message;
+    };
+    expect(msgFor("no_key")).toContain("Save key");
+    expect(msgFor("vault_locked").toLowerCase()).toContain("locked");
+    expect(msgFor("unauthorized")).toContain("401");
+    // Unknown reason is dropped and falls back to the generic copy.
+    const unknown = projectWardenTestResult({ ...base, reason: "Bearer abc" });
+    if (unknown === null) throw new Error("projection failed");
+    expect(unknown.reason).toBeUndefined();
+    expect(wardenTestMessage(unknown).message).toContain("did not respond");
+  });
+
   it("projects real warden test results strictly and maps them to honest copy", () => {
     const raw = { ok: true, provider: "meta-api", model: "muse-spark-1.3", latencyMs: 42, detail: "ok" };
     expect(projectWardenTestResult(raw)).toEqual(raw);

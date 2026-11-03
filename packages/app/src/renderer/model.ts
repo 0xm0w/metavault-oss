@@ -1260,8 +1260,27 @@ export function projectWardenTestResult(raw: unknown): WardenTestResultLike | nu
   if (typeof model !== "string") return null;
   if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) return null;
   if (typeof detail !== "string" || detail === "") return null;
+  const reason = raw["reason"];
+  if (typeof reason === "string" && WARDEN_TEST_REASON_COPY[reason] !== undefined) {
+    return { ok, provider: normalized, model, latencyMs, detail, reason };
+  }
   return { ok, provider: normalized, model, latencyMs, detail };
 }
+
+// Specific, secret-free copy per failure reason from the daemon self-check.
+const WARDEN_TEST_REASON_COPY: Readonly<Record<string, string>> = {
+  no_key: "No Meta API key is saved. Paste the key and click Save key, then test again.",
+  vault_locked: "A key is saved, but the vault is locked. Unlock the vault, then test again.",
+  key_unreadable: "A key is saved but could not be decrypted. Re-save the key.",
+  unauthorized: "Meta rejected the saved key (HTTP 401/403). Check that the key is current and was copied whole.",
+  rate_limited: "Meta rate-limited the check (HTTP 429). Try again shortly.",
+  bad_request: "Meta rejected the request (HTTP 400/404). Check the model id and base URL in settings.",
+  http_error: "Meta returned a server error. Try again shortly.",
+  timeout: "The request timed out. Try a longer effort setting or check your connection.",
+  network: "Could not reach the Meta API. Check your connection, proxy or firewall.",
+  bad_response: "Meta answered, but the reply was not in the expected format.",
+  unavailable: "The check failed for an unspecified reason.",
+};
 
 export function wardenTestMessage(result: WardenTestResultLike): WardenTestResult {
   if (result.provider === "bft") {
@@ -1279,6 +1298,10 @@ export function wardenTestMessage(result: WardenTestResultLike): WardenTestResul
   }
   if (result.ok) {
     return { ok: true, message: `Warden connection OK \u2014 ${result.provider} \u00b7 ${result.model} responded in ${String(Math.round(result.latencyMs))} ms.` };
+  }
+  const reasonCopy = result.reason === undefined ? undefined : WARDEN_TEST_REASON_COPY[result.reason];
+  if (reasonCopy !== undefined) {
+    return { ok: false, message: `Warden connection failed \u2014 ${result.provider} \u00b7 ${result.model}. ${reasonCopy}` };
   }
   return { ok: false, message: `Warden connection failed \u2014 ${result.provider} \u00b7 ${result.model} did not respond. Check the provider is running and the saved settings are correct, then try again.` };
 }

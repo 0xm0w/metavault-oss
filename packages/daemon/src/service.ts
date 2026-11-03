@@ -105,12 +105,49 @@ export type { WardenKeyStatus, WardenSettings };
 
 export type WardenSettingsPatch = Partial<WardenSettings>;
 
+// Fixed, secret-free failure reasons for the warden self-check. Only these
+// strings ever leave the daemon: never a response body, header, or key part.
+export const WARDEN_TEST_REASONS = [
+  "no_key",
+  "vault_locked",
+  "key_unreadable",
+  "unauthorized",
+  "rate_limited",
+  "bad_request",
+  "http_error",
+  "timeout",
+  "network",
+  "bad_response",
+  "unavailable",
+] as const;
+export type WardenTestReason = (typeof WARDEN_TEST_REASONS)[number];
+
 export interface WardenTestResult {
   readonly ok: boolean;
   readonly provider: WardenSettings["provider"];
   readonly model: string;
   readonly latencyMs: number;
   readonly detail: string;
+  readonly reason?: WardenTestReason;
+}
+
+// Maps the fixed MarshalUnavailable/MarshalInvalidOutput messages raised by
+// the brain providers to a reason. Reads only the status code and fixed
+// phrases, so a message that happens to carry a secret cannot leak through.
+export function classifyWardenFailure(message: string): WardenTestReason {
+  if (message.includes("key not configured")) return "no_key";
+  const http = /returned HTTP (\d{3})/.exec(message);
+  if (http?.[1] !== undefined) {
+    const status = Number(http[1]);
+    if (status === 401 || status === 403) return "unauthorized";
+    if (status === 429) return "rate_limited";
+    if (status === 400 || status === 404) return "bad_request";
+    return "http_error";
+  }
+  if (message.includes("timed out")) return "timeout";
+  if (message.includes("request to Meta API failed")) return "network";
+  if (message.includes("MarshalInvalidOutput")) return "bad_response";
+  return "unavailable";
 }
 
 export const WARDEN_SELFCHECK_REQUEST: CapabilityRequest = {
@@ -1209,7 +1246,27 @@ export function makeVaultServiceLive(
             if (Exit.isSuccess(exit)) {
               return { ok: true, provider: settings.provider, model, latencyMs, detail: "ok" } as const;
             }
-            return { ok: false, provider: settings.provider, model, latencyMs, detail: "warden unavailable" } as const;
+            const failure = Cause.failureOption(exit.cause);
+            const failureMessage =
+              failure._tag === "Some" &&
+              typeof (failure.value as { readonly message?: unknown }).message === "string"
+                ? (failure.value as { readonly message: string }).message
+                : "";
+            let reason = classifyWardenFailure(failureMessage);
+            if (reason === "no_key") {
+              // The brain reports a missing key for both "nothing saved" and
+              // "saved but cannot be decrypted", so look at the stored entry.
+              const stored = yield* Effect.either(store.getCredential(WARDEN_KEY_ALIAS));
+              if (stored._tag === "Right" && stored.right !== undefined) {
+                const opened = yield* Effect.either(decrypt(stored.right.ciphertext));
+                if (opened._tag === "Left") {
+                  reason = opened.left.operation === VAULT_LOCKED_OPERATION ? "vault_locked" : "key_unreadable";
+                } else if (opened.right.trim() === "") {
+                  reason = "key_unreadable";
+                }
+              }
+            }
+            return { ok: false, provider: settings.provider, model, latencyMs, detail: "warden unavailable", reason } as const;
           }),
 
         listPolicies: () =>
