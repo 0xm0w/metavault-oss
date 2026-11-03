@@ -6,7 +6,11 @@ try {
   $null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
   $vault = New-Object Windows.Security.Credentials.PasswordVault
   $all = @()
-  try { $all = @($vault.RetrieveAll()) } catch { }
+  try { $all = @($vault.RetrieveAll()) } catch {
+    # PasswordVault reports ERROR_NOT_FOUND when it contains no entries.
+    # Other errors mean ownership is unknown and must stop the wipe.
+    if ($_.Exception.HResult -ne -2147023728) { throw }
+  }
   foreach ($credential in $all) {
     if ($credential.Resource -eq 'metavault' -and $credential.UserName -eq 'master-key') {
       throw 'A shared legacy MetaVault key exists. No vault data was deleted. Back up and migrate its dependent vaults before uninstalling.'
