@@ -5,8 +5,11 @@
 .DESCRIPTION
   Self-contained: checks Ollama (>= 0.32.7, required by Muse Glimmer), starts
   `ollama serve` if the API is down, pulls the model, builds the repo, runs
-  `run-eval.js --live` for each model while sampling the RAM of every ollama
-  process, records the model digest, `ollama ps` (CPU/GPU split) and GPU info,
+  `run-eval.js --live` for each model while sampling memory (see
+  scripts\ollama-mem.ps1: the whole ollama process tree including child
+  runners, system-wide used RAM, /api/ps size and size_vram, nvidia-smi, and
+  the `ollama ps` SIZE and PROCESSOR columns), records the model digest and
+  GPU info,
   then writes everything (UTF-8, no BOM) to
   docs/verification/eval-live-muse-glimmer-<yyyyMMdd-HHmm>.txt
 
@@ -14,9 +17,13 @@
   https://ollama.com/library/muse-glimmer ; GGUF source
   https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF).
 
-  -Compare adds smaller quants that were verified to exist on 2026-11-03 in
-  https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF (apache-2.0, base_model
-  meta-models/Muse-Glimmer-30B):
+  -Quant picks the primary model (default Q4_K_M = the shipped default).
+  -Compare adds the other quants. The unsloth quants were verified to exist on
+  2026-11-03 in https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF
+  (apache-2.0, base_model meta-models/Muse-Glimmer-30B), file sizes from the
+  Hugging Face tree API:
+    UD-IQ3_XXS  (13,130,658,848 bytes)
+      https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF/blob/main/Muse-Glimmer-30B-UD-IQ3_XXS.gguf
     UD-Q3_K_XL  (13,360,983,072 bytes)
     UD-IQ2_XXS  (10,746,373,152 bytes)
   pulled through Ollama's documented hf.co/{user}/{repo}:{quant} syntax.
@@ -26,9 +33,11 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\eval-windows.ps1
   powershell -ExecutionPolicy Bypass -File scripts\eval-windows.ps1 -Compare
+  powershell -ExecutionPolicy Bypass -File scripts\eval-windows.ps1 -Quant UD-IQ3_XXS
 #>
 [CmdletBinding()]
 param(
+  [ValidateSet("Q4_K_M", "UD-IQ3_XXS", "UD-Q3_K_XL", "UD-IQ2_XXS")][string]$Quant = "Q4_K_M",
   [switch]$Compare,
   [string[]]$ExtraModels = @(),
   [switch]$SkipBuild,
@@ -46,11 +55,15 @@ $Stamp = Get-Date -Format "yyyyMMdd-HHmm"
 $OutDir = Join-Path $RepoRoot "docs\verification"
 $OutFile = Join-Path $OutDir "eval-live-muse-glimmer-$Stamp.txt"
 $MinOllama = [version]"0.32.7"
-$PrimaryModel = "muse-glimmer:30b"
-$CompareModels = @(
-  "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-Q3_K_XL",
-  "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ2_XXS"
-)
+$QuantTags = [ordered]@{
+  "Q4_K_M"     = "muse-glimmer:30b"
+  "UD-IQ3_XXS" = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"
+  "UD-Q3_K_XL" = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-Q3_K_XL"
+  "UD-IQ2_XXS" = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ2_XXS"
+}
+$PrimaryModel = $QuantTags[$Quant]
+$CompareModels = @($QuantTags.Values | Where-Object { $_ -ne $PrimaryModel })
+. (Join-Path $PSScriptRoot "ollama-mem.ps1")
 
 $Log = New-Object System.Collections.Generic.List[string]
 function Say([string]$line) { Write-Host $line; $Log.Add($line) | Out-Null }
@@ -79,8 +92,6 @@ function Invoke-Native([string]$exe, [string[]]$argv, [string]$label) {
 function Test-OllamaApi {
   try { return Invoke-RestMethod -Uri "$OllamaUrl/api/version" -TimeoutSec 3 } catch { return $null }
 }
-
-function Get-OllamaProcs { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "ollama*" }) }
 
 Say "MetaVault OSS live warden eval (issue #70)"
 Say ("started:  {0} (local time, {1})" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), [System.TimeZoneInfo]::Local.Id)
@@ -159,21 +170,8 @@ function Get-ModelInfo([string]$model) {
   return "not found in /api/tags"
 }
 
-$script:PeakSum = 0.0; $script:PeakPrivate = 0.0; $script:Samples = 0; $script:PeakByPid = @{}
-function Sample-Once {
-  $sum = 0.0; $priv = 0.0
-  foreach ($p in Get-OllamaProcs) {
-    try {
-      $p.Refresh()
-      $sum += $p.WorkingSet64; $priv += $p.PrivateMemorySize64
-      $key = "{0} (pid {1})" -f $p.ProcessName, $p.Id
-      if (-not $script:PeakByPid.ContainsKey($key) -or $p.PeakWorkingSet64 -gt $script:PeakByPid[$key]) { $script:PeakByPid[$key] = $p.PeakWorkingSet64 }
-    } catch { }
-  }
-  if ($sum -gt $script:PeakSum) { $script:PeakSum = $sum }
-  if ($priv -gt $script:PeakPrivate) { $script:PeakPrivate = $priv }
-  $script:Samples++
-}
+$script:Mem = $null
+function Sample-Once { if ($script:Mem) { Update-MemTracker $script:Mem } }
 
 function Warm-Model([string]$model) {
   # Loads the model (Ollama: /api/generate with no prompt loads it into memory)
@@ -218,11 +216,9 @@ function Run-Model([string]$model) {
     if ($loaded) { $null = Invoke-Native "ollama" @("stop", $loaded.name) "stop" }
   }
   Start-Sleep -Seconds 2
-  $baseline = 0.0
-  foreach ($p in Get-OllamaProcs) { $baseline += $p.WorkingSet64 }
-  Say ("ollama RAM before load (working set, all ollama processes): {0}" -f (Fmt-GB $baseline))
-
-  $script:PeakSum = 0.0; $script:PeakPrivate = 0.0; $script:Samples = 0; $script:PeakByPid = @{}
+  $script:Mem = New-MemTracker $OllamaUrl
+  Update-MemTracker $script:Mem
+  Say ("before load: ollama tree {0} working set over {1} process(es); system used RAM {2}" -f (Fmt-GB $script:Mem.PeakWs), $script:Mem.Tree.Count, (Fmt-GB $script:Mem.SysBaseline))
   $load = Warm-Model $model
   if ($load -lt 0) { Say "result: NOT RUN (model failed to load)"; return }
   Say ("load:  model loaded in {0:N1} s (warm-up, not counted in eval wall time)" -f $load)
@@ -240,6 +236,7 @@ function Run-Model([string]$model) {
     Sample-Once
     if ($psSnapshot -eq "" -and ((Get-Date) - $t0).TotalSeconds -gt 5) {
       $psSnapshot = (Invoke-Native "ollama" @("ps") "ps").Text
+      foreach ($l in (Get-OllamaApiPs $OllamaUrl).Lines) { Say "api/ps: $l" }
     }
     Start-Sleep -Milliseconds $SampleMs
   }
@@ -256,13 +253,8 @@ function Run-Model([string]$model) {
   Say ""
   Say ("eval exit code:   {0}" -f $proc.ExitCode)
   Say ("wall time:        {0:N1} s for the scenario set, model already loaded (mean {1:N1} s per scenario)" -f $wall, ($wall / [math]::Max(1, $ScenarioCount)))
-  Say ("peak ollama RAM:  {0} working set (sum of all ollama processes over load + eval, sampled every {1} ms, {2} samples)" -f (Fmt-GB $script:PeakSum), $SampleMs, $script:Samples)
-  Say ("peak ollama RAM:  {0} private bytes (sum, sampled)" -f (Fmt-GB $script:PeakPrivate))
-  foreach ($k in ($script:PeakByPid.Keys | Sort-Object)) {
-    Say ("  OS-reported PeakWorkingSet64 {0}: {1}" -f $k, (Fmt-GB $script:PeakByPid[$k]))
-  }
-  Say "note: VRAM used by GPU-offloaded layers is not part of process RAM; see 'ollama ps' below."
-  Say "ollama ps (during run):"
+  Write-MemReport $script:Mem $psSnapshot $SampleMs ${function:Say}
+  Say "ollama ps (raw, during run):"
   foreach ($l in ($psSnapshot -split "`r?`n")) { Say "  $l" }
   $null = Invoke-Native "ollama" @("stop", $model) "stop"
 }

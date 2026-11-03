@@ -17,16 +17,32 @@
   `ollama ps` CPU/GPU split, hardware) to
     docs\verification\thesis-live-context-<yyyyMMdd-HHmm>.txt
 
+  Memory is measured with scripts\ollama-mem.ps1 (whole ollama process tree
+  including child runners, system-wide used RAM, /api/ps size and size_vram,
+  nvidia-smi when present, and the `ollama ps` SIZE and PROCESSOR columns).
+
+  -Quant selects a quant by name (overrides -Model). -Compare runs the
+  benchmark once per quant (Q4_K_M, UD-IQ3_XXS, UD-Q3_K_XL, UD-IQ2_XXS),
+  each in its own child PowerShell so every run gets its own context file.
+  UD-IQ3_XXS: hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS, 13,130,658,848
+  bytes per the Hugging Face tree API (checked 2026-11-03),
+  https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF/blob/main/Muse-Glimmer-30B-UD-IQ3_XXS.gguf
+
   No secrets are read or printed. Nothing is uploaded.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\thesis-windows.ps1
   powershell -ExecutionPolicy Bypass -File scripts\thesis-windows.ps1 -Repeats 3
   powershell -ExecutionPolicy Bypass -File scripts\thesis-windows.ps1 -Model hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-Q3_K_XL
+  powershell -ExecutionPolicy Bypass -File scripts\thesis-windows.ps1 -Quant UD-IQ3_XXS
+  powershell -ExecutionPolicy Bypass -File scripts\thesis-windows.ps1 -Compare
 #>
 [CmdletBinding()]
 param(
   [string]$Model = "muse-glimmer:30b",
+  [ValidateSet("", "Q4_K_M", "UD-IQ3_XXS", "UD-Q3_K_XL", "UD-IQ2_XXS")][string]$Quant = "",
+  [switch]$Compare,
+  [int]$SampleMs = 500,
   [ValidateSet("fast", "standard", "deep")][string]$Effort = "standard",
   [ValidateSet("heldout", "dev")][string]$Set = "heldout",
   [int]$Repeats = 1,
@@ -37,11 +53,37 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 
+$QuantTags = [ordered]@{
+  "Q4_K_M"     = "muse-glimmer:30b"
+  "UD-IQ3_XXS" = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ3_XXS"
+  "UD-Q3_K_XL" = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-Q3_K_XL"
+  "UD-IQ2_XXS" = "hf.co/unsloth/Muse-Glimmer-30B-GGUF:UD-IQ2_XXS"
+}
+if ($Quant -ne "") { $Model = $QuantTags[$Quant] }
+
+if ($Compare) {
+  $worst = 0; $first = $true
+  foreach ($q in $QuantTags.Keys) {
+    $childArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath,
+      "-Quant", $q, "-Effort", $Effort, "-Set", $Set, "-Repeats", "$Repeats", "-OllamaUrl", $OllamaUrl, "-SampleMs", "$SampleMs")
+    if ($SkipBuild -or -not $first) { $childArgs += "-SkipBuild" }
+    Write-Host ("==== -Compare: {0} ({1}) ====" -f $q, $QuantTags[$q])
+    & powershell @childArgs
+    if ($LASTEXITCODE -ne 0) { Write-Host ("{0} exited {1}" -f $q, $LASTEXITCODE); $worst = [math]::Max($worst, [int]$LASTEXITCODE) }
+    # Free the model before the next quant so memory is measured on its own.
+    try { $ErrorActionPreference = "Continue"; & ollama stop $QuantTags[$q] 2>$null | Out-Null } catch { }
+    $first = $false
+  }
+  exit $worst
+}
+
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "ollama-mem.ps1")
 Set-Location $RepoRoot
 $Stamp = Get-Date -Format "yyyyMMdd-HHmm"
 $OutDir = Join-Path $RepoRoot "docs\verification"
-$CtxFile = Join-Path $OutDir "thesis-live-context-$Stamp.txt"
+$ModelSlug = ($Model -replace "[^A-Za-z0-9._-]+", "-")
+$CtxFile = Join-Path $OutDir "thesis-live-context-$ModelSlug-$Stamp.txt"
 $MinOllama = [version]"0.32.7"
 
 $Log = New-Object System.Collections.Generic.List[string]
@@ -119,25 +161,43 @@ $js = Join-Path $RepoRoot "dist\packages\brain\eval\run-thesis.js"
 if (-not (Test-Path $js)) { Fail "missing $js (build first)" }
 
 # Warm-up so the first scenario is not charged with the cold model load.
+$Mem = New-MemTracker $OllamaUrl
+Update-MemTracker $Mem
+Say ("before load: ollama tree {0} working set over {1} process(es); system used RAM {2}" -f (Fmt-GB $Mem.PeakWs), $Mem.Tree.Count, (Fmt-GB $Mem.SysBaseline))
 Say "warm-up:  loading $Model"
 $t0 = Get-Date
-try {
-  $body = @{ model = $Model; keep_alive = "60m" } | ConvertTo-Json -Compress
-  $null = Invoke-RestMethod -Uri "$OllamaUrl/api/generate" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 900
-} catch { Fail "model failed to load: $($_.Exception.Message)" }
+Add-Type -AssemblyName System.Net.Http
+$client = New-Object System.Net.Http.HttpClient
+$client.Timeout = [TimeSpan]::FromMinutes(15)
+$body = @{ model = $Model; keep_alive = "60m" } | ConvertTo-Json -Compress
+$content = New-Object System.Net.Http.StringContent($body, [System.Text.Encoding]::UTF8, "application/json")
+$task = $client.PostAsync("$OllamaUrl/api/generate", $content)
+while (-not $task.IsCompleted) { Update-MemTracker $Mem; Start-Sleep -Milliseconds $SampleMs }
+if ($task.IsFaulted -or -not $task.Result.IsSuccessStatusCode) {
+  $why = if ($task.IsFaulted) { $task.Exception.InnerException.Message } else { "HTTP " + [int]$task.Result.StatusCode }
+  Fail "model failed to load: $why"
+}
 Say ("warm-up:  loaded in {0:N1} s (not counted in benchmark latency)" -f ((Get-Date) - $t0).TotalSeconds)
+$psLoaded = (& ollama ps | Out-String)
 Say "ollama ps:"
-foreach ($l in ((& ollama ps) -split "`r?`n")) { Say "  $l" }
+foreach ($l in ($psLoaded -split "`r?`n")) { Say "  $l" }
+foreach ($l in (Get-OllamaApiPs $OllamaUrl).Lines) { Say "api/ps:   $l" }
 Save
 
 $argList = @($js, "--live", "--model", $Model, "--effort", $Effort, "--set", $Set, "--repeats", "$Repeats", "--out", $OutDir)
 Say ("run:      node dist\packages\brain\eval\run-thesis.js --live --model {0} --effort {1} --set {2} --repeats {3} --out docs\verification" -f $Model, $Effort, $Set, $Repeats)
 $t1 = Get-Date
-& node @argList
-$code = $LASTEXITCODE
+$quoted = @($argList | ForEach-Object { if ("$_" -match '\s') { '"' + $_ + '"' } else { "$_" } })
+$proc = Start-Process -FilePath "node" -ArgumentList $quoted -NoNewWindow -PassThru
+$null = $proc.Handle
+while (-not $proc.HasExited) { Update-MemTracker $Mem; Start-Sleep -Milliseconds $SampleMs }
+$proc.WaitForExit()
+$code = $proc.ExitCode
 Say ("benchmark exit code: {0}, wall time {1:N0} s" -f $code, ((Get-Date) - $t1).TotalSeconds)
+$psAfter = (& ollama ps | Out-String)
 Say "ollama ps (after run):"
-foreach ($l in ((& ollama ps) -split "`r?`n")) { Say "  $l" }
+foreach ($l in ($psAfter -split "`r?`n")) { Say "  $l" }
+Write-MemReport $Mem $psLoaded $SampleMs ${function:Say}
 Say ("finished: {0}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 Save
 Write-Host ""
