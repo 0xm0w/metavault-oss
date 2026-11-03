@@ -44,7 +44,7 @@ export {
 export function buildEnrollmentDeeplink(record: { enrollmentId: string; alias: string; scope: string; website: string }): string {
   const params = new URLSearchParams({ alias: record.alias, scope: record.scope, enrollment: record.enrollmentId });
   if (record.website !== "") { params.set("website", record.website); }
-  return `openvault://add?${params.toString()}`;
+  return `metavault://add?${params.toString()}`;
 }
 
 export function statusForErrorTag(tag: string): number {
@@ -156,7 +156,7 @@ const BAD_REQUEST: { status: number; body: unknown } = {
   body: { error: { _tag: "BadRequest", message: "invalid request body" } },
 };
 
-export const DAEMON_TOKEN_HEADER = "x-openvault-token";
+export const DAEMON_TOKEN_HEADER = "x-metavault-token";
 
 // The daemon token gates the human-decision routes. Without it any local
 // process (including the agent asking for a capability) could approve its
@@ -165,7 +165,7 @@ export const DAEMON_TOKEN_HEADER = "x-openvault-token";
 // /audit, /policies, /revoke) stay open: requesting never grants anything
 // and revoking only ever removes access.
 export function daemonTokenFilePath(dbPath: string): string {
-  return join(dirname(dbPath), "openvault.token");
+  return join(dirname(dbPath), "metavault.token");
 }
 
 export function resolveDaemonToken(dbPath: string): string {
@@ -176,7 +176,7 @@ export function resolveDaemonToken(dbPath: string): string {
   const token = randomBytes(32).toString("hex");
   try {
     // Best-effort restrictive perms; the token is exposed only via this
-    // file (or OPENVAULT_DAEMON_TOKEN), never via an API response or log.
+    // file (or METAVAULT_DAEMON_TOKEN), never via an API response or log.
     writeFileSync(daemonTokenFilePath(dbPath), token, { encoding: "utf8", mode: 0o600 });
   } catch {
     // A read-only vault directory must not stop the daemon from starting;
@@ -682,11 +682,11 @@ export function createVaultHttpServer(
             ? authHeader.slice(7).trim()
             : undefined;
         const providedToken = (Array.isArray(header) ? header[0] : header) ?? bearerToken;
-        const agentTokenHeader = req.headers["x-openvault-agent-token"];
+        const agentTokenHeader = req.headers["x-metavault-agent-token"];
         const rawAgentToken = Array.isArray(agentTokenHeader) ? agentTokenHeader[0] : agentTokenHeader;
         const providedAgentToken =
           rawAgentToken ?? (bearerToken !== undefined && bearerToken !== guardToken ? bearerToken : undefined);
-        const clientPidHeader = req.headers["x-openvault-client-pid"];
+        const clientPidHeader = req.headers["x-metavault-client-pid"];
         const rawClientPid = Array.isArray(clientPidHeader) ? clientPidHeader[0] : clientPidHeader;
         const parsedPid = rawClientPid !== undefined ? parseInt(rawClientPid, 10) : undefined;
         const clientPid = parsedPid !== undefined && !Number.isNaN(parsedPid) ? parsedPid : undefined;
@@ -715,7 +715,7 @@ export function resolveDaemonMasterKey(): Buffer {
   if (fromEnv !== undefined && fromEnv !== "") {
     const decoded = Buffer.from(fromEnv, "base64");
     if (decoded.length !== 32) {
-      throw new Error("OPENVAULT_MASTER_KEY must be base64-encoded 32 bytes");
+      throw new Error("METAVAULT_MASTER_KEY must be base64-encoded 32 bytes");
     }
     return decoded;
   }
@@ -724,7 +724,7 @@ export function resolveDaemonMasterKey(): Buffer {
     return fromKeychain;
   }
   throw new Error(
-    "master key unavailable: set OPENVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
+    "master key unavailable: set METAVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
   );
 }
 
@@ -743,7 +743,7 @@ export interface VaultDaemonOptions {
 export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promise<Server> {
   const masterKey = options.masterKey ?? resolveDaemonMasterKey();
   const port = options.port ?? Number(metavaultEnv("PORT") ?? "7077");
-  const dbPath = options.dbPath ?? join(process.cwd(), "openvault.db");
+  const dbPath = options.dbPath ?? join(process.cwd(), "metavault.db");
   const daemonToken = options.daemonToken ?? resolveDaemonToken(dbPath);
   // The real connector layer (Task 6): approved grants execute against the
   // preset upstream URLs with the secret injected inside the daemon.

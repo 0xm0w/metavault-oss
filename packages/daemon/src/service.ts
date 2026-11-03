@@ -225,7 +225,7 @@ function resolveMasterKey(options: VaultServiceOptions): Buffer {
   if (fromEnv !== undefined && fromEnv !== "") {
     const decoded = Buffer.from(fromEnv, "base64");
     if (decoded.length !== 32) {
-      throw new Error("METAVAULT_MASTER_KEY (or legacy OPENVAULT_MASTER_KEY) must be base64-encoded 32 bytes");
+      throw new Error("METAVAULT_MASTER_KEY (or legacy METAVAULT_MASTER_KEY) must be base64-encoded 32 bytes");
     }
     return decoded;
   }

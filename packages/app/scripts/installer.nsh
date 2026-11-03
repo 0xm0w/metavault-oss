@@ -34,10 +34,10 @@
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MetaVault OSS"
 
   ; Clean uninstaller data prompt: ask user whether to wipe local encrypted vault data
-  MessageBox MB_YESNO|MB_ICONQUESTION "Do you want to completely erase your encrypted vault data (openvault.db) and credentials?$\n$\nSelect 'Yes' to purge local vault databases.$\nSelect 'No' to preserve your encrypted vault for future use." IDNO skip_purge
-    RMDir /r "$APPDATA\OpenVault"
-    RMDir /r "$LOCALAPPDATA\openvault"
-    RMDir /r "$PROFILE\.openvault"
+  MessageBox MB_YESNO|MB_ICONQUESTION "Do you want to completely erase your encrypted vault data (metavault.db) and credentials?$\n$\nSelect 'Yes' to purge local vault databases.$\nSelect 'No' to preserve your encrypted vault for future use." IDNO skip_purge
+    RMDir /r "$APPDATA\MetaVault OSS"
+    RMDir /r "$LOCALAPPDATA\metavault"
+    RMDir /r "$PROFILE\.metavault"
     DetailPrint "Purged encrypted vault databases."
   skip_purge:
 

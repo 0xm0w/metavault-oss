@@ -12,11 +12,11 @@ import type {
 
 // Thin IPC bridge: the sandboxed preload has no filesystem, network, or
 // token access. It only forwards the fixed VaultApi operations to the main
-// process over the single "openvault:daemon-call" channel; main owns the
+// process over the single "metavault:daemon-call" channel; main owns the
 // daemon HTTP client and the daemon token, which never crosses into the
 // renderer. No generic IPC channel is exposed.
-const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
-const DEEPLINK_CHANNEL = "openvault:deeplink-add";
+const DAEMON_CALL_CHANNEL = "metavault:daemon-call";
+const DEEPLINK_CHANNEL = "metavault:deeplink-add";
 
 function invoke(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<unknown> {
   return ipcRenderer.invoke(
@@ -79,34 +79,34 @@ const api: VaultApi = {
     invoke("POST", "/settings/local-auth/pin", { pin, ...(currentPin !== undefined && currentPin !== "" ? { currentPin } : {}) }),
   verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),
   verifyBiometric: () => invoke("POST", "/settings/local-auth/verify-biometric"),
-  windowsHelloAvailability: () => ipcRenderer.invoke("openvault:windows-hello-availability"),
-  verifyWindowsHello: (purpose: "setup" | "unlock") => ipcRenderer.invoke("openvault:windows-hello-verify", purpose),
+  windowsHelloAvailability: () => ipcRenderer.invoke("metavault:windows-hello-availability"),
+  verifyWindowsHello: (purpose: "setup" | "unlock") => ipcRenderer.invoke("metavault:windows-hello-verify", purpose),
   bringToFront: () => {
-    ipcRenderer.send("openvault:bring-to-front");
+    ipcRenderer.send("metavault:bring-to-front");
   },
-  checkForUpdates: () => ipcRenderer.invoke("openvault:check-for-updates"),
-  quitAndInstallUpdate: () => ipcRenderer.invoke("openvault:quit-and-install"),
+  checkForUpdates: () => ipcRenderer.invoke("metavault:check-for-updates"),
+  quitAndInstallUpdate: () => ipcRenderer.invoke("metavault:quit-and-install"),
   onUpdaterStatus: (handler: (status: UpdaterStatusLike) => void) => {
     const listener = (_event: unknown, data: unknown): void => {
       handler(data as UpdaterStatusLike);
     };
-    ipcRenderer.on("openvault:updater-status", listener);
+    ipcRenderer.on("metavault:updater-status", listener);
     return () => {
-      ipcRenderer.removeListener("openvault:updater-status", listener);
+      ipcRenderer.removeListener("metavault:updater-status", listener);
     };
   },
-  getBuiltinAiStatus: () => ipcRenderer.invoke("openvault:builtin-ai-status"),
-  startBuiltinAiDownload: () => ipcRenderer.invoke("openvault:start-builtin-ai-download"),
-  cancelBuiltinAiDownload: () => ipcRenderer.invoke("openvault:cancel-builtin-ai-download"),
+  getBuiltinAiStatus: () => ipcRenderer.invoke("metavault:builtin-ai-status"),
+  startBuiltinAiDownload: () => ipcRenderer.invoke("metavault:start-builtin-ai-download"),
+  cancelBuiltinAiDownload: () => ipcRenderer.invoke("metavault:cancel-builtin-ai-download"),
   onBuiltinAiProgress: (handler: (progress: BuiltinAiProgressLike) => void) => {
     const listener = (_event: unknown, data: unknown): void => {
       handler(data as BuiltinAiProgressLike);
     };
-    ipcRenderer.on("openvault:builtin-ai-progress", listener);
+    ipcRenderer.on("metavault:builtin-ai-progress", listener);
     return () => {
-      ipcRenderer.removeListener("openvault:builtin-ai-progress", listener);
+      ipcRenderer.removeListener("metavault:builtin-ai-progress", listener);
     };
   },
 };
 
-contextBridge.exposeInMainWorld("openvault", api);
+contextBridge.exposeInMainWorld("metavault", api);

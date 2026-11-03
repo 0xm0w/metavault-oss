@@ -49,11 +49,11 @@ npm test            # full suite (268/268 at Task 10 verification)
    in your OS keychain or set `METAVAULT_MASTER_KEY` to its base64 form) and
    creates the encrypted store:
 
-   > Environment variables were renamed `OPENVAULT_*` → `METAVAULT_*` in the
-   > rebrand. The legacy `OPENVAULT_*` names still work everywhere; the new
+   > Environment variables were renamed `METAVAULT_*` → `METAVAULT_*` in the
+   > rebrand. The legacy `METAVAULT_*` names still work everywhere; the new
    > names win when both are set. The daemon's wire header
-   > (`x-openvault-token`), token file (`openvault.token`), default vault
-   > filename (`openvault.db`), OS keychain entry and `openvault://` deeplink
+   > (`x-metavault-token`), token file (`metavault.token`), default vault
+   > filename (`metavault.db`), OS keychain entry and `metavault://` deeplink
    > scheme are intentionally unchanged so existing vaults and IDE configs
    > keep working.
 
@@ -139,7 +139,7 @@ These are the tiers supported by the daemon and Settings UI. Higher tiers buy in
 
 Captured from the real running app against a real daemon, seeded with a fake test credential — never a real secret. Full-size copies: `docs/verification/`.
 
-1. **Agent asks to save a key.** MCP `request_enrollment` → daemon returns an `openvault://add` deeplink → prefilled modal (alias/scope/website filled, secret empty) → you paste the secret → agent polls `enrollment_status` → `completed`.
+1. **Agent asks to save a key.** MCP `request_enrollment` → daemon returns an `metavault://add` deeplink → prefilled modal (alias/scope/website filled, secret empty) → you paste the secret → agent polls `enrollment_status` → `completed`.
 
    ![Prefilled enrollment modal](docs/verification/enroll-flow.png)
 

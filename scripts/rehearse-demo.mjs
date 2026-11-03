@@ -52,7 +52,7 @@ const daemon = await startVaultDaemon({
   connectorPresets: { stripe: upstreamUrl },
 });
 const base = `http://127.0.0.1:${daemon.address().port}`;
-const token = readFileSync(join(dir, "openvault.token"), "utf8").trim();
+const token = readFileSync(join(dir, "metavault.token"), "utf8").trim();
 const post = async (path, body, headers = {}) => {
   const t = now();
   const res = await fetch(base + path, {
@@ -82,7 +82,7 @@ step("approve without token -> 401", bad.ms, bad.status === 401, `HTTP ${bad.sta
 // have auto-executed, in which case the upstream/secret checks apply to r1.
 let grantId = r1.json.grantId;
 if (grantId) {
-  const ok = await post("/approve", { grantId }, { "x-openvault-token": token });
+  const ok = await post("/approve", { grantId }, { "x-metavault-token": token });
   step("approve with token -> executed", ok.ms, ok.json.status === "executed", `result keys: ${Object.keys(ok.json.result ?? {}).join(",")}`);
   step("upstream received Bearer secret", 0, seenAuth === `Bearer ${SECRET}`, seenAuth ? "Authorization header injected in-daemon" : "no header seen");
   step("secret absent from approve result", 0, !ok.text.includes(SECRET), "result contains tool output only");

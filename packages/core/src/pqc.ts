@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:cr
 import { ml_kem768_x25519 } from "@noble/post-quantum/hybrid.js";
 
 export const PQC_ENVELOPE_MAGIC = "OV-PQC-v1";
-const HKDF_INFO = "openvault-pqc-v1-hybrid-kdf";
+const HKDF_INFO = "metavault-pqc-v1-hybrid-kdf";
 
 export interface HybridKeyPair {
   readonly publicKey: Uint8Array;

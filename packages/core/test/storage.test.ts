@@ -69,7 +69,7 @@ describe("vault storage", () => {
       expect(listed[1]?.modelId).toBe("test-model-1");
     }).pipe(Effect.provide(VaultStoreTest(key))));
   it.effect("persists credentials across VaultStoreLive instances on the same file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "openvault-storage-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "metavault-storage-test-"));
     const dbPath = join(dir, "vault.db");
     const blob = encryptSecret(key, "persisted-secret");
     return Effect.gen(function* () {
@@ -119,7 +119,7 @@ describe("vault storage", () => {
       expect(yield* store.getCredential("cf")).toBeUndefined();
     }).pipe(Effect.provide(VaultStoreTest(key))));
   it("migrates an old DB without a website column", () => {
-    const dir = mkdtempSync(join(tmpdir(), "openvault-migrate-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "metavault-migrate-test-"));
     const dbPath = join(dir, "vault.db");
     const raw = new Database(dbPath);
     raw.exec("CREATE TABLE credentials (alias TEXT PRIMARY KEY, ceiling TEXT NOT NULL, ciphertext TEXT NOT NULL); CREATE TABLE audit (ts TEXT NOT NULL, agent TEXT NOT NULL, alias TEXT NOT NULL, scope TEXT NOT NULL, stage TEXT NOT NULL, detail TEXT NOT NULL, model_id TEXT);");

@@ -18,7 +18,7 @@ export function storeMasterKey(key: Buffer): boolean {
       // -U updates existing item if present, avoiding duplicate key errors.
       execFileSync(
         "security",
-        ["add-generic-password", "-U", "-s", "openvault", "-a", "master-key", "-w", base64],
+        ["add-generic-password", "-U", "-s", "metavault", "-a", "master-key", "-w", base64],
         { stdio: ["pipe", "pipe", "pipe"] },
       );
       return true;
@@ -31,7 +31,7 @@ export function storeMasterKey(key: Buffer): boolean {
     try {
       execFileSync(
         "secret-tool",
-        ["store", "--label=OpenVault Master Key", "service", "openvault", "account", "master-key"],
+        ["store", "--label=MetaVault OSS Master Key", "service", "metavault", "account", "master-key"],
         { input: base64, stdio: ["pipe", "pipe", "pipe"] },
       );
       return true;
@@ -46,8 +46,8 @@ export function storeMasterKey(key: Buffer): boolean {
         "$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]",
         "$base64 = ($input | Out-String).Trim()",
         "$vault = New-Object Windows.Security.Credentials.PasswordVault",
-        "try { $existing = $vault.Retrieve('openvault','master-key'); $vault.Remove($existing) } catch { }",
-        "$cred = New-Object Windows.Security.Credentials.PasswordCredential('openvault','master-key',$base64)",
+        "try { $existing = $vault.Retrieve('metavault','master-key'); $vault.Remove($existing) } catch { }",
+        "$cred = New-Object Windows.Security.Credentials.PasswordCredential('metavault','master-key',$base64)",
         "$vault.Add($cred)",
       ].join("\n");
       execFileSync("powershell", ["-NoProfile", "-Command", script], {
@@ -69,13 +69,13 @@ export function retrieveMasterKey(): Buffer | null {
     if (process.platform === "darwin") {
       raw = execFileSync(
         "security",
-        ["find-generic-password", "-s", "openvault", "-a", "master-key", "-w"],
+        ["find-generic-password", "-s", "metavault", "-a", "master-key", "-w"],
         { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
       ).trim();
     } else if (process.platform === "linux") {
       raw = execFileSync(
         "secret-tool",
-        ["lookup", "service", "openvault", "account", "master-key"],
+        ["lookup", "service", "metavault", "account", "master-key"],
         { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
       ).trim();
     } else if (process.platform === "win32") {
@@ -83,7 +83,7 @@ export function retrieveMasterKey(): Buffer | null {
         "$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]",
         "$vault = New-Object Windows.Security.Credentials.PasswordVault",
         "try {",
-        "  $cred = $vault.Retrieve('openvault','master-key')",
+        "  $cred = $vault.Retrieve('metavault','master-key')",
         "  $cred.RetrievePassword()",
         "  Write-Output $cred.Password",
         "} catch { }",
@@ -112,7 +112,7 @@ export function deleteMasterKey(): boolean {
     if (process.platform === "darwin") {
       execFileSync(
         "security",
-        ["delete-generic-password", "-s", "openvault", "-a", "master-key"],
+        ["delete-generic-password", "-s", "metavault", "-a", "master-key"],
         { stdio: ["pipe", "pipe", "pipe"] },
       );
       return true;
@@ -120,7 +120,7 @@ export function deleteMasterKey(): boolean {
     if (process.platform === "linux") {
       execFileSync(
         "secret-tool",
-        ["clear", "service", "openvault", "account", "master-key"],
+        ["clear", "service", "metavault", "account", "master-key"],
         { stdio: ["pipe", "pipe", "pipe"] },
       );
       return true;
@@ -129,7 +129,7 @@ export function deleteMasterKey(): boolean {
       const script = [
         "$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]",
         "$vault = New-Object Windows.Security.Credentials.PasswordVault",
-        "try { $cred = $vault.Retrieve('openvault','master-key'); $vault.Remove($cred) } catch { }",
+        "try { $cred = $vault.Retrieve('metavault','master-key'); $vault.Remove($cred) } catch { }",
       ].join("\n");
       execFileSync("powershell", ["-NoProfile", "-Command", script], {
         stdio: ["pipe", "pipe", "pipe"],

@@ -72,7 +72,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-agent-token": cursorToken,
+          "x-metavault-agent-token": cursorToken,
         },
         body: JSON.stringify({
           agentId: "attacker-spoofed-name",
@@ -87,7 +87,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
 
       // Verify pending approval: agentId MUST be authoritative "cursor", not the spoofed string!
       const pendingRes = await fetch(`${daemon.base}/pending`, {
-        headers: { "x-openvault-token": "test-daemon-token" },
+        headers: { "x-metavault-token": "test-daemon-token" },
       });
       const pending = await pendingRes.json() as { approvals: { agentId: string; verified: boolean }[] };
       expect(pending.approvals.length).toBe(1);
@@ -105,7 +105,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-agent-token": "ov_agent_forged_invalid_token",
+          "x-metavault-agent-token": "ov_agent_forged_invalid_token",
         },
         body: JSON.stringify({
           agentId: "cursor",
@@ -135,7 +135,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-agent-token": cursorToken,
+          "x-metavault-agent-token": cursorToken,
         },
         body: JSON.stringify({
           agentId: "cursor",
@@ -148,7 +148,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       });
 
       const pendingRes = await fetch(`${daemon.base}/pending`, {
-        headers: { "x-openvault-token": "test-daemon-token" },
+        headers: { "x-metavault-token": "test-daemon-token" },
       });
       const grantId = (await pendingRes.json() as { approvals: { grantId: string }[] }).approvals[0]?.grantId ?? "";
 
@@ -157,7 +157,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-token": "test-daemon-token",
+          "x-metavault-token": "test-daemon-token",
         },
         body: JSON.stringify({ grantId }),
       });
@@ -181,7 +181,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       expect(spoofBody.status).toBe("awaiting-approval");
 
       const checkPending = await (await fetch(`${daemon.base}/pending`, {
-        headers: { "x-openvault-token": "test-daemon-token" },
+        headers: { "x-metavault-token": "test-daemon-token" },
       })).json() as { approvals: { agentId: string; verified: boolean }[] };
 
       expect(checkPending.approvals.length).toBe(1);
@@ -203,7 +203,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-token": "test-daemon-token",
+          "x-metavault-token": "test-daemon-token",
         },
         body: JSON.stringify({ target: "cursor" }),
       });
@@ -214,7 +214,7 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-openvault-agent-token": cursorToken,
+          "x-metavault-agent-token": cursorToken,
         },
         body: JSON.stringify({
           agentId: "cursor",

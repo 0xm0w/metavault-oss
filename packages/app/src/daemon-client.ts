@@ -8,7 +8,7 @@ import { metavaultEnv } from "./env.js";
 // renderer. This module imports no Electron APIs so the whitelist and
 // validation logic are unit-testable headlessly.
 
-export const DAEMON_CALL_CHANNEL = "openvault:daemon-call";
+export const DAEMON_CALL_CHANNEL = "metavault:daemon-call";
 
 export type DaemonMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -64,7 +64,7 @@ export function isAllowedDaemonCall(method: unknown, path: unknown): boolean {
 
 export function validateDaemonCall(input: unknown): DaemonCallRequest {
   if (typeof input !== "object" || input === null) {
-    throw new Error("OpenVault daemon call rejected: malformed request");
+    throw new Error("MetaVault OSS daemon call rejected: malformed request");
   }
   const record = input as Record<string, unknown>;
   const method = record["method"];
@@ -88,8 +88,8 @@ const daemonBase = (
   metavaultEnv("DAEMON_URL") ?? "http://127.0.0.1:7077"
 ).replace(/\/+$/, "");
 
-// Daemon token for the human-decision routes: OPENVAULT_DAEMON_TOKEN, else
-// the openvault.token file the daemon writes next to the vault DB. Resolved
+// Daemon token for the human-decision routes: METAVAULT_DAEMON_TOKEN, else
+// the metavault.token file the daemon writes next to the vault DB. Resolved
 // lazily (and cached once found) so a daemon started after this app still
 // authenticates. The token stays in the main process.
 let cachedDaemonToken: string | undefined;
@@ -103,8 +103,8 @@ function daemonToken(): string | undefined {
     return cachedDaemonToken;
   }
   try {
-    const dbPath = metavaultEnv("DB_PATH") ?? join(process.cwd(), "openvault.db");
-    const text = readFileSync(join(dirname(dbPath), "openvault.token"), "utf8").trim();
+    const dbPath = metavaultEnv("DB_PATH") ?? join(process.cwd(), "metavault.db");
+    const text = readFileSync(join(dirname(dbPath), "metavault.token"), "utf8").trim();
     if (text !== "") {
       cachedDaemonToken = text;
     }
@@ -123,19 +123,19 @@ export async function callDaemon(input: unknown): Promise<unknown> {
       method,
       headers: {
         "content-type": "application/json",
-        ...(token !== undefined ? { "x-openvault-token": token } : {}),
+        ...(token !== undefined ? { "x-metavault-token": token } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   } catch {
-    throw new Error("OpenVault daemon unreachable — is vaultd running?");
+    throw new Error("MetaVault OSS daemon unreachable — is vaultd running?");
   }
   const text = await response.text();
   let parsed: unknown;
   try {
     parsed = JSON.parse(text) as unknown;
   } catch {
-    throw new Error(`OpenVault daemon returned a non-JSON response (${String(response.status)})`);
+    throw new Error(`MetaVault OSS daemon returned a non-JSON response (${String(response.status)})`);
   }
   if (!response.ok) {
     // Surface only a whitelisted safe error tag (e.g. "alias-exists") so
@@ -150,10 +150,10 @@ export async function callDaemon(input: unknown): Promise<unknown> {
           : undefined;
     const safeTag = typeof rawTag === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(rawTag) ? rawTag : null;
     if (safeTag !== null) {
-      throw new Error(`OpenVault daemon error (${String(response.status)}): ${safeTag}`);
+      throw new Error(`MetaVault OSS daemon error (${String(response.status)}): ${safeTag}`);
     }
     // Daemon error bodies carry only a tagged error name and a safe message.
-    throw new Error(`OpenVault daemon error (${String(response.status)})`);
+    throw new Error(`MetaVault OSS daemon error (${String(response.status)})`);
   }
   return parsed;
 }

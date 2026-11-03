@@ -84,13 +84,13 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
   it(
     "enroll -> human seed -> request -> approve -> execute -> revoke, end to end",
     async () => {
-      const dir = mkdtempSync(join(tmpdir(), "openvault-e2e-"));
+      const dir = mkdtempSync(join(tmpdir(), "metavault-e2e-"));
       let daemon: HttpServer | undefined;
       let client: Client | undefined;
       try {
         daemon = await startVaultDaemon({
           port: 0,
-          dbPath: join(dir, "openvault.db"),
+          dbPath: join(dir, "metavault.db"),
           masterKey: MASTER_KEY,
           daemonToken: TOKEN,
           brain: BrainStub,
@@ -110,9 +110,9 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
           cwd: repoRoot,
           env: {
             ...process.env,
-            OPENVAULT_DAEMON_URL: base,
-            OPENVAULT_AGENT_ID: "e2e-agent",
-            OPENVAULT_IDE: "Cursor",
+            METAVAULT_DAEMON_URL: base,
+            METAVAULT_AGENT_ID: "e2e-agent",
+            METAVAULT_IDE: "Cursor",
           },
         });
         client = new Client({ name: "e2e-client", version: "0.0.1" });
@@ -152,7 +152,7 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
         expect(seedNoToken.status).toBe(401);
         const seeded = await fetch(`${base}/credentials`, {
           method: "POST",
-          headers: { "content-type": "application/json", "x-openvault-token": TOKEN },
+          headers: { "content-type": "application/json", "x-metavault-token": TOKEN },
           body: JSON.stringify({
             alias: "github",
             scope: "repos.read",
@@ -194,7 +194,7 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
         expect(approveNoToken.status).toBe(401);
         const approved = await fetch(`${base}/approve`, {
           method: "POST",
-          headers: { "content-type": "application/json", "x-openvault-token": TOKEN },
+          headers: { "content-type": "application/json", "x-metavault-token": TOKEN },
           body: JSON.stringify({ grantId }),
         });
         expect(approved.status).toBe(200);

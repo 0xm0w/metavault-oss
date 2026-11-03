@@ -18,9 +18,9 @@ export interface UpdaterStatusPayload {
   readonly message?: string;
 }
 
-export const UPDATER_STATUS_CHANNEL = "openvault:updater-status";
-export const CHECK_UPDATES_CHANNEL = "openvault:check-for-updates";
-export const QUIT_AND_INSTALL_CHANNEL = "openvault:quit-and-install";
+export const UPDATER_STATUS_CHANNEL = "metavault:updater-status";
+export const CHECK_UPDATES_CHANNEL = "metavault:check-for-updates";
+export const QUIT_AND_INSTALL_CHANNEL = "metavault:quit-and-install";
 
 let currentStatus: UpdaterStatusPayload = { status: "idle" };
 

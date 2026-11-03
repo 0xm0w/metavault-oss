@@ -62,8 +62,8 @@ describe("startVaultDaemon with the real connector layer", () => {
     }
     const upstreamUrl = `http://127.0.0.1:${String(upstreamAddress.port)}/charges`;
 
-    const dir = mkdtempSync(join(tmpdir(), "openvault-live-"));
-    const dbPath = join(dir, "openvault.db");
+    const dir = mkdtempSync(join(tmpdir(), "metavault-live-"));
+    const dbPath = join(dir, "metavault.db");
     try {
       // Seed the credential straight into the vault file the daemon will open.
       await Effect.runPromise(
@@ -118,7 +118,7 @@ describe("startVaultDaemon with the real connector layer", () => {
 
       const approved = await fetch(`${base}/approve`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-openvault-token": TOKEN },
+        headers: { "content-type": "application/json", "x-metavault-token": TOKEN },
         body: JSON.stringify({ grantId }),
       });
       expect(approved.status).toBe(200);

@@ -104,7 +104,7 @@ function trimTrailingSlashes(url: string): string {
 }
 
 // Daemon token for the human-decision routes: explicit dep, then
-// OPENVAULT_DAEMON_TOKEN, then the openvault.token file the daemon writes
+// METAVAULT_DAEMON_TOKEN, then the metavault.token file the daemon writes
 // next to the vault DB. The token itself is never printed.
 function resolveDaemonToken(deps: CliDeps): string | undefined {
   if (deps.daemonToken !== undefined && deps.daemonToken !== "") {
@@ -116,7 +116,7 @@ function resolveDaemonToken(deps: CliDeps): string | undefined {
   }
   try {
     const text = readFileSync(
-      join(dirname(resolveDbPath(deps)), "openvault.token"),
+      join(dirname(resolveDbPath(deps)), "metavault.token"),
       "utf8",
     ).trim();
     return text === "" ? undefined : text;
@@ -155,7 +155,7 @@ function resolveIo(deps: CliDeps): ResolvedIo {
 }
 
 function resolveDbPath(deps: CliDeps): string {
-  return deps.dbPath ?? metavaultEnv("DB_PATH") ?? join(process.cwd(), "openvault.db");
+  return deps.dbPath ?? metavaultEnv("DB_PATH") ?? join(process.cwd(), "metavault.db");
 }
 
 // Hidden secret prompt built on node:readline. The prompt itself goes to
@@ -203,7 +203,7 @@ function envMasterKey(): Buffer | null {
   }
   const decoded = Buffer.from(fromEnv, "base64");
   if (decoded.length !== 32) {
-    throw new Error("OPENVAULT_MASTER_KEY must be base64-encoded 32 bytes");
+    throw new Error("METAVAULT_MASTER_KEY must be base64-encoded 32 bytes");
   }
   return decoded;
 }
@@ -234,7 +234,7 @@ function masterKeyEffect(deps: CliDeps): Effect.Effect<Buffer, MasterKeyUnavaila
     catch: () =>
       new MasterKeyUnavailable({
         message:
-          "master key unavailable: set OPENVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
+          "master key unavailable: set METAVAULT_MASTER_KEY (base64, 32 bytes) or store it in the OS keychain",
       }),
   });
 }
@@ -269,7 +269,7 @@ function daemonCall(
         headers: {
           "content-type": "application/json",
           ...(io.daemonToken !== undefined
-            ? { "x-openvault-token": io.daemonToken }
+            ? { "x-metavault-token": io.daemonToken }
             : {}),
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -403,9 +403,9 @@ function initProgram(deps: CliDeps): Effect.Effect<string, CliFailure> {
     }
     const keychainNotice = savedToKeychain
       ? (process.platform === "darwin"
-          ? "master key saved to Apple Keychain (service=openvault, account=master-key)\n"
+          ? "master key saved to Apple Keychain (service=metavault, account=master-key)\n"
           : "master key saved to OS keyring\n")
-      : "store this key in your OS keychain or set OPENVAULT_MASTER_KEY; it will not be shown again\n";
+      : "store this key in your OS keychain or set METAVAULT_MASTER_KEY; it will not be shown again\n";
     return (
       `${header}master key (shown once): ${masterKey.toString("base64")}\n` +
       keychainNotice

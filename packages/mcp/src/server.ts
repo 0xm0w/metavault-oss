@@ -72,7 +72,7 @@ const TOOLS: readonly Tool[] = [
   {
     name: "request_enrollment",
     description:
-      "Ask the human to add a credential you do not have. Creates a pending enrollment and returns a deeplink (openvault://add?...) that opens the MetaVault OSS app with alias/scope/website prefilled — only the human types the secret. Show the deeplink to the user, then poll enrollment_status. Never returns secret values.",
+      "Ask the human to add a credential you do not have. Creates a pending enrollment and returns a deeplink (metavault://add?...) that opens the MetaVault OSS app with alias/scope/website prefilled — only the human types the secret. Show the deeplink to the user, then poll enrollment_status. Never returns secret values.",
     inputSchema: toolInputSchema(RequestEnrollmentToolSchema),
   },
   {
@@ -135,9 +135,9 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         method,
         headers: {
           "content-type": "application/json",
-          "x-openvault-client-pid": String(process.pid),
+          "x-metavault-client-pid": String(process.pid),
           ...(agentToken !== undefined && agentToken !== ""
-            ? { "x-openvault-agent-token": agentToken }
+            ? { "x-metavault-agent-token": agentToken }
             : {}),
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

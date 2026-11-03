@@ -1,9 +1,9 @@
-// Pure openvault:// deeplink parsing for the Electron main process. Kept
+// Pure metavault:// deeplink parsing for the Electron main process. Kept
 // free of Electron imports so hostile-input handling is unit-testable.
 // Only alias/scope/website/enrollmentId survive, each length-capped; the
 // secret is never a deeplink field — the human types it in the app.
 
-export const DEEPLINK_CHANNEL = "openvault:deeplink-add";
+export const DEEPLINK_CHANNEL = "metavault:deeplink-add";
 
 export interface DeeplinkAddParams {
   readonly alias: string;
@@ -46,7 +46,7 @@ export function parseVaultDeeplink(raw: unknown): DeeplinkAddParams | null {
   } catch {
     return null;
   }
-  if ((url.protocol !== "openvault:" && url.protocol !== "metavault:") || url.hostname !== "add") {
+  if ((url.protocol !== "metavault:" && url.protocol !== "metavault:") || url.hostname !== "add") {
     return null;
   }
   // Duplicate known params are ambiguous: reject instead of picking one.

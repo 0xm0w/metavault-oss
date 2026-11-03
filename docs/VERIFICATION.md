@@ -121,7 +121,7 @@ mock upstream. State was generated through the daemon HTTP API only,
 seeded with a fake test credential (`sk-test-FAKE-…`, never a real
 secret); the executed chain was produced by `POST /request` →
 `POST /approve` (token-guarded) against the mock upstream, and the
-enrollment by `POST /enrollments` → the real `openvault://add` deeplink.
+enrollment by `POST /enrollments` → the real `metavault://add` deeplink.
 The harness asserted the fake secret appears in no daemon response and
 in no rendered view before saving each shot.
 
@@ -145,10 +145,10 @@ deferred, per the plan.
 Gates for this task (run in-session): `npm run test` — **268 passed**
 (33 files); `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
-Site redeploy: `npx -y wrangler deploy --config wrangler.worker.jsonc` (the `metahackathon-vault` Worker serves `metahackathon.whativedone.xyz`; the `openvault` Pages project is a preview mirror only). Deployment and route
+Site redeploy: `npx -y wrangler deploy --config wrangler.worker.jsonc` (the `metahackathon-vault` Worker serves `metahackathon.whativedone.xyz`; the `metavault` Pages project is a preview mirror only). Deployment and route
 checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) are
 recorded in the Task 10 report
-(`.superpowers/sdd/2026-10-31-openvault-hardening-release/task-10-report.md`).
+(`.superpowers/sdd/2026-10-31-metavault-hardening-release/task-10-report.md`).
 
 ## Task 11 — v0.1.0-alpha.1 local release build (2026-10-31)
 

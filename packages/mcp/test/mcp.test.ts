@@ -92,7 +92,7 @@ afterAll(async () => {
   await client.close();
 });
 
-describe("OpenVault MCP server (in-process client)", () => {
+describe("MetaVault OSS MCP server (in-process client)", () => {
   it("handshake reports MCP_VERSION and tools/list is exactly the five tools", async () => {
     expect(MCP_VERSION).toBe("0.1.0");
     expect(client.getServerVersion()?.version).toBe(MCP_VERSION);

@@ -181,7 +181,7 @@ describe("structured audit trails (Task 4)", () => {
     }));
 
   it("migrates a legacy audit table in place and round-trips new fields", () => {
-    const dir = mkdtempSync(join(tmpdir(), "openvault-audit-migrate-"));
+    const dir = mkdtempSync(join(tmpdir(), "metavault-audit-migrate-"));
     const dbPath = join(dir, "vault.db");
     const raw = new Database(dbPath);
     raw.exec(

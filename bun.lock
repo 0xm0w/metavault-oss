@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "openvault",
+      "name": "metavault-oss",
       "dependencies": {
         "@effect/platform": "^0",
         "@effect/platform-node": "^0",

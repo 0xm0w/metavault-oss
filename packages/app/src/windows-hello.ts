@@ -132,11 +132,11 @@ export async function queryWindowsHello(mode: WindowsHelloMode, purpose: Windows
   }
 }
 export function registerWindowsHelloIpc(): void {
-  ipcMain.handle("openvault:windows-hello-availability", async () => {
+  ipcMain.handle("metavault:windows-hello-availability", async () => {
     const reason = await queryWindowsHello("availability", "unlock");
     return { available: reason === "available", reason: reason === "verified" || reason === "canceled" ? "failed" : reason };
   });
-  ipcMain.handle("openvault:windows-hello-verify", async (_event, purpose: unknown) => {
+  ipcMain.handle("metavault:windows-hello-verify", async (_event, purpose: unknown) => {
     if (!isWindowsHelloPurpose(purpose)) {
       return { ok: false, reason: "failed" };
     }
