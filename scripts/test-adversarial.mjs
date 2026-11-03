@@ -84,14 +84,11 @@ async function run() {
     },
   });
 
-  // 4. Retrieve auto-provisioned agent identities & tokens (token-guarded route only)
-  const agentsRes = await api("/agents", {
-    headers: { "x-metavault-token": DAEMON_TOKEN },
-  });
-  const agents = Array.isArray(agentsRes.json) ? agentsRes.json : agentsRes.json?.agents || [];
-  const cursorAgent = agents.find((a) => a.id === "cursor");
-  const codexAgent = agents.find((a) => a.id === "codex");
-  console.log(`[+] Provisioned agents: Cursor (${cursorAgent?.token.slice(0, 15)}...), Codex (${codexAgent?.token.slice(0, 15)}...)\n`);
+  // Mint synthetic test credentials once; listing never returns stored tokens.
+  const mint = async (id, name) => (await api("/agents", { method: "POST", headers: { "x-metavault-token": DAEMON_TOKEN }, body: { id, name } })).json;
+  const cursorAgent = await mint("cursor", "Cursor");
+  const codexAgent = await mint("codex", "Codex");
+  console.log("[+] Provisioned synthetic Cursor and Codex identities (tokens not logged).\n");
 
   const results = {
     spoofing: [],

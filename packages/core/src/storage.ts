@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { chmodSync } from "node:fs";
 import Database from "better-sqlite3";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
@@ -27,7 +28,8 @@ export interface CredentialMeta {
 export interface AgentRecord {
   readonly id: string;
   readonly name: string;
-  readonly token: string;
+  readonly token: string; // Empty on stored/listed records. Raw token is returned only at creation/rotation.
+  readonly tokenPrefix?: string;
   readonly createdAt: string;
   readonly revoked: boolean;
 }
@@ -166,9 +168,15 @@ interface AuditRow {
 interface AgentRow {
   readonly id: string;
   readonly name: string;
-  readonly token: string;
+  readonly token: string; // Legacy migration only.
+  readonly token_hash: string | null;
+  readonly token_prefix: string;
   readonly created_at: string;
   readonly revoked: number;
+}
+
+export function hashAgentToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function toStorageError(operation: string) {
@@ -275,28 +283,35 @@ function makeStore(db: Database.Database): VaultStoreService {
   const insertAudit = db.prepare(
     "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
-  const countAgents = db.prepare("SELECT count(*) as count FROM agents").get() as { count: number };
-  if (countAgents.count === 0) {
-    const seedAgent = db.prepare(
-      "INSERT INTO agents (id, name, token, created_at, revoked) VALUES (?, ?, ?, ?, 0)",
-    );
-    const now = new Date().toISOString();
-    seedAgent.run("cursor", "Cursor", "ov_agent_cursor_" + randomBytes(16).toString("hex"), now);
-    seedAgent.run("claude-code", "Claude Code", "ov_agent_claude_" + randomBytes(16).toString("hex"), now);
-    seedAgent.run("vscode", "VS Code", "ov_agent_vscode_" + randomBytes(16).toString("hex"), now);
-    seedAgent.run("codex", "Codex", "ov_agent_codex_" + randomBytes(16).toString("hex"), now);
+  // Rebuild the legacy token table transactionally. No raw bearer is retained
+  // in the logical database. Existing IDE tokens keep working until rotated.
+  const agentCols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+  if (agentCols.some((c) => c.name === "token")) {
+    // A consistent SQLite snapshot precedes any destructive schema change.
+    // Local backup retains the old credential data and must stay private.
+    if (db.name !== ":memory:") {
+      const backup = `${db.name}.before-agent-hash-${Date.now().toString()}-${Math.random().toString(16).slice(2)}.bak`;
+      db.prepare("VACUUM INTO ?").run(backup);
+      chmodSync(backup, 0o600);
+    }
+    db.exec("PRAGMA secure_delete=ON");
+    db.transaction(() => {
+      const rows = db.prepare("SELECT * FROM agents").all() as AgentRow[];
+      db.exec("ALTER TABLE agents RENAME TO agents_legacy; CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE, token_prefix TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0)");
+      const put = db.prepare("INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?)");
+      for (const row of rows) put.run(row.id, row.name, hashAgentToken(row.token), row.token.slice(0, 16), row.created_at, row.revoked);
+      db.exec("DROP TABLE agents_legacy");
+    })();
+    // Remove freed legacy plaintext pages (SQLite secure_delete + compaction).
+    db.exec("PRAGMA secure_delete=ON; VACUUM");
   }
-  const selectAllAgents = db.prepare(
-    "SELECT id, name, token, created_at, revoked FROM agents ORDER BY id ASC",
-  );
-  const selectAgentById = db.prepare(
-    "SELECT id, name, token, created_at, revoked FROM agents WHERE id = ?",
-  );
-  const selectAgentByToken = db.prepare(
-    "SELECT id, name, token, created_at, revoked FROM agents WHERE token = ?",
-  );
+  const seedAgent = db.prepare("INSERT OR IGNORE INTO agents (id,name,token_hash,token_prefix,created_at,revoked) VALUES (?,?,NULL,'',?,1)");
+  for (const [id, name] of [["cursor", "Cursor"], ["claude-code", "Claude Code"], ["vscode", "VS Code"], ["codex", "Codex"], ["opencode", "OpenCode"]]) seedAgent.run(id, name, new Date().toISOString());
+  const selectAllAgents = db.prepare("SELECT * FROM agents ORDER BY id ASC");
+  const selectAgentById = db.prepare("SELECT * FROM agents WHERE id = ?");
+  const selectAgentByToken = db.prepare("SELECT * FROM agents WHERE token_hash = ?");
   const insertAgent = db.prepare(
-    "INSERT OR REPLACE INTO agents (id, name, token, created_at, revoked) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO agents (id,name,token_hash,token_prefix,created_at,revoked) VALUES (?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET name=excluded.name,token_hash=excluded.token_hash,token_prefix=excluded.token_prefix,revoked=0",
   );
   const revokeAgentStmt = db.prepare(
     "UPDATE agents SET revoked = 1 WHERE id = ?",
@@ -518,7 +533,8 @@ function makeStore(db: Database.Database): VaultStoreService {
           return rows.map((r): AgentRecord => ({
             id: r.id,
             name: r.name,
-            token: r.token,
+            token: "",
+            tokenPrefix: r.token_prefix,
             createdAt: r.created_at,
             revoked: r.revoked === 1,
           }));
@@ -534,7 +550,8 @@ function makeStore(db: Database.Database): VaultStoreService {
             : {
                 id: row.id,
                 name: row.name,
-                token: row.token,
+                token: "",
+                tokenPrefix: row.token_prefix,
                 createdAt: row.created_at,
                 revoked: row.revoked === 1,
               };
@@ -544,23 +561,17 @@ function makeStore(db: Database.Database): VaultStoreService {
     getAgentByToken: (token) =>
       Effect.try({
         try: () => {
-          const row = selectAgentByToken.get(token) as AgentRow | undefined;
-          return row === undefined
+          const row = selectAgentByToken.get(hashAgentToken(token)) as AgentRow | undefined;
+          return row === undefined || row.token_hash === null || !timingSafeEqual(Buffer.from(row.token_hash), Buffer.from(hashAgentToken(token)))
             ? undefined
-            : {
-                id: row.id,
-                name: row.name,
-                token: row.token,
-                createdAt: row.created_at,
-                revoked: row.revoked === 1,
-              };
+            : { id: row.id, name: row.name, token: "", tokenPrefix: row.token_prefix, createdAt: row.created_at, revoked: row.revoked === 1 };
         },
         catch: toStorageError("getAgentByToken"),
       }),
     addAgent: (id, name, token) =>
       Effect.try({
         try: () => {
-          insertAgent.run(id, name, token, new Date().toISOString(), 0);
+          insertAgent.run(id, name, hashAgentToken(token), token.slice(0, 16), new Date().toISOString());
         },
         catch: toStorageError("addAgent"),
       }),

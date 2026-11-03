@@ -157,7 +157,7 @@ describe("GET /policies token hygiene (F2 regression)", () => {
     expect(JSON.stringify(res.body)).not.toContain("ov_agent_");
   });
 
-  it("serves agent bearer tokens only via the token-guarded GET /agents route", async () => {
+  it("lists only metadata even through guarded GET /agents", async () => {
     const service = await makeService(brainReturning("low", "charges.read", true));
     const denied = await handleVaultRequest(service, "GET", "/agents");
     expect(denied.status).toBe(401);
@@ -167,6 +167,6 @@ describe("GET /policies token hygiene (F2 regression)", () => {
     const agents = allowed.body as { id: string; token: string }[];
     expect(agents.length).toBeGreaterThanOrEqual(4);
     const cursor = agents.find((a) => a.id === "cursor");
-    expect(cursor?.token).toMatch(/^ov_agent_cursor_[0-9a-f]{32}$/);
+    expect(cursor?.token).toBe("");
   });
 });

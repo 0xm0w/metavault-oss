@@ -102,7 +102,7 @@ export const AgentRecordSchema = Schema.Struct({
 
 // GET /policies is an open route, so its agent rows never carry the bearer
 // token: the token is the credential that authenticates an agent, and it is
-// served only via the token-guarded GET /agents route.
+// returned once via token-guarded creation/rotation, never from listings.
 export const PublicAgentRecordSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { Writable, type Readable } from "node:stream";
@@ -127,7 +127,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: metavault <init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>>\n";
+  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -884,6 +884,36 @@ function auditProgram(io: ResolvedIo): Effect.Effect<string, CliFailure> {
   });
 }
 
+function agentsProgram(io: ResolvedIo, argv: readonly string[]): Effect.Effect<string, CliFailure> {
+  return Effect.scoped(Effect.gen(function* () {
+    const action = argv[0]; const id = argv[1];
+    if (action === "list") {
+      const rows = yield* daemonCall(io, "GET", "/agents");
+      return JSON.stringify(rows.body) + "\n";
+    }
+    if (id === undefined || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) return yield* Effect.fail(new UsageError());
+    if (action === "revoke") { yield* daemonCall(io, "POST", "/agents/revoke", { target: id }); return "agent token revoked\n"; }
+    if (action !== "add" && action !== "rotate") return yield* Effect.fail(new UsageError());
+    // Tokens never reach stdout. An explicit exclusive owner-only file is
+    // mandatory; an existing file is never overwritten.
+    const outputIndex = argv.indexOf("--out"); const output = argv[outputIndex + 1];
+    if (outputIndex < 0 || output === undefined || output === "") return yield* Effect.fail(new UsageError({ message: "agents add/rotate requires --out <new-private-file>" }));
+    const nameIndex = argv.indexOf("--name"); const name = nameIndex < 0 ? id : argv[nameIndex + 1];
+    if (name === undefined) return yield* Effect.fail(new UsageError());
+    // Reserve before rotating, so an existing/invalid output path cannot
+    // unexpectedly invalidate the user's old config.
+    const fd = yield* Effect.acquireRelease(
+      Effect.try({ try: () => openSync(output, "wx", 0o600), catch: () => new UsageError({ message: "output file must be new and writable" }) }),
+      (handle) => Effect.sync(() => { closeSync(handle); }),
+    );
+    const reply = yield* daemonCall(io, "POST", action === "add" ? "/agents" : "/agents/rotate", { id, name });
+    const token = typeof reply.body === "object" && reply.body !== null ? (reply.body as Record<string, unknown>)["token"] : undefined;
+    if (typeof token !== "string" || !token.startsWith("ov_agent_")) return yield* Effect.fail(new DaemonError());
+    yield* Effect.try({ try: () => { writeFileSync(fd, token + "\n"); }, catch: () => new UsageError({ message: "cannot save token; rotate again to another private file" }) });
+    return "agent token written to private output file; update the IDE config\n";
+  }));
+}
+
 function programFor(
   argv: readonly string[],
   deps: CliDeps,
@@ -891,6 +921,8 @@ function programFor(
 ): Effect.Effect<string, CliFailure> {
   const command = argv[0];
   switch (command) {
+    case "agents":
+      return agentsProgram(io, argv.slice(1));
     case "init":
       return initProgram(deps, io, argv.slice(1));
     case "key": {

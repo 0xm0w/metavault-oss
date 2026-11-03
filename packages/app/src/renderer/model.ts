@@ -447,10 +447,8 @@ export function projectPoliciesResponse(raw: unknown): PoliciesData {
   return { ceilings, standingApprovals, ...(agents.length > 0 ? { agents } : {}) };
 }
 
-// GET /agents is the token-guarded route that legitimately returns agent
-// bearer tokens to the app (for config snippets). The projection validates
-// the exact shape; the secret-like-key fail-closed rule is not applied
-// because carrying tokens is this route's purpose.
+// Stored agent listings contain metadata and an empty token. Creation and
+// rotation return a bearer once over the guarded route for immediate config.
 export function projectAgentsResponse(raw: unknown): RegisteredAgent[] {
   const agentsRaw = isRecord(raw) ? raw["agents"] : raw;
   const agents: RegisteredAgent[] = [];

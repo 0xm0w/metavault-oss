@@ -329,6 +329,12 @@ export async function handleVaultRequest(
   if (method === "GET" && path === "/audit") {
     return run(service.listAudit().pipe(Effect.map((events) => ({ events }))));
   }
+  if (method === "POST" && (path === "/agents" || path === "/agents/rotate")) {
+    const input = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    const id = input["id"]; const name = input["name"];
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) || typeof name !== "string" || name.trim().length === 0 || name.length > 100 || /[\x00-\x1f\x7f]/.test(name)) return BAD_REQUEST;
+    return run(service.registerAgent(id, name.trim(), path === "/agents/rotate"));
+  }
   if (method === "GET" && path === "/agents") {
     return run(service.listAgents());
   }
@@ -338,7 +344,7 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     return run(
-      Effect.all([service.revokeAgentToken(decoded.target), service.revoke(decoded.target)]).pipe(
+      service.revokeAgentToken(decoded.target).pipe(
         Effect.map(() => ({ revoked: true, target: decoded.target })),
       ),
     );

@@ -40,6 +40,7 @@ export interface GrantRegistry {
   readonly markDenied: (grantId: string) => Effect.Effect<boolean>;
   readonly markExpired: (grantId: string) => Effect.Effect<boolean>;
   readonly revokePendingFor: (target: string) => Effect.Effect<Grant[]>;
+  readonly invalidatePendingForAgent: (agentId: string) => Effect.Effect<Grant[]>;
   readonly revokePendingForAlias: (alias: string) => Effect.Effect<Grant[]>;
   readonly isRevoked: (agentId: string, alias: string) => Effect.Effect<boolean>;
   readonly listGrants: () => Effect.Effect<Grant[]>;
@@ -142,6 +143,19 @@ export function makeGrantRegistry(): Effect.Effect<GrantRegistry> {
                 grant.status === "pending" &&
                 (grant.request.agentId === target || grant.request.alias === target)
               ) {
+                const revoked: Grant = { ...grant, status: "revoked" };
+                next = withGrant(next, revoked);
+                affected.push(revoked);
+              }
+            }
+            return [affected, next] as const;
+          }),
+        invalidatePendingForAgent: (agentId) =>
+          SynchronizedRef.modify(ref, (state): readonly [Grant[], RegistryState] => {
+            let next = state;
+            const affected: Grant[] = [];
+            for (const grant of state.grants.values()) {
+              if (grant.status === "pending" && grant.request.agentId === agentId) {
                 const revoked: Grant = { ...grant, status: "revoked" };
                 next = withGrant(next, revoked);
                 affected.push(revoked);
