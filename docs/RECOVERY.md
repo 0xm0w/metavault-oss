@@ -55,7 +55,7 @@ gate. Do not upgrade a valuable vault using an unverified candidate.
 
 Deliberate uninstall now deletes the fixed `%APPDATA%\MetaVault OSS` directory,
 including credentials, settings, wrapped key, daemon token and migration backups.
-It removes the app-owned `metavault` / `master-key` Windows keychain entry too.
+If the legacy `metavault` / `master-key` Windows keychain entry exists, cleanup stops before deleting any vault files because it may be shared by external vaults.
 The interactive uninstaller warns before deletion and offers Cancel. `/S` is
 noninteractive consent to this same wipe; it is not a keep-data switch. Reinstall
 then starts first-run setup. Back up privately before intentionally uninstalling
@@ -73,8 +73,10 @@ or promise forensic erasure. Any linked directory or entry in the vault profile
 causes cleanup to stop rather than follow it into unrelated files. Locked files
 can also stop cleanup; inspect the error instead of assuming a complete wipe.
 
-The keychain entry is app-scoped but shared by legacy custom vaults using it.
-Such a vault needs its own matching key backup before uninstalling. Environment
+The legacy keychain entry has no per-vault ownership/dependency metadata. Custom
+vaults are not registered, so the uninstaller cannot safely distinguish them. It
+refuses cleanup while that key exists. Back up and migrate dependent vaults before
+removing a legacy key or retrying uninstall; do not blindly delete it. Environment
 variables set outside the app are not removed by the uninstaller. A default
 fresh setup is not guaranteed if an external daemon or environment-selected
 master key is still configured. These external dependencies are not owned by

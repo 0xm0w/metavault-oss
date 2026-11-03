@@ -15,6 +15,8 @@ describe("explicit uninstall policy",()=>{
     expect(cleanup).not.toContain("param(");
     expect(cleanup).toContain("'ApplicationData')) 'MetaVault OSS'");
     expect(cleanup.indexOf("ReparsePoint")).toBeLessThan(cleanup.indexOf("Remove-Item"));
+    expect(cleanup.indexOf("A shared legacy MetaVault key exists")).toBeLessThan(cleanup.indexOf("Remove-Item"));
+    expect(cleanup).not.toContain("$vault.Remove");
     expect(cleanup).toContain("$credential.Resource -eq 'metavault' -and $credential.UserName -eq 'master-key'");
   });
 });

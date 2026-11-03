@@ -36,7 +36,7 @@
     Pop $1
     ${if} $0 != 0
       IfSilent cleanup_failed_silent
-      MessageBox MB_OK|MB_ICONSTOP "MetaVault data cleanup failed. Uninstall stopped. Close all MetaVault processes and check the vault folder for links or locked files before retrying. No external vault path was deleted."
+      MessageBox MB_OK|MB_ICONSTOP "MetaVault data cleanup failed. Uninstall stopped. No complete wipe was performed. A shared legacy encryption key, linked folder or locked file can block cleanup. Back up/migrate dependent vaults and close MetaVault before retrying. External vault paths are not deleted."
       cleanup_failed_silent:
       SetErrorLevel 1
       Abort

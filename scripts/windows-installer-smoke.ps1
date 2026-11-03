@@ -267,7 +267,26 @@ Check ((Test-Path $dbFile) -and (Test-Path (Join-Path $outsideDir 'keep.txt'))) 
 [IO.Directory]::Delete($link)
 $null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
 $testKeychain = New-Object Windows.Security.Credentials.PasswordVault
-$testKeychain.Add((New-Object Windows.Security.Credentials.PasswordCredential('metavault','master-key','synthetic-unused-ci-master-key')))
+# A real external encrypted fixture depends on the shared legacy key.
+$sharedKey = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($sharedKey)
+$aes = [Security.Cryptography.Aes]::Create(); $aes.Key = $sharedKey; $aes.GenerateIV()
+$clear = [Text.Encoding]::UTF8.GetBytes('external-legacy-vault-dummy')
+$encrypted = $aes.CreateEncryptor().TransformFinalBlock($clear,0,$clear.Length)
+$externalEncryptedFile = Join-Path $outsideDir 'legacy-fixture.encrypted'
+[IO.File]::WriteAllBytes($externalEncryptedFile,$encrypted)
+$testKeychain.Add((New-Object Windows.Security.Credentials.PasswordCredential('metavault','master-key',[Convert]::ToBase64String($sharedKey))))
+$blockedShared = Start-Process powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"' + (Join-Path $installDir 'resources\cleanup-profile.ps1') + '"') -Wait -PassThru
+Check ($blockedShared.ExitCode -ne 0) "cleanup refuses shared legacy key before any deletion"
+Check (Test-Path $dbFile) "shared-key refusal preserves app vault"
+$sharedCredential = $testKeychain.Retrieve('metavault','master-key'); $sharedCredential.RetrievePassword()
+$aes.Key = [Convert]::FromBase64String($sharedCredential.Password)
+$recovered = $aes.CreateDecryptor().TransformFinalBlock([IO.File]::ReadAllBytes($externalEncryptedFile),0,$encrypted.Length)
+Check ([Text.Encoding]::UTF8.GetString($recovered) -eq 'external-legacy-vault-dummy') "preserved external fixture remains decryptable with shared key"
+# Fixture-only removal after validation, never a production cleanup action.
+$testKeychain.Remove($sharedCredential)
+$sharedKey = $null; $sharedCredential = $null; $aes.Dispose()
+
 $testKeychain.Add((New-Object Windows.Security.Credentials.PasswordCredential('metavault-unrelated-ci','test-account','synthetic-unrelated')))
 $oldToken = Get-Content $tokenFile -Raw
 # Interactive destructive warning must precede any change; Cancel preserves all.
@@ -307,9 +326,6 @@ Uninstall-App "deliberate wipe"
 Check-Cleanup
 Check (-not (Test-Path $dataDir)) "deliberate uninstall removes vault, key, token, settings and backups"
 Check ((Get-Content $outside -Raw).Trim() -eq "must survive MetaVault uninstall") "unrelated external data survives"
-$appKeyFound = $true
-try { $null = $testKeychain.Retrieve('metavault','master-key') } catch { $appKeyFound = $false }
-Check (-not $appKeyFound) "app-owned legacy Windows keychain entry removed"
 $other = $testKeychain.Retrieve('metavault-unrelated-ci','test-account')
 Check ($null -ne $other) "unrelated keychain entry retained"
 $testKeychain.Remove($other)

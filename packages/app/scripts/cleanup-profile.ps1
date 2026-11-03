@@ -1,6 +1,17 @@
 # Installed uninstaller helper. Never accepts a user-supplied deletion path.
 $ErrorActionPreference = 'Stop'
 try {
+  # This historical key is shared by unregistered custom vaults. There is no
+  # owner/dependency metadata. Refuse BEFORE deletion instead of orphaning them.
+  $null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
+  $vault = New-Object Windows.Security.Credentials.PasswordVault
+  $all = @()
+  try { $all = @($vault.RetrieveAll()) } catch { }
+  foreach ($credential in $all) {
+    if ($credential.Resource -eq 'metavault' -and $credential.UserName -eq 'master-key') {
+      throw 'A shared legacy MetaVault key exists. No vault data was deleted. Back up and migrate its dependent vaults before uninstalling.'
+    }
+  }
   $root = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'MetaVault OSS'
   if (Test-Path -LiteralPath $root) {
     # Walk one directory at a time, refusing links BEFORE descending into them.
@@ -17,13 +28,6 @@ try {
     }
     Remove-Item -LiteralPath $root -Recurse -Force
     if (Test-Path -LiteralPath $root) { throw 'Vault directory still exists' }
-  }
-  $null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
-  $vault = New-Object Windows.Security.Credentials.PasswordVault
-  $all = @()
-  try { $all = @($vault.RetrieveAll()) } catch { }
-  foreach ($credential in $all) {
-    if ($credential.Resource -eq 'metavault' -and $credential.UserName -eq 'master-key') { $vault.Remove($credential) }
   }
   exit 0
 } catch {
