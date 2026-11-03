@@ -49,21 +49,19 @@
 
   function legendText(kind) {
     var t = THRESHOLDS[kind];
-    var keys, why;
+    var keys;
     if (kind === "percent") {
       keys =
         '<span class="v-good">' + icon("good") + " \u2265 " + t.good + "</span>" +
         '<span class="v-mid">' + icon("mid") + " " + t.bad + "\u2013" + (t.good - 1) + "</span>" +
         '<span class="v-bad">' + icon("bad") + " &lt; " + t.bad + "</span>";
-      why = "Colour = how good the outcome is, not how big the number is. Score = the rate, or 100 \u2212 rate when lower is better.";
     } else {
       keys =
         '<span class="v-good">' + icon("good") + " &lt; " + t.good / 1000 + " s</span>" +
         '<span class="v-mid">' + icon("mid") + " " + t.good / 1000 + "\u2013" + t.bad / 1000 + " s</span>" +
         '<span class="v-bad">' + icon("bad") + " &gt; " + t.bad / 1000 + " s</span>";
-      why = "Colour = how long a request waits at the gate. A range is judged by its slower end.";
     }
-    return '<span class="pg-legend-keys">' + keys + '</span><span class="pg-legend-why">' + why + "</span>";
+    return '<span class="pg-legend-keys">' + keys + "</span>";
   }
 
   function apply() {

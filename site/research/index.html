@@ -101,8 +101,8 @@ if warden_call_failed:
   <section class="hack-slide" id="gap-fpr" data-label="False alarms">
     <div class="hack-slide-inner is-wide">
       <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · false alarms</span>
-      <h2>More catches without more prompts</h2>
-      <p class="pg-sub">A safe read sent to you is a <strong>false alarm</strong>. Lower is better.</p>
+      <h2>More catches, but rules keep their false alarms</h2>
+      <p class="pg-sub">A safe read sent to you is a <strong>false alarm</strong>. Lower is better. Rules + Muse Spark 1.3 takes the stricter of the two, so on these 28 benign reads it keeps all 9 rules alarms. Muse Spark 1.3 alone raised none, and caught 25/28 against 27/28 combined.</p>
       <div class="pg-chart-card pg-chart-solo is-split">
           <div class="pg-chart-header">
             <span class="pg-chart-title">Benign reads sent to a human (n = 28)</span>
@@ -303,6 +303,17 @@ META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live --provider met
         <li>freedesktop.org. polkit(8). <a href="https://www.freedesktop.org/software/polkit/docs/latest/polkit.8.html">freedesktop.org</a></li>
         <li>Linux man-pages. madvise(2): <a href="https://man7.org/linux/man-pages/man2/madvise.2.html">man7.org</a> · PR_SET_DUMPABLE: <a href="https://man7.org/linux/man-pages/man2/PR_SET_DUMPABLE.2const.html">man7.org</a></li>
       </ol>
+    </div>
+  </section>
+
+  <section class="hack-slide" id="integrate" data-label="Integrate">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker neon-rainbow-text">Next step</span>
+      <h2>Integrate now</h2>
+      <p class="pg-lead">Drop in the 5-tool MCP server for Meta Muse, Cursor, Claude Code, Codex, or VS Code. Secure credentials on-device in under two minutes.</p>
+      <div class="pg-row" style="margin-top:24px">
+        <a class="mb-btn-primary" href="/docs/">Read the docs</a>
+      </div>
       <footer class="mb-foot pg-foot-gap">
         <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
         <nav>
@@ -320,17 +331,18 @@ META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live --provider met
 </div>
 
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
-  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 11, Thesis"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 11, The gap"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 11, False alarms"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 11, Dumb vault"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 11, Method"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 11, Card storage"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 11, Payment cards"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 11, Agent incidents"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 11, Limits"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 11, Limits: protection"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="10" aria-label="Slide 11 of 11, Sources"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 12, Thesis"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 12, The gap"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 12, False alarms"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 12, Dumb vault"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 12, Method"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 12, Card storage"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 12, Payment cards"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 12, Agent incidents"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="8" aria-label="Slide 9 of 12, Limits"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="9" aria-label="Slide 10 of 12, Limits: protection"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="10" aria-label="Slide 11 of 12, Sources"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="11" aria-label="Slide 12 of 12, Integrate"><span></span></button>
 </nav>
 <div class="hack-chevrons">
   <button type="button" class="hack-chevron" id="hack-up" aria-label="Previous slide" disabled>

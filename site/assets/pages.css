@@ -315,6 +315,7 @@ body:has(.hack-deck) {
 .hack-slide .pg-card p:last-child,
 .hack-slide .pg-note { margin-bottom: 0; }
 .hack-slide .pg-lead { margin: 0 auto 18px; text-align: center; }
+.hack-slide .pg-sub { margin: -4px auto 14px; }
 .hack-slide .pg-grid,
 .hack-slide .pg-grid-2 { text-align: left; }
 .hack-slide .pg-row,
@@ -829,7 +830,7 @@ body:has(.hack-deck) {
 .v-icon { display: inline-flex; width: 15px; height: 15px; flex-shrink: 0; vertical-align: -2px; }
 .v-icon svg { width: 100%; height: 100%; }
 .v-mid .v-icon, span.v-mid .v-icon { color: var(--v-mid); }
-.pg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--muted-foreground); margin: 2px 0 0; text-align: left; }
+.pg-legend { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--muted-foreground); margin: 2px 0 0; text-align: left; }
 
 /* Typographic rhythm: one big line, one quiet line, a quote, a code block. */
 .pg-pull { margin: 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--accent); font-size: 19px; line-height: 1.35; font-style: italic; color: var(--foreground); text-align: left; }
