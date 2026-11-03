@@ -248,10 +248,10 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
 
   <section class="hack-slide" id="warden-recall" data-label="Risky reads">
     <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · risky reads caught</span>
-      <h2>Risky reads caught before they leak</h2>
-      <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="Risky reads caught before they leak, best to worst, failed warden calls not credited: rules plus Muse Spark 27 of 28, Muse Spark alone 25 of 28, policy only 12 of 28. Unranked baseline, ask on every read: 28 of 28, only by asking about everything, so it lets 0 of 28 safe reads through">
+      <span class="caption-mono-sm pg-kicker">05 · Warden · rules alone aren't enough</span>
+      <h2>Rules alone miss most risky reads</h2>
+      <p class="pg-sub">Risky reads caught. Higher is better. <em>Sorted best → worst.</em></p>
+      <div class="pg-chart" role="img" aria-label="Risky reads caught, best to worst, failed warden calls not credited: rules plus Muse Spark 27 of 28, Muse Spark alone 25 of 28, policy only 12 of 28. Unranked baseline, ask on every read: 28 of 28, only by asking about everything, so it lets 0 of 28 safe reads through">
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="96.4"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:96.4%"></span></span><span class="pg-bar-value">27/28 · 96.4%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="89.3"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:89.3%"></span></span><span class="pg-bar-value">25/28 · 89.3%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="42.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:42.9%"></span></span><span class="pg-bar-value">12/28 · 42.9%</span></div>
@@ -259,6 +259,7 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
         <p class="pg-baseline-note">Catches 28/28 only by asking about everything: it lets 0/28 safe reads through.</p>
       </div>
       <p class="pg-legend" data-verdict-legend="percent"></p>
+      <blockquote class="pg-pull" style="margin-top:10px">Rules catch <strong>12/28</strong>. Add Muse Spark: <strong>27/28</strong>.</blockquote>
       <div class="pg-duo">
         <div class="pg-snippet is-tight"><pre data-lang="python"># counting rule
 caught = decision in ("deny", "ask_human")
@@ -272,10 +273,10 @@ if warden_call_failed:
 
   <section class="hack-slide" id="warden-fpr" data-label="Safe reads">
     <div class="hack-slide-inner">
-      <span class="caption-mono-sm pg-kicker">05 · Warden · safe reads that pass</span>
-      <h2>Safe reads that go through without asking you</h2>
-      <p class="pg-sub">Higher is better. <em>Sorted best → worst.</em></p>
-      <div class="pg-chart" role="img" aria-label="Safe reads that go through without asking you, best to worst: Muse Spark alone 28 of 28, rules plus Muse Spark 19 of 28, policy only 19 of 28. Unranked baseline, ask on every read: 0 of 28">
+      <span class="caption-mono-sm pg-kicker">05 · Warden · rules alone aren't enough</span>
+      <h2>Rules alone stop safe reads too</h2>
+      <p class="pg-sub">Safe reads that pass without asking. Higher is better. <em>Sorted best → worst.</em></p>
+      <div class="pg-chart" role="img" aria-label="Safe reads that pass without asking, best to worst: Muse Spark alone 28 of 28, rules plus Muse Spark 19 of 28, policy only 19 of 28. Unranked baseline, ask on every read: 0 of 28">
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="100"><span class="pg-bar-label">Muse Spark 1.3 alone · Meta API</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:100%"></span></span><span class="pg-bar-value">28/28 · 100%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label"><strong>Rules + Muse Spark 1.3</strong></span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
         <div class="pg-bar-row" data-verdict="percent" data-better="higher" data-value="67.9"><span class="pg-bar-label">Policy only (rules)</span><span class="pg-bar-track"><span class="pg-bar-fill" style="width:67.9%"></span></span><span class="pg-bar-value">19/28 · 67.9%</span></div>
@@ -283,7 +284,8 @@ if warden_call_failed:
         <p class="pg-baseline-note">Lets 0/28 safe reads through: it asks you about every one.</p>
       </div>
       <p class="pg-legend" data-verdict-legend="percent"></p>
-      <blockquote class="pg-pull" style="margin-top:14px">All <strong>8/8</strong> plain safe reads go straight through. The 9 that ask you are "hard" reads that mention <em>keys</em> or <em>export</em>, where <strong>the stricter verdict wins</strong>.</blockquote>
+      <blockquote class="pg-pull" style="margin-top:14px">Rules alone aren't enough: they miss bad requests and still raise false alarms on <strong>9/28</strong> safe reads. Muse Spark alone lets all <strong>28/28</strong> through.</blockquote>
+      <p class="pg-tiny" style="margin:6px 0 0">Rules + Spark keeps the rules' 9 alarms: <strong>the stricter verdict wins</strong>. All 9 are hard reads that mention <em>keys</em> or <em>export</em>; 8/8 plain reads pass.</p>
       <p class="pg-note pg-chart-src">Held-out set: 28 benign reads (20 hard, 8 plain). Same runs as the risky-reads slide.</p>
     </div>
   </section>

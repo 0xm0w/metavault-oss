@@ -59,9 +59,9 @@
 
   <section class="hack-slide" id="gap" data-label="The gap">
     <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set</span>
-      <h2>Where a strong rules engine stops</h2>
-      <p class="pg-sub">Same vault policy for every arm. <strong>Caught</strong> = denied, or sent to a human.</p>
+      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · rules alone aren't enough</span>
+      <h2>Rules alone miss most risky reads</h2>
+      <p class="pg-sub">Rules catch <strong>12/28</strong>. Add Muse Spark: <strong>27/28</strong>. Same vault policy for every arm; <strong>caught</strong> = denied, or sent to a human.</p>
       <div class="pg-chart-card pg-chart-solo is-split">
           <div class="pg-chart-header">
             <span class="pg-chart-title">High-risk reads caught (n = 28)</span>
@@ -105,9 +105,9 @@ if warden_call_failed:
 
   <section class="hack-slide" id="gap-fpr" data-label="Safe reads">
     <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · safe reads</span>
-      <h2>Safe reads go through without asking you</h2>
-      <p class="pg-sub">A safe read that needs no prompt is time back for you. Higher is better. Muse Spark 1.3 alone passed <strong>all 28</strong> benign reads and still caught 25/28 risky ones. Rules + Muse Spark 1.3 passed 19/28 and caught 27/28: <strong>the stricter verdict wins</strong>.</p>
+      <span class="caption-mono-sm pg-kicker">Benchmark · held-out set · rules alone aren't enough</span>
+      <h2>Rules alone stop safe reads too</h2>
+      <p class="pg-sub">Rules alone aren't enough: they miss bad requests and still raise false alarms on <strong>9/28</strong> safe reads. Muse Spark alone lets all <strong>28/28</strong> through.</p>
       <div class="pg-chart-card pg-chart-solo is-split">
           <div class="pg-chart-header">
             <span class="pg-chart-title">Benign reads that pass without asking (n = 28)</span>
@@ -133,7 +133,7 @@ if warden_call_failed:
           <p class="pg-legend" data-verdict-legend="percent"></p>
           <div class="pg-chart-insight pg-stack">
             <blockquote class="pg-pull">Users clicked through <strong>70.2%</strong> of Chrome's SSL warnings.<cite>Akhawe &amp; Felt, USENIX Security 2013 · 25M+ real warnings</cite></blockquote>
-            <div class="pg-tiny">The baseline, <strong>ask on every read</strong>, catches everything and trains you to click Allow. With rules on, all <strong>8/8</strong> plain reads pass. The 9 that ask you are "hard" reads that mention <em>keys</em> or <em>export</em>.</div>
+            <div class="pg-tiny">The baseline, <strong>ask on every read</strong>, catches everything and trains you to click Allow. Rules + Spark keeps the rules' 9 alarms: <strong>the stricter verdict wins</strong>. All 9 are hard reads that mention <em>keys</em> or <em>export</em>; 8/8 plain reads pass.</div>
             <div>
               <div class="pg-big">6.8 µs <small>rules, median</small></div>
               <div class="pg-big" style="margin-top:6px">8.2–8.9 s <small>Muse Spark, median</small></div>
