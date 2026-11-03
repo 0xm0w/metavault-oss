@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Research: the warden thesis — MetaVault OSS</title>
-<meta name="description" content="Zero-Context Agentic Vault: four credential boundaries, implementation limits, ZK tradeoffs and the measured Meta warden benchmark.">
+<meta name="description" content="Zero-Context Agentic Vault: why brokered custody wins for existing APIs, the trade-offs we accept, four credential boundaries and the Meta warden benchmark.">
 <meta name="theme-color" content="#8629ff">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="../favicon.svg">
@@ -60,23 +60,41 @@
 
   <section class="hack-slide" id="zero-context" data-label="Zero-context">
     <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker neon-rainbow-text">Zero-Context Agentic Vault · the design</span>
-      <h2>Use the capability. Keep the credential out of context.</h2>
-      <p class="pg-sub">A name for the <strong>brokered MCP path</strong>, not a zero-knowledge proof or a promise about every execution mode.</p>
+      <span class="caption-mono-sm pg-kicker neon-rainbow-text">Zero-Context Agentic Vault · the practical winner</span>
+      <h2>For existing APIs, zero-context custody wins.</h2>
+      <p class="pg-sub"><strong>Call Stripe without handing its key to the agent.</strong> The broker supplies the authentication the API accepts. A standalone ZK proof cannot replace that credential. This is the advantage we optimize for.</p>
       <div class="pg-grid pg-grid-4" style="margin-top:16px">
         <article class="pg-card"><span class="n">1 · Request</span><h3>Ask by alias and scope</h3><p class="pg-note">The agent supplies a reason, not a stored key. <code>request_capability({alias: 'stripe', scope: 'charges.read', reason: 'List charges'})</code></p></article>
         <article class="pg-card"><span class="n">2 · Warden</span><h3>Vet metadata, not the key</h3><p class="pg-note">Agent, IDE, tool, alias, scope, reason, request/denial counts and policy digest enter the prompt. The stored target credential does not.</p></article>
         <article class="pg-card"><span class="n">3 · Transport</span><h3>Inject inside the daemon</h3><p class="pg-note">After authorization, <code>vaultd</code> decrypts the credential and the connector adds a bearer header to a preset HTTPS request.</p></article>
-        <article class="pg-card"><span class="n">4 · Return</span><h3>Return the result</h3><p class="pg-note">No credential-read MCP tool. Headers and failed response bodies are omitted. Successful bodies pass through: this boundary still needs hardening.</p></article>
+        <article class="pg-card"><span class="n">4 · Return</span><h3>Return the result</h3><p class="pg-note">No credential-read MCP tool. Headers and failed response bodies are omitted. Successful bodies pass through; response hardening is tracked separately.</p></article>
       </div>
       <p class="pg-tiny" style="margin-top:14px">Code review: <a href="https://github.com/0xm0w/metavault-oss/blob/main/docs/research/zero-context-vault.md">four boundaries, evidence and limits</a>. "Zero-context" describes credential custody, not an agent with no task context.</p>
     </div>
   </section>
 
+  <section class="hack-slide" id="zk-comparison" data-label="Why custody wins">
+    <div class="hack-slide-inner is-wide">
+      <span class="caption-mono-sm pg-kicker">Architecture decision · goal, choice, trade-off</span>
+      <h2>Custody executes the call. A proof verifies a claim.</h2>
+      <p class="pg-sub"><strong>Choose brokered custody for agent-safe access to existing APIs.</strong> Keep keys out of the agent's request and prompt while preserving the service's normal authentication.</p>
+      <div class="pg-table-wrap"><table class="pg-table is-compact">
+        <thead><tr><th>Decision criterion</th><th>Why custody wins here</th><th>Trade-off considered</th></tr></thead>
+        <tbody>
+          <tr><td>Call an unchanged API</td><td>The daemon injects a credential that Stripe accepts. No proof verifier or new authentication protocol is required at the service.</td><td>Trust the unlocked daemon, local runtime and HTTP stack with plaintext credentials.</td></tr>
+          <tr><td>Keep keys out of agent context</td><td>The agent requests an alias and scope, not the stored key. The warden assesses metadata, not that credential.</td><td>Custody separation is not cryptographic proof of correct execution, nor protection from a compromised host.</td></tr>
+          <tr><td>Use ZK instead?</td><td>A standalone proof is not an accepted substitute for Stripe's documented key/token authentication. It does not complete this job alone.</td><td>ZK can add independently verifiable claims or policy receipts at a different boundary. That is additional machinery, not a replacement broker.</td></tr>
+          <tr><td>Ship a focused integration</td><td>Three preset GET connectors already cover Stripe charges, GitHub repos and Cloudflare token verification.</td><td>More operations, signing schemes and token refresh need connector work. No universal compatibility or measured latency win is claimed.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="pg-tiny" style="margin-top:12px">Decision reasoning in this review, not a claim about historical intent. zkTLS can authenticate web data while normal server authentication remains. <a href="https://docs.stripe.com/api/authentication">Stripe auth</a> · <a href="https://dev.risczero.com/api/zkvm/receipts">zkVM receipts</a> · <a href="https://tlsnotary.org/docs/protocol/mpc-tls/">MPC-TLS</a></p>
+    </div>
+  </section>
+
   <section class="hack-slide" id="custody-limits" data-label="Custody limits">
     <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker">Implemented today · not stronger than the code</span>
-      <h2>Isolation has a boundary. Name it.</h2>
+      <span class="caption-mono-sm pg-kicker">Implementation gaps · separate from the design decision</span>
+      <h2>Harden the implementation. Keep the custody advantage.</h2>
       <div class="pg-grid pg-grid-2" style="margin-top:16px">
         <article class="pg-card"><span class="n">Model boundary</span><h3>Metadata can leave the device</h3><p class="pg-note">Default: <strong>Muse Spark 1.3 via the Meta API</strong>. Local inference is a bring-your-own endpoint, not a bundled Llama 3.2. The model prompt excludes stored target secrets, but agent-written reasons can contain sensitive text.</p></article>
         <article class="pg-card"><span class="n">Memory boundary</span><h3>No immediate RAM-scrub guarantee</h3><p class="pg-note">Decryption produces a JavaScript string. Credential and HTTP-runtime copies have no guaranteed erasure time. Passphrase mode zero-fills its held master-key buffer on lock; that is a different claim.</p></article>
@@ -87,35 +105,17 @@
     </div>
   </section>
 
-  <section class="hack-slide" id="zk-comparison" data-label="Why not ZK?">
-    <div class="hack-slide-inner is-wide">
-      <span class="caption-mono-sm pg-kicker">Different tools · different trust boundaries</span>
-      <h2>Zero-context custody. Zero-knowledge verification.</h2>
-      <p class="pg-sub">Keep the broker for supported API calls. Add proofs where another party needs evidence, not the private inputs.</p>
-      <div class="pg-table-wrap"><table class="pg-table is-compact">
-        <thead><tr><th>Question</th><th>MetaVault broker today</th><th>ZK / related approach</th></tr></thead>
-        <tbody>
-          <tr><td>Who handles the credential?</td><td>The local daemon and HTTP stack, not the MCP request.</td><td>A proof hides a witness from a verifier; it does not remove the need to authenticate an ordinary API request.</td></tr>
-          <tr><td>Which APIs work?</td><td>Three preset GET connectors: Stripe charges, GitHub repos, Cloudflare token verification.</td><td>Stripe documents key-based auth and short-lived federation, not ZK proof auth. zkTLS can prove web data without replacing server auth.</td></tr>
-          <tr><td>What can outsiders verify?</td><td>Local audit records; no cryptographic proof of execution.</td><td>Credential proofs can selectively disclose signed claims. A zkVM receipt proves a specified program's execution, not arbitrary real-world truth.</td></tr>
-          <tr><td>What does it cost?</td><td>No published end-to-end injection latency measurement. The separate warden benchmark includes model and network time.</td><td>Proof cost depends on circuit, hardware and protocol. No matched benchmark here; no universal 500 ms-10 s range.</td></tr>
-        </tbody>
-      </table></div>
-      <p class="pg-tiny" style="margin-top:12px">Not "100% REST/OAuth compatible," not universally superior. Signing schemes, token refresh and new operations need connector work. <a href="https://docs.stripe.com/api/authentication">Stripe auth</a> · <a href="https://dev.risczero.com/api/zkvm/receipts">zkVM receipts</a> · <a href="https://tlsnotary.org/docs/protocol/mpc-tls/">MPC-TLS</a></p>
-    </div>
-  </section>
-
   <section class="hack-slide" id="zk-roadmap" data-label="Proof roadmap">
     <div class="hack-slide-inner is-wide">
       <span class="caption-mono-sm pg-kicker">Research directions · not shipped features</span>
-      <h2>Proofs can complement the vault.</h2>
+      <h2>Add proofs where verification is the job.</h2>
       <div class="pg-grid pg-grid-2" style="margin-top:16px">
         <article class="pg-card"><span class="n">Selective disclosure</span><h3>Prove an issued claim</h3><p class="pg-note">BBS-style credential proofs can reveal selected signed facts without exposing the full credential. A spend-limit claim needs an issuer, fresh data and a proof design; an API key alone is not that credential.</p></article>
         <article class="pg-card"><span class="n">Policy receipts</span><h3>Prove a defined computation</h3><p class="pg-note">Explore zkVM receipts tied to a reviewed policy program and authenticated inputs. Proving a policy check does not by itself prove which HTTP request was sent or what the remote service did.</p></article>
         <article class="pg-card"><span class="n">Encrypted team sync</span><h3>Keep the server out of key custody</h3><p class="pg-note">Client-side encrypted sync needs key distribution, recovery, revocation and device security. This is often marketed as "zero knowledge," but it is not the same primitive as a ZK proof. Neither is implemented here.</p></article>
         <article class="pg-card"><span class="n">Web-data provenance</span><h3>Prove what a server returned</h3><p class="pg-note">TLSNotary uses MPC-TLS to authenticate exchanged data with selective disclosure. It is not a blanket proof of payment settlement or a replacement for credentials. Protocol and verifier/notary assumptions matter.</p></article>
       </div>
-      <p class="pg-tiny" style="margin-top:14px">Before expanding the claim: harden successful-response handling, review CLI export, test memory exposure, then benchmark matched workflows. No new model calls or proof benchmarks were run for this review. <a href="https://github.com/w3c/vc-di-bbs/blob/main/EXPLAINER.md">BBS explainer</a> · <a href="https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html">OWASP memory guidance</a></p>
+      <p class="pg-tiny" style="margin-top:14px">These are optional verification directions, not prerequisites for the brokered API design. Hardening priorities: successful-response handling, CLI export review, memory exposure and matched workflow benchmarks. No new model calls or proof benchmarks were run for this review. <a href="https://github.com/w3c/vc-di-bbs/blob/main/EXPLAINER.md">BBS explainer</a> · <a href="https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html">OWASP memory guidance</a></p>
     </div>
   </section>
 

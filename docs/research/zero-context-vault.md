@@ -4,7 +4,24 @@ Implementation review: 2026-11-03 PHT. Baseline: `7b6f28b692a5de4476b4b0c6aa64a9
 
 ## Conclusion
 
-Use "Zero-Context Agentic Vault" to describe the brokered MCP credential path: request a capability, evaluate metadata, inject the credential in the daemon, return the operation result. This is a custody design, not a cryptographic zero-knowledge property or a guarantee across every MetaVault mode. Keep the broker for the supported API operations. Proof systems can complement it at separate verification boundaries; there is no evidence here of universal superiority or a matched performance advantage.
+**For credential-safe agent calls to existing key-authenticated APIs, zero-context custody is the better-fit architecture.** It performs the authentication the service already accepts while keeping the stored key out of the agent's request and model prompt. Stripe is the concrete example: its documented endpoints accept API keys or supported short-lived tokens, not a standalone ZK proof in place of authentication. A proof-only approach therefore cannot replace the broker for this job.
+
+This is a clear practical win for the use case, not a claim that custody is universally more secure than cryptographic verification. ZK proves statements to a verifier; custody controls who handles the credential when executing a call. Proofs can add value at a separate verification boundary without displacing custody.
+
+## Decision record: trade-offs considered
+
+This is the reasoning of the present review, not evidence that every trade-off was documented during the original design.
+
+| Criterion | Choice and benefit | Cost or responsibility accepted |
+| --- | --- | --- |
+| Execute useful calls against unchanged APIs | Keep credential injection in the broker. The service receives its normal authentication; the agent asks by alias and scope. | The unlocked daemon, runtime and HTTP stack are trusted with plaintext. Host compromise remains in scope for defenses, not solved by this design. |
+| Reduce credential exposure to the agent | Do not deliver the stored key as a tool result or insert it into the warden prompt. | The broker must enforce scope and destination. An authorized capability can still be abused, and responses can contain sensitive data. |
+| Avoid requiring a new service-side proof protocol | Use existing key/token authentication. A proof alone is inapplicable as its substitute at the documented Stripe endpoint. | No cryptographic execution receipt for a third party. Adding one requires a defined statement, authenticated inputs and binding to the actual request/outcome. |
+| Keep the integration focused | Support the three implemented preset GET connectors without a proof system in the request path. | New operations, refresh flows and signing schemes need connector work. Complexity is avoided here, but no numerical speed advantage has been measured. |
+
+**Why not choose proof-only authentication?** It does not satisfy the target API's authentication contract. Even zkTLS-style provenance can retain ordinary server authentication while proving selected exchange data. It is not correct to call all ZK-related approaches unusable with Stripe; they can address verification around an authenticated call. They do not replace the accepted credential by themselves.
+
+**Design trade-offs are not implementation gaps.** Trusting a broker instead of requiring third-party execution proofs is the architectural choice evaluated here. Missing response redaction, absent per-credential erasure guarantees and CLI export exposure are current limitations to test or harden, not intentional security benefits. The four-boundary review below keeps those limits explicit.
 
 ## Four boundaries, checked against code
 
@@ -29,9 +46,9 @@ Same-user malware can keylog a passphrase, target an unlocked daemon or steal lo
 - **Client-side encrypted sync:** ciphertext stored by a server whose design does not give it decryption keys. Sometimes marketed as "zero knowledge", but not itself a ZK proof. X25519 key agreement and Argon2id password derivation have different jobs; listing algorithms does not establish a secure team-key lifecycle. MetaVault does not implement team sync.
 - **MPC-TLS / zkTLS-style web provenance:** can authenticate selected data from a TLS exchange, without changing ordinary server authentication. TLSNotary uses MPC and a participating verifier, with an optional notary for delegated attestation. A transcript is not proof of every business fact or that settlement will remain final.
 
-### Why keep the local broker?
+### Why custody wins for the target workflow
 
-Stripe's current authentication documentation supports API keys (Basic or bearer) and short-lived federation. A standalone ZK proof is not a replacement credential for this documented endpoint. Do not generalize this to every service, all future auth, or a requirement that the raw signing key itself always be transmitted: signing protocols such as SigV4 authenticate differently and need connector-specific support.
+Stripe's current authentication documentation supports API keys (Basic or bearer) and short-lived federation. Brokered custody can use accepted authentication while separating the credential from the agent; this is the deciding practical advantage. A standalone ZK proof is not a replacement credential for this documented endpoint. Do not generalize this to every service, all future auth, or a requirement that the raw signing key itself always be transmitted: signing protocols such as SigV4 authenticate differently and need connector-specific support.
 
 MetaVault's default presets are Stripe charges, GitHub user repositories and Cloudflare token verification. No 100% compatibility claim is warranted. No matched AES/injection versus proof benchmark was run. Existing held-out model latency measures warden assessment, not credential decryption or end-to-end API execution. Universal sub-millisecond and 500 ms-to-dozens-of-seconds comparisons are omitted. Circuit complexity, hardware, network, proof type and verification work change the tradeoff.
 
