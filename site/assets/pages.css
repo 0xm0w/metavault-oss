@@ -239,6 +239,9 @@ details.pg-more p { margin: 10px 0 0; color: var(--muted-foreground); font-size:
 
 .pg-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .pg-foot-gap { margin-top: 24px; }
+/* Closing CTA row: same breathing room above the button on every deck's last slide. */
+.pg-row.pg-cta,
+.hack-slide .pg-row.pg-cta { margin-top: 24px; }
 
 @media (max-width: 800px) {
   .pg-split { grid-template-columns: 1fr; }
