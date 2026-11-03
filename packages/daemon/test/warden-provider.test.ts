@@ -77,7 +77,7 @@ describe("warden provider none", () => {
     await Effect.runPromise(
       service.updateWardenSettings({
         provider: "meta-api",
-        model: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model: "muse-spark-1.2",
       }),
     );
     const result = await Effect.runPromise(service.requestCapability(req));
@@ -85,7 +85,7 @@ describe("warden provider none", () => {
     const audit = await Effect.runPromise(service.listAudit());
     const marshal = audit.filter((e) => e.stage === "marshal");
     expect(marshal.length).toBeGreaterThan(0);
-    expect(marshal.every((e) => e.modelId === "Llama-4-Maverick-17B-128E-Instruct-FP8")).toBe(
+    expect(marshal.every((e) => e.modelId === "muse-spark-1.2")).toBe(
       true,
     );
   });

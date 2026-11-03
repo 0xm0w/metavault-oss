@@ -22,7 +22,7 @@
 - [ ] No real secret, token, vault file, or `.db` is committed; tests use fake/canary values only
 - [ ] No secret is logged, put in an audit row, sent to the marshal/model, returned to an agent, or rendered in the UI after save
 - [ ] The canary tests still pass (`test/canary.test.ts`, `test/security/canary.test.ts`) if credential paths were touched
-- [ ] Human-mutation routes still require `x-openvault-token`; MCP/agent routes still never accept it
+- [ ] Human-mutation routes still require `x-metavault-token`; MCP/agent routes still never accept it
 - [ ] Deterministic policy can still only be narrowed/escalated by the marshal, never widened
 
 ## UI screenshots

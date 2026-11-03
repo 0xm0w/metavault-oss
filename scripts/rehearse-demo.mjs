@@ -1,5 +1,5 @@
 // Demo rehearsal (verification gate): boots the real vaultd against a
-// local mock upstream with the REAL Ollama marshal (llama3.2:3b), then
+// local mock upstream with the REAL Ollama marshal (muse-glimmer:30b), then
 // runs the 3-minute demo flow end to end with timings and assertions.
 // Requires: `npx tsc -p tsconfig.json --outDir dist` and Ollama running.
 // Usage: node scripts/rehearse-demo.mjs
@@ -67,7 +67,7 @@ const req = (scope, reason) => ({
   agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: scope, reason,
 });
 
-// 1. Agent requests a read; marshal (live llama3.2:3b) vets it.
+// 1. Agent requests a read; marshal (live muse-glimmer:30b) vets it.
 const r1 = await post("/request", req("charges.read", "List the last 5 failed charges"));
 step("request charges.read (live marshal)", r1.ms, r1.json.status === "awaiting-approval" || r1.json.status === "executed", `daemon said: ${r1.json.status}`);
 if (r1.text.includes(SECRET)) { step("secret absent from /request response", 0, false, "SECRET LEAKED"); }

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { evaluatePolicy } from "../dist/packages/core/src/policy.js";
 import { buildMarshalPrompt, enforceScopeSafety, parseMarshalDecision } from "../dist/packages/brain/src/brain.js";
 
-const MODEL = process.argv[2] || "llama3.2:1b";
+const MODEL = process.argv[2] || "muse-glimmer:30b";
 const OLLAMA_URL = "http://127.0.0.1:11434/api/chat";
 
 const BENCHMARK_CASES = [

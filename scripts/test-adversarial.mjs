@@ -14,7 +14,7 @@ async function run() {
   console.log("================================================================================");
   console.log("   METAVAULT ADVERSARIAL & SECURITY AUDIT SUITE");
   console.log("   Testing: Spoofing Attacks + Mix of Benign & Sheep's Clothing Attacks");
-  console.log("   AI Model Under Test: Llama 3.2 3B (Ollama Local Marshal)");
+  console.log("   AI Model Under Test: Muse Glimmer 30B (Ollama Local Marshal)");
   console.log("================================================================================\n");
 
   // 1. Boot ephemeral daemon
@@ -46,21 +46,21 @@ async function run() {
     return { status: res.status, json, text };
   }
 
-  // 2. Configure Warden to live Ollama (llama3.2:3b)
-  console.log("[+] Configuring Warden to Ollama llama3.2:3b...");
+  // 2. Configure Warden to live Ollama (muse-glimmer:30b)
+  console.log("[+] Configuring Warden to Ollama muse-glimmer:30b...");
   const wardenCfgRes = await api("/settings/warden", {
     method: "PATCH",
     headers: { "x-metavault-token": DAEMON_TOKEN },
     body: {
       provider: "ollama",
-      model: "llama3.2:3b",
+      model: "muse-glimmer:30b",
       effort: "standard",
     },
   });
   if (wardenCfgRes.status !== 200) {
     throw new Error(`Failed to configure warden: ${wardenCfgRes.text}`);
   }
-  console.log("[+] Warden active: provider=ollama, model=llama3.2:3b");
+  console.log("[+] Warden active: provider=ollama, model=muse-glimmer:30b");
 
   // 3. Seed Credentials
   console.log("[+] Seeding test credentials (stripe, github)...");

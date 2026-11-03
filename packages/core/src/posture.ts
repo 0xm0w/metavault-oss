@@ -74,7 +74,7 @@ export function calculateSecurityPosture(input: PostureInput): SecurityPostureRe
     });
     remediations.push({
       id: "rem-enable-warden",
-      title: "Enable On-Device Llama 3.2 3B Warden",
+      title: "Enable On-Device Muse Glimmer Warden",
       action: "enable-warden",
     });
   }

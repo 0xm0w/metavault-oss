@@ -1,3 +1,4 @@
+import { isCardSecretPayload } from "../../core/src/card.js";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "@effect/platform";
 import { Effect, Layer } from "effect";
 import { Connector } from "../../core/src/connector.js";
@@ -127,6 +128,12 @@ export function makeConnectorLive(
         // brief's UnknownAlias surfaces as the alias + message, never a secret.
         return Effect.fail(
           new ConnectorFailed({ alias, message: `UnknownAlias: ${alias}` }),
+        );
+      }
+      // Defense in depth: a payment card is never sent as a bearer token.
+      if (isCardSecretPayload(secret)) {
+        return Effect.fail(
+          new ConnectorFailed({ alias, message: "card credentials cannot be sent by the HTTP connector" }),
         );
       }
       return executeHttp({

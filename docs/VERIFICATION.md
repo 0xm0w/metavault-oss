@@ -1,32 +1,130 @@
 # Verification — measured gates (2026-10-31)
 
 Every number below was produced by running the gate on the demo-class
-machine (Windows, NVIDIA GeForce RTX 3070 8 GB, Node 24, Ollama with
-`llama3.2:3b` Q4, 2.0 GB model download) and saving the raw output next
-to this file. Re-run any gate with the commands shown.
+machine (Windows, NVIDIA GeForce RTX 3070 8 GB, Node 24, Ollama with the
+previous ~2 GB local model) and saving the raw output next to this file.
+Re-run any gate with the commands shown.
+
+> **#70 (2026-11-03):** the local warden is now Meta **Muse Glimmer 30B
+> Q4_K_M** (`muse-glimmer:30b`). The fake-brain eval was re-run on the agent
+> box (`eval-fake.txt`). No live Muse Glimmer eval output is committed, so no
+> local Glimmer numbers are published here (see
+> `verification/eval-live-muse-glimmer-quants.md`). The old live output was removed.
+> The rehearsal and two-host MCP rows below predate #70 and used the previous local model.
 
 ## Gate results
 
 | Gate | Command | Result |
 |---|---|---|
-| Unit + integration tests | `npm test` | **268 passed** (33 files), 0 failed |
+| Unit + integration tests | `npm test` | Node 22.23.4 (CI version): **503 passed, 3 skipped** (64 files, 1 skipped); Node 24.22.1: **504 passed, 2 skipped**. The extra skip on Node 22 is the argon2id keywrap test (`runIf(argon2Available())`; Node 22 has no `crypto.argon2`). Re-run 2026-11-03 on the box |
 | Typecheck (strict) | `npm run typecheck` | exit 0 |
 | Lint (max-warnings 0) | `npm run lint` | exit 0 |
-| Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (1.2 s wall) |
-| Brain eval, live marshal | `node dist/packages/brain/eval/run-eval.js --live` | risk 23.5%, approval 64.7%, **safety 100%, gate PASS** (59.7 s / 17 scenarios) |
-| Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS**, 3.6 s wall |
-| Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (4.3 s / 4.8 s incl. model call) |
+| Brain eval, fake brain | `node dist/packages/brain/eval/run-eval.js --fake` | risk 76.5%, approval 100%, **safety 100%, gate PASS** (re-run 2026-11-03) |
+| Brain eval, live marshal (Muse Glimmer 30B) | `scripts\eval-windows.ps1 -Compare` | no committed result (raw output not in the repo) |
+| Demo rehearsal (live) | `node scripts/rehearse-demo.mjs` | **7/7 PASS** (previous local model) |
+| Two-host MCP check | `node scripts/check-mcp-hosts.mjs` | **PASS** for both hosts (366 ms / 378 ms, [`mcp-two-host.txt`](verification/mcp-two-host.txt)) |
 | Electron GUI | manual CDP-driven run, screenshots below | Approval, Audit, Vault verified live |
 | Windows installer | `npx electron-builder --win nsis` | built, 115.6 MB, unsigned |
 | Demo walkthrough video | ffmpeg from live screenshots | 21 s, 1280x720, h264 |
 
-Raw outputs: `eval-fake.txt`, `eval-live.txt`, `rehearsal.txt`,
+Raw outputs: `eval-fake.txt`, `rehearsal.txt`,
 `mcp-two-host.txt` in this directory.
+
+## Research thesis benchmark (`packages/brain/eval/run-thesis.ts`)
+
+Four arms on the same vault policy: always-ask, rules-only (`packages/brain/src/rules.ts`,
+frozen in `793371d` before the held-out set in `702bb2b`), warden, rules+warden.
+Box run (Linux, commit `342f39f`), held-out set, 60 cases:
+
+| arm | high-risk read recall | policy floor | FPR all | FPR hard | FPR plain | median / p95 |
+|-----|-----|-----|-----|-----|-----|-----|
+| always-ask | 28/28 | 4/4 | 28/28 | 20/20 | 8/8 | - |
+| rules | 12/28 (42.9%) | 4/4 | 9/28 (32.1%) | 9/20 | 0/8 | 6.8 us / 21.3 us |
+| warden: Muse Spark 1.3, Meta API (2 runs) | 25/28 (89.3%) both runs | 4/4 | 0/28 (0%) | 0/20 | 0/8 | 8,940 / 17,320 ms; 8,209 / 14,751 ms |
+| rules + Muse Spark 1.3 (2 runs) | 27/28 (96.4%) both runs | 4/4 | 9/28 (32.1%) | 9/20 | 0/8 | 8,940 / 17,321 ms; 8,209 / 14,754 ms |
+| warden, rules+warden: Muse Glimmer, local | not run | | | | | |
+
+Muse Spark runs: `verification/thesis-muse-spark-1.3-heldout-2026-11-03T08-14-24-236Z.*` and
+`...T08-25-08-673Z.*` (16:14 and 16:25 PHT), `max_tokens` 2048, JSON mode, one repeat each.
+Each run had 1/60 warden failures, both at the 2,048-token output cap (invalid JSON on
+`ho-email-finance` in run 1, empty content on `ho-browser-logins` in run 2), both paraphrased
+high-risk reads. **Counting rule: a failed warden call counts as a miss**, so recall above is
+real decisions only. A failure still fails closed to a human, so the request was stopped; counted
+that way the numbers would be 26/28 and 28/28. Paraphrased high-risk reads: warden 21/22 in
+both runs. The warden alone missed both
+history-only anomalies (`ho-burst`, `ho-denied-retry`) in both runs; rules catch them. The rules
+latencies in those files (40-42 us median) are from the same box under network load; the table
+row above is the dedicated rules-only run. Muse Glimmer is not offered by the Meta API
+(`GET https://api.meta.ai/v1/models` on 2026-11-03 listed muse-wonder-1.0, sam-3.1,
+muse-spark-1.3, muse-spark-1.3-contributor, muse-spark-1.2, muse-spark-1.2-contributor,
+muse-spark-1.1, muse-voice-transcribe-1.0, muse-image-1.0), so it was not run there.
+
+Dev set (20 cases): rules 10/10 recall, 0/10 FPR. Oracle runs (`--oracle`) are harness
+checks only. Raw: `verification/thesis-*.txt|json`. Review: `research/thesis-review.md`.
+
+### Comparison baselines: free models on OpenCode Zen (not shipped)
+
+These are comparison points only; the shipped warden stays a Meta model. Harness:
+`--provider openai-compat --base-url https://opencode.ai/zen/v1 --api-key-env OPENCODE_API_KEY
+--price-in 0 --price-out 0 --pricing-url https://opencode.ai/docs/zen --min-interval-ms 3000`
+(retries 429/5xx with backoff and `Retry-After`; logs `usage` tokens per call; a quota
+refusal aborts the run so nothing else is sent).
+
+| Zen model id | maker | model card | status (2026-11-03 15:57 PHT, held-out) |
+|---|---|---|---|
+| `deepseek-v4.1-flash-free` | DeepSeek | https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash | blocked |
+| `glm-5.3-flash-free` | Z.ai | https://huggingface.co/zai-org/GLM-5.3-Flash | blocked |
+| `mimo-v2.6-flash-free` | Xiaomi | https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL | blocked |
+| `nemotron-3.5-lightning-free` | NVIDIA | https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 | blocked |
+| `nemotron-3.5-super-vl-free` | NVIDIA | https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16 | blocked |
+| `flint-40b-free` | Recursive | https://huggingface.co/RecursiveSI/flint | blocked |
+| `beam-free` | Reflection | https://huggingface.co/reflection/Beam-1.0-501B-A23B | blocked |
+
+Excluded: `big-pickle` and `pulse-alpha-free`, which Zen lists as stealth models with no
+named maker or card, so their benchmarks are unknown.
+
+Every run stopped at its first request with HTTP 429 `FreeUsageLimitError` ("Free usage
+limit reached. Free models work in OpenCode ..."). That is a quota refusal, not a rate
+limit, so it is not retried; the other 59 cases are recorded as "not sent". Result:
+0/60 answered per model, 0 tokens, so **no recall, FPR, latency or token figures exist
+for these models**. Raw: `verification/thesis-<model>-heldout-2026-11-03T07-57-*.txt|json`.
+
+### Dollars per gated request
+
+One gated request = one warden call (60 per held-out run). Cost =
+`prompt_tokens x input price + completion_tokens x output price` (cached input at its own
+rate), from the `usage` field of each response; the run report prints tokens and dollars per
+gated request. `--budget-usd` (default 0.50) refuses any call whose worst-case cost would
+pass the cap.
+
+| tier | price source | $ per gated request | tokens per gated request |
+|---|---|---|---|
+| Policy only | none | $0 (no model) | 0 |
+| Muse Glimmer quants, local | none | $0 in API fees (electricity excluded) | not measured (held-out run not done) |
+| Free baselines (Zen) | https://opencode.ai/docs/zen lists them as Free | $0 | not measured (quota refused every call) |
+| Muse Spark 1.3, Meta API | https://dev.meta.ai/docs/pricing-rate-limits: $1.25 in / $4.25 out / $0.15 cached per 1M | $0.005309 (run 1), $0.005159 (run 2) | 1,537.2 (run 1), 1,505.2 (run 2); about 397 prompt + 1,108-1,140 completion |
+
+Meta API spend on 2026-11-03, from `usage`: run 1 $0.318518 (92,232 tokens), run 2 $0.309563
+(90,313 tokens), $0.628081 measured. An earlier run was stopped after 18 calls before it wrote
+its report, so its `usage` was not kept; the same 18 cases cost $0.120539 in run 1, and their
+ceiling at `max_tokens` 2048 is $0.165757. Total Meta API spend: about $0.749, at most $0.794.
+Per-call logs (`*.calls.jsonl`, no key) now record spend as it happens.
+
+Meta run, once a key is set: `META_API_KEY=... npx tsx packages/brain/eval/run-thesis.ts --live
+--provider meta-api` (defaults: `muse-spark-1.3`, `https://api.meta.ai/v1`, $0.50 cap).
+
+## Coverage today (2026-11-03, Node 22.23.4)
+
+`npm run test:coverage` exits 0 with every threshold met. Statements / lines:
+core 93.11% / 95.38% (threshold 90), daemon 89.96% / 89.92% (85), brain 95.16% / 94.57% (85),
+mcp 88.11% / 89.24% (85), renderer `model.ts` 93.77% / 95.27% (90). Core was 89.51% before
+`packages/core/test/keychain-platforms.test.ts` added real tests for the macOS, Windows and
+Linux keychain paths.
 
 ## Coverage baseline (Task 7, measured before thresholds)
 
-Measured with `npm run test:coverage` (Vitest + `@vitest/coverage-v8`,
-247 tests passing) **before** any coverage thresholds were configured and
+Historical baseline: measured with `npm run test:coverage` (Vitest + `@vitest/coverage-v8`,
+247 tests passing at the time) **before** any coverage thresholds were configured and
 before the Task 7 canary/e2e tests were added. Statements and lines are
 identical for every row in this codebase (V8 provider, one statement per
 line in the measured output).
@@ -45,19 +143,19 @@ in `vitest.config.ts` were set exactly at the plan targets (90 / 85 / 85 /
 main process are excluded from thresholds and covered by smoke
 screenshots instead, as stated in the config comments.
 
-## How to read the live eval
+## How to read the brain eval
 
-The 3B marshal's risk labels are weak (23.5% risk accuracy live) and we
-say so in the README. The number that matters is the safety rate:
-**100% in both modes** — across benign reads, writes phrased as reads,
+The fake-brain eval (`eval-fake.txt`) scores risk labels at 76.5%: the fake
+brain is deliberately fooled on four scenarios. The number that matters is
+the safety rate: **100%** — across benign reads, writes phrased as reads,
 scope escalation, prompt injection in the reason field, bursts, and a
 marshal that is down or lying, no write ever executed without approval
 and no scope ever escaped its ceiling. Policy is the floor; the marshal
-is discretion within bounds. That is the design working as designed.
+is discretion within bounds.
 
-Warm marshal latency: the rehearsal's live `charges.read` request
-completed marshal + policy in **1,872 ms** (model already loaded).
-Cold eval averaged ~3.5 s per scenario including model variance.
+Warm marshal latency (previous local model, before #70): the rehearsal's
+live `charges.read` request completed marshal + policy in **1,872 ms**
+(`rehearsal.txt`). No Muse Glimmer latency is committed.
 
 ## Rehearsal detail (`scripts/rehearse-demo.mjs`)
 
@@ -87,11 +185,11 @@ IDEs; both IDEs are present on this machine and use this exact transport.
 
 - `electron-approval.png` — a real pending request in the Approval hero:
   marshal assessment, expiry countdown, Approve/Deny/Always allow.
-  (The 3B marshal labelled this one LOW RISK while still requiring
+  (The previous local marshal labelled this one LOW RISK while still requiring
   approval — the human gate held. We show it because it is honest.)
 - `electron-audit.png` — the Audit timeline after clicking **Deny** in
   the real window: Requested → Marshal → Policy → Denied by human, each
-  marshal row naming `llama3.2:3b`.
+  marshal row naming the previous local model (screenshot predates #70).
 - `electron-vault.png` — the Vault home: `stripe · charges.read`,
   values never displayed.
 
@@ -137,12 +235,12 @@ The same four images are wired into the site docs page
 `/assets/shots/`) and into the README's end-to-end flows section. The
 site docs and README gained an MCP install section (five hosts, five
 tools), a Settings/warden section, and a security-levels table aligned
-with the Task 3 tiers (`none` / `llama3.2:3b` Medium / `llama3.1:8b`
-High / `llama3.3:70b` Maximum-local / Meta API cloud; effort
-Fast 10s / Standard 30s / Deep 60s). Semantic data-flow charting stays
+with the Task 3 tiers (at the time: `none`, three local sizes, and Meta
+API cloud; effort Fast 10s / Standard 30s / Deep 60s). Since #70 the only
+local model is `muse-glimmer:30b` and local timeouts are 60 / 120 / 240 s. Semantic data-flow charting stays
 deferred, per the plan.
 
-Gates for this task (run in-session): `npm run test` — **268 passed**
+Gates for this task (run in-session, 2026-10-31; historical): `npm run test` — **268 passed**
 (33 files); `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
 Site redeploy: `npx -y wrangler deploy --config wrangler.worker.jsonc` (the `metahackathon-vault` Worker serves `metahackathon.whativedone.xyz`; the `metavault` Pages project is a preview mirror only). Deployment and route
@@ -162,7 +260,7 @@ release workflow remains unproven until its first `v*` run).
 | SHA256 | `60cb6baf2923d9f4415f23b364e30985d1df029e7a32fdfbe0f991a753cd1e5a` |
 | Built with | `cd packages/app && npm run build && npx electron-builder --win --publish never` (locked root devDependency `electron-builder@26.18.0`, Electron 45.2.1) |
 
-Gates (in-session, after the version bump and final review fix wave): `npm run test` — **271
+Gates (in-session, 2026-10-31, historical; see the gate table for today's count): `npm run test` — **271
 passed** (34 files, including the extended `test/version.test.ts` asserting
 root `package.json` = `packages/app/package.json` = `packages/mcp/package.json` = `MCP_VERSION` =
 renderer `APP_VERSION_DISPLAY` = `0.1.0-alpha.1`);
@@ -186,5 +284,4 @@ is the designed behaviour when another instance/profile is present.
 
 ## Codebase
 
-43 TypeScript files, 6,649 lines (packages + root canary test), 268
-tests. Secrets appear in the repo only as fake canary/test strings.
+Test count today: see the gate table above (504 on Node 24, 503 on Node 22). Secrets appear in the repo only as fake canary/test strings.

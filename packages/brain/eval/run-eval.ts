@@ -12,7 +12,7 @@ import type {
   MarshalDecision,
   Risk,
 } from "../../core/src/types.js";
-import { Brain, BrainOllamaLive, type HistorySummary } from "../src/brain.js";
+import { Brain, BrainOllamaLive, DEFAULT_MARSHAL_MODEL, type HistorySummary } from "../src/brain.js";
 
 // Brain eval harness (design spec Section 11). Every scenario runs through
 // the Brain service plus the pure evaluatePolicy, with marshal errors
@@ -457,7 +457,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     mode === "fake" ? makeFakeBrain(scenarios) : BrainOllamaLive(model);
   const report = await runEval(scenarios, brainLayer);
   process.stdout.write(
-    formatReport(report, mode, mode === "fake" ? "fake-brain" : (model ?? "llama3.2:3b")),
+    formatReport(report, mode, mode === "fake" ? "fake-brain" : (model ?? DEFAULT_MARSHAL_MODEL)),
   );
   return report.gatePassed ? 0 : 1;
 }

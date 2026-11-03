@@ -55,6 +55,10 @@ describe("main-process daemon whitelist", () => {
       { method: "GET", path: "/policies" },
       { method: "GET", path: "/security/posture" },
       { method: "POST", path: "/credentials" },
+      { method: "POST", path: "/cards" },
+      { method: "GET", path: "/key/status" },
+      { method: "POST", path: "/unlock" },
+      { method: "POST", path: "/lock" },
       { method: "GET", path: "/settings/warden" },
       { method: "PATCH", path: "/settings/warden" },
       { method: "GET", path: "/settings/warden/key" },
@@ -166,7 +170,7 @@ describe("warden settings IPC whitelist (Task 6)", () => {
     globalThis.fetch = mockFetch;
     try {
       await callDaemon({ method: "GET", path: "/settings/warden" });
-      await callDaemon({ method: "PATCH", path: "/settings/warden", body: { provider: "ollama", model: "llama3.1:8b", effort: "deep" } });
+      await callDaemon({ method: "PATCH", path: "/settings/warden", body: { provider: "ollama", model: "muse-glimmer:30b", effort: "deep" } });
       await callDaemon({ method: "PUT", path: "/settings/warden/key", body: { key: "meta-key-12345678" } });
       await callDaemon({ method: "GET", path: "/settings/warden/key" });
       await callDaemon({ method: "DELETE", path: "/settings/warden/key" });

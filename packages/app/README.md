@@ -33,9 +33,9 @@ carries no `grantId`), so two additive endpoints were added:
 ## Run (manual gate — pending, see task-9 report)
 
 ```powershell
-# 1. Start vaultd (separate terminal; needs METAVAULT_MASTER_KEY or keychain)
-$env:METAVAULT_MASTER_KEY = "<base64 32 bytes>"
+# 1. Start vaultd (separate terminal), then unlock it with your passphrase
 node --experimental-strip-types packages/daemon/src/server.ts  # or the compiled daemon entry
+node dist/packages/cli/src/cli.js unlock   # the app has no passphrase screen yet
 
 # 2. Build the app (CommonJS preload.cjs + renderer assets staged into dist)
 npm --prefix packages/app run build

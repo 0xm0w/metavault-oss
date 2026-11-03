@@ -3,8 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every PR runs checks, whatever its base branch (stacked PRs included).
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
