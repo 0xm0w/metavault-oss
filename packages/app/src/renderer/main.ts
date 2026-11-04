@@ -164,6 +164,12 @@ let settingsMessage: { readonly text: string; readonly ok: boolean } | null = nu
 let localAuthNotice: { readonly text: string; readonly ok: boolean } | null = null;
 let updaterStatus: UpdaterStatusLike = { status: "idle" };
 
+let settingsPending: "test" | null = null;
+let daemonDetailsOpen = false;
+let agentAdvancedOpen = false;
+let lockedSettingsOpen = false;
+const sessionBlockedAgents = new Set<string>();
+
 let settingsOpen = false;
 let settingsTab: SettingsTab = "general";
 let settingsFocusOnOpen = false;
@@ -290,6 +296,41 @@ function updateMarshalLine(): void {
   const fromPending = approvals.find((a) => a.modelId !== undefined)?.modelId;
   const fromAudit = auditEvents.find((e) => e.modelId !== undefined)?.modelId;
   mustElement("#marshal-line").textContent = marshalStatusLine(fromPending ?? fromAudit);
+}
+
+// One revoke path for the Policies and Audit views. A registered agent has a
+// stored token, so the token itself is disabled (persisted, rejects every
+// later call, clears pending requests and standing approvals). The session
+// block on top of that also stops self-reported calls under the same id. An
+// id with no registered token can only be blocked for this vaultd session.
+// The UI claims success only after the agent list confirms it.
+function revokeAgentFlow(agentId: string): void {
+  if (busy) return;
+  const registered = agentsData.find((agent) => agent.id === agentId);
+  const hasToken = registered !== undefined && !registered.revoked;
+  const prompt = hasToken
+    ? `Revoke ${agentId}? Its token stops working, and its pending requests and standing approvals are cancelled.`
+    : `Block ${agentId}? It has no registered token to revoke, so this blocks the name only until vaultd restarts.`;
+  if (!window.confirm(prompt)) return;
+  const act = (): void => {
+    void runAction(async () => {
+      if (hasToken) await window.metavault.revokeAgent(agentId);
+      await window.metavault.revoke(agentId);
+      if (registered !== undefined) {
+        const listed = projectAgentsResponse(await window.metavault.agents());
+        if (listed.find((agent) => agent.id === agentId)?.revoked !== true) {
+          throw new Error(`Could not confirm that ${agentId} is revoked. Its token may still work.`);
+        }
+        agentsData = listed;
+      } else {
+        sessionBlockedAgents.add(agentId);
+      }
+    }, registered !== undefined
+      ? `Revoked ${agentId}. Its token is disabled; pending requests and standing approvals are cancelled.`
+      : `Blocked ${agentId} until vaultd restarts. It had no token to revoke.`);
+  };
+  if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to revoke agent", act);
+  else act();
 }
 
 function selectedApproval(): PendingApproval | null {
@@ -482,7 +523,7 @@ function dismissApprovalDialog(): void {
 
 function paintApprovalDialog(): void {
   const existing = document.querySelector("#approval-dialog");
-  const hero = vaultLocked || approvalDialogDismissed || currentView === "approval" ? null : selectedApproval();
+  const hero = vaultLocked || keyGate !== null || approvalDialogDismissed || currentView === "approval" ? null : selectedApproval();
   if (hero === null) {
     existing?.remove();
     approvalDialogKey = "";
@@ -1841,12 +1882,7 @@ function renderAudit(view: HTMLElement): void {
           const blockAgentBtn = el("button", "text-revoke", "Revoke") as HTMLButtonElement;
           blockAgentBtn.type = "button";
           blockAgentBtn.disabled = busy;
-          blockAgentBtn.addEventListener("click", () => {
-            void runAction(
-              () => window.metavault.revoke(group.agentId),
-              `Revoked ${group.agentId} — pending grants cancelled, new requests denied.`,
-            );
-          });
+          blockAgentBtn.addEventListener("click", () => { revokeAgentFlow(group.agentId); });
           timeline.append(blockAgentBtn);
         }
         const detail = el("tr", "is-detail");
@@ -2488,25 +2524,29 @@ function renderSettings(view: HTMLElement): void {
     bft: "Two wardens: Muse Spark on the Meta API, cross-checked by your local endpoint if you set one. If they disagree, the request comes to you.",
     none: "No model judges requests. Deterministic policy alone decides, and anything needing approval comes to you.",
   };
+  const providerLabel = el("label", "vault-field");
+  providerLabel.append(el("span", "vault-field-label", "Provider"));
+  const providerSelect = document.createElement("select");
+  providerSelect.className = "vault-input";
+  providerSelect.id = "warden-provider-select";
   for (const provider of WARDEN_PROVIDERS) {
-    const label = el("label", "settings-radio");
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "warden-provider";
-    radio.value = provider.id;
-    radio.checked = wardenDraft.provider === provider.id;
-    radio.addEventListener("change", () => {
-      wardenDraft = { ...wardenDraft, provider: provider.id };
-      wardenDirty = true;
-      settingsMessage = null;
-      render();
-    });
-    const text = el("span", "");
-    text.append(el("span", "settings-radio-label", provider.label));
-    text.append(el("span", "settings-radio-copy", providerCopy[provider.id]));
-    label.append(radio, text);
-    providerSection.append(label);
+    const opt = document.createElement("option");
+    opt.value = provider.id;
+    opt.textContent = provider.label;
+    providerSelect.append(opt);
   }
+  providerSelect.value = wardenDraft.provider;
+  providerSelect.addEventListener("change", () => {
+    const chosen = WARDEN_PROVIDERS.find((provider) => provider.id === providerSelect.value);
+    if (chosen === undefined) return;
+    wardenDraft = { ...wardenDraft, provider: chosen.id };
+    wardenDirty = true;
+    settingsMessage = null;
+    render();
+  });
+  providerLabel.append(providerSelect);
+  providerSection.append(providerLabel);
+  providerSection.append(el("p", "settings-copy", providerCopy[wardenDraft.provider]));
   view.append(providerSection);
 
   const textField = (
@@ -2669,25 +2709,30 @@ function renderSettings(view: HTMLElement): void {
 
   // 3. Effort
   const effortSection = settingsSection("Effort", "", "warden");
+  const effortLabel = el("label", "vault-field");
+  effortLabel.append(el("span", "vault-field-label", "Effort"));
+  const effortSelect = document.createElement("select");
+  effortSelect.className = "vault-input";
+  effortSelect.id = "warden-effort-select";
   for (const option of EFFORT_OPTIONS) {
-    const label = el("label", "settings-radio");
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "warden-effort";
-    radio.value = option.id;
-    radio.checked = wardenDraft.effort === option.id;
-    radio.addEventListener("change", () => {
-      wardenDraft = { ...wardenDraft, effort: option.id };
-      wardenDirty = true;
-      settingsMessage = null;
-      render();
-    });
-    const text = el("span", "");
-    text.append(el("span", "settings-radio-label", option.label));
-    text.append(el("span", "settings-radio-copy", option.description));
-    label.append(radio, text);
-    effortSection.append(label);
+    const opt = document.createElement("option");
+    opt.value = option.id;
+    opt.textContent = option.label;
+    effortSelect.append(opt);
   }
+  effortSelect.value = wardenDraft.effort;
+  effortSelect.addEventListener("change", () => {
+    const chosen = EFFORT_OPTIONS.find((option) => option.id === effortSelect.value);
+    if (chosen === undefined) return;
+    wardenDraft = { ...wardenDraft, effort: chosen.id };
+    wardenDirty = true;
+    settingsMessage = null;
+    render();
+  });
+  effortLabel.append(effortSelect);
+  effortSection.append(effortLabel);
+  const effortCurrent = EFFORT_OPTIONS.find((option) => option.id === wardenDraft.effort);
+  if (effortCurrent !== undefined) effortSection.append(el("p", "settings-copy", effortCurrent.description));
   const saveBtn = el("button", "action btn-approve", "Save settings") as HTMLButtonElement;
   saveBtn.type = "button";
   saveBtn.id = "warden-save-button";
@@ -2769,8 +2814,19 @@ function renderSettings(view: HTMLElement): void {
   testBtn.type = "button";
   // Test connection runs against the saved key only, so it needs one.
   testBtn.disabled = settingsBusy || !wardenKeyStatusState.configured;
+  if (settingsPending === "test") {
+    testBtn.textContent = "";
+    const spin = el("span", "spinner");
+    spin.setAttribute("aria-hidden", "true");
+    testBtn.append(spin, document.createTextNode("Testing\u2026"));
+    testBtn.setAttribute("aria-busy", "true");
+  }
   testBtn.addEventListener("click", () => {
+    if (settingsBusy) return;
+    settingsPending = "test";
+    settingsMessage = null;
     void runSettingsAction(async () => {
+     try {
       const raw = await window.metavault.testWarden();
       const projected = projectWardenTestResult(raw);
       if (projected === null) {
@@ -2784,6 +2840,9 @@ function renderSettings(view: HTMLElement): void {
           ? " The key typed in the field is not saved yet; this tested the saved key. Click Save key to replace it."
           : "";
       settingsMessage = { text: `${result.message}${draftNote}`, ok: result.ok };
+     } finally {
+      settingsPending = null;
+     }
     });
   });
   const deleteKeyBtn = el("button", "action btn-deny", "Delete key") as HTMLButtonElement;
@@ -2806,6 +2865,11 @@ function renderSettings(view: HTMLElement): void {
     }
   });
   keyBtns.append(saveKeyBtn, testBtn, deleteKeyBtn);
+  if (settingsPending === "test") {
+    const live = el("span", "visually-hidden", "Testing connection\u2026");
+    live.setAttribute("role", "status");
+    keyBtns.append(live);
+  }
   const keyRow = el("div", "settings-row");
   keyRow.append(el("span", "settings-row-label", "Key actions"));
   keyRow.append(keyBtns);
@@ -3212,37 +3276,80 @@ function renderSettings(view: HTMLElement): void {
 
   // 6. Daemon (read-only)
   const daemonSection = settingsSection("Daemon", "", "daemon");
-  const rows: readonly (readonly [string, string])[] = [
-    ["Daemon URL", DAEMON_URL_DISPLAY],
-    ["Vault path", mcpRuntime?.dbPath ?? VAULT_PATH_DISPLAY],
-    ["Key fingerprint", vaultKeyFingerprint ?? "Unlock to verify"],
-    ["Version", `MetaVault OSS ${APP_VERSION_DISPLAY}`],
-  ];
-  for (const [label, value] of rows) {
+  const addDaemonRow = (label: string, value: string, wrap: boolean): void => {
     const row = el("div", "settings-row");
     row.append(el("span", "settings-row-label", label));
     const text = el("span", "mono settings-row-value", value);
     text.title = value;
-    if (label === "Vault path") {
+    if (wrap) {
       text.style.whiteSpace = "normal";
       text.style.overflowWrap = "anywhere";
       text.style.userSelect = "text";
       text.tabIndex = 0;
-      text.setAttribute("aria-label", `Vault path: ${value}`);
+      text.setAttribute("aria-label", `${label}: ${value}`);
     }
     row.append(text);
     daemonSection.append(row);
+  };
+  addDaemonRow("Version", `MetaVault OSS ${APP_VERSION_DISPLAY}`, false);
+  const detailsBtn = el("button", "action btn-always", daemonDetailsOpen ? "Hide details" : "Show details") as HTMLButtonElement;
+  detailsBtn.type = "button";
+  detailsBtn.id = "daemon-details-toggle";
+  detailsBtn.setAttribute("aria-expanded", daemonDetailsOpen ? "true" : "false");
+  detailsBtn.setAttribute("aria-controls", "daemon-details");
+  detailsBtn.addEventListener("click", () => {
+    daemonDetailsOpen = !daemonDetailsOpen;
+    render();
+  });
+  const detailsRow = el("div", "settings-row");
+  detailsRow.append(el("span", "settings-row-label", "Connection details"), detailsBtn);
+  daemonSection.append(detailsRow);
+  // Display-only tidiness, not an access boundary. Tokens and keys are never
+  // rendered here, expanded or not.
+  if (daemonDetailsOpen) {
+    const details = el("div", "");
+    details.id = "daemon-details";
+    daemonSection.append(details);
+    const holder = daemonSection;
+    const before = holder.children.length;
+    addDaemonRow("Daemon URL", DAEMON_URL_DISPLAY, false);
+    addDaemonRow("Vault path", mcpRuntime?.dbPath ?? VAULT_PATH_DISPLAY, true);
+    addDaemonRow("Key fingerprint", vaultKeyFingerprint ?? "Unlock to verify", false);
+    while (holder.children.length > before) {
+      const node = holder.children[before];
+      if (node === undefined) break;
+      details.append(node);
+    }
+    daemonSection.append(el("p", "settings-copy", "Read-only. Warden settings apply on the next request, so no restart is needed after saving. If vaultd is unreachable, restart it from the terminal where it was launched, then reopen this page."));
   }
-  daemonSection.append(el("p", "settings-copy", "Read-only. Warden settings apply on the next request, so no restart is needed after saving. If vaultd is unreachable, restart it from the terminal where it was launched, then reopen this page."));
   view.append(daemonSection);
 
   // 5b. Agent Integration & MCP
   const agentSection = settingsSection(
     "Agent Integration & MCP",
-    "Connect AI coding agents to MetaVault OSS via the Model Context Protocol (MCP) or built-in agent skills. All requests route to vaultd for policy enforcement and human approval.",
+    "Give your AI coding agent these instructions. Policy and your approval still decide every request.",
     "daemon",
   );
 
+  const instructionsBtn = el("button", "action btn-approve", "Copy agent instructions") as HTMLButtonElement;
+  instructionsBtn.type = "button";
+  instructionsBtn.id = "copy-agent-instructions";
+  instructionsBtn.addEventListener("click", () => {
+    void navigator.clipboard.writeText(AGENT_INSTRUCTIONS).then(
+      () => { instructionsBtn.textContent = "Copied"; },
+      () => { instructionsBtn.textContent = "Could not copy"; },
+    ).finally(() => {
+      window.setTimeout(() => { instructionsBtn.textContent = "Copy agent instructions"; }, 2000);
+    });
+  });
+  agentSection.append(instructionsBtn);
+  agentSection.append(el("p", "settings-copy", "For an agent running on this PC. A cloud agent connects through the Connections tab instead."));
+  const advanced = document.createElement("details");
+  advanced.className = "settings-advanced";
+  advanced.open = agentAdvancedOpen;
+  advanced.addEventListener("toggle", () => { agentAdvancedOpen = advanced.open; });
+  advanced.append(el("summary", "", "Advanced: client config and agent tokens"));
+  agentSection.append(advanced);
   const tabsRow = el("div", "agent-tab-btns");
   const tabs = [
     { id: "claude", label: "Claude Code" },
@@ -3262,7 +3369,7 @@ function renderSettings(view: HTMLElement): void {
     });
     tabsRow.append(tabBtn);
   }
-  agentSection.append(tabsRow);
+  advanced.append(tabsRow);
 
   const management = el("div", "agent-skill-box");
   management.append(el("p", "settings-copy", "Tokens are shown only when generated. Rotate to replace an existing IDE token, then update that IDE config. Rotation cancels pending requests and standing approvals. Existing configs keep working after migration until you rotate them."));
@@ -3306,7 +3413,7 @@ function renderSettings(view: HTMLElement): void {
     copy.addEventListener("click", () => { void navigator.clipboard.writeText(token); });
     management.append(once, copy);
   }
-  agentSection.append(management);
+  advanced.append(management);
   const codeBox = el("div", "agent-code-block");
   let codeSnippet = "";
   let configPath = "";
@@ -3446,13 +3553,8 @@ function renderSettings(view: HTMLElement): void {
   pre.tabIndex = 0;
   pre.setAttribute("aria-label", "MCP configuration, scroll horizontally to view long lines");
   codeBox.append(copyBtn, pre);
-  agentSection.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
-  agentSection.append(codeBox);
-  const instructionsBtn = el("button", "action", "Copy agent instructions") as HTMLButtonElement;
-  instructionsBtn.type = "button";
-  instructionsBtn.addEventListener("click", () => { void navigator.clipboard.writeText(AGENT_INSTRUCTIONS); });
-  agentSection.append(instructionsBtn);
-
+  advanced.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
+  advanced.append(codeBox);
   const skillInfo = el("div", "agent-skill-box");
   skillInfo.append(el("div", "agent-skill-title", "Zero Secret Leakage Invariant"));
   skillInfo.append(
@@ -3462,7 +3564,7 @@ function renderSettings(view: HTMLElement): void {
       "Secrets never pass through MCP, agents, terminal stdout, or audit trails. AI agents request scoped capabilities; vaultd holds the encrypted secrets and executes calls; the MetaVault OSS UI prompts the human for approval."
     )
   );
-  agentSection.append(skillInfo);
+  advanced.append(skillInfo);
   view.append(agentSection);
 
   // 6. Security defaults (read-only summary)
@@ -3588,7 +3690,7 @@ function renderSettings(view: HTMLElement): void {
 
 function renderPolicies(view: HTMLElement): void {
   view.append(el("h1", "", "Policies"));
-  view.append(el("p", "sub", "Deterministic ceilings are enforced inside vaultd policy; the marshal can only narrow them. Revoking an agent blocks its pending and future grants immediately."));
+  view.append(el("p", "sub", "Deterministic ceilings are enforced inside vaultd policy; the marshal can only narrow them. Revoking an agent disables its token and cancels its pending requests; it stays revoked until you rotate it."));
 
   const rows = buildPolicyRows(auditEvents, policiesData);
   const ceilingEntries = Object.entries(policiesData.ceilings).sort(([a], [b]) =>
@@ -3633,12 +3735,19 @@ function renderPolicies(view: HTMLElement): void {
       const standing = row.standingApprovals.length === 0 ? "—" : row.standingApprovals.map((approval) => `${approval.alias}: ${approval.scope}`).join(", ");
       const tr = el("tr", "");
       const statusCell = el("td", "");
+      const registeredAgent = agentsData.find((agent) => agent.id === row.agentId);
+      const isRevoked = registeredAgent?.revoked === true;
+      const isBlocked = !isRevoked && sessionBlockedAgents.has(row.agentId);
       statusCell.append(
-        el(
-          "span",
-          row.verified ? "status-badge is-ok" : "status-badge is-warn",
-          row.verified ? "Verified" : "⚠️ Unverified",
-        ),
+        isRevoked
+          ? el("span", "status-badge is-bad", "Revoked")
+          : isBlocked
+            ? el("span", "status-badge is-bad", "Blocked until restart")
+            : el(
+                "span",
+                registeredAgent !== undefined ? "status-badge is-ok" : "status-badge is-warn",
+                registeredAgent !== undefined ? "Verified" : "⚠️ Unverified",
+              ),
       );
       tr.append(
         cell(row.agentId),
@@ -3650,12 +3759,11 @@ function renderPolicies(view: HTMLElement): void {
         cell(standing),
       );
       const action = el("td", "data-table-action");
-      const revokeBtn = el("button", "text-revoke", "Revoke") as HTMLButtonElement;
+      const revokeBtn = el("button", "text-revoke", busy ? "Working\u2026" : isRevoked || isBlocked ? "Revoked" : "Revoke") as HTMLButtonElement;
       revokeBtn.type = "button";
-      revokeBtn.disabled = busy;
-      revokeBtn.addEventListener("click", () => {
-        void runAction(() => window.metavault.revoke(row.agentId), `Revoked ${row.agentId} — pending grants cancelled, new requests denied.`);
-      });
+      revokeBtn.disabled = busy || isRevoked || isBlocked;
+      if (busy) revokeBtn.setAttribute("aria-busy", "true");
+      revokeBtn.addEventListener("click", () => { revokeAgentFlow(row.agentId); });
       action.append(revokeBtn);
       tr.append(action);
       tbody.append(tr);
@@ -3763,6 +3871,14 @@ function render(): void {
     currentView = "policies";
   }
   if (vaultLocked) settingsOpen = false;
+  const lockedNow = vaultLocked || keyGate !== null;
+  document.body.classList.toggle("is-locked", lockedNow);
+  if (lockedNow) {
+    showBanner(null);
+  } else {
+    lockedSettingsOpen = false;
+    daemonDetailsOpen = false;
+  }
   if (keyGate !== null) {
     settingsOpen = false;
     const gateTitle = document.querySelector("#view-title");
@@ -3785,18 +3901,12 @@ function render(): void {
   if (vaultLocked) {
     view.replaceChildren();
     const lockScreen = el("div", "lock-screen");
-    lockScreen.style.display = "flex";
-    lockScreen.style.flexDirection = "column";
-    lockScreen.style.alignItems = "center";
-    lockScreen.style.justifyContent = "center";
-    lockScreen.style.padding = "60px 20px";
-    lockScreen.style.textAlign = "center";
 
     const lockIcon = el("div", "lock-icon");
     lockIcon.append(lockSvg());
 
     const helloOn = isBiometricsActive(localAuthStatus);
-    const lockTitle = el("h2", "", "Vault Locked");
+    const lockTitle = el("h2", "", "Welcome back.");
     const lockSub = el(
       "p",
       "sub",
@@ -3811,6 +3921,7 @@ function render(): void {
     lockScreen.append(lockIcon, lockTitle, lockSub, errorP);
 
     let pinInput: HTMLInputElement | null = null;
+    let helloPill: HTMLElement | null = null;
     if (helloOn) {
       const helloBtn = el("button", "action btn-approve", "Unlock with Windows Hello") as HTMLButtonElement;
       helloBtn.type = "button";
@@ -3830,7 +3941,9 @@ function render(): void {
           helloBtn.disabled = false;
         })();
       });
-      lockScreen.append(helloBtn);
+      helloBtn.classList.add("lock-pill");
+      helloBtn.removeAttribute("style");
+      helloPill = helloBtn;
     }
     if (localAuthStatus.configured) {
       const field = document.createElement("input");
@@ -3838,14 +3951,10 @@ function render(): void {
       field.className = "vault-input";
       field.type = "password";
       field.placeholder = helloOn ? "App PIN fallback" : "Enter PIN to unlock";
-      field.style.maxWidth = "240px";
-      field.style.textAlign = "center";
-      field.style.margin = helloOn ? "16px 0" : "0 0 16px";
 
-      const unlockBtn = el("button", "action", "Unlock with app PIN") as HTMLButtonElement;
+      const unlockBtn = el("button", "action lock-submit", "Unlock") as HTMLButtonElement;
       unlockBtn.type = "button";
-      unlockBtn.style.padding = "8px 24px";
-      if (!helloOn) unlockBtn.classList.add("btn-approve");
+      unlockBtn.classList.add("btn-approve");
 
       const doUnlock = async () => {
         const pin = field.value.trim();
@@ -3877,6 +3986,7 @@ function render(): void {
       });
       lockScreen.append(field, unlockBtn);
     }
+    decorateLockScreen(lockScreen, lockTitle, helloPill);
     view.append(lockScreen);
     view.querySelectorAll("h1").forEach((node) => {
       node.setAttribute("aria-hidden", "true");
@@ -4026,19 +4136,56 @@ let inFlightRefresh: Promise<void> | null = null;
 // First run: create the vault passphrase (POST /setup). Later launches:
 // unlock with it (POST /unlock). The passphrase goes straight to the local
 // daemon through main and is never stored by the app.
+
+function decorateLockScreen(box: HTMLElement, heading: HTMLElement, hello: HTMLElement | null): void {
+  box.classList.add("lock-shell");
+  box.querySelector(".lock-icon")?.remove();
+  const logo = document.createElement("img");
+  logo.className = "lock-logo";
+  logo.src = "./favicon.svg";
+  logo.alt = "MetaVault";
+  logo.width = 56;
+  logo.height = 56;
+  box.prepend(logo);
+  heading.textContent = "Welcome back.";
+  const bar = el("div", "lock-bar");
+  const settingsBtn = el("button", "lock-settings-btn", "Settings") as HTMLButtonElement;
+  settingsBtn.type = "button";
+  settingsBtn.setAttribute("aria-expanded", String(lockedSettingsOpen));
+  const panel = el("div", "lock-settings-panel");
+  panel.hidden = !lockedSettingsOpen;
+  panel.append(el("h3", "", "Settings"));
+  const modeRow = el("div", "lock-mode-row");
+  for (const [value, label] of [["verbose", "Full interface"], ["simple", "Simple interface"]] as const) {
+    const b = el("button", `lock-mode-btn${uiMode === value ? " is-selected" : ""}`, label) as HTMLButtonElement;
+    b.type = "button";
+    b.addEventListener("click", () => {
+      uiMode = value;
+      localStorage.setItem("metavault_ui_mode", value);
+      document.body.classList.toggle("is-simple-mode", value === "simple");
+      modeRow.querySelectorAll(".lock-mode-btn").forEach((n) => n.classList.remove("is-selected"));
+      b.classList.add("is-selected");
+    });
+    modeRow.append(b);
+  }
+  panel.append(modeRow, el("p", "lock-note", `Version v${APP_VERSION_DISPLAY}. More settings are available after you unlock.`));
+  settingsBtn.addEventListener("click", () => {
+    lockedSettingsOpen = !lockedSettingsOpen;
+    panel.hidden = !lockedSettingsOpen;
+    settingsBtn.setAttribute("aria-expanded", String(lockedSettingsOpen));
+  });
+  bar.append(settingsBtn);
+  if (hello !== null) bar.append(hello);
+  box.append(panel, bar);
+}
+
 function renderKeyGate(mode: "setup" | "unlock"): HTMLElement {
   const box = el("form", "lock-screen vault-key-gate");
   box.id = "vault-key-gate";
   box.dataset["mode"] = mode;
-  box.style.display = "flex";
-  box.style.flexDirection = "column";
-  box.style.alignItems = "center";
-  box.style.gap = "12px";
-  box.style.padding = "60px 20px";
-  box.style.textAlign = "center";
   const icon = el("div", "lock-icon");
   icon.append(lockSvg());
-  const heading = el("h2", "", mode === "setup" ? "Create your vault password" : "Unlock your vault");
+  const heading = el("h2", "", mode === "setup" ? "Create your vault password" : "Welcome back.");
   const sub = el(
     "p",
     "",
@@ -4061,11 +4208,27 @@ function renderKeyGate(mode: "setup" | "unlock"): HTMLElement {
   const error = el("p", "field-error");
   error.id = "vault-key-gate-error";
   error.setAttribute("role", "alert");
-  const submit = el("button", "action btn-approve", mode === "setup" ? "Create vault" : "Unlock") as HTMLButtonElement;
+  const submit = el("button", "action btn-approve lock-submit", mode === "setup" ? "Create vault" : "Unlock") as HTMLButtonElement;
   submit.type = "submit";
   box.append(icon, heading, sub, pass);
   if (mode === "setup") box.append(confirm);
   box.append(error, submit);
+  if (mode === "unlock") {
+    const vaultRow = el("div", "lock-vault-row");
+    vaultRow.append(el("span", "", "Vault"), el("span", "lock-vault-value", "Local"));
+    box.insertBefore(vaultRow, pass);
+    decorateLockScreen(box, heading, null);
+  } else {
+    box.classList.add("lock-shell");
+    box.querySelector(".lock-icon")?.remove();
+    const logo = document.createElement("img");
+    logo.className = "lock-logo";
+    logo.src = "./favicon.svg";
+    logo.alt = "MetaVault";
+    logo.width = 56;
+    logo.height = 56;
+    box.prepend(logo);
+  }
   box.addEventListener("submit", (event) => {
     event.preventDefault();
     const problem = mode === "setup" ? passphraseSetupError(pass.value, confirm.value) : pass.value === "" ? "Enter your password." : null;

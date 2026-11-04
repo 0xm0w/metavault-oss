@@ -276,6 +276,29 @@ const BAD_REQUEST: { status: number; body: unknown } = {
   body: { error: { _tag: "BadRequest", message: "invalid request body" } },
 };
 
+// Terminal, structured outcome an agent can act on. "executed" means the
+// human approved and vaultd ran the call; the result goes to the approver
+// path, never back through this route.
+export function grantOutcome(
+  status: string,
+  expiresAtMs: number,
+  nowMs: number,
+): { status: "pending" | "executed" | "denied" | "expired" | "revoked"; terminal: boolean; message: string } {
+  if (status === "pending" && nowMs >= expiresAtMs) return grantOutcome("expired", expiresAtMs, nowMs);
+  switch (status) {
+    case "executed":
+      return { status: "executed", terminal: true, message: "The user approved this request and vaultd ran it. The result is not returned here." };
+    case "denied":
+      return { status: "denied", terminal: true, message: "The user denied this request in MetaVault OSS. Do not retry it or look for another way around it; ask the user what they want." };
+    case "expired":
+      return { status: "expired", terminal: true, message: "This request expired before the user decided. Nothing ran. Ask the user before requesting again." };
+    case "revoked":
+      return { status: "revoked", terminal: true, message: "This request was revoked. Nothing ran. Ask the user before requesting again." };
+    default:
+      return { status: "pending", terminal: false, message: "Still waiting for the user to decide in MetaVault OSS. Do not send the request again." };
+  }
+}
+
 export const DAEMON_TOKEN_HEADER = "x-metavault-token";
 
 // The daemon token gates the human-decision routes. Without it any local
@@ -340,6 +363,8 @@ export interface VaultRequestOptions {
   readonly daemonToken?: string;
   readonly providedToken?: string;
   readonly providedAgentToken?: string;
+  // The private receipt /request returned with awaiting-approval.
+  readonly providedGrantReceipt?: string;
   readonly clientPid?: number | undefined;
   // Loopback gateway authentication and device identity stamps. The
   // configured secret is server state; the provided one comes from the
@@ -1016,6 +1041,31 @@ export async function handleVaultRequest(
     };
     return run(service.requestCapability(request, token?.trim(), deviceCtx));
   }
+  // Agent-visible outcome of one grant. /request answers awaiting-approval
+  // and returns at once, so without this an agent could never learn that
+  // the human denied (or let expire) its request. Metadata only: it never
+  // returns the request details, the executed result or any secret. A
+  // grant is readable only with the receipt from its own /request answer;
+  // every miss answers the same 404 so ids cannot be probed. The receipt,
+  // not an agent token, so a revoked agent still learns its request died.
+  if (method === "GET" && path.startsWith("/grants/")) {
+    const decodedId = safeDecodeSegment(path.slice("/grants/".length));
+    const grantId = decodedId === null ? "" : decodedId.trim();
+    const notFound = { status: 404, body: { status: "unknown", error: { _tag: "NotFound", message: "grant not found" } } };
+    if (grantId === "" || grantId.includes("/")) { return notFound; }
+    // The unguessable receipt from that grant's own /request answer is the
+    // authorization, for verified and unverified agents alike. A grant id,
+    // an agent name or an agent token without it reads nothing.
+    const receipt = options?.providedGrantReceipt?.trim();
+    if (receipt === undefined || receipt === "") { return notFound; }
+    const receiptOk = await run(service.checkGrantReceipt(grantId, receipt));
+    if (receiptOk.status !== 200 || receiptOk.body !== true) { return notFound; }
+    const found = await run(service.getGrant(grantId));
+    if (found.status !== 200 || found.body === null || found.body === undefined) { return notFound; }
+    const grant = found.body as { status: string; expiresAtMs: number };
+    const outcome = grantOutcome(grant.status, grant.expiresAtMs, Date.now());
+    return { status: 200, body: { grantId, ...outcome } };
+  }
   if (method === "POST" && path === "/approve") {
     const decoded = await decode(GrantIdSchema, body ?? {});
     if (decoded === null) {
@@ -1206,6 +1256,8 @@ export function createVaultHttpServer(
         const rawAgentToken = Array.isArray(agentTokenHeader) ? agentTokenHeader[0] : agentTokenHeader;
         const providedAgentToken =
           rawAgentToken ?? (bearerToken !== undefined && bearerToken !== guardToken ? bearerToken : undefined);
+        const receiptHeader = req.headers["x-metavault-grant-receipt"];
+        const providedGrantReceipt = Array.isArray(receiptHeader) ? receiptHeader[0] : receiptHeader;
         const clientPidHeader = req.headers["x-metavault-client-pid"];
         const rawClientPid = Array.isArray(clientPidHeader) ? clientPidHeader[0] : clientPidHeader;
         const parsedPid = rawClientPid !== undefined ? parseInt(rawClientPid, 10) : undefined;
@@ -1264,6 +1316,7 @@ export function createVaultHttpServer(
           daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
           ...(providedAgentToken !== undefined ? { providedAgentToken } : {}),
+          ...(providedGrantReceipt !== undefined ? { providedGrantReceipt } : {}),
           ...(options.gatewaySecret !== undefined ? { gatewaySecret: options.gatewaySecret } : {}),
           ...(anyStampHeader ? { gatewayStampValid } : {}),
           ...(isInternalPath && providedInternalSecret !== undefined ? { providedGatewaySecret: providedInternalSecret } : {}),

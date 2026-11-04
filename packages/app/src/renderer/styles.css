@@ -1554,3 +1554,77 @@ body.is-simple-mode .verbose-note {
 .vault-key-gate .field-error { color: #c0392b; min-height: 1.2em; margin: 0; }
 
 .agent-code-block pre { overflow-x: auto; max-width: 100%; }
+
+/* Spinner, hidden live region, bad badge, collapsed advanced block */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid var(--pink-deep);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: mv-spin 0.8s linear infinite;
+}
+@keyframes mv-spin { to { transform: rotate(360deg); } }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.status-badge.is-bad { background: #fde8e8; color: #b91c1c; }
+.settings-advanced { margin-top: 16px; border-top: 1px solid var(--border-soft); padding-top: 12px; }
+.settings-advanced > summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+/* Locked screen: centered welcome, settings bottom-left */
+body.is-locked .app-header,
+body.is-locked .sidebar,
+body.is-locked .app-footer,
+body.is-locked #banner { display: none !important; }
+body.is-locked .shell-body { display: block; }
+body.is-locked .shell-main { display: block; min-height: 100vh; padding: 0; background: linear-gradient(180deg, #ffffff 0%, var(--pink-soft) 100%); }
+body.is-locked .view { padding: 0; max-width: none; }
+.lock-shell {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 64px 24px 96px;
+  text-align: center;
+}
+.lock-shell > * { width: min(100%, 340px); }
+.lock-shell .lock-logo { width: 56px; height: 56px; margin-bottom: 4px; }
+.lock-shell h2 { margin: 0 0 8px; font-size: 28px; font-weight: 600; color: var(--ink); }
+.lock-shell .sub, .lock-shell > p { color: var(--muted); font-size: 13px; margin: 0; }
+.lock-vault-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 14px; color: var(--muted); }
+.lock-vault-value { color: var(--ink); font-weight: 600; }
+.lock-shell input[type="password"], .lock-shell .vault-input { width: 100%; max-width: none; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 15px; background: var(--field); text-align: left; margin: 0; }
+.lock-shell input[type="password"]:focus-visible, .lock-shell .vault-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.lock-shell .lock-submit { width: 100%; padding: 12px 14px; font-size: 15px; font-weight: 600; border-radius: 10px; background: var(--primary); color: #fff; border: 0; cursor: pointer; }
+.lock-shell .lock-submit:hover:not(:disabled) { background: var(--primary-hover); }
+.lock-shell .lock-submit:disabled { opacity: 0.6; cursor: default; }
+.lock-shell .field-error, .lock-shell .vault-modal-error { color: #b91c1c; min-height: 1.2em; margin: 0; font-size: 13px; }
+.lock-bar { position: absolute; left: 16px; right: 16px; bottom: 16px; width: auto !important; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lock-settings-btn, .lock-pill { padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink-soft); font-size: 13px; cursor: pointer; min-height: 36px; }
+.lock-settings-btn:hover, .lock-pill:hover { background: var(--pink-soft); }
+.lock-settings-panel { position: absolute; left: 16px; bottom: 64px; width: min(calc(100% - 32px), 300px) !important; box-sizing: border-box; text-align: left; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-secondary); }
+.lock-settings-panel h3 { margin: 0 0 10px; font-size: 14px; }
+.lock-mode-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.lock-mode-btn { flex: 1 1 120px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; font-size: 13px; }
+.lock-mode-btn.is-selected { border-color: var(--primary); background: var(--pink-soft); font-weight: 600; }
+.lock-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+.lock-shell.lock-shell input, .lock-shell.lock-shell .lock-submit, .lock-shell.lock-shell .lock-vault-row { width: min(100%, 340px); max-width: 340px; }
+.lock-shell.lock-shell .field-error, .lock-shell.lock-shell .vault-modal-error { min-height: 0; }

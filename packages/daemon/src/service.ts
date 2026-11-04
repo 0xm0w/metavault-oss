@@ -64,6 +64,10 @@ import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/
 export interface CapabilityResult {
   readonly status: "executed" | "awaiting-approval" | "denied";
   readonly grantId?: string;
+  // Returned once, with awaiting-approval only. The caller keeps it private
+  // and presents it to read that grant's outcome; the grant id alone is not
+  // enough. Only its hash is kept here.
+  readonly receipt?: string;
   readonly result?: unknown;
   readonly reason?: string;
 }
@@ -345,6 +349,8 @@ export interface VaultServiceService {
   readonly listAliases: () => Effect.Effect<string[], StorageError>;
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
   readonly listPendingApprovals: () => Effect.Effect<PendingApproval[], StorageError>;
+  readonly getGrant: (grantId: string) => Effect.Effect<Grant | undefined>;
+  readonly checkGrantReceipt: (grantId: string, receipt: string) => Effect.Effect<boolean>;
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
@@ -489,6 +495,7 @@ export function makeVaultServiceLive(
         new Map<string, { readonly requestId: string; readonly decisionSource: AuditEvent["decisionSource"] }>(),
       );
       const enrollments = yield* Ref.make(new Map<string, EnrollmentRecord>());
+      const grantReceipts = yield* Ref.make(new Map<string, string>());
       const agentVelocities = yield* Ref.make(new Map<string, AgentVelocityTracker>());
       // At most one pairing session exists; starting a new one kills the
       // old. In-memory only: pairing state never persists across restarts.
@@ -1209,7 +1216,19 @@ export function makeVaultServiceLive(
                 return next;
               });
               yield* scheduleExpiry(grant);
-              return { status: "awaiting-approval", grantId, reason: result.reason } as const;
+              const receipt = randomBytes(24).toString("hex");
+              yield* Ref.update(grantReceipts, (map) => {
+                const next = new Map(map);
+                next.set(grantId, createHash("sha256").update(receipt).digest("hex"));
+                // Bounded: drop the oldest receipts first.
+                while (next.size > 2000) {
+                  const oldest = next.keys().next().value;
+                  if (oldest === undefined) break;
+                  next.delete(oldest);
+                }
+                return next;
+              });
+              return { status: "awaiting-approval", grantId, receipt, reason: result.reason } as const;
             }
 
             yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
@@ -1343,6 +1362,15 @@ export function makeVaultServiceLive(
             ),
           ),
         listAudit: () => store.listAudit(),
+        getGrant: (grantId) => registry.get(grantId),
+        checkGrantReceipt: (grantId, receipt) =>
+          Effect.map(Ref.get(grantReceipts), (map) => {
+            const stored = map.get(grantId);
+            if (stored === undefined) return false;
+            const given = createHash("sha256").update(receipt).digest();
+            const expected = Buffer.from(stored, "hex");
+            return given.length === expected.length && timingSafeEqual(given, expected);
+          }),
         listPendingApprovals: () =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;

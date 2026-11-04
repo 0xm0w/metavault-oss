@@ -23,6 +23,11 @@ export interface MetavaultMcpOptions {
   readonly ide?: string;
   readonly defaultTool?: string;
   readonly fetchFn?: DaemonFetch;
+  // How long request_capability / grant_status wait for the user's decision
+  // before returning a still-pending answer. Bounded so a tool call never
+  // outlives a client's own tool timeout. 0 disables waiting.
+  readonly approvalWaitMs?: number;
+  readonly approvalPollMs?: number;
 }
 
 // Tool-edge input for request_capability. The translated daemon request is
@@ -35,6 +40,8 @@ const RequestCapabilityToolSchema = Schema.Struct({
   tool: Schema.optional(Schema.String),
   payload: Schema.optional(Schema.Unknown),
 });
+
+const GrantStatusToolSchema = Schema.Struct({ grantId: Schema.String });
 
 const NoArgsSchema = Schema.Struct({});
 
@@ -62,7 +69,7 @@ const TOOLS: readonly Tool[] = [
   {
     name: "request_capability",
     description:
-      "Request a scoped capability (e.g. alias stripe, scope charges.read) with a reason. Returns the daemon result verbatim: executed, awaiting-approval (with grantId), or denied. Never returns secret values.",
+      "Request a scoped capability (e.g. alias stripe, scope charges.read) with a reason. Returns the daemon result: executed, awaiting-approval (with grantId; then call grant_status), or denied (final). Never returns secret values.",
     inputSchema: toolInputSchema(RequestCapabilityToolSchema),
   },
   {
@@ -80,6 +87,12 @@ const TOOLS: readonly Tool[] = [
     name: "enrollment_status",
     description: "Check an enrollment created by request_enrollment: pending, completed, or expired.",
     inputSchema: toolInputSchema(EnrollmentIdSchema),
+  },
+  {
+    name: "grant_status",
+    description:
+      "Check the outcome of a request_capability call that returned awaiting-approval. Returns pending, executed, denied, expired or revoked for that grantId. denied, expired and revoked are final: nothing ran, so stop and ask the user. Never returns secret values.",
+    inputSchema: toolInputSchema(GrantStatusToolSchema),
   },
   {
     name: "revoke",
@@ -135,6 +148,7 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
     method: "GET" | "POST",
     path: string,
     body?: unknown,
+    extraHeaders?: Record<string, string>,
   ): Promise<CallToolResult> => {
     let response: Response;
     try {
@@ -143,6 +157,7 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         headers: {
           "content-type": "application/json",
           "x-metavault-client-pid": String(process.pid),
+          ...(extraHeaders ?? {}),
           ...(agentToken !== undefined && agentToken !== ""
             ? { "x-metavault-agent-token": agentToken }
             : {}),
@@ -188,10 +203,86 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
     if (decoded === null) {
       return errorResult("invalid arguments for request_capability");
     }
-    return callDaemon("POST", "/request", {
+    const result = await callDaemon("POST", "/request", {
       ...decoded,
       ...(input.payload !== undefined ? { payload: input.payload } : {}),
     });
+    return await annotateRequestResult(result);
+  };
+
+  // Private receipts from awaiting-approval answers. They stay in this
+  // process: the model only ever sees the grant id.
+  const receipts = new Map<string, string>();
+  const finals = new Map<string, Record<string, unknown>>();
+  const approvalWaitMs = Math.max(0, Math.min(options.approvalWaitMs ?? 20_000, 25_000));
+  const approvalPollMs = Math.max(10, options.approvalPollMs ?? 750);
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+  // One read of a grant's outcome, then a bounded wait while it is pending.
+  // A wait that ends is "pending, timedOut", never a denial; a daemon or
+  // network failure is "unavailable", never a decision either.
+  const readGrant = async (grantId: string, waitMs: number): Promise<Record<string, unknown>> => {
+    const settled = finals.get(grantId);
+    if (settled !== undefined) return settled;
+    const receipt = receipts.get(grantId);
+    if (receipt === undefined) {
+      return { grantId, status: "unknown", final: false, message: "This session did not make that request, so its outcome cannot be read." };
+    }
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      const res = await callDaemon("GET", `/grants/${encodeURIComponent(grantId)}`, undefined, { "x-metavault-grant-receipt": receipt });
+      let parsed: unknown;
+      try { parsed = JSON.parse(textOfResult(res)) as unknown; } catch { parsed = null; }
+      const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+      if (res.isError === true || record === null) {
+        const detail = textOfResult(res);
+        return { grantId, status: "unavailable", final: false, message: `Could not read the outcome (${detail.slice(0, 120)}). This is not a decision. Ask the user instead of retrying the request.` };
+      }
+      if (record["terminal"] === true) {
+        receipts.delete(grantId);
+        const outcome = { ...record, final: true };
+        finals.set(grantId, outcome);
+        return outcome;
+      }
+      if (Date.now() >= deadline) {
+        return { ...record, final: false, timedOut: waitMs > 0, message: "Still waiting for the user to decide in MetaVault OSS. The wait ended; this is not a denial. Call grant_status again, and do not send the request again." };
+      }
+      await sleep(Math.min(approvalPollMs, Math.max(10, deadline - Date.now())));
+    }
+  };
+
+  // Gives the agent the next step for each daemon answer. A denial stays a
+  // structured domain result (status "denied", unchanged contract) with
+  // final: true and a plain instruction, so a client cannot read it as a
+  // connection problem. awaiting-approval waits a bounded time for the
+  // user's decision and returns it, or the pending state with the poll tool.
+  const annotateRequestResult = async (result: CallToolResult): Promise<CallToolResult> => {
+    let parsed: unknown;
+    try { parsed = JSON.parse(textOfResult(result)) as unknown; } catch { return result; }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) { return result; }
+    const record = { ...(parsed as Record<string, unknown>) };
+    if (record["status"] === "awaiting-approval" && typeof record["grantId"] === "string") {
+      const grantId = record["grantId"];
+      const receipt = record["receipt"];
+      delete record["receipt"];
+      if (typeof receipt !== "string") { return verbatimResult(record, result.isError !== true); }
+      receipts.set(grantId, receipt);
+      const outcome = await readGrant(grantId, approvalWaitMs);
+      const merged = { ...record, ...(outcome["final"] === true || outcome["status"] === "unavailable" ? outcome : { status: "awaiting-approval", timedOut: outcome["timedOut"], instruction: "The user must decide in MetaVault OSS. Call grant_status with this grantId to learn the outcome. Do not send this request again while it is pending." }) };
+      return { content: [{ type: "text", text: JSON.stringify(merged) }], structuredContent: merged };
+    }
+    if (record["status"] === "denied") {
+      return verbatimResult({ ...record, final: true, instruction: "This request was denied. Nothing ran. Do not retry it or look for another way around it; tell the user and ask what they want." }, result.isError !== true);
+    }
+    return result;
+  };
+
+  const handleGrantStatus = async (args: unknown): Promise<CallToolResult> => {
+    const decoded = await decode(GrantStatusToolSchema, args ?? {});
+    if (decoded === null || decoded.grantId.trim() === "") { return errorResult("invalid arguments for grant_status"); }
+    const outcome = await readGrant(decoded.grantId.trim(), approvalWaitMs);
+    const failed = outcome["status"] === "unavailable" || outcome["status"] === "unknown";
+    return { content: [{ type: "text", text: JSON.stringify(outcome) }], structuredContent: outcome, ...(failed ? { isError: true } : {}) };
   };
 
   const handleRequestEnrollment = async (args: unknown): Promise<CallToolResult> => {
@@ -253,6 +344,8 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         return handleRequestEnrollment(args);
       case "enrollment_status":
         return handleEnrollmentStatus(args);
+      case "grant_status":
+        return handleGrantStatus(args);
       case "revoke":
         return handleRevoke(args);
       default:
