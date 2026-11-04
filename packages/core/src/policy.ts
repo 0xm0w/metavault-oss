@@ -8,6 +8,12 @@ export interface PolicyConfig {
   // a high-risk financial write: it always needs a human, standing
   // approvals never apply, and no marshal verdict can auto-approve it.
   financialAliases?: readonly string[];
+  // Remote-origin requests never reuse standing approvals: a remote grant
+  // is a fresh human decision on the vault machine every time.
+  disableStandingApprovals?: boolean;
+  // Device write ceiling (DD4): when false, remote write scopes are denied
+  // outright at the policy floor, below the alias ceiling.
+  deviceAllowWrite?: boolean;
 }
 
 export interface AgentVelocityConfig {
@@ -162,12 +168,17 @@ export function evaluatePolicy(
   }
 
 
+  if (cfg.deviceAllowWrite === false && isWriteScope(allowedScope)) {
+    return { allowedScope: null, requireApproval: false, reason: "device-ceiling-readonly" };
+  }
+
   const financial = cfg.financialAliases?.includes(req.alias) === true;
   if (financial) {
     return { allowedScope, requireApproval: true, reason: "financial-approval-required" };
   }
 
   const hasStandingApproval =
+    cfg.disableStandingApprovals !== true &&
     decision !== null &&
     decision.risk === "low" &&
     !isWriteScope(allowedScope) &&
