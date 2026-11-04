@@ -2,11 +2,16 @@
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a suspected vulnerability — this project
-will be public later, and reports should not disclose exploit details
-before a fix exists.
+Do not open a public issue for a suspected vulnerability: reports should
+not disclose exploit details before a fix exists.
 
-Report privately to the maintainers with:
+Use GitHub's private vulnerability reporting: open the repository's
+**Security** tab and choose **Report a vulnerability**. This creates a
+private advisory that only the maintainers can see. (If that button is not
+shown, the maintainers have not enabled it yet. Open a public issue that
+asks for a private contact, without any vulnerability details.)
+
+Include:
 
 - A description of the issue and its impact.
 - The exact component (`vaultd`, policy, brain, connectors, MCP, CLI, or
