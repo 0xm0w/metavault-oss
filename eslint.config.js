@@ -2,7 +2,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["node_modules/**", "dist/**", "**/dist/**", "coverage/**", "packages/app/bundle/**", "packages/app/release/**"],
+    ignores: ["tools/site-animations/**", "site/assets/animations/**", "**/node_modules/**", "dist/**", "**/dist/**", "coverage/**", "packages/app/bundle/**", "packages/app/release/**"],
   },
   ...tseslint.configs.strictTypeChecked,
   {

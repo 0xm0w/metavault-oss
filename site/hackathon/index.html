@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/assets/landing.css">
 <link rel="stylesheet" href="/assets/pages.css">
+<link rel="stylesheet" href="/assets/animation-embed.css">
 </head>
 <body>
 <div class="mb-landing hack-deck">
@@ -75,6 +76,15 @@
         <article class="pg-card"><span class="n">Warden</span><h3>A Meta model on guard</h3><p class="pg-note">Default <span class="buzz">Muse Spark 1.3 via the Meta API</span>, or a model on your own local endpoint. It sees the request, never the key.</p></article>
         <article class="pg-card"><span class="n">Tripwire</span><h3>The grant expires</h3><p class="pg-note">After the call, after 60 seconds, or on one revoke. Standing approval is a low read only.</p></article>
       </div>
+      <p class="pg-note animation-pan-note">Explore the request flow below. On phones, swipe the diagram sideways.</p>
+      <iframe class="animation-frame" data-animation="architecture" title="MetaVault capability request flow" src="/assets/animations/architecture.html" loading="lazy" height="890"></iframe>
+    </div>
+  </section>
+
+  <section class="hack-slide hack-animation-slide" id="key-rotation" data-label="Key rotation">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">Key rotation</span>
+      <iframe class="animation-frame" data-animation="comparison" title="From chronic key rotation to paste-once capability delegation" src="/assets/animations/comparison.html" loading="lazy" height="820"></iframe>
     </div>
   </section>
 
@@ -148,12 +158,13 @@
 </div>
 
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
-  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 6, The pitch"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 6, The problem"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 6, The solution"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 6, Try the gate"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 6, Why a Meta model"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 6, Proofs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 7, The pitch"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 7, The problem"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 7, The solution"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 7, Key rotation"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 7, Try the gate"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 7, Why a Meta model"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 7, Proofs"><span></span></button>
 </nav>
 <div class="hack-chevrons">
   <button type="button" class="hack-chevron" id="hack-up" aria-label="Previous slide" disabled>
@@ -165,5 +176,6 @@
 </div>
 </div>
 <script src="/assets/pages.js"></script>
+<script src="/assets/animation-embed.js"></script>
 </body>
 </html>
