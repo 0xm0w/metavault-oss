@@ -156,8 +156,8 @@ describe("remote settings guard", () => {
       issuer,
       nowMs: NOW,
     });
-    expect(denied.allow).toBe(false);
-    const token = issuer.issue(SETTINGS_REMOTE_PROOF_SCOPE, NOW);
+    expect(denied.decision.allow).toBe(false);
+    const token = issuer.issue(SETTINGS_REMOTE_PROOF_SCOPE, NOW, "daemon-proof-xyz");
     const allowed = guardRemoteSettingsCall({
       method: "PATCH",
       path: "/settings/remote",
@@ -165,13 +165,15 @@ describe("remote settings guard", () => {
       issuer,
       nowMs: NOW + 100,
     });
-    expect(allowed.allow).toBe(true);
+    expect(allowed.decision.allow).toBe(true);
+    // The main token is stripped and the daemon proof forwarded.
+    expect(allowed.body).toEqual({ requireAuthForRemoteApproval: false, presenceProof: "daemon-proof-xyz" });
   });
 
   it("does not gate other settings changes or paths", () => {
     const issuer = new PresenceProofIssuer();
-    expect(guardRemoteSettingsCall({ method: "PATCH", path: "/settings/remote", body: { enabled: true }, issuer, nowMs: NOW }).allow).toBe(true);
-    expect(guardRemoteSettingsCall({ method: "PATCH", path: "/settings/remote", body: { requireAuthForRemoteApproval: true }, issuer, nowMs: NOW }).allow).toBe(true);
-    expect(guardRemoteSettingsCall({ method: "PATCH", path: "/settings/warden", body: { requireAuthForRemoteApproval: false }, issuer, nowMs: NOW }).allow).toBe(true);
+    expect(guardRemoteSettingsCall({ method: "PATCH", path: "/settings/remote", body: { enabled: true }, issuer, nowMs: NOW }).decision.allow).toBe(true);
+    expect(guardRemoteSettingsCall({ method: "PATCH", path: "/settings/remote", body: { requireAuthForRemoteApproval: true }, issuer, nowMs: NOW }).decision.allow).toBe(true);
+    expect(guardRemoteSettingsCall({ method: "PATCH", path: "/settings/warden", body: { requireAuthForRemoteApproval: false }, issuer, nowMs: NOW }).decision.allow).toBe(true);
   });
 });

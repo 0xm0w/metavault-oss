@@ -132,19 +132,34 @@ export async function guardApprovalCall(options: {
 }
 
 // Guards PATCH /settings/remote: weakening the remote-approval presence
-// requirement itself requires fresh local presence.
+// requirement itself requires fresh local presence, and the daemon-issued
+// proof is forwarded so the daemon enforces the same rule for direct
+// token-authenticated calls.
 export function guardRemoteSettingsCall(options: {
   readonly method: string;
   readonly path: string;
   readonly body: unknown;
   readonly issuer: PresenceProofIssuer;
   readonly nowMs: number;
-}): RemoteApprovalDecision {
-  if (!(options.method === "PATCH" && options.path === "/settings/remote")) return { allow: true };
-  const record = typeof options.body === "object" && options.body !== null ? (options.body as Record<string, unknown>) : {};
-  if (record["requireAuthForRemoteApproval"] !== false) return { allow: true };
-  if (options.issuer.consume(record["__presenceProof"], SETTINGS_REMOTE_PROOF_SCOPE, options.nowMs) !== null) {
-    return { allow: true };
+}): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
+  if (!(options.method === "PATCH" && options.path === "/settings/remote")) {
+    return { decision: { allow: true }, body: options.body };
   }
-  return { allow: false, reason: "disabling remote-approval presence requires fresh local presence (PIN or Windows Hello)" };
+  const record = typeof options.body === "object" && options.body !== null ? { ...(options.body as Record<string, unknown>) } : {};
+  if (record["requireAuthForRemoteApproval"] !== false) {
+    return { decision: { allow: true }, body: options.body };
+  }
+  const proof = record["__presenceProof"];
+  delete record["__presenceProof"];
+  const consumed = options.issuer.consume(proof, SETTINGS_REMOTE_PROOF_SCOPE, options.nowMs);
+  if (consumed !== null) {
+    if (typeof consumed.daemonProof === "string" && consumed.daemonProof !== "") {
+      record["presenceProof"] = consumed.daemonProof;
+    }
+    return { decision: { allow: true }, body: record };
+  }
+  return {
+    decision: { allow: false, reason: "disabling remote-approval presence requires fresh local presence (app PIN)" },
+    body: record,
+  };
 }

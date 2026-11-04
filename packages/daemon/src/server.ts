@@ -1139,7 +1139,8 @@ export async function handleVaultRequest(
       if (typeof b["requireAuthForRemoteApproval"] !== "boolean") return BAD_REQUEST;
       patch.requireAuthForRemoteApproval = b["requireAuthForRemoteApproval"];
     }
-    const updated = await run(service.updateRemoteSettings(patch));
+    const presenceProof = b["presenceProof"];
+    const updated = await run(service.updateRemoteSettings(patch, typeof presenceProof === "string" ? presenceProof : undefined));
     if (updated.status !== 200) {
       return updated;
     }

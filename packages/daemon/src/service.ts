@@ -356,7 +356,7 @@ export interface VaultServiceService {
   readonly listDeviceAliasPolicies: (deviceId: string) => Effect.Effect<DeviceAliasPolicy[], StorageError>;
   readonly setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) => Effect.Effect<void, StorageError>;
   readonly getRemoteSettings: () => Effect.Effect<RemoteSettings, StorageError>;
-  readonly updateRemoteSettings: (patch: Partial<RemoteSettings>) => Effect.Effect<RemoteSettings, StorageError>;
+  readonly updateRemoteSettings: (patch: Partial<RemoteSettings>, presenceProof?: string) => Effect.Effect<RemoteSettings, PresenceRequired | StorageError>;
   readonly createPairingSession: () => Effect.Effect<PairingSessionView, StorageError>;
   readonly getPairingSession: () => Effect.Effect<PairingSessionView | undefined, StorageError>;
   readonly cancelPairingSession: (pairingId: string) => Effect.Effect<void, StorageError>;
@@ -390,7 +390,7 @@ export interface VaultServiceService {
     currentPin?: string,
   ) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
   readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean; readonly presenceProof?: string }, StorageError>;
-  readonly verifyBiometric: () => Effect.Effect<{ readonly ok: boolean; readonly presenceProof?: string }, StorageError>;
+  readonly verifyBiometric: () => Effect.Effect<{ readonly ok: boolean }, StorageError>;
   readonly getSecurityPosture: () => Effect.Effect<SecurityPostureReport, StorageError>;
 }
 
@@ -1621,9 +1621,20 @@ export function makeVaultServiceLive(
             yield* store.setDeviceAliasPolicy(deviceId, alias, allowWrite);
           }),
         getRemoteSettings: () => store.getRemoteSettingsRow(),
-        updateRemoteSettings: (patch) =>
+        updateRemoteSettings: (patch, presenceProof) =>
           Effect.gen(function* () {
             const current = yield* store.getRemoteSettingsRow();
+            // Turning the remote-approval presence requirement OFF is itself
+            // a privileged weakening: any caller - app main or a direct
+            // daemon-token holder - must prove fresh local presence (PIN).
+            if (patch.requireAuthForRemoteApproval === false && current.requireAuthForRemoteApproval) {
+              const ok = yield* consumePresenceProof(presenceProof);
+              if (!ok) {
+                return yield* Effect.fail(
+                  new PresenceRequired({ message: "disabling remote-approval presence requires fresh local presence (app PIN)" }),
+                );
+              }
+            }
             const next = {
               enabled: patch.enabled ?? current.enabled,
               host: patch.host ?? current.host,
@@ -1869,8 +1880,10 @@ export function makeVaultServiceLive(
             if (!current.enabled || !current.biometricEnabled) {
               return { ok: false } as const;
             }
-            const presenceProof = yield* mintPresenceProof();
-            return { ok: true, presenceProof } as const;
+            // Deliberately NO presence proof: this result is caller-attested
+            // (the daemon cannot verify a Hello prompt happened), so it must
+            // never authorize remote approvals. PIN is the only proof source.
+            return { ok: true } as const;
           }),
 
         getSecurityPosture: () =>

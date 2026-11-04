@@ -1057,23 +1057,13 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
 }
 
 // Remote approvals and weakening the remote-presence setting require a
-// single-use proof issued by the main process after a REAL PIN or Hello
-// check. No configured local auth means no proof: fail closed, visibly.
+// single-use proof issued by the main process after a REAL PIN check.
+// Windows Hello is deliberately NOT accepted for remote approvals: its
+// daemon-side result is caller-attested, so it cannot prove presence to
+// the vault. No configured PIN means no proof: fail closed, visibly.
 function obtainPresenceProof(req: PresenceProofRequestLike, onToken: (token: string) => void): void {
-  if (isBiometricsActive(localAuthStatus)) {
-    void (async () => {
-      try {
-        const { token } = await window.metavault.requestPresenceProof({ ...req, hello: true });
-        onToken(token);
-      } catch {
-        notice = "Windows Hello was not confirmed.";
-        render();
-      }
-    })();
-    return;
-  }
   if (!localAuthStatus.configured) {
-    notice = "Set an app PIN or Windows Hello in Settings before approving remote requests.";
+    notice = "Set an app PIN in Settings before approving remote requests. Windows Hello alone cannot authorize them.";
     render();
     return;
   }

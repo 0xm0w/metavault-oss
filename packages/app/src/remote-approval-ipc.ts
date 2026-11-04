@@ -48,9 +48,9 @@ export function defaultGuardDeps(issuer: PresenceProofIssuer): GuardDeps {
   };
 }
 
-// Issues a single-use presence proof after a REAL local-presence check.
-// No configured PIN and no usable Hello means no proof: remote approval
-// fails closed, never silently bypasses.
+// Issues a single-use presence proof after a REAL PIN verification.
+// No configured PIN means no proof: remote approval fails closed, never
+// silently bypasses. Hello is deliberately not accepted here.
 export async function issuePresenceProof(input: unknown, deps: GuardDeps): Promise<{ token: string }> {
   if (typeof input !== "object" || input === null) throw new Error("malformed presence proof request");
   const req = input as PresenceProofRequest;
@@ -62,17 +62,21 @@ export async function issuePresenceProof(input: unknown, deps: GuardDeps): Promi
   } else {
     throw new Error("malformed presence proof request");
   }
+  // PIN is the ONLY accepted factor. Windows Hello results are
+  // caller-attested at the daemon, so a Hello-based proof would be a faux
+  // guarantee: remote approvals fail closed to the app PIN instead.
+  if (req.hello === true && (typeof req.pin !== "string" || req.pin === "")) {
+    throw new Error("Windows Hello cannot authorize remote approvals - use the app PIN");
+  }
   let verified = false;
   let daemonProof: string | null = null;
-  if (req.hello === true) {
-    verified = await deps.verifyHello();
-  } else if (typeof req.pin === "string" && req.pin !== "") {
+  if (typeof req.pin === "string" && req.pin !== "") {
     const pinResult = await deps.verifyPin(req.pin);
     verified = pinResult !== false;
     daemonProof = typeof pinResult === "string" ? pinResult : null;
   }
   if (!verified) {
-    throw new Error("local presence not verified - set an app PIN or Windows Hello to approve remote requests");
+    throw new Error("local presence not verified - set an app PIN to approve remote requests");
   }
   // When the PIN was verified by the daemon, its single-use proof rides
   // along so the guarded approval can satisfy the daemon-side presence
@@ -91,12 +95,12 @@ export async function guardedDaemonCall(request: unknown, deps: GuardDeps): Prom
     issuer: deps.issuer,
     nowMs: deps.nowMs(),
   });
-  if (!settingsGuard.allow) {
-    throw new Error(settingsGuard.reason ?? "rejected by remote settings guard");
+  if (!settingsGuard.decision.allow) {
+    throw new Error(settingsGuard.decision.reason ?? "rejected by remote settings guard");
   }
   const approvalGuard = await guardApprovalCall({
     path: validated.path,
-    body: validated.body,
+    body: settingsGuard.body,
     issuer: deps.issuer,
     nowMs: deps.nowMs(),
     getPending: deps.getPending,

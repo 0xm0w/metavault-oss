@@ -30,13 +30,17 @@ describe("issuePresenceProof (trusted boundary)", () => {
     expect(deps.issuer.consume(token, "approve:g-remote", NOW)).toEqual({ daemonProof: "daemon-proof-abc" });
   });
 
-  it("mints via Windows Hello and fails closed when neither factor verifies", async () => {
-    const deps = makeDeps({ verifyHello: () => Promise.resolve(false), verifyPin: () => Promise.resolve(false) });
-    await expect(issuePresenceProof({ scope: "approve", grantId: "g-remote", hello: true }, deps)).rejects.toThrow(/not verified/);
+  it("never mints from Windows Hello and fails closed when the PIN does not verify", async () => {
+    // Hello results are caller-attested at the daemon; remote approvals are
+    // PIN-only by design.
+    const deps = makeDeps({ verifyPin: () => Promise.resolve(false) });
+    await expect(issuePresenceProof({ scope: "approve", grantId: "g-remote", hello: true }, deps)).rejects.toThrow(/Hello cannot authorize/);
+    await expect(issuePresenceProof({ scope: "settings-remote", hello: true }, deps)).rejects.toThrow(/Hello cannot authorize/);
     await expect(issuePresenceProof({ scope: "approve", grantId: "g-remote" }, deps)).rejects.toThrow(/not verified/);
+    await expect(issuePresenceProof({ scope: "approve", grantId: "g-remote", pin: "wrong" }, deps)).rejects.toThrow(/not verified/);
     const ok = makeDeps();
-    const { token } = await issuePresenceProof({ scope: "settings-remote", hello: true }, ok);
-    expect(ok.issuer.consume(token, SETTINGS_REMOTE_PROOF_SCOPE, NOW)).toEqual({ daemonProof: undefined });
+    const { token } = await issuePresenceProof({ scope: "settings-remote", pin: "1234" }, ok);
+    expect(ok.issuer.consume(token, SETTINGS_REMOTE_PROOF_SCOPE, NOW)).toEqual({ daemonProof: "daemon-proof-abc" });
   });
 
   it("rejects malformed requests", async () => {

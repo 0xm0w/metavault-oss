@@ -347,8 +347,10 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     // Biometric verification endpoint succeeds
     const bioRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, auth);
     expect(bioRes.status).toBe(200);
-    expect(bioRes.body).toMatchObject({ ok: true });
-    expect(typeof (bioRes.body as { presenceProof?: unknown }).presenceProof).toBe("string");
+    expect(bioRes.body).toEqual({ ok: true });
+    // Biometric success is caller-attested: it must never mint a remote
+    // approval presence proof.
+    expect((bioRes.body as { presenceProof?: unknown }).presenceProof).toBeUndefined();
 
     // PIN fallback remains active
     const pinRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "1357" }, auth);

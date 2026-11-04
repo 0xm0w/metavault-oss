@@ -153,6 +153,77 @@ describe("daemon-side remote approval presence enforcement", () => {
     expect(err._tag).toBe("PresenceRequired");
   });
 
+  it("a direct daemon-token settings PATCH cannot disable the presence requirement without a proof", async () => {
+    const { svc } = await makeHarness();
+    await Effect.runPromise(svc.setLocalPin("4321"));
+    // Direct, token-authenticated, no proof: rejected.
+    const denied = await handleVaultRequest(
+      svc,
+      "PATCH",
+      "/settings/remote",
+      { requireAuthForRemoteApproval: false },
+      withToken,
+    );
+    expect(denied.status).toBe(403);
+    expect((denied.body as { error: { _tag: string } }).error._tag).toBe("PresenceRequired");
+    // The setting is still on.
+    const row = await handleVaultRequest(svc, "GET", "/settings/remote", undefined, withToken);
+    expect((row.body as Record<string, unknown>)["requireAuthForRemoteApproval"]).toBe(true);
+    // With a real PIN-verify proof the same direct call succeeds.
+    const verified = await Effect.runPromise(svc.verifyLocalPin("4321"));
+    const allowed = await handleVaultRequest(
+      svc,
+      "PATCH",
+      "/settings/remote",
+      { requireAuthForRemoteApproval: false, presenceProof: verified.presenceProof },
+      withToken,
+    );
+    expect(allowed.status).toBe(200);
+    const row2 = await handleVaultRequest(svc, "GET", "/settings/remote", undefined, withToken);
+    expect((row2.body as Record<string, unknown>)["requireAuthForRemoteApproval"]).toBe(false);
+  });
+
+  it("a daemon-token holder cannot replace an existing PIN without the current PIN", async () => {
+    const { svc } = await makeHarness();
+    await Effect.runPromise(svc.setLocalPin("4321"));
+    // Attempted silent replacement via the direct route: rejected.
+    const replaced = await handleVaultRequest(svc, "POST", "/settings/local-auth/pin", { pin: "9999" }, withToken);
+    expect(replaced.status).not.toBe(200);
+    // The original PIN still verifies (and mints); the attempted one does not.
+    const oldPin = await Effect.runPromise(svc.verifyLocalPin("4321"));
+    expect(oldPin.ok).toBe(true);
+    expect(typeof oldPin.presenceProof).toBe("string");
+    const newPin = await Effect.runPromise(svc.verifyLocalPin("9999"));
+    expect(newPin.ok).toBe(false);
+    expect(newPin.presenceProof).toBeUndefined();
+  });
+
+  it("a daemon-token holder cannot mint a proof through the biometric route", async () => {
+    const { svc, store } = await makeHarness();
+    await Effect.runPromise(svc.setLocalPin("4321"));
+    const current = await Effect.runPromise(store.getLocalAuthRecord());
+    await Effect.runPromise(store.setLocalAuthRecord({ ...current, enabled: true, biometricEnabled: true }));
+    const bio = await handleVaultRequest(svc, "POST", "/settings/local-auth/verify-biometric", undefined, withToken);
+    expect(bio.status).toBe(200);
+    expect((bio.body as Record<string, unknown>)["presenceProof"]).toBeUndefined();
+    // ...and a remote approval still fails closed without a real PIN proof.
+    const grantId = await createRemoteGrant(svc);
+    const denied = await handleVaultRequest(svc, "POST", "/approve", { grantId }, withToken);
+    expect(denied.status).toBe(403);
+  });
+
+  it("disabling local-auth keeps the PIN hash, so proofs still need the real PIN", async () => {
+    const { svc } = await makeHarness();
+    await Effect.runPromise(svc.setLocalPin("4321"));
+    await handleVaultRequest(svc, "PATCH", "/settings/local-auth", { enabled: false }, withToken);
+    const wrong = await Effect.runPromise(svc.verifyLocalPin("0000"));
+    expect(wrong.ok).toBe(false);
+    expect(wrong.presenceProof).toBeUndefined();
+    const right = await Effect.runPromise(svc.verifyLocalPin("4321"));
+    expect(right.ok).toBe(true);
+    expect(typeof right.presenceProof).toBe("string");
+  });
+
   it("does not gate local grants", async () => {
     const { svc } = await makeHarness();
     const created = await handleVaultRequest(svc, "POST", "/request", req);
