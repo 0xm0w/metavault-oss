@@ -1646,3 +1646,35 @@ body.is-locked .view { padding: 0; max-width: none; }
 .wizard-steps li strong { font-size: 14px; color: var(--ink); }
 .wizard-steps li.is-done strong { color: var(--ok); }
 .wizard-steps li .action { justify-self: start; margin-top: 4px; }
+
+/* Narrow windows: the sidebar becomes a top strip and content uses the full width. */
+@media (max-width: 720px) {
+  :root { --caption-reserve: 0px; }
+  .shell-body { flex-direction: column; overflow: hidden; }
+  .sidebar { width: 100%; flex-direction: row; align-items: center; padding: 6px 8px; border-right: none; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .sidebar-brand, .sidebar-version { display: none; }
+  .sidebar-nav { flex-direction: row; padding-top: 0; gap: 4px; flex: 1 1 auto; }
+  .sidebar-nav .nav-btn, .sidebar-foot .nav-btn { white-space: nowrap; flex: none; }
+  .sidebar-foot { margin-top: 0; padding-top: 0; flex-direction: row; flex: none; }
+  .app-header { padding: 0 10px; gap: 8px; }
+  .header-right { gap: 8px; min-width: 0; }
+  .shell-main { min-width: 0; overflow-y: auto; }
+  .view { padding-left: 12px; padding-right: 12px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .registration-card, .wizard-card { min-width: 0; box-sizing: border-box; }
+  .registration-card p, .wizard-card p, .wizard-steps li span { overflow-wrap: anywhere; }
+  .wizard-steps { padding-left: 18px; }
+  .registration-actions .action { flex: 1 1 90px; }
+}
+@media (max-width: 720px) {
+  .sidebar-nav { min-width: 0; }
+  .sidebar .nav-btn { width: auto; flex: none; padding: 0 12px; }
+}
+@media (max-width: 420px) {
+  .daemon-status { max-width: 7ch; overflow: hidden; white-space: nowrap; }
+  .app-logo { font-size: 12px; }
+  .header-sep { display: none; }
+}
+@media (max-width: 720px) {
+  .sidebar-nav { flex: none; }
+  .sidebar-foot { margin-left: 4px; }
+}
