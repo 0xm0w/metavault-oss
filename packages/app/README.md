@@ -9,8 +9,8 @@ renderer rebuilds every payload from whitelisted fields before rendering.
 ## Layout
 
 - `src/main.ts` — Electron main: hardened window, tray, close-to-tray.
-  Quitting from the tray stops only the UI; `vaultd` keeps queueing
-  approvals (bounded by grant TTL) until the UI or CLI next connects.
+  Quitting stops a daemon owned by the app; an independently started daemon
+  remains independent. Closing the window can hide it to the tray.
 - `src/window-options.ts` — window security contract (unit-tested):
   `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`.
 - `src/preload.ts` — context bridge exposing only the daemon API calls
@@ -30,12 +30,28 @@ carries no `grantId`), so two additive endpoints were added:
   standing approval. The daemon re-checks eligibility server-side:
   read-only scope + marshal risk `low`, otherwise `403 PolicyDenied`.
 
-## Run (manual gate — pending, see task-9 report)
+## Installed Windows candidate
+
+The installed app bundles its daemon, CLI and MCP runtime and starts its owned
+daemon on launch. Fresh launch shows password setup; later locked launches show
+password unlock. Settings > Daemon shows actual vault path and an unlocked key
+fingerprint, plus host config and one-time agent generate/rotate/revoke controls.
+Copy agent instructions there. No external Node or source checkout is required.
+
+Deliberate uninstall warns then deletes the fixed app profile; Cancel preserves it.
+Silent `/S` means the same wipe without a prompt. In-place update preserves data.
+Shared legacy keys and links block cleanup before deletion. External/custom data
+is not deleted. See [recovery](../../docs/RECOVERY.md).
+
+Windows Hello verifies the app screen lock only, not encryption-key custody.
+This is unreleased candidate behavior; see [validation](../../docs/VERIFICATION.md).
+
+## Run from source
 
 ```powershell
 # 1. Start vaultd (separate terminal), then unlock it with your passphrase
 node --experimental-strip-types packages/daemon/src/server.ts  # or the compiled daemon entry
-node dist/packages/cli/src/cli.js unlock   # the app has no passphrase screen yet
+node dist/packages/cli/src/cli.js unlock   # or use the app password screen
 
 # 2. Build the app (CommonJS preload.cjs + renderer assets staged into dist)
 npm --prefix packages/app run build

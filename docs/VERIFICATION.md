@@ -291,3 +291,31 @@ is the designed behaviour when another instance/profile is present.
 ## Codebase
 
 Test count today: see the gate table above (504 on Node 24, 503 on Node 22). Secrets appear in the repo only as fake canary/test strings.
+
+
+## Local-hardening candidate - November 4, 2026
+
+This is unreleased candidate evidence, not a production certification. Historical
+"two-host" config tests above are not actual editor-host proof.
+
+| Gate | Current evidence | Limit |
+| --- | --- | --- |
+| Uninstall warning/Cancel, fixed-profile wipe, fresh reinstall, protected shared key, encrypted install-over-install | Passed exacta06f60c, then88c91c1 on actual Windows CI; runs41711642268 and41716116132 | Synthetic disposable profile only; external/custom DBs/IDE config/exported tokens not deleted |
+| Actual installed IDE host | VS Code1.144.1, exact88c91c1, official archive SHA, isolated profile/workspace, `lm.invokeTool(request_capability)` awaiting approval plus daemon `verified=true`; run41716116132 | No execution/approval/model account; other IDEs/model chat not proved |
+| Unit/coverage/build |547 passed /3 skipped on exact88c91c1, Windows and Ubuntu CI41716116234 | Live model tests skipped, no paid model calls |
+| Published working0.1.2 upgrade | Gate added in PR101; final exact-head Windows result pending | Distinct from same-artifact reinstall; no0.1.0 compatibility claim |
+| Key identity and restore | PR103 synthetic matching DB/key restore, unrelated/mixed key rejection, no byte changes, rejected buffer zeroing;553 passed /3 skipped locally | Final Windows gate pending; empty DB cannot authenticate pairing |
+| Main-base CodeQL | Temporary validation-only PR102 on exact combined stack; final run pending | Analysis uses continue-on-error, inspect actual analysis step/log, not wrapper green |
+
+Links: https://github.com/0xm0w/metavault-oss/actions/runs/41711642268 ,
+https://github.com/0xm0w/metavault-oss/actions/runs/41716116132 ,
+https://github.com/0xm0w/metavault-oss/actions/runs/41716116234 .
+
+Use actual commands from package.json: `npm test`, `npm run test:coverage`,
+`npm run typecheck`, `npm run lint`, `npm run build`. Screenshot work-package
+commands such as `npm test:crypto-prf` are not implemented test suites.
+Passkey custody requires a packaged target-device create/get/restart/provider/
+cancellation/recovery spike. Windows Hello consent is not that test. Legacy0.1.0
+startup compatibility remains unverified. JS heap inspection cannot establish
+that secrets never remain in runtime copies. No new public release is authorized
+by these tests, and remote Connections are not implemented in this local candidate.

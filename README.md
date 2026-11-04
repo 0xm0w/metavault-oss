@@ -29,7 +29,7 @@ Download the Windows NSIS installer (`MetaVault-OSS-0.1.2-alpha-win-x64.exe`) an
 The installer is built by the `Windows installer` workflow on `windows-latest`, which also runs a clean-install smoke test (silent install, launch, `/health`, uninstall) on the exact `.exe` before it reaches the release.
 
 - Assisted install: you accept the alpha terms (`packages/app/TERMS.txt`), choose the folder, and get a desktop shortcut and a Start menu shortcut. `bin\` is added to your user PATH (`metavault`, `vaultd`).
-- The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a passphrase. Vault data lives in `%APPDATA%\MetaVault OSS`.
+- The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a password. Vault data lives in `%APPDATA%\MetaVault OSS`.
 - No model is bundled or downloaded.
 - A deliberate uninstall removes the program, shortcuts, PATH/startup entries and the app-owned vault, password key, credentials, settings and migration backups in `%APPDATA%\MetaVault OSS`. Interactive uninstall warns before deletion; Cancel keeps it. Silent uninstall (`/S`) has the same destructive semantics without a prompt. Reinstall starts fresh. In-place updates (`--updated`) preserve data. A shared legacy key blocks cleanup before deletion. Custom external DB paths are never recursively deleted; see [recovery and uninstall](docs/RECOVERY.md).
 - Windows CI checks clean install, interactive uninstall warning/Cancel, deliberate silent wipe/fresh reinstall, and encrypted-vault preservation on install-over-install. Historical preservation-on-uninstall logs describe the previous behavior, not this change.
@@ -61,7 +61,7 @@ npm test            # full suite (see docs/VERIFICATION.md for current counts)
    OpenAI-compatible server you already run (see
    [Settings](#settings-the-warden-settings-page)). MetaVault ships no model
    and downloads none.
-2. **Create the vault.** This generates a master key, asks for a passphrase
+2. **Create the vault.** This generates a master key, asks for a password
    (at least 12 characters), wraps the key with it (scrypt by default,
    `--kdf argon2id` on request) in `metavault.key.json` next to the database,
    and creates the encrypted store. Existing vaults with the key in the OS
@@ -112,9 +112,26 @@ npm test            # full suite (see docs/VERIFICATION.md for current counts)
    from the CLI (`approve <grantId>`, `audit`, `revoke <target>`).
 7. **Connect your IDE** with the MCP snippet below.
 
+## Candidate status and recovery
+
+The local-hardening changes described here are an **unreleased candidate**, not a
+new published release. They include packaged Windows MCP, one-time agent tokens
+with rotate/revoke and hashed storage, missing/mismatched-key recovery checks,
+and destructive deliberate uninstall with update preservation. See
+[recovery](docs/RECOVERY.md) before upgrading or uninstalling, and
+[current evidence and limits](docs/VERIFICATION.md#local-hardening-candidate---november-4-2026).
+Windows Hello screen-lock verification is not passkey-backed encryption. PRF
+key custody and remote Connections are not implemented by this local candidate.
+
 ## Install via MCP (one snippet per IDE)
 
-Build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, VS Code, Codex and OpenCode** — each with its own `METAVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `metavault-mcp` bin from `packages/mcp/package.json`); the server reads `METAVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `METAVAULT_AGENT_ID` and `METAVAULT_IDE`.
+**Installed Windows app:** open Settings > Daemon > Agent Integration & MCP,
+generate or rotate the host token and copy the generated config. It uses the
+installed executable and bundled server, with no source checkout or separate Node.
+Copy the static agent instructions there too. Raw tokens are shown only at creation;
+after restarting the app, rotate to get a replacement config. See [token lifecycle](docs/MCP.md#agent-token-lifecycle).
+
+**Source development only:** build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, VS Code, Codex and OpenCode** — each with its own `METAVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `metavault-mcp` bin from `packages/mcp/package.json`); the server reads `METAVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `METAVAULT_AGENT_ID` and `METAVAULT_IDE`.
 Example (Cursor shape; other hosts differ only in wrapping — see [docs/MCP.md](docs/MCP.md)):
 
 ```json
@@ -125,7 +142,8 @@ Example (Cursor shape; other hosts differ only in wrapping — see [docs/MCP.md]
       "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
       "env": {
         "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
-        "METAVAULT_AGENT_ID": "cursor-agent",
+        "METAVAULT_AGENT_ID": "cursor",
+        "METAVAULT_AGENT_TOKEN": "<generated-private-agent-token>",
         "METAVAULT_IDE": "Cursor"
       }
     }
@@ -143,7 +161,7 @@ The desktop app's **Settings** page chooses who judges capability requests. Dete
 - **Your local endpoint (bring your own):** an API style (`Ollama` → `POST {base}/api/chat`, or `OpenAI-compatible` → `POST {base}/chat/completions`), a base URL (for example `http://localhost:11434` for Ollama or `http://localhost:8000/v1` for an OpenAI-compatible server) and a model name. We recommend a Meta open model such as Muse Glimmer (`muse-glimmer:30b` in Ollama, <https://ollama.com/library/muse-glimmer>); any model your server runs works. MetaVault does not install, download or start the model. The base URL must be `http` or `https` with no username or password in it. Empty means no local warden, and requests fail closed to you.
 - **Effort:** `Fast` (one marshal pass; 10s cloud / 60s local timeout), `Standard` (one pass; 30s / 120s), `Deep` (two passes — assess + verify — 60s / 240s; on disagreement it escalates to you and keeps the narrower scope). Effort never changes policy ceilings.
 - **Meta API key:** paste once and Save; the field clears and is never repopulated. Status shows only `Not configured` or `Configured ••••last4`. The key is stored as an ordinary encrypted credential (alias `warden-meta-api`) and decrypted only inside the daemon at call time. **Test connection** runs one real marshal self-check through the daemon (no grant, no audit row) and reports provider, model and latency.
-- **Daemon / Security defaults:** read-only daemon URL, vault path and version, plus a policy-floor summary with a jump to Policies. Settings apply on the next request — no daemon restart needed. All settings routes require the daemon token; agents cannot read or change them.
+- **Daemon / Security defaults:** read-only daemon URL, actual vault path, unlocked key fingerprint and version, plus a policy-floor summary with a jump to Policies. Settings apply on the next request — no daemon restart needed. All settings routes require the daemon token; agents cannot read or change them.
 
 ### Security levels (warden tiers & hardware profiles)
 

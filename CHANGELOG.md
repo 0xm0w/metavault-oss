@@ -4,6 +4,24 @@ All notable changes to MetaVault OSS are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Local-hardening candidate - 2026-11-04 (unreleased)
+
+- Installed Windows MCP paths/runtime and static agent instructions, tested in
+  actual VS Code with a verified synthetic request, not model chat or all IDEs.
+- One-time agent token creation, rotation/revocation and backed-up hash migration.
+- Active vault path and unlocked key fingerprint; fail-closed missing/mismatched
+  key handling and synthetic matching DB/key restore tests.
+- Deliberate uninstall wipes fixed app data, warning/Cancel, fresh reinstall;
+  in-place update preserves. Shared legacy keys and linked profiles fail closed.
+- Published0.1.2-to-candidate Windows upgrade gate added; its final exact-head
+  result must be checked in verification evidence before handoff.
+- Password wording preserves stored/API passphrase compatibility.
+- Not included/proven: Windows PRF key custody, legacy0.1.0 compatibility,
+  other-platform onboarding fixes, remote Connections or zero-memory guarantees.
+
+The entries below are historical. They do not override the current candidate's
+uninstall contract or prove its validation.
+
 ## [0.1.0-alpha] - Unreleased (draft release only)
 
 ### Breaking

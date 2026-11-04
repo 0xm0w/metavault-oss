@@ -5,7 +5,7 @@ It is a thin adapter over the vault daemon (`vaultd`, `127.0.0.1:7077`): it
 never sees secret values, validates tool inputs, forwards calls to the
 daemon, and returns the daemon result verbatim.
 
-Current version: `0.1.0` (reported as `serverInfo.version` in the
+Current source version: `0.1.2-alpha` (reported as `serverInfo.version` in the
 MCP handshake; exported in code as `MCP_VERSION` from
 `packages/mcp/src/server.ts`).
 
@@ -15,7 +15,7 @@ Tools (exactly five): `request_capability`, `list_aliases`,
 ## Installed Windows app (no source checkout or separate Node required)
 
 The installed app ships `resources/vaultd/mcp.cjs`. In MetaVault OSS, open
-Settings > Agent Integration & MCP, select your host, and copy its config.
+Settings > Daemon > Agent Integration & MCP, select your host, and copy its config.
 The app supplies absolute paths to its own executable and bundled MCP server,
 plus `ELECTRON_RUN_AS_NODE=1`, so spaces in the install path and a stale PATH
 in an already-running IDE do not require a workaround. Reload the host MCP
@@ -27,6 +27,12 @@ executable directly, not a shell wrapper. If paths change after moving the
 app, copy a fresh config. Settings also has **Copy agent instructions** for
 the static vault workflow. Prompts guide the agent; policy and human approval
 enforce access.
+
+The installed path has been tested in actual VS Code1.144.1 on disposable Windows:
+`lm.invokeTool(request_capability)` reaches an awaiting-approval request whose daemon
+identity is verified. This is not proof for other IDEs, their model chat behavior or
+macOS/Linux installation. `list_aliases` alone is an open read and does not prove
+agent authentication. See [verification](VERIFICATION.md).
 
 The source-checkout examples below are for development, not installed users.
 
@@ -175,7 +181,7 @@ node scripts/check-mcp-hosts.mjs
 
 ## Agent token lifecycle
 
-In Settings > Agent Integration & MCP, generate a token for an inactive host,
+In Settings > Daemon > Agent Integration & MCP, generate a token for an inactive host,
 or rotate an existing token, then copy the host config during this app session.
 Raw tokens are returned only at generation and cannot be retrieved from agent
 listings. Restarting the app clears its temporary copy; rotate again if you
