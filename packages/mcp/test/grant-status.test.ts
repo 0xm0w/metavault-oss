@@ -102,14 +102,28 @@ describe("grant_status: the agent learns the user's decision", () => {
     expect((await status(opencode, grantId)).structuredContent?.["status"]).toBe("denied");
   });
 
-  it("reports executed after the human approves, without returning the result or secret", async () => {
+  it("delivers the approved result to the requesting session once, never the secret", async () => {
     const c = await connect("opencode-approve");
     const grantId = await request(c);
     await Effect.runPromise(service.approve(grantId));
     const res = await status(c, grantId);
     expect(res.structuredContent).toMatchObject({ status: "executed", terminal: true });
+    expect(res.structuredContent?.["result"]).toBeDefined();
     expect(JSON.stringify(res)).not.toContain(SECRET);
-    expect(JSON.stringify(res)).not.toContain("echoedLength");
+    // Asking again in the same session returns the same cached outcome.
+    expect((await status(c, grantId)).structuredContent?.["result"]).toEqual(res.structuredContent?.["result"]);
+  });
+
+  it("another session cannot collect the result, and a revoke before pickup discards it", async () => {
+    const owner = await connect("opencode-owner");
+    const other = await connect("opencode-other");
+    const grantId = await request(owner);
+    await Effect.runPromise(service.approve(grantId));
+    expect((await status(other, grantId)).structuredContent?.["status"]).toBe("unknown");
+    await Effect.runPromise(service.revoke("opencode-owner"));
+    const res = await status(owner, grantId);
+    expect(res.structuredContent?.["result"]).toBeUndefined();
+    expect(String(res.structuredContent?.["message"])).toContain("not available");
   });
 
   it("reports revoked when the grant is revoked while pending", async () => {

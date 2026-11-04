@@ -209,3 +209,13 @@ Tokens created after the snapshot will not exist in that rollback, and tokens
 rotated since it may become valid again. Revoke/rotate affected credentials after
 rollback. Delete the backup after validating recovery if you do not need it.
 Neither SQLite compaction nor deletion is a promise of forensic disk erasure.
+
+## Learning the outcome of a request
+
+`request_capability` waits a short time (about 20 seconds) for the user's decision when approval is needed. It then returns one of:
+
+- `executed`: the call ran, and the result is included once. The credential itself is never returned.
+- `denied`, `expired`, `revoked`: final. Nothing ran. The agent should stop and ask the user, not retry or look for another route.
+- `awaiting-approval` with `timedOut`: still pending. This is not a denial. Call `grant_status` with the `grantId`.
+
+`grant_status` reads the outcome with a request-scoped receipt that only the MCP process that made the request holds. A grant id, an agent name or an agent token alone reads nothing. An approved result is kept by vaultd for at most 5 minutes, handed over once to the holder of that receipt, and discarded if the agent is revoked or its credential changes first. `unavailable` (daemon or network problem) and `unknown` (this session did not make that request) are not decisions.

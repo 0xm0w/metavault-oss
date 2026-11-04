@@ -351,6 +351,7 @@ export interface VaultServiceService {
   readonly listPendingApprovals: () => Effect.Effect<PendingApproval[], StorageError>;
   readonly getGrant: (grantId: string) => Effect.Effect<Grant | undefined>;
   readonly checkGrantReceipt: (grantId: string, receipt: string) => Effect.Effect<boolean>;
+  readonly takeGrantResult: (grantId: string) => Effect.Effect<{ readonly taken: boolean; readonly result?: unknown }>;
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
@@ -480,6 +481,9 @@ export function makeVaultServiceLive(
         });
       const registry = yield* makeGrantRegistry();
       const agentEpoch = new Map<string, number>();
+      // Result of an approved request, held for the requesting MCP process only.
+      // One-time read, 5 minute life, dropped on revoke or credential change.
+      const grantResults = new Map<string, { result: unknown; agentId: string; epoch: number; expiresAt: number }>();
       const agentManagement = yield* Effect.makeSemaphore(1);
       const sleepers = yield* Ref.make(new Map<string, Fiber.Fiber<void, StorageError>>());
       const aliases = yield* Ref.make(new Set<string>());
@@ -763,6 +767,15 @@ export function makeVaultServiceLive(
           }
           const result = execExit.value;
           yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", false, undefined, grantAuditExtras(auditCtx, "human"));
+          if ((agentEpoch.get(grantReq.agentId) ?? 0) === epoch) {
+            const nowMs = yield* Clock.currentTimeMillis;
+            for (const [key, entry] of grantResults) if (entry.expiresAt <= nowMs) grantResults.delete(key);
+            if (grantResults.size >= 200) {
+              const oldest = grantResults.keys().next();
+              if (oldest.done !== true) grantResults.delete(oldest.value);
+            }
+            grantResults.set(grantId, { result, agentId: grantReq.agentId, epoch, expiresAt: nowMs + 300_000 });
+          }
           return { status: "executed", result } as const;
         });
 
@@ -1336,6 +1349,7 @@ export function makeVaultServiceLive(
         revoke: (agentIdOrAlias) =>
           Effect.gen(function* () {
             const affected = yield* registry.revokePendingFor(agentIdOrAlias);
+            for (const [key, entry] of grantResults) if (entry.agentId === agentIdOrAlias) grantResults.delete(key);
             for (const grant of affected) {
               const auditCtx = (yield* Ref.get(grantAudit)).get(grant.grantId);
               yield* forgetDecision(grant.grantId);
@@ -1363,6 +1377,15 @@ export function makeVaultServiceLive(
           ),
         listAudit: () => store.listAudit(),
         getGrant: (grantId) => registry.get(grantId),
+        takeGrantResult: (grantId) =>
+          Effect.gen(function* () {
+            const nowMs = yield* Clock.currentTimeMillis;
+            const held = grantResults.get(grantId);
+            grantResults.delete(grantId);
+            if (held === undefined || held.expiresAt <= nowMs) return { taken: false } as const;
+            if ((agentEpoch.get(held.agentId) ?? 0) !== held.epoch) return { taken: false } as const;
+            return { taken: true, result: held.result } as const;
+          }),
         checkGrantReceipt: (grantId, receipt) =>
           Effect.map(Ref.get(grantReceipts), (map) => {
             const stored = map.get(grantId);

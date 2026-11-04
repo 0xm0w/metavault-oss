@@ -287,7 +287,7 @@ export function grantOutcome(
   if (status === "pending" && nowMs >= expiresAtMs) return grantOutcome("expired", expiresAtMs, nowMs);
   switch (status) {
     case "executed":
-      return { status: "executed", terminal: true, message: "The user approved this request and vaultd ran it. The result is not returned here." };
+      return { status: "executed", terminal: true, message: "The user approved this request and vaultd ran it." };
     case "denied":
       return { status: "denied", terminal: true, message: "The user denied this request in MetaVault OSS. Do not retry it or look for another way around it; ask the user what they want." };
     case "expired":
@@ -1048,6 +1048,21 @@ export async function handleVaultRequest(
   // grant is readable only with the receipt from its own /request answer;
   // every miss answers the same 404 so ids cannot be probed. The receipt,
   // not an agent token, so a revoked agent still learns its request died.
+  if (method === "POST" && path.startsWith("/grants/") && path.endsWith("/result")) {
+    const middle = path.slice("/grants/".length, path.length - "/result".length);
+    const decodedId = safeDecodeSegment(middle);
+    const grantId = decodedId === null ? "" : decodedId.trim();
+    const notFound = { status: 404, body: { status: "unknown", error: { _tag: "NotFound", message: "grant not found" } } };
+    const receipt = options?.providedGrantReceipt?.trim();
+    if (grantId === "" || grantId.includes("/") || receipt === undefined || receipt === "") { return notFound; }
+    const receiptOk = await run(service.checkGrantReceipt(grantId, receipt));
+    if (receiptOk.status !== 200 || receiptOk.body !== true) { return notFound; }
+    const took = await run(service.takeGrantResult(grantId));
+    if (took.status !== 200 || took.body === null || took.body === undefined) { return notFound; }
+    const held = took.body as { taken: boolean; result?: unknown };
+    if (!held.taken) { return { status: 410, body: { grantId, status: "gone", message: "The result is no longer available: it was already delivered, expired or was revoked." } }; }
+    return { status: 200, body: { grantId, status: "delivered", result: held.result } };
+  }
   if (method === "GET" && path.startsWith("/grants/")) {
     const decodedId = safeDecodeSegment(path.slice("/grants/".length));
     const grantId = decodedId === null ? "" : decodedId.trim();

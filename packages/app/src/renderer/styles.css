@@ -1628,3 +1628,5 @@ body.is-locked .view { padding: 0; max-width: none; }
 .lock-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
 .lock-shell.lock-shell input, .lock-shell.lock-shell .lock-submit, .lock-shell.lock-shell .lock-vault-row { width: min(100%, 340px); max-width: 340px; }
 .lock-shell.lock-shell .field-error, .lock-shell.lock-shell .vault-modal-error { min-height: 0; }
+.lock-shell.lock-shell > p { line-height: 1.55; font-size: 13.5px; max-width: 340px; text-wrap: pretty; }
+.lock-shell.lock-shell h2 { line-height: 1.2; }

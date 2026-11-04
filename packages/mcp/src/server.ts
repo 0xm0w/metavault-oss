@@ -239,8 +239,24 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         return { grantId, status: "unavailable", final: false, message: `Could not read the outcome (${detail.slice(0, 120)}). This is not a decision. Ask the user instead of retrying the request.` };
       }
       if (record["terminal"] === true) {
+        let outcome: Record<string, unknown> = { ...record, final: true };
+        if (record["status"] === "executed") {
+          // One-time pickup of the approved call's result, bound to this
+          // request's receipt. The daemon never sends the credential.
+          const taken = await callDaemon("POST", `/grants/${encodeURIComponent(grantId)}/result`, undefined, { "x-metavault-grant-receipt": receipt });
+          let body: unknown;
+          try { body = JSON.parse(textOfResult(taken)) as unknown; } catch { body = null; }
+          const got = typeof body === "object" && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : null;
+          if (got !== null && got["status"] === "delivered") {
+            outcome = { ...outcome, result: got["result"], message: "The user approved this request and vaultd ran it. The result is included." };
+          } else if (got === null || taken.isError === true && got["status"] !== "gone") {
+            // Transient failure: keep the receipt so a later call can retry the pickup.
+            return { grantId, status: "unavailable", final: false, message: "The request ran, but the result could not be fetched yet. Call grant_status again." };
+          } else {
+            outcome = { ...outcome, message: "The user approved this request and vaultd ran it. The result was already delivered, expired or was revoked and is not available." };
+          }
+        }
         receipts.delete(grantId);
-        const outcome = { ...record, final: true };
         finals.set(grantId, outcome);
         return outcome;
       }
