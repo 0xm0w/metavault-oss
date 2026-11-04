@@ -19,7 +19,7 @@ import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "nod
 import { execFileSync } from "node:child_process";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { TLSSocket } from "node:tls";
 import { computePairingSas, PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/pairing.js";
 import { generateRsaKeyPairPem, spkiFingerprintFromPublicKeyPem } from "../../core/src/vault-ca.js";
@@ -269,15 +269,50 @@ export function parseIcaclsAces(output: string, path?: string): { principal: str
   return aces;
 }
 
+// Well-known principals that must never appear on device credential
+// material, whatever name the locale gives them.
+const WELL_KNOWN_FOREIGN_SIDS = new Set(["S-1-5-18", "S-1-5-32-544", "S-1-1-0", "S-1-5-11"]);
+
 // True only when every ACE in the output belongs to the expected user.
-export function isOwnerOnlyAcl(icaclsOutput: string, expectedUser: string, path?: string): boolean {
+// Identity is matched by exact name, DOMAIN\\name suffix, or SID when
+// provided (localized/domain account names can defeat name matching).
+export function isOwnerOnlyAcl(
+  icaclsOutput: string,
+  expectedUser: string,
+  path?: string,
+  userSid?: string,
+): boolean {
   const aces = parseIcaclsAces(icaclsOutput, path);
   if (aces.length === 0) return false;
   const expected = expectedUser.toLowerCase();
+  const sid = userSid?.toUpperCase();
   return aces.every((ace) => {
     const principal = ace.principal.toLowerCase();
+    if (WELL_KNOWN_FOREIGN_SIDS.has(ace.principal.toUpperCase())) return false;
+    if (sid !== undefined && ace.principal.toUpperCase() === sid) return true;
     return principal === expected || principal.endsWith(`\\${expected}`);
   });
+}
+
+export interface HardenOptions {
+  // SID of the current user (from `whoami /user`); matched in addition to
+  // the account name so localized or domain-qualified names cannot slip by.
+  userSid?: string | undefined;
+  // Resolved absolute roots the path must live under. ACL-reset operations
+  // are never applied outside these roots, so an arbitrary user-selected
+  // existing directory cannot be silently re-ACLed.
+  allowedRoots: string[];
+}
+
+function assertWithinRoots(path: string, allowedRoots: string[]): void {
+  const resolved = resolve(path).toLowerCase();
+  const inside = allowedRoots.some((root) => {
+    const r = resolve(root).toLowerCase();
+    return resolved === r || resolved.startsWith(r.endsWith(sep) ? r : r + sep);
+  });
+  if (!inside) {
+    throw new Error(`refusing to modify ACLs outside the device credential root: ${path}`);
+  }
 }
 
 export function hardenOwnerOnly(
@@ -286,18 +321,23 @@ export function hardenOwnerOnly(
   platform: NodeJS.Platform = process.platform,
   run: IcaclsRun = defaultIcaclsRun,
   user: string = process.env["USERNAME"] ?? "",
+  opts?: HardenOptions,
 ): void {
+  if (opts !== undefined) {
+    assertWithinRoots(path, opts.allowedRoots);
+  }
   if (platform === "win32") {
     if (user === "") {
       throw new Error("cannot harden device credentials: USERNAME is unknown");
     }
     // Reset to inherited defaults (drops stray explicit grants), strip
     // inheritance, grant the current user alone - then verify the result.
+    // NOTE: exit codes are never trusted; the effective ACE list decides.
     run([path, "/reset"]);
     run([path, "/inheritance:r"]);
     run([path, "/grant:r", `${user}:(F)`]);
     const verified = run([path]);
-    if (!isOwnerOnlyAcl(verified, user, path)) {
+    if (!isOwnerOnlyAcl(verified, user, path, opts?.userSid)) {
       throw new Error(`refusing to store device credentials: could not make ${path} owner-only`);
     }
     return;
@@ -310,16 +350,74 @@ export function hardenOwnerOnly(
   }
 }
 
+// Best-effort current-user SID for SID-aware ACL matching. Returns
+// undefined when unavailable (non-Windows or whoami failed); name matching
+// still applies, and docs label the gate pending on-Windows validation.
+export function currentWindowsUserSid(): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  try {
+    const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" });
+    const match = out.match(/"(S-1-5-21-[0-9-]+)"/);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
 export function saveDeviceProfile(dir: string, profile: DeviceProfile, material: PairingResult, shimToken: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  hardenOwnerOnly(dir, true);
+  const sid = currentWindowsUserSid();
+  const opts: HardenOptions = sid === undefined ? { allowedRoots: [resolve(dir)] } : { allowedRoots: [resolve(dir)], userSid: sid };
+  hardenOwnerOnly(dir, true, process.platform, undefined, undefined, opts);
   writeFileSync(join(dir, "key.pem"), material.keyPem, { mode: 0o600 });
   writeFileSync(join(dir, "cert.pem"), material.certPem, { mode: 0o600 });
   writeFileSync(join(dir, "ca.pem"), material.caCertPem, { mode: 0o600 });
   writeFileSync(join(dir, "device.json"), JSON.stringify(profile, null, 2) + "\n", { mode: 0o600 });
   writeFileSync(join(dir, "shim-token"), shimToken + "\n", { mode: 0o600 });
   for (const file of ["key.pem", "cert.pem", "ca.pem", "device.json", "shim-token"]) {
-    hardenOwnerOnly(join(dir, file), false);
+    hardenOwnerOnly(join(dir, file), false, process.platform, undefined, undefined, opts);
+  }
+  // Parent path is verified, never re-ACLed: it may be a user-selected
+  // existing directory, so only fail closed when it is not owner-only.
+  verifyOwnerOnlyParent(dir);
+}
+
+// Broad principals that must never appear on a credential parent directory,
+// by SID (locale-proof). Well-known names are also rejected because icacls
+// prints names, not SIDs, when the SID maps to an account.
+const BROAD_PARENT_SIDS = new Set(["S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-32-546", "S-1-5-7"]);
+const BROAD_PARENT_NAMES = new Set(["everyone", "authenticated users", "builtin\\users", "builtin\\guests", "anonymous logon"]);
+
+// The credential directory and its files are strictly owner-only; the
+// parent is verify-only (we never re-ACL a directory we did not create) and
+// may legitimately carry SYSTEM/Administrators grants on standard profile
+// locations - but never broad principals like Everyone.
+export function isParentAclSafe(icaclsOutput: string, path?: string): boolean {
+  const aces = parseIcaclsAces(icaclsOutput, path);
+  if (aces.length === 0) return false;
+  return aces.every((ace) => {
+    if (BROAD_PARENT_SIDS.has(ace.principal.toUpperCase())) return false;
+    return !BROAD_PARENT_NAMES.has(ace.principal.toLowerCase());
+  });
+}
+
+function verifyOwnerOnlyParent(dir: string): void {
+  const parent = resolve(dir, "..");
+  if (process.platform !== "win32") {
+    // A 0700 credential dir is a hard boundary on POSIX; the parent only
+    // matters for delete/rename rights. Reject group/world-writable parents
+    // unless sticky (e.g. /tmp 1777, where only the owner can unlink).
+    const mode = statSync(parent).mode & 0o1777;
+    const groupOrOtherWrite = (mode & 0o022) !== 0;
+    const sticky = (mode & 0o1000) !== 0;
+    if (groupOrOtherWrite && !sticky) {
+      throw new Error(`refusing to store device credentials: parent directory ${parent} is writable by others`);
+    }
+    return;
+  }
+  const out = defaultIcaclsRun([parent]);
+  if (!isParentAclSafe(out, parent)) {
+    throw new Error(`refusing to store device credentials: parent directory ${parent} grants broad access`);
   }
 }
 

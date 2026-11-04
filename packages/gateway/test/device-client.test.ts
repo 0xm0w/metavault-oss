@@ -4,6 +4,7 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createGatewayServer } from "../src/server.js";
@@ -380,5 +381,26 @@ describe("device-client", () => {
     // 90s comparison are a fraction of the 60/min status budget.
     const at90s = starts.filter((t) => t <= 90_000).length;
     expect(at90s).toBeLessThanOrEqual(25);
+  });
+});
+
+// Real-icacls integration coverage. Skipped everywhere except Windows so the
+// gap stays visible in CI logs until a windows-latest runner carries it;
+// the mocked ACE parser tests above are not a substitute for these.
+const onWindows = process.platform === "win32";
+describe.skipIf(!onWindows)("windows effective-ACL integration (requires win32 runner)", () => {
+  it("accepts a directory ACLed to the current user alone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mv-acl-ok-"));
+    hardenOwnerOnly(dir, true, "win32");
+  });
+
+  it("rejects a preexisting directory with an explicit foreign grant", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mv-acl-bad-"));
+    execFileSync("icacls", [dir, "/inheritance:r"]);
+    execFileSync("icacls", [dir, "/grant:r", `${process.env["USERNAME"] ?? ""}:(F)`]);
+    execFileSync("icacls", [dir, "/grant:r", "Everyone:(R)"]);
+    expect(() => {
+      hardenOwnerOnly(dir, true, "win32");
+    }).toThrow(/owner-only|foreign/i);
   });
 });
