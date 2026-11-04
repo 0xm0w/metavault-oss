@@ -58,9 +58,12 @@ rollback. Do not mix SQLite WAL/SHM files from a different DB state. Tokens made
 after the snapshot disappear on rollback; tokens rotated since it can become
 valid again. Rotate affected credentials and update host configs afterwards.
 
-Only synthetic tests cover the missing-key guard and migration snapshot behavior.
-A genuine published old-installer-to-candidate Windows upgrade remains a separate
-gate. Do not upgrade a valuable vault using an unverified candidate.
+Synthetic tests cover missing/mismatched-key guards, matching stopped DB/key
+restore and private migration snapshots. Actual Windows CI also passed the
+published working0.1.2-alpha-to-candidate upgrade: original password, exact key
+bytes, alias and stored ciphertext decryption, plus fingerprint lock/reunlock.
+See VERIFICATION.md for exact heads/runs. This does not prove0.1.0 compatibility
+or recovery of lost keys, and it does not replace a private stopped backup.
 
 ## Deliberate uninstall versus update
 

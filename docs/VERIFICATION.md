@@ -303,9 +303,9 @@ This is unreleased candidate evidence, not a production certification. Historica
 | Uninstall warning/Cancel, fixed-profile wipe, fresh reinstall, protected shared key, encrypted install-over-install | Passed exacta06f60c, then88c91c1 on actual Windows CI; runs41711642268 and41716116132 | Synthetic disposable profile only; external/custom DBs/IDE config/exported tokens not deleted |
 | Actual installed IDE host | VS Code1.144.1, exact88c91c1, official archive SHA, isolated profile/workspace, `lm.invokeTool(request_capability)` awaiting approval plus daemon `verified=true`; run41716116132 | No execution/approval/model account; other IDEs/model chat not proved |
 | Unit/coverage/build |547 passed /3 skipped on exact88c91c1, Windows and Ubuntu CI41716116234 | Live model tests skipped, no paid model calls |
-| Published working0.1.2 upgrade | Gate added in PR101; final exact-head Windows result pending | Distinct from same-artifact reinstall; no0.1.0 compatibility claim |
-| Key identity and restore | PR103 synthetic matching DB/key restore, unrelated/mixed key rejection, no byte changes, rejected buffer zeroing;553 passed /3 skipped locally | Final Windows gate pending; empty DB cannot authenticate pairing |
-| Main-base CodeQL | Temporary validation-only PR102 on exact combined stack; final run pending | Analysis uses continue-on-error, inspect actual analysis step/log, not wrapper green |
+| Published working0.1.2 upgrade | PASS on final tested60f1db7; Windows41749962736 and41749961003: old artifact SHA, original password, exact wrapped key, alias and actual ciphertext decryption | Distinct from same-artifact reinstall; no0.1.0 compatibility claim |
+| Key identity and restore | Matching DB/key restore, unrelated/mixed key rejection, unchanged bytes, rejected buffer zeroing; final555 passed /3 skipped on Windows+Ubuntu41749962842 | Windows upgrade fingerprint/lock/reunlock passed; empty DB cannot authenticate pairing |
+| Main-base CodeQL | PASS CodeQL41749962861, actual analysis successful and private SARIF zero findings; PR102 closed NOT merged | PR105 removed continue-on-error; unavailable Code Scanning upload disabled, results privately retained and failclosed checked |
 
 Links: https://github.com/0xm0w/metavault-oss/actions/runs/41711642268 ,
 https://github.com/0xm0w/metavault-oss/actions/runs/41716116132 ,
@@ -319,3 +319,23 @@ cancellation/recovery spike. Windows Hello consent is not that test. Legacy0.1.0
 startup compatibility remains unverified. JS heap inspection cannot establish
 that secrets never remain in runtime copies. No new public release is authorized
 by these tests, and remote Connections are not implemented in this local candidate.
+
+
+Final local merge: individual PR96-101 and103-106 merged after the above gates.
+Main645bda60f30b7f579cb89f67255fec5e4a667621 has exactly the tested60f1db7
+git tree17e7c59beeaa26dad0aebf10d83312fb3a0da077. No new release was made.
+The parallel9c95018 Windows run failed cleanup of disposable VS Code's native
+module after host proof;60f1db7 fixes owned-helper process cleanup with bounded
+removal retries. Both exact60f1db7 Windows runs passed afterward.
+
+Final evidence:
+- https://github.com/0xm0w/metavault-oss/actions/runs/41749962736
+- https://github.com/0xm0w/metavault-oss/actions/runs/41749961003
+- https://github.com/0xm0w/metavault-oss/actions/runs/41749962842
+- https://github.com/0xm0w/metavault-oss/actions/runs/41749962861
+
+CodeQL initially found one incomplete-sanitization result in prompt.ts. PR106
+changed untrusted angle-boundary escaping to global replacements and added
+regressions. The final actual analysis reports zero findings. This is defined
+query coverage, not proof of absence of all vulnerabilities. Remote work and
+packaged target PRF feasibility remain separate from this local validation.
