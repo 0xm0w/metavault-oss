@@ -219,3 +219,19 @@ Neither SQLite compaction nor deletion is a promise of forensic disk erasure.
 - `awaiting-approval` with `timedOut`: still pending. This is not a denial. Call `grant_status` with the `grantId`.
 
 `grant_status` reads the outcome with a request-scoped receipt that only the MCP process that made the request holds. A grant id, an agent name or an agent token alone reads nothing. An approved result is kept by vaultd for at most 5 minutes, handed over once to the holder of that receipt, and discarded if the agent is revoked or its credential changes first. `unavailable` (daemon or network problem) and `unknown` (this session did not make that request) are not decisions.
+
+## Verified agents
+
+An unverified agent is flagged on every request. To become a Verified agent, the agent calls `register_agent`, tells the user the 6-digit code it returns, and the user approves the matching request in MetaVault OSS by typing that code. The agent's MCP process then calls `registration_status` and receives its own credential, which it keeps in an owner-only file (`~/.metavault/agents/<agent id>.token`; on Windows the inherited permissions are removed and only the current user is granted access, and the credential is not stored if that fails). The credential never passes through the model, logs or the clipboard.
+
+What this proves, and what it does not:
+
+- Verified means the user approved this agent's credential, and the process holding it is the one that asked (it proved this with a claim secret only it knows).
+- It does not prove which program the agent is, or who published it. A different local program that reads the same file as the same user could use the credential.
+- It grants no capability. Every request still needs its own approval.
+- A hostile local process can hold an agent id as "pending" for up to 10 minutes. It cannot obtain a credential without the user approving the exact request. The user can deny it. Claims are single-use, five wrong claims cancel the registration, and registrations are rate limited.
+- Remote devices keep their own pairing. Registration routes are not exposed through the gateway.
+
+## Adding a token from the IDE
+
+`request_enrollment` opens MetaVault OSS on the user's computer (`metavault://add?...`) with the add form prefilled and the secure input ready, and returns `launched: true`. The user types the token in MetaVault only. If the app could not be opened, or the daemon is not on the same machine, the link is returned instead.
