@@ -14,6 +14,7 @@ import {
   defaultListAclSids,
   hardenOwnerOnly,
   isParentAclSafe,
+  normalizeSddlTrustee,
   parseSddlAces,
   loadDeviceProfile,
   nextPollDelay,
@@ -334,6 +335,11 @@ describe("device-client", () => {
       "S-1-5-18",
       sid,
     ]);
+    // Well-known trustees may appear as SDDL aliases, and a trailing SACL
+    // contributes no access trustees.
+    expect(
+      parseSddlAces("D:AI(A;OICI;FA;;;SY)(A;OICI;FA;;;S-1-5-21-1000-2000-3000-1001)S:AI(AU;OICISA;LA;;;WD)"),
+    ).toEqual(["SY", sid]);
     // hardenOwnerOnly grants by SID (*SID syntax) and verifies the
     // effective ACL contains ONLY that SID; the runner's exit output is
     // never consulted.
@@ -393,6 +399,14 @@ describe("device-client", () => {
         "mvshim_x",
       );
     }).toThrow(/unrelated/);
+  });
+
+  it("normalizes well-known SDDL aliases to SIDs for comparison", () => {
+    expect(normalizeSddlTrustee("SY")).toBe("S-1-5-18");
+    expect(normalizeSddlTrustee("ba")).toBe("S-1-5-32-544");
+    expect(normalizeSddlTrustee("S-1-5-21-1000-2000-3000-1001")).toBe("S-1-5-21-1000-2000-3000-1001");
+    // Unknown aliases are never treated as the owner.
+    expect(normalizeSddlTrustee("LA")).toBe("LA");
   });
 
   it("accepts only owner + SYSTEM/Administrators on the credential parent", () => {

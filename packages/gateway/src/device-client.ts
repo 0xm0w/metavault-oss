@@ -269,13 +269,35 @@ export function parseSddlAces(sddl: string): string[] {
   const sids: string[] = [];
   const daclStart = sddl.indexOf("D:");
   if (daclStart === -1) return sids;
-  const dacl = sddl.slice(daclStart);
+  // DACL region only: a trailing SACL ("S:") contributes audit ACEs, not
+  // access trustees.
+  const saclStart = sddl.indexOf("S:", daclStart + 2);
+  const dacl = sddl.slice(daclStart, saclStart === -1 ? undefined : saclStart);
   const aceRe = /\((?:[^;]*;){5}([^)]+)\)/g;
   let match: RegExpExecArray | null;
   while ((match = aceRe.exec(dacl)) !== null) {
     sids.push((match[1] ?? "").toUpperCase());
   }
   return sids;
+}
+
+// icacls /save writes well-known trustees as SDDL aliases (SY, BA, ...)
+// instead of S-1-5 SIDs. Normalize before comparing; an alias we do not
+// know is never treated as the owner.
+const SDDL_ALIAS_SIDS: Readonly<Record<string, string>> = {
+  SY: "S-1-5-18",
+  LS: "S-1-5-19",
+  NS: "S-1-5-20",
+  BA: "S-1-5-32-544",
+  BU: "S-1-5-32-545",
+  WD: "S-1-1-0",
+  AU: "S-1-5-11",
+  AN: "S-1-5-7",
+};
+
+export function normalizeSddlTrustee(trustee: string): string {
+  const upper = trustee.toUpperCase();
+  return SDDL_ALIAS_SIDS[upper] ?? upper;
 }
 
 export interface AclSidList {
@@ -301,6 +323,24 @@ export const defaultListAclSids: AclSidList = (path) => {
   }
 };
 
+// Raw SDDL for diagnostics on verification failure. Never contains
+// credential material: trustee SIDs and rights only.
+export function defaultReadAclSddl(path: string): string {
+  const tmp = join(tmpdir(), `mv-acl-${randomBytes(6).toString("hex")}.txt`);
+  try {
+    execFileSync("icacls", [path, "/save", tmp, "/C"], { encoding: "utf8" });
+    const buf = readFileSync(tmp);
+    let content = buf.toString("utf8");
+    if (content.includes("\0")) content = buf.toString("utf16le");
+    content = content.replace(/^\uFEFF/, "");
+    return content.split(/\r?\n/).find((line) => /D:[A-Z]{0,4}\(/.test(line)) ?? "(unreadable)";
+  } catch {
+    return "(unavailable)";
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
 export interface HardenOptions {
   // Current user's SID (from whoami /user). REQUIRED on Windows: secret
   // material ACLs are verified against this exact SID only, never against
@@ -312,6 +352,8 @@ export interface HardenOptions {
   allowedRoots: string[];
   // Injectable for tests; production uses icacls /save SDDL parsing.
   listSids?: AclSidList | undefined;
+  // Injectable raw-SDDL reader for failure diagnostics.
+  rawSddl?: ((path: string) => string) | undefined;
 }
 
 // Canonical, reparse-point-safe containment: resolve symlinks/junctions on
@@ -372,9 +414,10 @@ export function hardenOwnerOnly(
     run([path, "/inheritance:r"]);
     run([path, "/grant:r", `*${sid}:(F)`]);
     const listSids = opts?.listSids ?? defaultListAclSids;
-    const sids = listSids(path);
+    const sids = listSids(path).map(normalizeSddlTrustee);
     if (sids.length === 0 || !sids.every((entry) => entry === sid.toUpperCase())) {
-      throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL SIDs: ${sids.join(", ") || "none"})`);
+      const rawSddl = (opts?.rawSddl ?? defaultReadAclSddl)(path);
+      throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL trustees: ${sids.join(", ") || "none"}; SDDL: ${rawSddl})`);
     }
     return;
   }
@@ -446,7 +489,10 @@ const ALLOWED_PARENT_SIDS = new Set(["S-1-5-18", "S-1-5-32-544"]);
 export function isParentAclSafe(sids: readonly string[], userSid: string): boolean {
   if (sids.length === 0) return false;
   const owner = userSid.toUpperCase();
-  return sids.every((sid) => sid.toUpperCase() === owner || ALLOWED_PARENT_SIDS.has(sid.toUpperCase()));
+  return sids.every((sid) => {
+    const normalized = normalizeSddlTrustee(sid);
+    return normalized === owner || ALLOWED_PARENT_SIDS.has(normalized);
+  });
 }
 
 function verifyOwnerOnlyParent(dir: string, opts: HardenOptions): void {
