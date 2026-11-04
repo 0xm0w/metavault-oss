@@ -39,6 +39,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Real sshd for the tunnel integration test (positive + negative proof
+      # of the generated authorized_keys line; skips when unavailable).
+      - name: Install OpenSSH server (Ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y openssh-server
+
       - name: Lint
         run: npm run lint
 

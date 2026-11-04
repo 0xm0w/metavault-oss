@@ -57,6 +57,8 @@ import {
   projectDevicesResponse,
   projectPairingSession,
   projectRemoteSettings,
+  projectSshTunnelResult,
+  projectSshTunnelStatus,
   shouldRequireAuthForApproval,
   shouldRequireAuthForRemoteApproval,
   shouldRequireAuthForSettings,
@@ -77,6 +79,8 @@ import type {
   PresenceProofRequestLike,
   PairingSessionLike,
   RemoteSettingsLike,
+  SshTunnelSetupProposalLike,
+  SshTunnelStatusLike,
   RegisteredAgent,
   AuditEventLike,
   CredentialMeta,
@@ -114,6 +118,11 @@ let devicesData: DeviceLike[] = [];
 let pairingSession: PairingSessionLike | null = null;
 let pairingCode: string | null = null;
 let pairingNotice: { text: string; ok: boolean } | null = null;
+let sshTunnel: SshTunnelStatusLike | null = null;
+let sshSetupStep: "address" | "verify" | "install" | null = null;
+let sshSetupProposal: SshTunnelSetupProposalLike | null = null;
+let sshSetupError: string | null = null;
+let sshRemoveArmedUntil = 0;
 let agentSecuritySettings: AgentSecuritySettingsLike = { strictMode: false, verifyCallerProcess: false };
 let securityPosture: SecurityPostureReportLike | null = null;
 let selectedGrantId: string | null = null;
@@ -2048,6 +2057,378 @@ async function runSettingsAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
+// --- Remote connection (app-managed SSH tunnel) ---------------------------
+
+let sshSetupExpectedFingerprint = "";
+
+function sshTunnelStateLabel(t: SshTunnelStatusLike): string {
+  switch (t.state) {
+    case "not-configured": return "Not set up";
+    case "off": return "Off";
+    case "connecting": return "Connecting";
+    case "connected": return "Connected";
+    case "reconnecting": return t.attempts !== undefined ? `Reconnecting (attempt ${String(t.attempts)})` : "Reconnecting";
+    case "error": return "Error";
+  }
+}
+
+function sshTunnelBadge(t: SshTunnelStatusLike): HTMLElement {
+  const badge = el("span", "status-badge", sshTunnelStateLabel(t));
+  if (t.state === "connected") badge.classList.add("is-ok");
+  if (t.state === "connecting" || t.state === "reconnecting") badge.classList.add("is-warn");
+  if (t.state === "error") badge.classList.add("is-danger");
+  return badge;
+}
+
+function sshErrorText(reason: string | undefined): string {
+  switch (reason) {
+    case "auth-failed": return "The server refused the key. Check that the line above is in the server's authorized_keys, then verify again.";
+    case "forward-refused": return "The server accepted the key but refused the port forwards. The relay ports may be in use, or the key's restrictions do not allow them.";
+    case "gateway-down": return "The local gateway is not running. Turn on remote access above, then try again.";
+    case "host-key-changed": return "The server's host key no longer matches. Nothing was saved.";
+    default: return "The server did not confirm the connection in time. Check that it is reachable.";
+  }
+}
+
+function applySshStatusResult(raw: unknown): void {
+  const result = projectSshTunnelResult(raw);
+  if (result !== null && result.kind === "status" && result.status !== undefined) {
+    sshTunnel = result.status;
+  }
+}
+
+function resetSshSetup(): void {
+  sshSetupStep = null;
+  sshSetupProposal = null;
+  sshSetupError = null;
+  sshSetupExpectedFingerprint = "";
+}
+
+function renderSshSetupWizard(section: HTMLElement): void {
+  const stepTitle = sshSetupStep === "address"
+    ? "Step 1 of 3: Server address"
+    : sshSetupStep === "verify"
+      ? "Step 2 of 3: Verify the host key"
+      : "Step 3 of 3: Install the key";
+  section.append(el("p", "settings-copy", stepTitle));
+
+  if (sshSetupStep === "address") {
+    section.append(el("p", "settings-copy", "Enter the SSH server this vault should dial out to. You control this server; the app never picks or rents one for you."));
+    const addrRow = el("div", "settings-row");
+    addrRow.append(el("span", "settings-row-label", "Server"));
+    const addrInput = el("input", "vault-input") as HTMLInputElement;
+    addrInput.placeholder = "user@relay.example.com[:22]";
+    addrInput.maxLength = 320;
+    addrInput.style.maxWidth = "52%";
+    addrInput.setAttribute("aria-label", "SSH server address");
+    addrRow.append(addrInput);
+    section.append(addrRow);
+    const portsRow = el("div", "settings-row");
+    portsRow.append(el("span", "settings-row-label", "Relay ports (pairing, devices)"));
+    const portsBox = el("span", "settings-row-value");
+    const pairInput = el("input", "vault-input") as HTMLInputElement;
+    pairInput.value = "7078";
+    pairInput.maxLength = 5;
+    pairInput.style.width = "72px";
+    pairInput.setAttribute("aria-label", "Relay pairing port");
+    const devInput = el("input", "vault-input") as HTMLInputElement;
+    devInput.value = "7080";
+    devInput.maxLength = 5;
+    devInput.style.width = "72px";
+    devInput.style.marginLeft = "6px";
+    devInput.setAttribute("aria-label", "Relay device port");
+    portsBox.append(pairInput, devInput);
+    portsRow.append(portsBox);
+    section.append(portsRow);
+    if (sshSetupError !== null) section.append(el("p", "alert is-warn", sshSetupError));
+    const btns = el("div", "settings-btns");
+    const cancelBtn = el("button", "action", "Cancel") as HTMLButtonElement;
+    cancelBtn.type = "button";
+    cancelBtn.disabled = settingsBusy;
+    cancelBtn.addEventListener("click", () => {
+      void window.metavault.sshTunnelCancelSetup().catch(() => undefined);
+      resetSshSetup();
+      render();
+    });
+    const continueBtn = el("button", "action btn-approve", "Continue") as HTMLButtonElement;
+    continueBtn.type = "button";
+    continueBtn.disabled = settingsBusy;
+    continueBtn.addEventListener("click", () => {
+      const address = addrInput.value;
+      const pairPort = Number(pairInput.value);
+      const devPort = Number(devInput.value);
+      void runSettingsAction(async () => {
+        const raw = await window.metavault.sshTunnelBeginSetup({
+          address,
+          ...(Number.isInteger(pairPort) ? { remotePairingPort: pairPort } : {}),
+          ...(Number.isInteger(devPort) ? { remoteDevicePort: devPort } : {}),
+        });
+        const result = projectSshTunnelResult(raw);
+        if (result !== null && result.kind === "proposal" && result.proposal !== undefined) {
+          sshSetupProposal = result.proposal;
+          sshSetupError = null;
+          sshSetupStep = "verify";
+        } else {
+          sshSetupError = result !== null && result.kind === "error" && result.error !== undefined
+            ? result.error
+            : "Setup could not start.";
+        }
+      });
+    });
+    btns.append(cancelBtn, continueBtn);
+    section.append(btns);
+    return;
+  }
+
+  if (sshSetupStep === "verify" && sshSetupProposal !== null) {
+    const proposal = sshSetupProposal;
+    section.append(el("p", "settings-copy", `The server at ${proposal.user}@${proposal.host}:${String(proposal.port)} presented this ${proposal.keyType} host key:`));
+    const fpBox = el("p", "mono");
+    fpBox.style.overflowWrap = "anywhere";
+    fpBox.style.userSelect = "text";
+    fpBox.textContent = proposal.fingerprint;
+    section.append(fpBox);
+    section.append(el("p", "settings-copy", "Check this against the fingerprint your server provider shows (or run ssh-keygen -lf on the server's host key). Paste the provider's fingerprint here to confirm. A mismatch cancels setup and saves nothing."));
+    const fpRow = el("div", "settings-row");
+    fpRow.append(el("span", "settings-row-label", "Provider fingerprint"));
+    const fpInput = el("input", "vault-input") as HTMLInputElement;
+    fpInput.placeholder = "SHA256:...";
+    fpInput.maxLength = 128;
+    fpInput.style.maxWidth = "52%";
+    fpInput.setAttribute("aria-label", "Expected host key fingerprint");
+    fpRow.append(fpInput);
+    section.append(fpRow);
+    if (sshSetupError !== null) section.append(el("p", "alert is-warn", sshSetupError));
+    const btns = el("div", "settings-btns");
+    const backBtn = el("button", "action", "Back") as HTMLButtonElement;
+    backBtn.type = "button";
+    backBtn.disabled = settingsBusy;
+    backBtn.addEventListener("click", () => { sshSetupError = null; sshSetupStep = "address"; render(); });
+    const confirmBtn = el("button", "action btn-approve", "Confirm fingerprint") as HTMLButtonElement;
+    confirmBtn.type = "button";
+    confirmBtn.disabled = settingsBusy;
+    confirmBtn.addEventListener("click", () => {
+      if (fpInput.value.trim() === "") {
+        sshSetupError = "Paste the fingerprint from your server provider to continue.";
+        render();
+        return;
+      }
+      sshSetupExpectedFingerprint = fpInput.value.trim();
+      sshSetupError = null;
+      sshSetupStep = "install";
+      render();
+    });
+    btns.append(backBtn, confirmBtn);
+    section.append(btns);
+    return;
+  }
+
+  if (sshSetupStep === "install" && sshSetupProposal !== null) {
+    const proposal = sshSetupProposal;
+    section.append(el("p", "settings-copy", `Two pieces go on ${proposal.host}. Both are verified before setup finishes; setup refuses to finish if either is missing or the account is not locked down.`));
+    section.append(el("p", "settings-copy", `1. Add this line to ~/.ssh/authorized_keys for ${proposal.user}. It restricts the key to exactly the two loopback forwards this tunnel needs - no shell, no file access, no pty.`));
+    const lineBox = el("p", "mono");
+    lineBox.style.overflowWrap = "anywhere";
+    lineBox.style.userSelect = "text";
+    lineBox.style.fontSize = "11px";
+    lineBox.textContent = proposal.installLine;
+    section.append(lineBox);
+    section.append(el("p", "settings-copy", "2. Add this block to the server's /etc/ssh/sshd_config (or a file in sshd_config.d), then reload sshd. Per-key options cannot genuinely block local port forwarding; this server policy can. Finish verifies it live."));
+    const policyBox = el("p", "mono");
+    policyBox.style.overflowWrap = "anywhere";
+    policyBox.style.userSelect = "text";
+    policyBox.style.fontSize = "11px";
+    policyBox.style.whiteSpace = "pre-wrap";
+    policyBox.textContent = proposal.policyBlock;
+    section.append(policyBox);
+    section.append(el("p", "settings-copy", "Cancel discards the local key and saves nothing. To undo later: remove both on the server and use Remove connection here."));
+    if (sshSetupError !== null) section.append(el("p", "alert is-warn", sshSetupError));
+    const btns = el("div", "settings-btns");
+    const backBtn = el("button", "action", "Back") as HTMLButtonElement;
+    backBtn.type = "button";
+    backBtn.disabled = settingsBusy;
+    backBtn.addEventListener("click", () => { sshSetupError = null; sshSetupStep = "verify"; render(); });
+    const finishBtn = el("button", "action btn-approve", "Key installed - verify and finish") as HTMLButtonElement;
+    finishBtn.type = "button";
+    finishBtn.disabled = settingsBusy;
+    finishBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        const raw = await window.metavault.sshTunnelCompleteSetup(sshSetupExpectedFingerprint);
+        const result = projectSshTunnelResult(raw);
+        if (result === null) {
+          sshSetupError = "Unexpected response from the app.";
+          return;
+        }
+        if (result.kind === "error") {
+          // Fingerprint mismatch or stale setup: back to the verify step.
+          sshSetupError = result.error ?? "Setup failed.";
+          sshSetupStep = "verify";
+          return;
+        }
+        if (result.kind === "verification" && result.verified) {
+          resetSshSetup();
+          settingsMessage = { text: "Remote connection is set up. Press Connect to start the tunnel.", ok: true };
+          await refresh();
+          return;
+        }
+        if (result.kind === "verification") {
+          sshSetupError = sshErrorText(result.reason);
+          await refresh();
+          return;
+        }
+        sshSetupError = "Setup failed.";
+      });
+    });
+    btns.append(backBtn, finishBtn);
+    section.append(btns);
+  }
+}
+
+function renderSshTunnelSection(view: HTMLElement): void {
+  const section = settingsSection(
+    "Remote connection",
+    "Reach this vault from anywhere through an SSH server you control: this PC dials out and forwards the two loopback gateway ports to the server's own loopback. Nothing new listens on your network.",
+    "connections",
+  );
+
+  if (sshTunnel === null) {
+    section.append(el("p", "settings-copy", "Remote connection is unavailable in this build."));
+    view.append(section);
+    return;
+  }
+  const t = sshTunnel;
+
+  const statusRow = el("div", "settings-row");
+  statusRow.append(el("span", "settings-row-label", "Status"));
+  statusRow.append(sshTunnelBadge(t));
+  section.append(statusRow);
+
+  if (t.state === "not-configured") {
+    if (sshSetupStep === null) {
+      section.append(el("p", "settings-copy", "One-time setup: paste the server address, confirm its host key fingerprint, install the shown key on the server."));
+      const setupBtn = el("button", "action btn-approve", "Set up remote connection") as HTMLButtonElement;
+      setupBtn.type = "button";
+      setupBtn.disabled = settingsBusy;
+      setupBtn.addEventListener("click", () => {
+        resetSshSetup();
+        sshSetupStep = "address";
+        render();
+      });
+      section.append(setupBtn);
+    } else {
+      renderSshSetupWizard(section);
+    }
+    view.append(section);
+    return;
+  }
+
+  // Configured states share the server/fingerprint rows.
+  const serverRow = el("div", "settings-row");
+  serverRow.append(el("span", "settings-row-label", "Server"));
+  const serverValue = `${t.user ?? ""}@${t.host ?? ""}${t.port !== undefined && t.port !== 22 ? `:${String(t.port)}` : ""}`;
+  const serverText = el("span", "mono settings-row-value", serverValue);
+  serverText.title = serverValue;
+  serverRow.append(serverText);
+  section.append(serverRow);
+
+  if (t.fingerprint !== undefined) {
+    const fpRow = el("div", "settings-row");
+    fpRow.append(el("span", "settings-row-label", "Host key"));
+    const fpText = el("span", "mono settings-row-value", `${t.fingerprint.slice(0, 23)}...`);
+    fpText.title = t.fingerprint;
+    fpRow.append(fpText);
+    const fpCopy = el("button", "action", "Copy") as HTMLButtonElement;
+    fpCopy.title = `Copy full host key fingerprint: ${t.fingerprint}`;
+    fpCopy.setAttribute("aria-label", "Copy full host key fingerprint");
+    fpCopy.addEventListener("click", () => {
+      void navigator.clipboard.writeText(t.fingerprint ?? "").then(() => {
+        fpCopy.textContent = "Copied";
+        setTimeout(() => { fpCopy.textContent = "Copy"; }, 1500);
+      });
+    });
+    fpRow.append(fpCopy);
+    section.append(fpRow);
+  }
+
+  if (t.state === "connected" && t.connectedSince !== undefined) {
+    const sinceRow = el("div", "settings-row");
+    sinceRow.append(el("span", "settings-row-label", "Connected since"));
+    sinceRow.append(el("span", "settings-row-value", t.connectedSince.replace("T", " ").slice(0, 19)));
+    section.append(sinceRow);
+  }
+
+  if (t.state === "error" && t.detail !== undefined) {
+    section.append(el("p", "alert is-warn", t.detail));
+  }
+
+  if (t.state === "off" || t.state === "error" || t.state === "connected") {
+    const autoRow = el("div", "settings-row");
+    autoRow.append(el("span", "settings-row-label", "Automatic reconnect"));
+    const autoBtn = el("button", "action", t.autoReconnect === false ? "Off" : "On") as HTMLButtonElement;
+    autoBtn.type = "button";
+    autoBtn.disabled = settingsBusy;
+    autoBtn.title = "Reconnect automatically if the tunnel drops, with bounded retries.";
+    autoBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        applySshStatusResult(await window.metavault.sshTunnelSetAutoReconnect(t.autoReconnect === false));
+      });
+    });
+    autoRow.append(autoBtn);
+    section.append(autoRow);
+  }
+
+  const btns = el("div", "settings-btns");
+  if (t.state === "off" || t.state === "error") {
+    const connectBtn = el("button", "action btn-approve", t.state === "error" ? "Try again" : "Connect") as HTMLButtonElement;
+    connectBtn.type = "button";
+    connectBtn.disabled = settingsBusy;
+    connectBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        applySshStatusResult(await window.metavault.sshTunnelConnect());
+      });
+    });
+    btns.append(connectBtn);
+    const removeBtn = el("button", "action btn-deny", sshRemoveArmedUntil > Date.now() ? "Click again to remove" : "Remove connection") as HTMLButtonElement;
+    removeBtn.type = "button";
+    removeBtn.disabled = settingsBusy;
+    removeBtn.title = "Deletes the pinned host key, this PC's keypair and the saved server. Also delete the key line on the server.";
+    removeBtn.addEventListener("click", () => {
+      if (sshRemoveArmedUntil <= Date.now()) {
+        sshRemoveArmedUntil = Date.now() + 5000;
+        render();
+        return;
+      }
+      sshRemoveArmedUntil = 0;
+      void runSettingsAction(async () => {
+        applySshStatusResult(await window.metavault.sshTunnelRemove());
+        resetSshSetup();
+      });
+    });
+    btns.append(removeBtn);
+  }
+  if (t.state === "connecting" || t.state === "reconnecting" || t.state === "connected") {
+    const disconnectBtn = el("button", "action btn-deny", t.state === "connected" ? "Disconnect" : "Cancel") as HTMLButtonElement;
+    disconnectBtn.type = "button";
+    disconnectBtn.disabled = settingsBusy;
+    disconnectBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        applySshStatusResult(await window.metavault.sshTunnelDisconnect());
+      });
+    });
+    btns.append(disconnectBtn);
+  }
+  if (btns.childElementCount > 0) section.append(btns);
+
+  if (t.state === "off" && remoteSettings !== null && !remoteSettings.enabled) {
+    section.append(el("p", "settings-copy", "Turn on remote access above before connecting; the tunnel forwards its gateway."));
+  }
+
+  section.append(el("p", "settings-copy",
+    "Connected means the tunnel is up. It grants no capabilities by itself: requests still come only from paired devices, policy decides what is allowed, and your PIN is asked when a remote request needs your approval. This PC must stay awake with MetaVault running for the tunnel to stay up. This section shows only the host address, its fingerprint and connection state; keys stay as files on disk."));
+
+  view.append(section);
+}
+
 function renderSettings(view: HTMLElement): void {
   const settingsHeading = el("h1", "settings-page-title", "Settings");
   settingsHeading.setAttribute("aria-hidden", "true");
@@ -2647,7 +3028,7 @@ function renderSettings(view: HTMLElement): void {
   // 5. Connections (remote access)
   const remoteSection = settingsSection(
     "Remote access",
-    "Pair another device so its agents can request capabilities from this vault over mutual TLS. Remote access is off unless you turn it on here. This build accepts loopback connections only; a network transport is not enabled yet.",
+    "Pair another device so its agents can request capabilities from this vault over mutual TLS. Remote access is off unless you turn it on here. Pairing and device traffic stay on this machine's loopback unless you also connect an SSH transport below.",
     "connections",
   );
   const remoteOn = remoteSettings?.enabled ?? false;
@@ -2699,6 +3080,8 @@ function renderSettings(view: HTMLElement): void {
   reauthRow.append(reauthBtn);
   remoteSection.append(reauthRow);
   view.append(remoteSection);
+
+  renderSshTunnelSection(view);
 
   // Pairing flow. The code is shown once here and typed into the device
   // CLI; the SAS must then match the device screen before anything is
@@ -3573,6 +3956,11 @@ async function refresh(): Promise<void> {
       pairingSession = null;
       pairingCode = null;
     }
+    const sshRaw = await window.metavault.sshTunnelStatus().catch(() => null);
+    const sshResult = projectSshTunnelResult(sshRaw);
+    if (sshResult !== null && sshResult.kind === "status" && sshResult.status !== undefined) {
+      sshTunnel = sshResult.status;
+    }
     if (secRaw !== null && typeof secRaw === "object") {
       const s = secRaw as Record<string, unknown>;
       agentSecuritySettings = {
@@ -3814,6 +4202,15 @@ function start(): void {
     });
   }
   void refreshTracked();
+  if (typeof window.metavault.onSshTunnelStatus === "function") {
+    window.metavault.onSshTunnelStatus((value) => {
+      const projected = projectSshTunnelStatus(value);
+      if (projected !== null) {
+        sshTunnel = projected;
+        if (settingsOpen && !settingsBusy) render();
+      }
+    });
+  }
   if (typeof window.metavault.onUpdaterStatus === "function") {
     window.metavault.onUpdaterStatus((status) => {
       updaterStatus = status;

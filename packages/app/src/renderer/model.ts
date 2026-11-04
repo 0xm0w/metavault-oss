@@ -1,4 +1,7 @@
 import type {
+  SshTunnelResultLike,
+  SshTunnelSetupProposalLike,
+  SshTunnelStatusLike,
   DeviceLike,
   PairingSessionLike,
   AuditEventLike,
@@ -303,6 +306,107 @@ export const SETTINGS_TABS = ["general", "warden", "daemon", "security", "connec
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export function isSettingsTab(value: unknown): value is SettingsTab {
   return typeof value === "string" && (SETTINGS_TABS as readonly string[]).includes(value);
+}
+
+const SSH_TUNNEL_STATES = ["not-configured", "off", "connecting", "connected", "reconnecting", "error"] as const;
+const SSH_FINGERPRINT_PATTERN = /^SHA256:[A-Za-z0-9+/]{1,64}={0,2}$/;
+
+// SSH tunnel status from the main process, whitelisted field by field.
+// Anything malformed yields null (renderer shows "unavailable") rather
+// than rendering an attacker-shaped state.
+export function projectSshTunnelStatus(raw: unknown): SshTunnelStatusLike | null {
+  if (!isRecord(raw)) return null;
+  const state = raw["state"];
+  const configured = raw["configured"];
+  if (typeof state !== "string" || !(SSH_TUNNEL_STATES as readonly string[]).includes(state)) return null;
+  if (typeof configured !== "boolean") return null;
+  const str = (key: string, max: number): string | undefined => {
+    const value = raw[key];
+    return typeof value === "string" && value !== "" && value.length <= max ? value : undefined;
+  };
+  const port = (key: string): number | undefined => {
+    const value = raw[key];
+    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535 ? value : undefined;
+  };
+  const fingerprint = str("fingerprint", 96);
+  const autoReconnect = raw["autoReconnect"];
+  const attempts = raw["attempts"];
+  return {
+    state: state as SshTunnelStatusLike["state"],
+    configured,
+    ...(str("host", 255) !== undefined ? { host: str("host", 255) as string } : {}),
+    ...(str("user", 64) !== undefined ? { user: str("user", 64) as string } : {}),
+    ...(port("port") !== undefined ? { port: port("port") as number } : {}),
+    ...(port("remotePairingPort") !== undefined ? { remotePairingPort: port("remotePairingPort") as number } : {}),
+    ...(port("remoteDevicePort") !== undefined ? { remoteDevicePort: port("remoteDevicePort") as number } : {}),
+    ...(fingerprint !== undefined && SSH_FINGERPRINT_PATTERN.test(fingerprint) ? { fingerprint } : {}),
+    ...(typeof autoReconnect === "boolean" ? { autoReconnect } : {}),
+    ...(str("detail", 300) !== undefined ? { detail: str("detail", 300) as string } : {}),
+    ...(typeof attempts === "number" && Number.isInteger(attempts) && attempts >= 0 && attempts <= 1000 ? { attempts } : {}),
+    ...(str("connectedSince", 40) !== undefined ? { connectedSince: str("connectedSince", 40) as string } : {}),
+  };
+}
+
+export function projectSshTunnelSetupProposal(raw: unknown): SshTunnelSetupProposalLike | null {
+  if (!isRecord(raw)) return null;
+  const host = raw["host"];
+  const user = raw["user"];
+  const port = raw["port"];
+  const remotePairingPort = raw["remotePairingPort"];
+  const remoteDevicePort = raw["remoteDevicePort"];
+  const keyType = raw["keyType"];
+  const fingerprint = raw["fingerprint"];
+  const publicKey = raw["publicKey"];
+  const installLine = raw["installLine"];
+  const policyBlock = raw["policyBlock"];
+  if (typeof host !== "string" || host === "" || host.length > 255) return null;
+  if (typeof user !== "string" || user === "" || user.length > 64) return null;
+  for (const p of [port, remotePairingPort, remoteDevicePort]) {
+    if (typeof p !== "number" || !Number.isInteger(p) || p < 1 || p > 65535) return null;
+  }
+  if (typeof keyType !== "string" || keyType.length > 40) return null;
+  if (typeof fingerprint !== "string" || !SSH_FINGERPRINT_PATTERN.test(fingerprint)) return null;
+  if (typeof publicKey !== "string" || publicKey === "" || publicKey.length > 2200) return null;
+  if (typeof installLine !== "string" || installLine === "" || installLine.length > 2400) return null;
+  if (typeof policyBlock !== "string" || policyBlock === "" || policyBlock.length > 1200) return null;
+  return {
+    host, user,
+    port: port as number,
+    remotePairingPort: remotePairingPort as number,
+    remoteDevicePort: remoteDevicePort as number,
+    keyType, fingerprint, publicKey, installLine, policyBlock,
+  };
+}
+
+// Tagged IPC result from the main process tunnel handler.
+export function projectSshTunnelResult(raw: unknown): SshTunnelResultLike | null {
+  if (!isRecord(raw)) return null;
+  const kind = raw["kind"];
+  if (kind === "ok") return { kind: "ok" };
+  if (kind === "error") {
+    const error = raw["error"];
+    if (typeof error !== "string" || error === "" || error.length > 300) return null;
+    return { kind: "error", error };
+  }
+  if (kind === "status") {
+    const status = projectSshTunnelStatus(raw["status"]);
+    return status === null ? null : { kind: "status", status };
+  }
+  if (kind === "proposal") {
+    const proposal = projectSshTunnelSetupProposal(raw["proposal"]);
+    return proposal === null ? null : { kind: "proposal", proposal };
+  }
+  if (kind === "verification") {
+    const verified = raw["verified"];
+    if (typeof verified !== "boolean") return null;
+    const reason = raw["reason"];
+    return {
+      kind: "verification",
+      verified,
+      ...(typeof reason === "string" && reason.length <= 40 ? { reason } : {}),
+    };
+  }
+  return null;
 }
 
 export function projectRemoteSettings(raw: unknown): RemoteSettingsLike | null {

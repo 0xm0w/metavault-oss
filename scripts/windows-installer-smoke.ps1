@@ -152,6 +152,40 @@ function Test-PackagedGateway {
   Start-Sleep -Seconds 1
   Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7080)) "both gateway listeners close on shutdown"
 
+  # Packaged-app proof, not an externally spawned bundle: with remote still
+  # enabled, restarting the app must bring BOTH gateway listeners up by
+  # itself. (The daemon stays up across the app restart; remote is on.)
+  Stop-App
+  Launch-App-Wait-Health "gateway autostart"
+  $autoPair = $false
+  $autoDev = $false
+  $deadline = (Get-Date).AddSeconds(45)
+  while ((Get-Date) -lt $deadline -and -not ($autoPair -and $autoDev)) {
+    if (-not $autoPair) { $autoPair = Test-Tcp 7078 }
+    if (-not $autoDev) { $autoDev = Test-Tcp 7080 }
+    if (-not ($autoPair -and $autoDev)) { Start-Sleep -Milliseconds 500 }
+  }
+  if (-not ($autoPair -and $autoDev)) {
+    # Bound the failure with real evidence: the app's autostart and the
+    # gateway child both log here. Without this the failure mode is a guess.
+    $gwLog = Join-Path $dataDir "gateway.log"
+    if (Test-Path $gwLog) {
+      Log "gateway.log tail (autostart diagnostics):"
+      Get-Content $gwLog -Tail 40 | ForEach-Object { Log "  gw| $_" }
+    } else {
+      Log "gateway.log missing at $gwLog - app autostart never wrote diagnostics"
+    }
+  }
+  Check $autoPair "app itself auto-started gateway pairing listener 127.0.0.1:7078"
+  Check $autoDev "app itself auto-started gateway device listener 127.0.0.1:7080"
+  # Clean up the app-owned gateway so later stages reinstall cleanly.
+  foreach ($gwPort in @(7078, 7080)) {
+    Get-NetTCPConnection -LocalPort $gwPort -State Listen -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty OwningProcess -Unique |
+      ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+  }
+  Start-Sleep -Seconds 1
+
   # Disable remote again so later stages run with the default posture.
   $off = Invoke-Daemon "PATCH" "/settings/remote" @{ enabled = $false }
   Check ($null -ne $off -and $off.enabled -eq $false) "remote access disabled again"

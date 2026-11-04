@@ -141,19 +141,33 @@ function daemonToken(): string | undefined {
   return cachedDaemonToken;
 }
 
+const daemonFetch = async (method: string, path: string, body: unknown): Promise<Response> => {
+  const token = daemonToken();
+  return fetch(`${daemonBase}${path}`, {
+    method,
+    headers: {
+      "content-type": "application/json",
+      ...(token !== undefined ? { "x-metavault-token": token } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+};
+
 export async function callDaemon(input: unknown): Promise<unknown> {
   const { method, path, body } = validateDaemonCall(input);
   let response: Response;
   try {
-    const token = daemonToken();
-    response = await fetch(`${daemonBase}${path}`, {
-      method,
-      headers: {
-        "content-type": "application/json",
-        ...(token !== undefined ? { "x-metavault-token": token } : {}),
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
+    response = await daemonFetch(method, path, body);
+    if (response.status === 401) {
+      // The daemon mints a fresh token on every start (resolveDaemonToken),
+      // so a token cached while a previous daemon process ran - or read from
+      // the file before the new daemon rewrote it - is stale forever after.
+      // Re-read once and retry; this is what lets a relaunched app talk to
+      // its restarted daemon (gateway autostart, renderer IPC after a
+      // daemon bounce).
+      cachedDaemonToken = undefined;
+      response = await daemonFetch(method, path, body);
+    }
   } catch {
     throw new Error("MetaVault OSS daemon unreachable — is vaultd running?");
   }

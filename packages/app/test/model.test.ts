@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  projectSshTunnelResult,
+  projectSshTunnelSetupProposal,
+  projectSshTunnelStatus,
   MIN_PASSPHRASE_LENGTH,
   TOKENS,
   keyGateErrorMessage,
@@ -1434,5 +1437,94 @@ describe("settings tabs", () => {
     expect(isSettingsTab("admin")).toBe(false);
     expect(isSettingsTab(undefined)).toBe(false);
     expect(SETTINGS_TABS).toHaveLength(5);
+  });
+});
+
+describe("SSH tunnel projections", () => {
+  const validStatus = {
+    state: "connected",
+    configured: true,
+    host: "relay.example.com",
+    user: "mow",
+    port: 22,
+    remotePairingPort: 7078,
+    remoteDevicePort: 7080,
+    fingerprint: "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
+    autoReconnect: true,
+    connectedSince: "2026-11-04T12:00:00.000Z",
+  };
+
+  it("projects a valid status and drops junk fields", () => {
+    const projected = projectSshTunnelStatus({ ...validStatus, evil: "<script>" });
+    expect(projected).toEqual(validStatus);
+  });
+
+  it("rejects unknown states and non-boolean configured", () => {
+    expect(projectSshTunnelStatus({ ...validStatus, state: "pwned" })).toBeNull();
+    expect(projectSshTunnelStatus({ ...validStatus, configured: "yes" })).toBeNull();
+    expect(projectSshTunnelStatus(null)).toBeNull();
+    expect(projectSshTunnelStatus("connected")).toBeNull();
+  });
+
+  it("drops malformed optional fields instead of failing", () => {
+    const projected = projectSshTunnelStatus({ ...validStatus, port: 70000, fingerprint: "not-a-fp", detail: "x".repeat(400) });
+    expect(projected).not.toBeNull();
+    expect(projected?.port).toBeUndefined();
+    expect(projected?.fingerprint).toBeUndefined();
+    expect(projected?.detail).toBeUndefined();
+  });
+
+  it("projects tagged results and rejects junk", () => {
+    expect(projectSshTunnelResult({ kind: "ok" })).toEqual({ kind: "ok" });
+    expect(projectSshTunnelResult({ kind: "error", error: "nope" })).toEqual({ kind: "error", error: "nope" });
+    expect(projectSshTunnelResult({ kind: "status", status: validStatus })).toEqual({ kind: "status", status: validStatus });
+    expect(projectSshTunnelResult({ kind: "status", status: { state: "pwned" } })).toBeNull();
+    expect(projectSshTunnelResult({ kind: "verification", verified: true })).toEqual({ kind: "verification", verified: true });
+    expect(projectSshTunnelResult({ kind: "verification", verified: "yes" })).toBeNull();
+    expect(projectSshTunnelResult({ kind: "exec" })).toBeNull();
+  });
+
+  const validProposal = {
+    host: "relay.example.com",
+    user: "mv-tunnel",
+    port: 22,
+    remotePairingPort: 48081,
+    remoteDevicePort: 48082,
+    keyType: "ed25519",
+    fingerprint: "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
+    publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeAdoDEADBEEF",
+    installLine: 'restrict,port-forwarding,command="false",permitlisten="127.0.0.1:48081" ssh-ed25519 AAAA',
+    policyBlock: "Match User mv-tunnel\n  AllowTcpForwarding remote\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTTY no",
+  };
+
+  it("projects a valid setup proposal verbatim", () => {
+    expect(projectSshTunnelSetupProposal(validProposal)).toEqual(validProposal);
+  });
+
+  it("rejects malformed setup proposals", () => {
+    expect(projectSshTunnelSetupProposal(null)).toBeNull();
+    expect(projectSshTunnelSetupProposal("proposal")).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, host: "" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, host: "x".repeat(256) })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, user: "" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, user: 7 })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, port: 0 })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, port: 65536 })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, remotePairingPort: 1.5 })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, remoteDevicePort: "48082" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, keyType: "x".repeat(41) })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, fingerprint: "not-a-fp" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, publicKey: "" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, publicKey: "x".repeat(2201) })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, installLine: "" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, installLine: "x".repeat(2401) })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, policyBlock: "" })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, policyBlock: "x".repeat(1201) })).toBeNull();
+    expect(projectSshTunnelSetupProposal({ ...validProposal, policyBlock: 42 })).toBeNull();
+  });
+
+  it("projects proposal-tagged results and rejects junk proposals", () => {
+    expect(projectSshTunnelResult({ kind: "proposal", proposal: validProposal })).toEqual({ kind: "proposal", proposal: validProposal });
+    expect(projectSshTunnelResult({ kind: "proposal", proposal: { host: "" } })).toBeNull();
   });
 });
