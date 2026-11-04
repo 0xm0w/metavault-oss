@@ -3,8 +3,10 @@
 > intended data boundary, not a zero-memory or all-attacks guarantee. Current
 > token migration/rotation, recovery and uninstall behavior is in SECURITY.md
 > and RECOVERY.md. PID inspection is self-reported defense-in-depth. Windows
-> Hello screen lock is not passkey encryption custody; remote access is not in
-> the local-hardening candidate.
+> Hello screen lock is not passkey encryption custody. Remote Connections are a
+> separate loopback-isolated candidate documented in docs/REMOTE.md; remote
+> approval presence protects the remote client and app/renderer paths and is
+> not local-admin resistance.
 
 # MetaVault OSS: OWASP LLM Top 10 Compliance Audit & Post-Quantum Cryptography Specification
 

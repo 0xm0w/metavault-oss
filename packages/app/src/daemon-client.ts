@@ -53,6 +53,19 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "POST", path: "/settings/local-auth/verify" },
   { method: "GET", path: "/settings/security" },
   { method: "PATCH", path: "/settings/security" },
+  // Remote Connections (WP4/WP5): pairing and device management. All of
+  // these stay daemon-token gated in the daemon; the token never leaves
+  // the main process.
+  { method: "GET", path: "/settings/remote" },
+  { method: "PATCH", path: "/settings/remote" },
+  { method: "GET", path: "/devices" },
+  { method: "POST", path: "/devices/pair" },
+  { method: "GET", path: "/devices/pairing" },
+  { method: "POST", path: "/devices/pairing/confirm" },
+  { method: "POST", path: "/devices/pairing/cancel" },
+  { method: "POST", path: "/devices/rename" },
+  { method: "POST", path: "/devices/revoke" },
+  { method: "POST", path: "/devices/policy" },
 ];
 
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(
@@ -60,6 +73,7 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set(
 );
 
 const CREDENTIAL_ITEM_PATTERN = /^\/credentials\/[^/]+$/;
+const DEVICE_POLICIES_PATTERN = /^\/devices\/policies\/[^/]+$/;
 
 export function isAllowedDaemonCall(method: unknown, path: unknown): boolean {
   if (typeof method !== "string" || typeof path !== "string") {
@@ -68,7 +82,10 @@ export function isAllowedDaemonCall(method: unknown, path: unknown): boolean {
   if (ALLOWED_KEYS.has(`${method} ${path}`)) {
     return true;
   }
-  return (method === "PATCH" || method === "DELETE") && CREDENTIAL_ITEM_PATTERN.test(path);
+  if ((method === "PATCH" || method === "DELETE") && CREDENTIAL_ITEM_PATTERN.test(path)) {
+    return true;
+  }
+  return method === "GET" && DEVICE_POLICIES_PATTERN.test(path);
 }
 
 export function validateDaemonCall(input: unknown): DaemonCallRequest {

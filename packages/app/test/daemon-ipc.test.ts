@@ -76,6 +76,16 @@ describe("main-process daemon whitelist", () => {
       { method: "POST", path: "/settings/local-auth/verify" },
       { method: "GET", path: "/settings/security" },
       { method: "PATCH", path: "/settings/security" },
+      { method: "GET", path: "/settings/remote" },
+      { method: "PATCH", path: "/settings/remote" },
+      { method: "GET", path: "/devices" },
+      { method: "POST", path: "/devices/pair" },
+      { method: "GET", path: "/devices/pairing" },
+      { method: "POST", path: "/devices/pairing/confirm" },
+      { method: "POST", path: "/devices/pairing/cancel" },
+      { method: "POST", path: "/devices/rename" },
+      { method: "POST", path: "/devices/revoke" },
+      { method: "POST", path: "/devices/policy" },
     ]);
     for (const call of ALLOWED_DAEMON_CALLS) {
       expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);
@@ -84,6 +94,17 @@ describe("main-process daemon whitelist", () => {
         path: call.path,
       });
     }
+  });
+
+  it("allows GET only for a single device policies path", () => {
+    expect(isAllowedDaemonCall("GET", "/devices/policies/dev-abc123")).toBe(true);
+    expect(isAllowedDaemonCall("POST", "/devices/policies/dev-abc123")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/devices/policies")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/devices/policies/a/b")).toBe(false);
+    // Device routes not on the list stay closed.
+    expect(isAllowedDaemonCall("DELETE", "/devices")).toBe(false);
+    expect(isAllowedDaemonCall("POST", "/devices")).toBe(false);
+    expect(isAllowedDaemonCall("GET", "/devices/export")).toBe(false);
   });
 
   it("allows PATCH/DELETE only for a single credential item path", () => {
@@ -118,9 +139,14 @@ describe("main-process daemon whitelist", () => {
     const mainSource = readFileSync(join(appRoot, "src", "main.ts"), "utf8");
     expect(mainSource).toContain("ipcMain.handle");
     expect(mainSource).toContain("DAEMON_CALL_CHANNEL");
-    expect(mainSource).toContain("callDaemon");
+    // The daemon channel is served exclusively through the guarded path:
+    // remote approvals and remote-setting weakening must pass the
+    // presence guard in main before any daemon call is made.
+    expect(mainSource).toContain("guardedDaemonCall");
     const handleCount = (mainSource.match(/ipcMain\.handle\(DAEMON_CALL_CHANNEL/g) ?? []).length;
     expect(handleCount).toBe(1);
+    const ipcSource = readFileSync(join(appRoot, "src", "remote-approval-ipc.ts"), "utf8");
+    expect(ipcSource).toContain("callDaemon");
     expect(mainSource).not.toContain("METAVAULT_DAEMON_TOKEN");
   });
 

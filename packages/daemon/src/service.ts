@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from "effect";
 import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
@@ -28,6 +28,8 @@ import {
   GrantExpired,
   GrantRevoked,
   PolicyDenied,
+  PairingNotConfirmable,
+  PresenceRequired,
   StorageError,
 } from "../../core/src/errors.js";
 import { createGrant, makeGrantRegistry, type Grant } from "../../core/src/grants.js";
@@ -55,7 +57,8 @@ import {
   type WardenKeyStatus,
   type WardenSettings,
 } from "../../core/src/settings.js";
-import { VaultStore, type AgentRecord } from "../../core/src/storage.js";
+import { VaultStore, type AgentRecord, type DeviceAliasPolicy, type DeviceRecord } from "../../core/src/storage.js";
+import { ensureVaultCa, signLeafCertificate, spkiFingerprintFromPublicKeyPem, type VaultCa } from "../../core/src/vault-ca.js";
 import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 
 export interface CapabilityResult {
@@ -63,6 +66,102 @@ export interface CapabilityResult {
   readonly grantId?: string;
   readonly result?: unknown;
   readonly reason?: string;
+}
+
+// Channel metadata the daemon trusts only when it arrives with the
+// loopback gateway secret. Remote agents never set this themselves.
+export interface RemoteRequestContext {
+  readonly deviceId: string;
+  readonly transport: string;
+}
+
+export interface RemoteSettings {
+  readonly enabled: boolean;
+  readonly host: string;
+  readonly port: number;
+  readonly requireAuthForRemoteApproval: boolean;
+}
+
+export const DEFAULT_REMOTE_SETTINGS: RemoteSettings = {
+  enabled: false,
+  host: "127.0.0.1",
+  port: 7078,
+  requireAuthForRemoteApproval: true,
+};
+
+export type PairingStatus = "waiting" | "joined" | "confirmed" | "failed";
+
+// What the app may display about an in-flight pairing. The code is shown
+// only while the session waits for a device to join; the SAS is shown once
+// a device has joined so the human can compare both screens.
+export interface PairingSessionView {
+  readonly pairingId: string;
+  readonly status: PairingStatus;
+  readonly expiresAtMs: number;
+  readonly code?: string;
+  readonly deviceName?: string;
+  readonly platform?: string;
+  readonly sas?: string;
+  readonly deviceId?: string;
+}
+
+export interface PairBeginInput {
+  readonly code: string;
+  readonly deviceName: string;
+  readonly platform: string;
+  readonly clientPublicKeyPem: string;
+  readonly clientNonce: string;
+}
+
+export type PairBeginError =
+  | "pairing-unavailable"
+  | "pairing-code-invalid"
+  | "pairing-key-invalid"
+  | "pairing-expired";
+
+export interface PairBeginResult {
+  readonly pairingId: string;
+  readonly serverNonce: string;
+}
+
+export interface PairingInternalStatus {
+  readonly status: PairingStatus | "unknown";
+  readonly certificatePem?: string;
+  readonly caCertPem?: string;
+}
+
+const PAIRING_TTL_MS = 5 * 60 * 1000;
+const PAIRING_MAX_FAILED_ATTEMPTS = 5;
+const PAIRING_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+interface PairingSession {
+  readonly pairingId: string;
+  readonly code: string;
+  readonly codeHash: string;
+  readonly createdAtMs: number;
+  readonly expiresAtMs: number;
+  readonly failedAttempts: number;
+  readonly status: PairingStatus;
+  readonly serverNonce: string;
+  readonly clientNonce?: string;
+  readonly deviceName?: string;
+  readonly platform?: string;
+  readonly clientPublicKeyPem?: string;
+  readonly clientFingerprint?: string;
+  readonly sas?: string;
+  readonly deviceId?: string;
+  readonly certificatePem?: string;
+}
+
+function hashPairingCode(code: string): string {
+  return createHash("sha256").update(code.trim().toUpperCase(), "utf8").digest("hex");
+}
+
+function generatePairingCode(): string {
+  // randomInt is uniform over the alphabet; a modulo of raw bytes is not.
+  let out = "";
+  for (let i = 0; i < 8; i += 1) out += PAIRING_CODE_ALPHABET[randomInt(PAIRING_CODE_ALPHABET.length)] ?? "";
+  return out;
 }
 
 // What the desktop app may see about a queued approval: who is asking, for
@@ -83,6 +182,11 @@ export interface PendingApproval {
   readonly expiresAtMs: number;
   readonly modelId?: string;
   readonly verified?: boolean;
+  // Remote origin banner data: set when the request arrived via a paired
+  // device through the gateway.
+  readonly deviceId?: string;
+  readonly origin?: "local" | "remote";
+  readonly transport?: string;
   readonly clientPid?: number | undefined;
   readonly clientProcess?: string | undefined;
 }
@@ -219,19 +323,22 @@ export interface VaultServiceService {
   readonly requestCapability: (
     req: CapabilityRequest,
     agentToken?: string,
+    deviceCtx?: RemoteRequestContext,
   ) => Effect.Effect<CapabilityResult, StorageError>;
   readonly approve: (
     grantId: string,
+    presenceProof?: string,
   ) => Effect.Effect<
     { readonly status: "executed"; readonly result: unknown },
-    GrantExpired | GrantRevoked | ConnectorFailed | StorageError
+    GrantExpired | GrantRevoked | ConnectorFailed | PresenceRequired | StorageError
   >;
   readonly deny: (grantId: string) => Effect.Effect<void, StorageError>;
   readonly approveAlways: (
     grantId: string,
+    presenceProof?: string,
   ) => Effect.Effect<
     { readonly status: "executed"; readonly result: unknown },
-    GrantExpired | GrantRevoked | PolicyDenied | ConnectorFailed | StorageError
+    GrantExpired | GrantRevoked | PolicyDenied | ConnectorFailed | PresenceRequired | StorageError
   >;
   readonly revoke: (agentIdOrAlias: string) => Effect.Effect<void, StorageError>;
   readonly hasCredential: (alias: string) => Effect.Effect<boolean, StorageError>;
@@ -241,8 +348,25 @@ export interface VaultServiceService {
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
-  readonly registerAgent: (id: string, name: string, rotate?: boolean) => Effect.Effect<AgentRecord, StorageError>;
+  readonly registerAgent: (id: string, name: string, rotate?: boolean, deviceId?: string) => Effect.Effect<AgentRecord, StorageError>;
   readonly revokeAgentToken: (id: string) => Effect.Effect<void, StorageError>;
+  readonly listDevices: () => Effect.Effect<DeviceRecord[], StorageError>;
+  readonly getDeviceByFingerprint: (fingerprint: string) => Effect.Effect<DeviceRecord | undefined, StorageError>;
+  readonly renameDevice: (id: string, name: string) => Effect.Effect<void, StorageError>;
+  readonly revokeDevice: (id: string) => Effect.Effect<void, StorageError>;
+  readonly listDeviceAliasPolicies: (deviceId: string) => Effect.Effect<DeviceAliasPolicy[], StorageError>;
+  readonly setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) => Effect.Effect<void, StorageError>;
+  readonly getRemoteSettings: () => Effect.Effect<RemoteSettings, StorageError>;
+  readonly updateRemoteSettings: (patch: Partial<RemoteSettings>, presenceProof?: string) => Effect.Effect<RemoteSettings, PresenceRequired | StorageError>;
+  readonly createPairingSession: () => Effect.Effect<PairingSessionView, StorageError>;
+  readonly getPairingSession: () => Effect.Effect<PairingSessionView | undefined, StorageError>;
+  readonly cancelPairingSession: (pairingId: string) => Effect.Effect<void, StorageError>;
+  readonly pairBegin: (input: PairBeginInput) => Effect.Effect<PairBeginResult, PairBeginError | StorageError>;
+  readonly attachPairingSas: (pairingId: string, sas: string) => Effect.Effect<void, StorageError>;
+  readonly confirmPairing: (pairingId: string) => Effect.Effect<{ deviceId: string; certFingerprint: string }, PairingNotConfirmable | StorageError>;
+  readonly pairingInternalStatus: (pairingId: string) => Effect.Effect<PairingInternalStatus, StorageError>;
+  // True only while a live, unconfirmed, unexpired pairing session exists.
+  readonly pairingOpen: () => Effect.Effect<{ readonly open: boolean }, StorageError>;
   readonly getAgentSecuritySettings: () => Effect.Effect<AgentSecuritySettings, StorageError>;
   readonly updateAgentSecuritySettings: (
     patch: { readonly strictMode?: boolean | undefined; readonly verifyCallerProcess?: boolean | undefined },
@@ -268,7 +392,7 @@ export interface VaultServiceService {
     pin: string,
     currentPin?: string,
   ) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
-  readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
+  readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean; readonly presenceProof?: string }, StorageError>;
   readonly verifyBiometric: () => Effect.Effect<{ readonly ok: boolean }, StorageError>;
   readonly getSecurityPosture: () => Effect.Effect<SecurityPostureReport, StorageError>;
 }
@@ -285,6 +409,11 @@ export interface VaultServiceOptions {
   readonly standingApprovals?: PolicyConfig["standingApprovals"];
   readonly modelId?: string;
   readonly enrollmentTtlMs?: number;
+  // Where vault-CA and gateway certificate files live (usually the DB's
+  // directory). Pairing confirmation signs device certs with this CA.
+  // Tests may inject vaultCa directly to skip the filesystem.
+  readonly vaultDir?: string;
+  readonly vaultCa?: VaultCa;
 }
 
 export const DEFAULT_ENROLLMENT_TTL_MS = 600_000;
@@ -361,6 +490,77 @@ export function makeVaultServiceLive(
       );
       const enrollments = yield* Ref.make(new Map<string, EnrollmentRecord>());
       const agentVelocities = yield* Ref.make(new Map<string, AgentVelocityTracker>());
+      // At most one pairing session exists; starting a new one kills the
+      // old. In-memory only: pairing state never persists across restarts.
+      const pairing = yield* Ref.make<PairingSession | undefined>(undefined);
+      // Daemon-issued local-presence proofs: single-use, 60s TTL, minted
+      // only by a real PIN verification (or an attested Hello). Required
+      // to approve remote-origin grants when the setting is on.
+      const presenceProofs = yield* Ref.make(new Map<string, number>());
+      const PRESENCE_PROOF_TTL_MS = 60_000;
+      const mintPresenceProof = () : Effect.Effect<string> =>
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const token = randomBytes(24).toString("hex");
+          yield* Ref.update(presenceProofs, (proofs) => {
+            const next = new Map<string, number>();
+            for (const [t, exp] of proofs) {
+              if (exp > now) next.set(t, exp);
+            }
+            next.set(token, now + PRESENCE_PROOF_TTL_MS);
+            return next;
+          });
+          return token;
+        });
+      const consumePresenceProof = (token: string | undefined): Effect.Effect<boolean> =>
+        Effect.gen(function* () {
+          if (token === undefined || token === "") return false;
+          const now = yield* Clock.currentTimeMillis;
+          const proofs = yield* Ref.get(presenceProofs);
+          const exp = proofs.get(token);
+          if (exp === undefined) return false;
+          yield* Ref.update(presenceProofs, (current) => {
+            const next = new Map(current);
+            next.delete(token);
+            return next;
+          });
+          return exp > now;
+        });
+      // Remote-origin approvals require fresh local presence at the DAEMON
+      // boundary: any caller - app main or another daemon-token holder -
+      // must present a proof minted by a real verification moments ago.
+      // Origin is provenance-bound (gateway stamps), never client-supplied.
+      const requirePresenceForRemoteApproval = (
+        grantId: string,
+        presenceProof: string | undefined,
+      ): Effect.Effect<void, PresenceRequired | StorageError> =>
+        Effect.gen(function* () {
+          const grant = yield* registry.get(grantId);
+          if (grant === undefined || grant.request.origin !== "remote") return;
+          const remote = yield* store.getRemoteSettingsRow();
+          if (!remote.requireAuthForRemoteApproval) return;
+          const ok = yield* consumePresenceProof(presenceProof);
+          if (!ok) {
+            return yield* Effect.fail(
+              new PresenceRequired({ message: "remote approval requires fresh local presence (PIN or Windows Hello)", grantId }),
+            );
+          }
+        });
+      let injectedCa: VaultCa | undefined = options.vaultCa;
+      const vaultDir = options.vaultDir;
+      const loadVaultCa = (): Effect.Effect<VaultCa, StorageError> =>
+        Effect.try({
+          try: () => {
+            if (injectedCa !== undefined) return injectedCa;
+            if (vaultDir === undefined) {
+              throw new Error("vault directory unavailable");
+            }
+            const ca = ensureVaultCa(vaultDir);
+            injectedCa = ca;
+            return ca;
+          },
+          catch: (err) => new StorageError({ message: `vault CA unavailable: ${err instanceof Error ? err.message : "unknown"}`, operation: "pairing" }),
+        });
 
       const purgeExpiredEnrollments = (now: number, keepId?: string): Effect.Effect<void> =>
         Ref.update(enrollments, (map) => {
@@ -408,7 +608,7 @@ export function makeVaultServiceLive(
         withModel: boolean,
         modelOverride?: string,
         extras?: Partial<
-          Pick<AuditEvent, "requestId" | "risk" | "recommendedScope" | "decisionSource" | "latencyMs" | "explanation" | "verified">
+          Pick<AuditEvent, "requestId" | "risk" | "recommendedScope" | "decisionSource" | "latencyMs" | "explanation" | "verified" | "deviceId" | "origin" | "transport">
         >,
       ): Effect.Effect<void, StorageError> =>
         Effect.flatMap(Clock.currentTimeMillis, (now) => {
@@ -788,22 +988,50 @@ export function makeVaultServiceLive(
             catch: () => new StorageError({ message: "vault setup failed", operation: "setup" }),
           }),
 
-        requestCapability: (req, agentToken) =>
+        requestCapability: (reqIn, agentToken, deviceCtx) =>
           Effect.gen(function* () {
+            // Channel metadata is stamped by the daemon from the gateway's
+            // authenticated session, never taken from the agent's body.
+            const req: CapabilityRequest =
+              deviceCtx !== undefined
+                ? { ...reqIn, deviceId: deviceCtx.deviceId, origin: "remote", transport: deviceCtx.transport }
+                : reqIn;
+            const deviceAuditExtras =
+              deviceCtx !== undefined
+                ? { deviceId: deviceCtx.deviceId, origin: "remote" as const, transport: deviceCtx.transport }
+                : {};
+            let deviceAllowWrite = true;
+            if (deviceCtx !== undefined) {
+              // The daemon re-checks the device at its own policy floor; it
+              // never relies on the gateway having already done so.
+              const device = yield* store.getDevice(deviceCtx.deviceId);
+              if (device === undefined || device.revoked) {
+                return { status: "denied", reason: "device-revoked" } as const;
+              }
+              const devicePolicies = yield* store.listDeviceAliasPolicies(deviceCtx.deviceId);
+              deviceAllowWrite = devicePolicies.find((p) => p.alias === req.alias)?.allowWrite === true;
+              yield* store.touchDeviceLastSeen(deviceCtx.deviceId, new Date().toISOString());
+            }
             const epoch = agentEpoch.get(req.agentId) ?? 0;
             if (agentToken !== undefined) {
               const current = yield* store.getAgentByToken(agentToken);
               if (current === undefined || current.revoked || current.id !== req.agentId) return { status: "denied", reason: "agent-credentials-changed" } as const;
+              // Device binding is enforced in both directions: a bound
+              // token works only inside its own device's session, and a
+              // local (unbound) token never works from a remote device.
+              const boundDevice = current.deviceId ?? null;
+              if (deviceCtx !== undefined && boundDevice !== deviceCtx.deviceId) return { status: "denied", reason: "agent-token-device-mismatch" } as const;
+              if (deviceCtx === undefined && boundDevice !== null) return { status: "denied", reason: "agent-token-device-bound" } as const;
             }
             const now = yield* Clock.currentTimeMillis;
             const storedCredential = yield* store.getCredential(req.alias);
             const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;
             const auditEvents = yield* store.listAudit();
             const requestId = yield* Effect.sync(() => randomUUID());
-            yield* audit(req.agentId, req.alias, req.requestedScope, "requested", req.verified ? "capability requested (verified)" : "capability requested (unverified)", false, undefined, { requestId, ...(req.verified !== undefined ? { verified: req.verified } : {}) });
+            yield* audit(req.agentId, req.alias, req.requestedScope, "requested", req.verified ? "capability requested (verified)" : "capability requested (unverified)", false, undefined, { requestId, ...(req.verified !== undefined ? { verified: req.verified } : {}), ...deviceAuditExtras });
 
             if (yield* registry.isRevoked(req.agentId, req.alias)) {
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", "revoked", false, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", "revoked", false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
               return { status: "denied", reason: "revoked" } as const;
             }
 
@@ -813,8 +1041,8 @@ export function makeVaultServiceLive(
             const velocityCheck = isAgentRateLimited(agentTracker, undefined, now);
             if (velocityCheck.limited) {
               const reason = velocityCheck.reason ?? "rate-limit-velocity";
-              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy" });
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
               return { status: "denied", reason } as const;
             }
             const agentEvents = auditEvents.filter((e) => e.agentId === req.agentId);
@@ -834,7 +1062,14 @@ export function makeVaultServiceLive(
               credential === undefined ? {} : { [req.alias]: credential.scopeCeiling };
             const standingNow = yield* Ref.get(standing);
             const financialAliases = credential?.kind === CARD_KIND ? [req.alias] : [];
-            const cfg: PolicyConfig = { ceilings, standingApprovals: standingNow, rateLimitPerHour, financialAliases };
+            const cfg: PolicyConfig = {
+              ceilings,
+              standingApprovals: standingNow,
+              rateLimitPerHour,
+              financialAliases,
+              disableStandingApprovals: deviceCtx !== undefined,
+              deviceAllowWrite,
+            };
 
             // Policy pre-check: unknown alias / rate limit deny before the marshal runs.
             const preCheck = evaluatePolicy(req, null, cfg, historyCount);
@@ -846,8 +1081,8 @@ export function makeVaultServiceLive(
                 next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, false));
                 return next;
               });
-              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy" });
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy" });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
               return { status: "denied", reason } as const;
             }
             yield* Ref.update(aliases, (set) => {
@@ -889,6 +1124,7 @@ export function makeVaultServiceLive(
                     decisionSource: "marshal",
                     latencyMs,
                     explanation: decision.explanation,
+                    ...deviceAuditExtras,
                   },
                 );
               } else {
@@ -944,7 +1180,7 @@ export function makeVaultServiceLive(
                 next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, false));
                 return next;
               });
-              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
+              yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
               return { status: "denied", reason: result.reason } as const;
             }
             const allowedScope = result.allowedScope;
@@ -976,21 +1212,26 @@ export function makeVaultServiceLive(
               return { status: "awaiting-approval", grantId, reason: result.reason } as const;
             }
 
-            yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
+            yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
             if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) return { status: "denied", reason: "agent-credentials-changed" } as const;
             const exit = yield* Effect.exit(executeGrant(req, allowedScope, credential.ciphertext));
             if (Exit.isFailure(exit)) {
-              yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
+              yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
               return { status: "denied", reason: "connector-failed" } as const;
             }
-            yield* audit(req.agentId, req.alias, allowedScope, "executed", "executed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
+            yield* audit(req.agentId, req.alias, allowedScope, "executed", "executed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
             return { status: "executed", result: exit.value, reason: result.reason } as const;
           }),
 
-        approve: (grantId) => consumeAndExecute(grantId, "approved by human"),
-
-        approveAlways: (grantId) =>
+        approve: (grantId, presenceProof) =>
           Effect.gen(function* () {
+            yield* requirePresenceForRemoteApproval(grantId, presenceProof);
+            return yield* consumeAndExecute(grantId, "approved by human");
+          }),
+
+        approveAlways: (grantId, presenceProof) =>
+          Effect.gen(function* () {
+            yield* requirePresenceForRemoteApproval(grantId, presenceProof);
             const grant = yield* registry.get(grantId);
             if (grant === undefined || grant.status !== "pending") {
               return yield* Effect.fail(
@@ -1138,6 +1379,9 @@ export function makeVaultServiceLive(
                 verified: grant.request.verified ?? false,
                 ...(grant.request.clientPid !== undefined ? { clientPid: grant.request.clientPid } : {}),
                 ...(grant.request.clientProcess !== undefined ? { clientProcess: grant.request.clientProcess } : {}),
+                ...(grant.request.deviceId !== undefined ? { deviceId: grant.request.deviceId } : {}),
+                ...(grant.request.origin !== undefined ? { origin: grant.request.origin } : {}),
+                ...(grant.request.transport !== undefined ? { transport: grant.request.transport } : {}),
               };
               pending.push(hasMarshal ? { ...base, modelId: pendingModelId } : base);
             }
@@ -1315,7 +1559,7 @@ export function makeVaultServiceLive(
 
         listAgents: () => store.listAgents(),
         getAgentByToken: (token) => store.getAgentByToken(token),
-        registerAgent: (id, name, rotate = false) =>
+        registerAgent: (id, name, rotate = false, deviceId) =>
           Effect.gen(function* () {
             const existing = yield* store.getAgent(id);
             if (existing !== undefined && !existing.revoked && !rotate) return yield* Effect.fail(new StorageError({ message: "agent already exists; rotate explicitly", operation: "registerAgent" }));
@@ -1325,7 +1569,7 @@ export function makeVaultServiceLive(
             for (const grant of affected) { yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
             yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== id));
             const token = `ov_agent_${id.replace(/[^a-zA-Z0-9_-]/g, "")}_${randomBytes(16).toString("hex")}`;
-            yield* store.addAgent(id, name, token);
+            yield* store.addAgent(id, name, token, deviceId);
             const created = yield* store.getAgent(id);
             if (created === undefined) {
               return yield* Effect.fail(new StorageError({ message: "failed to create agent", operation: "registerAgent" }));
@@ -1340,6 +1584,227 @@ export function makeVaultServiceLive(
             for (const grant of affected) { yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
             yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== id));
           }).pipe(agentManagement.withPermits(1)),
+        listDevices: () => store.listDevices(),
+        getDeviceByFingerprint: (fingerprint) => store.getDeviceByFingerprint(fingerprint),
+        renameDevice: (id, name) =>
+          Effect.gen(function* () {
+            const device = yield* store.getDevice(id);
+            if (device === undefined) return yield* Effect.fail(new StorageError({ message: "device not found", operation: "renameDevice" }));
+            yield* store.renameDevice(id, name.trim());
+          }),
+        // Revocation is complete by construction: the device row, every
+        // agent token bound to it, its pending grants, its standing
+        // approvals and its per-alias write opt-ins all die together. The
+        // gateway independently re-checks status on every request.
+        revokeDevice: (id) =>
+          Effect.gen(function* () {
+            const device = yield* store.getDevice(id);
+            if (device === undefined) return yield* Effect.fail(new StorageError({ message: "device not found", operation: "revokeDevice" }));
+            yield* store.setDeviceRevoked(id, true);
+            const agents = yield* store.listAgents();
+            for (const agent of agents) {
+              if ((agent.deviceId ?? null) === id && !agent.revoked) {
+                yield* store.revokeAgent(agent.id);
+                const affected = yield* registry.invalidatePendingForAgent(agent.id);
+                for (const grant of affected) { yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
+                yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== agent.id));
+              }
+            }
+            yield* store.deleteDeviceAliasPolicies(id);
+            yield* audit("devices", "*", "*", "revoked", `device revoked: ${device.name}`, false, undefined, { deviceId: id, origin: "remote", transport: device.transport });
+          }).pipe(agentManagement.withPermits(1)),
+        listDeviceAliasPolicies: (deviceId) => store.listDeviceAliasPolicies(deviceId),
+        setDeviceAliasPolicy: (deviceId, alias, allowWrite) =>
+          Effect.gen(function* () {
+            const device = yield* store.getDevice(deviceId);
+            if (device === undefined) return yield* Effect.fail(new StorageError({ message: "device not found", operation: "setDeviceAliasPolicy" }));
+            if (device.revoked) return yield* Effect.fail(new StorageError({ message: "device revoked", operation: "setDeviceAliasPolicy" }));
+            const hasAlias = yield* store.listCredentialAliases().pipe(Effect.map((list) => list.includes(alias)));
+            if (!hasAlias) return yield* Effect.fail(new StorageError({ message: "unknown alias", operation: "setDeviceAliasPolicy" }));
+            yield* store.setDeviceAliasPolicy(deviceId, alias, allowWrite);
+          }),
+        getRemoteSettings: () => store.getRemoteSettingsRow(),
+        updateRemoteSettings: (patch, presenceProof) =>
+          Effect.gen(function* () {
+            const current = yield* store.getRemoteSettingsRow();
+            // Turning the remote-approval presence requirement OFF is itself
+            // a privileged weakening: any caller - app main or a direct
+            // daemon-token holder - must prove fresh local presence (PIN).
+            if (patch.requireAuthForRemoteApproval === false && current.requireAuthForRemoteApproval) {
+              const ok = yield* consumePresenceProof(presenceProof);
+              if (!ok) {
+                return yield* Effect.fail(
+                  new PresenceRequired({ message: "disabling remote-approval presence requires fresh local presence (app PIN)" }),
+                );
+              }
+            }
+            const next = {
+              enabled: patch.enabled ?? current.enabled,
+              host: patch.host ?? current.host,
+              port: patch.port ?? current.port,
+              requireAuthForRemoteApproval: patch.requireAuthForRemoteApproval ?? current.requireAuthForRemoteApproval,
+            };
+            yield* store.setRemoteSettingsRow(next);
+            yield* audit("settings", "*", "*", "settings-changed", `remote access ${next.enabled ? "enabled" : "disabled"} (${next.host}:${String(next.port)})`, false, undefined, {});
+            return next;
+          }),
+        createPairingSession: () =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const code = generatePairingCode();
+            const session: PairingSession = {
+              pairingId: randomBytes(16).toString("hex"),
+              code,
+              codeHash: hashPairingCode(code),
+              createdAtMs: now,
+              expiresAtMs: now + PAIRING_TTL_MS,
+              failedAttempts: 0,
+              status: "waiting",
+              serverNonce: randomBytes(16).toString("hex"),
+            };
+            yield* Ref.set(pairing, session);
+            return { pairingId: session.pairingId, status: session.status, expiresAtMs: session.expiresAtMs, code: session.code };
+          }),
+        getPairingSession: () =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const session = yield* Ref.get(pairing);
+            if (session === undefined) return undefined;
+            if (session.expiresAtMs <= now && session.status !== "confirmed") {
+              yield* Ref.set(pairing, undefined);
+              return undefined;
+            }
+            return {
+              pairingId: session.pairingId,
+              status: session.status,
+              expiresAtMs: session.expiresAtMs,
+              ...(session.status === "waiting" ? { code: session.code } : {}),
+              ...(session.deviceName !== undefined ? { deviceName: session.deviceName } : {}),
+              ...(session.platform !== undefined ? { platform: session.platform } : {}),
+              ...(session.sas !== undefined && session.status === "joined" ? { sas: session.sas } : {}),
+              ...(session.deviceId !== undefined ? { deviceId: session.deviceId } : {}),
+            };
+          }),
+        cancelPairingSession: (pairingId) =>
+          Effect.gen(function* () {
+            const session = yield* Ref.get(pairing);
+            if (session !== undefined && session.pairingId === pairingId) {
+              yield* Ref.set(pairing, undefined);
+            }
+          }),
+        pairBegin: (input) =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const session = yield* Ref.get(pairing);
+            if (session === undefined || session.status !== "waiting") {
+              return yield* Effect.fail("pairing-unavailable" as const);
+            }
+            if (session.expiresAtMs <= now) {
+              yield* Ref.set(pairing, undefined);
+              return yield* Effect.fail("pairing-expired" as const);
+            }
+            if (session.failedAttempts >= PAIRING_MAX_FAILED_ATTEMPTS) {
+              // Too many wrong codes: the human must start a fresh session.
+              yield* Ref.set(pairing, undefined);
+              return yield* Effect.fail("pairing-unavailable" as const);
+            }
+            const provided = hashPairingCode(input.code);
+            const ok =
+              provided.length === session.codeHash.length &&
+              timingSafeEqual(Buffer.from(provided), Buffer.from(session.codeHash));
+            if (!ok) {
+              yield* Ref.update(pairing, (cur) =>
+                cur === undefined ? cur : { ...cur, failedAttempts: cur.failedAttempts + 1 },
+              );
+              return yield* Effect.fail("pairing-code-invalid" as const);
+            }
+            let fingerprint: string;
+            try {
+              fingerprint = spkiFingerprintFromPublicKeyPem(input.clientPublicKeyPem);
+            } catch {
+              return yield* Effect.fail("pairing-key-invalid" as const);
+            }
+            // Single-use: the code cannot pair a second device.
+            yield* Ref.set(pairing, {
+              ...session,
+              status: "joined",
+              deviceName: input.deviceName.slice(0, 64),
+              platform: input.platform.slice(0, 64),
+              clientPublicKeyPem: input.clientPublicKeyPem,
+              clientFingerprint: fingerprint,
+              clientNonce: input.clientNonce.slice(0, 128),
+            });
+            return { pairingId: session.pairingId, serverNonce: session.serverNonce };
+          }),
+        attachPairingSas: (pairingId, sas) =>
+          Effect.gen(function* () {
+            const session = yield* Ref.get(pairing);
+            if (session === undefined || session.pairingId !== pairingId || session.status !== "joined") return;
+            // The SAS lives only in the in-memory session: never persisted,
+            // never logged, cleared with the session.
+            yield* Ref.set(pairing, { ...session, sas: sas.slice(0, 32) });
+          }),
+        confirmPairing: (pairingId) =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const session = yield* Ref.get(pairing);
+            if (
+              session === undefined ||
+              session.pairingId !== pairingId ||
+              session.status !== "joined" ||
+              session.sas === undefined ||
+              session.clientPublicKeyPem === undefined ||
+              session.clientFingerprint === undefined ||
+              session.expiresAtMs <= now
+            ) {
+              return yield* Effect.fail(new PairingNotConfirmable({ message: "pairing not confirmable", pairingId }));
+            }
+            const ca = yield* loadVaultCa();
+            const deviceId = `dev-${session.clientFingerprint.slice(0, 12)}`;
+            const certificatePem = signLeafCertificate({
+              caKeyPem: ca.keyPem,
+              caCertPem: ca.certPem,
+              publicKeyPem: session.clientPublicKeyPem,
+              commonName: deviceId,
+              serialNumber: randomBytes(8).toString("hex"),
+              validityDays: 365,
+              usage: "client",
+            });
+            const device: DeviceRecord = {
+              id: deviceId,
+              name: session.deviceName ?? deviceId,
+              platform: session.platform ?? "",
+              certFingerprint: session.clientFingerprint,
+              transport: "",
+              createdAt: new Date(now).toISOString(),
+              lastSeenAt: null,
+              revoked: false,
+            };
+            yield* store.addDevice(device);
+            yield* Ref.set(pairing, { ...session, status: "confirmed", deviceId, certificatePem });
+            yield* audit("devices", "*", "*", "settings-changed", `device paired: ${device.name}`, false, undefined, { deviceId });
+            return { deviceId, certFingerprint: session.clientFingerprint };
+          }).pipe(agentManagement.withPermits(1)),
+        pairingInternalStatus: (pairingId) =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const session = yield* Ref.get(pairing);
+            if (session === undefined || session.pairingId !== pairingId || session.expiresAtMs <= now) {
+              return { status: "unknown" as const };
+            }
+            if (session.status !== "confirmed" || session.certificatePem === undefined) {
+              return { status: session.status };
+            }
+            const ca = yield* loadVaultCa();
+            return { status: "confirmed" as const, certificatePem: session.certificatePem, caCertPem: ca.certPem };
+          }),
+
+        pairingOpen: () =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const session = yield* Ref.get(pairing);
+            return { open: session !== undefined && session.expiresAtMs > now && session.status !== "confirmed" };
+          }),
 
         getLocalAuthStatus: () =>
           Effect.gen(function* () {
@@ -1409,10 +1874,14 @@ export function makeVaultServiceLive(
           Effect.gen(function* () {
             const current = yield* store.getLocalAuthRecord();
             if (current.pinHash === null || current.salt === null) {
+              // No PIN configured: verification is vacuous and must NOT
+              // mint presence proofs - fail closed for remote approvals.
               return { ok: true } as const;
             }
             const ok = verifyPin(pin, current.salt, current.pinHash);
-            return { ok } as const;
+            if (!ok) return { ok } as const;
+            const presenceProof = yield* mintPresenceProof();
+            return { ok, presenceProof } as const;
           }),
 
         verifyBiometric: () =>
@@ -1421,6 +1890,9 @@ export function makeVaultServiceLive(
             if (!current.enabled || !current.biometricEnabled) {
               return { ok: false } as const;
             }
+            // Deliberately NO presence proof: this result is caller-attested
+            // (the daemon cannot verify a Hello prompt happened), so it must
+            // never authorize remote approvals. PIN is the only proof source.
             return { ok: true } as const;
           }),
 

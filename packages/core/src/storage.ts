@@ -34,6 +34,26 @@ export interface AgentRecord {
   readonly tokenPrefix?: string;
   readonly createdAt: string;
   readonly revoked: boolean;
+  // Set when the token is bound to one paired remote device: it then
+  // authenticates only inside that device's mTLS session. NULL = local-only.
+  readonly deviceId?: string | null;
+}
+
+export interface DeviceRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly platform: string;
+  readonly certFingerprint: string;
+  readonly transport: string;
+  readonly createdAt: string;
+  readonly lastSeenAt: string | null;
+  readonly revoked: boolean;
+}
+
+export interface DeviceAliasPolicy {
+  readonly deviceId: string;
+  readonly alias: string;
+  readonly allowWrite: boolean;
 }
 
 export interface VaultStoreService {
@@ -68,8 +88,27 @@ export interface VaultStoreService {
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgent: (id: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
-  readonly addAgent: (id: string, name: string, token: string) => Effect.Effect<void, StorageError>;
+  readonly addAgent: (id: string, name: string, token: string, deviceId?: string) => Effect.Effect<void, StorageError>;
   readonly revokeAgent: (id: string) => Effect.Effect<void, StorageError>;
+  readonly listDevices: () => Effect.Effect<DeviceRecord[], StorageError>;
+  readonly getDevice: (id: string) => Effect.Effect<DeviceRecord | undefined, StorageError>;
+  readonly getDeviceByFingerprint: (fingerprint: string) => Effect.Effect<DeviceRecord | undefined, StorageError>;
+  readonly addDevice: (device: DeviceRecord) => Effect.Effect<void, StorageError>;
+  readonly renameDevice: (id: string, name: string) => Effect.Effect<void, StorageError>;
+  readonly setDeviceRevoked: (id: string, revoked: boolean) => Effect.Effect<void, StorageError>;
+  readonly touchDeviceLastSeen: (id: string, ts: string) => Effect.Effect<void, StorageError>;
+  readonly listDeviceAliasPolicies: (deviceId: string) => Effect.Effect<DeviceAliasPolicy[], StorageError>;
+  readonly setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) => Effect.Effect<void, StorageError>;
+  readonly deleteDeviceAliasPolicies: (deviceId: string) => Effect.Effect<void, StorageError>;
+  readonly getRemoteSettingsRow: () => Effect.Effect<RemoteSettingsRow, StorageError>;
+  readonly setRemoteSettingsRow: (row: RemoteSettingsRow) => Effect.Effect<void, StorageError>;
+}
+
+export interface RemoteSettingsRow {
+  readonly enabled: boolean;
+  readonly host: string;
+  readonly port: number;
+  readonly requireAuthForRemoteApproval: boolean;
 }
 
 export class VaultStore extends Context.Tag("VaultStore")<VaultStore, VaultStoreService>() {}
@@ -165,11 +204,15 @@ interface AuditRow {
   readonly verified: number | null;
   readonly client_pid: number | null;
   readonly client_process: string | null;
+  readonly device_id: string | null;
+  readonly origin: string | null;
+  readonly transport: string | null;
 }
 
 interface AgentRow {
   readonly id: string;
   readonly name: string;
+  readonly device_id: string | null;
   readonly token: string; // Legacy migration only.
   readonly token_hash: string | null;
   readonly token_prefix: string;
@@ -237,6 +280,29 @@ function makeStore(db: Database.Database): VaultStoreService {
        token TEXT NOT NULL UNIQUE,
        created_at TEXT NOT NULL,
        revoked INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE TABLE IF NOT EXISTS devices (
+       id TEXT PRIMARY KEY,
+       name TEXT NOT NULL,
+       platform TEXT NOT NULL DEFAULT '',
+       cert_fingerprint TEXT NOT NULL UNIQUE,
+       transport TEXT NOT NULL DEFAULT '',
+       created_at TEXT NOT NULL,
+       last_seen TEXT,
+       revoked INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE TABLE IF NOT EXISTS device_alias_policies (
+       device_id TEXT NOT NULL,
+       alias TEXT NOT NULL,
+       allow_write INTEGER NOT NULL DEFAULT 0,
+       PRIMARY KEY (device_id, alias)
+     );
+     CREATE TABLE IF NOT EXISTS remote_settings (
+       id INTEGER PRIMARY KEY CHECK (id = 1),
+       enabled INTEGER NOT NULL DEFAULT 0,
+       host TEXT NOT NULL DEFAULT '127.0.0.1',
+       port INTEGER NOT NULL DEFAULT 7078,
+       require_auth_remote_approval INTEGER NOT NULL DEFAULT 1
      );`,
   );
   const cols = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
@@ -260,6 +326,9 @@ function makeStore(db: Database.Database): VaultStoreService {
     verified: "INTEGER",
     client_pid: "INTEGER",
     client_process: "TEXT",
+    device_id: "TEXT",
+    origin: "TEXT",
+    transport: "TEXT",
   };
   for (const [name, def] of Object.entries(auditColumnDefs)) {
     if (!auditCols.some((c) => c.name === name)) {
@@ -283,7 +352,7 @@ function makeStore(db: Database.Database): VaultStoreService {
     "SELECT alias FROM credentials ORDER BY alias ASC",
   );
   const insertAudit = db.prepare(
-    "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process, device_id, origin, transport) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   // Rebuild the legacy token table transactionally. No raw bearer is retained
   // in the logical database. Existing IDE tokens keep working until rotated.
@@ -333,17 +402,61 @@ function makeStore(db: Database.Database): VaultStoreService {
     if (result.some(row=>row.busy !== 0)) throw new Error("agent migration cleanup is busy; close other vault processes and retry");
     db.exec("UPDATE local_migration_state SET cleanup_pending=0 WHERE name='agent-hash'");
   }
+  const agentTableCols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+  if (!agentTableCols.some((c) => c.name === "device_id")) {
+    db.exec("ALTER TABLE agents ADD COLUMN device_id TEXT");
+  }
   const seedAgent = db.prepare("INSERT OR IGNORE INTO agents (id,name,token_hash,token_prefix,created_at,revoked) VALUES (?,?,NULL,'',?,1)");
   for (const [id, name] of [["cursor", "Cursor"], ["claude-code", "Claude Code"], ["vscode", "VS Code"], ["codex", "Codex"], ["opencode", "OpenCode"]]) seedAgent.run(id, name, new Date().toISOString());
   const selectAllAgents = db.prepare("SELECT * FROM agents ORDER BY id ASC");
   const selectAgentById = db.prepare("SELECT * FROM agents WHERE id = ?");
   const selectAgentByToken = db.prepare("SELECT * FROM agents WHERE token_hash = ?");
   const insertAgent = db.prepare(
-    "INSERT INTO agents (id,name,token_hash,token_prefix,created_at,revoked) VALUES (?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET name=excluded.name,token_hash=excluded.token_hash,token_prefix=excluded.token_prefix,revoked=0",
+    "INSERT INTO agents (id,name,token_hash,token_prefix,created_at,revoked,device_id) VALUES (?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,token_hash=excluded.token_hash,token_prefix=excluded.token_prefix,revoked=0,device_id=excluded.device_id",
   );
   const revokeAgentStmt = db.prepare(
     "UPDATE agents SET revoked = 1 WHERE id = ?",
   );
+
+  const selectAllDevices = db.prepare("SELECT * FROM devices ORDER BY created_at ASC");
+  const selectDeviceById = db.prepare("SELECT * FROM devices WHERE id = ?");
+  const selectDeviceByFingerprint = db.prepare("SELECT * FROM devices WHERE cert_fingerprint = ?");
+  const insertDevice = db.prepare(
+    "INSERT INTO devices (id,name,platform,cert_fingerprint,transport,created_at,last_seen,revoked) VALUES (?,?,?,?,?,?,?,?)",
+  );
+  const renameDeviceStmt = db.prepare("UPDATE devices SET name = ? WHERE id = ?");
+  const setDeviceRevokedStmt = db.prepare("UPDATE devices SET revoked = ? WHERE id = ?");
+  const touchDeviceStmt = db.prepare("UPDATE devices SET last_seen = ? WHERE id = ?");
+  const selectDevicePolicies = db.prepare("SELECT * FROM device_alias_policies WHERE device_id = ?");
+  const upsertDevicePolicy = db.prepare(
+    "INSERT INTO device_alias_policies (device_id,alias,allow_write) VALUES (?,?,?) ON CONFLICT(device_id,alias) DO UPDATE SET allow_write=excluded.allow_write",
+  );
+  const deleteDevicePoliciesStmt = db.prepare("DELETE FROM device_alias_policies WHERE device_id = ?");
+  const selectRemoteSettings = db.prepare("SELECT enabled, host, port, require_auth_remote_approval FROM remote_settings WHERE id = 1");
+  const upsertRemoteSettings = db.prepare(
+    "INSERT INTO remote_settings (id, enabled, host, port, require_auth_remote_approval) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, host=excluded.host, port=excluded.port, require_auth_remote_approval=excluded.require_auth_remote_approval",
+  );
+
+  interface DeviceRow {
+    readonly id: string;
+    readonly name: string;
+    readonly platform: string;
+    readonly cert_fingerprint: string;
+    readonly transport: string;
+    readonly created_at: string;
+    readonly last_seen: string | null;
+    readonly revoked: number;
+  }
+  const toDevice = (row: DeviceRow): DeviceRecord => ({
+    id: row.id,
+    name: row.name,
+    platform: row.platform,
+    certFingerprint: row.cert_fingerprint,
+    transport: row.transport,
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen,
+    revoked: row.revoked === 1,
+  });
 
   const upsertSecuritySettings = db.prepare(
     "INSERT INTO agent_security_settings (id, strict_mode, verify_caller_process) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET strict_mode = excluded.strict_mode, verify_caller_process = excluded.verify_caller_process"
@@ -385,7 +498,7 @@ function makeStore(db: Database.Database): VaultStoreService {
     "SELECT provider, model, effort, meta_api_base_url, local_base_url, local_api, local_model FROM warden_settings WHERE id = 1",
   );
   const selectAudit = db.prepare(
-    "SELECT ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process FROM audit ORDER BY rowid ASC",
+    "SELECT ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process, device_id, origin, transport FROM audit ORDER BY rowid ASC",
   );
 
   return {
@@ -439,7 +552,7 @@ function makeStore(db: Database.Database): VaultStoreService {
     appendAudit: (e) =>
       Effect.try({
         try: () => {
-          insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null, e.requestId ?? null, e.risk ?? null, e.recommendedScope ?? null, e.decisionSource ?? null, e.latencyMs ?? null, e.explanation ?? null, (e.verified === undefined ? null : e.verified ? 1 : 0), e.clientPid ?? null, e.clientProcess ?? null);
+          insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null, e.requestId ?? null, e.risk ?? null, e.recommendedScope ?? null, e.decisionSource ?? null, e.latencyMs ?? null, e.explanation ?? null, (e.verified === undefined ? null : e.verified ? 1 : 0), e.clientPid ?? null, e.clientProcess ?? null, e.deviceId ?? null, e.origin ?? null, e.transport ?? null);
         },
         catch: toStorageError("appendAudit"),
       }),
@@ -467,6 +580,9 @@ function makeStore(db: Database.Database): VaultStoreService {
             if (row.verified !== null) event = { ...event, verified: row.verified === 1 };
             if (row.client_pid !== null) event = { ...event, clientPid: row.client_pid };
             if (row.client_process !== null) event = { ...event, clientProcess: row.client_process };
+            if (row.device_id !== null) event = { ...event, deviceId: row.device_id };
+            if (row.origin !== null) event = { ...event, origin: row.origin as AuditEvent["origin"] };
+            if (row.transport !== null) event = { ...event, transport: row.transport };
             return event;
           });
         },
@@ -565,6 +681,7 @@ function makeStore(db: Database.Database): VaultStoreService {
             tokenPrefix: r.token_prefix,
             createdAt: r.created_at,
             revoked: r.revoked === 1,
+            deviceId: r.device_id,
           }));
         },
         catch: toStorageError("listAgents"),
@@ -582,6 +699,7 @@ function makeStore(db: Database.Database): VaultStoreService {
                 tokenPrefix: row.token_prefix,
                 createdAt: row.created_at,
                 revoked: row.revoked === 1,
+                deviceId: row.device_id,
               };
         },
         catch: toStorageError("getAgent"),
@@ -592,14 +710,14 @@ function makeStore(db: Database.Database): VaultStoreService {
           const row = selectAgentByToken.get(hashAgentToken(token)) as AgentRow | undefined;
           return row === undefined || row.token_hash === null || !timingSafeEqual(Buffer.from(row.token_hash), Buffer.from(hashAgentToken(token)))
             ? undefined
-            : { id: row.id, name: row.name, token: "", tokenPrefix: row.token_prefix, createdAt: row.created_at, revoked: row.revoked === 1 };
+            : { id: row.id, name: row.name, token: "", tokenPrefix: row.token_prefix, createdAt: row.created_at, revoked: row.revoked === 1, deviceId: row.device_id };
         },
         catch: toStorageError("getAgentByToken"),
       }),
-    addAgent: (id, name, token) =>
+    addAgent: (id, name, token, deviceId) =>
       Effect.try({
         try: () => {
-          insertAgent.run(id, name, hashAgentToken(token), token.slice(0, 16), new Date().toISOString());
+          insertAgent.run(id, name, hashAgentToken(token), token.slice(0, 16), new Date().toISOString(), deviceId ?? null);
         },
         catch: toStorageError("addAgent"),
       }),
@@ -609,6 +727,100 @@ function makeStore(db: Database.Database): VaultStoreService {
           revokeAgentStmt.run(id);
         },
         catch: toStorageError("revokeAgent"),
+      }),
+    listDevices: () =>
+      Effect.try({
+        try: () => (selectAllDevices.all() as DeviceRow[]).map(toDevice),
+        catch: toStorageError("listDevices"),
+      }),
+    getDevice: (id) =>
+      Effect.try({
+        try: () => {
+          const row = selectDeviceById.get(id) as DeviceRow | undefined;
+          return row === undefined ? undefined : toDevice(row);
+        },
+        catch: toStorageError("getDevice"),
+      }),
+    getDeviceByFingerprint: (fingerprint) =>
+      Effect.try({
+        try: () => {
+          const row = selectDeviceByFingerprint.get(fingerprint) as DeviceRow | undefined;
+          return row === undefined ? undefined : toDevice(row);
+        },
+        catch: toStorageError("getDeviceByFingerprint"),
+      }),
+    addDevice: (device) =>
+      Effect.try({
+        try: () => {
+          insertDevice.run(device.id, device.name, device.platform, device.certFingerprint, device.transport, device.createdAt, device.lastSeenAt, device.revoked ? 1 : 0);
+        },
+        catch: toStorageError("addDevice"),
+      }),
+    renameDevice: (id, name) =>
+      Effect.try({
+        try: () => {
+          renameDeviceStmt.run(name, id);
+        },
+        catch: toStorageError("renameDevice"),
+      }),
+    setDeviceRevoked: (id, revoked) =>
+      Effect.try({
+        try: () => {
+          setDeviceRevokedStmt.run(revoked ? 1 : 0, id);
+        },
+        catch: toStorageError("setDeviceRevoked"),
+      }),
+    touchDeviceLastSeen: (id, ts) =>
+      Effect.try({
+        try: () => {
+          touchDeviceStmt.run(ts, id);
+        },
+        catch: toStorageError("touchDeviceLastSeen"),
+      }),
+    listDeviceAliasPolicies: (deviceId) =>
+      Effect.try({
+        try: () => {
+          const rows = selectDevicePolicies.all(deviceId) as { device_id: string; alias: string; allow_write: number }[];
+          return rows.map((r) => ({ deviceId: r.device_id, alias: r.alias, allowWrite: r.allow_write === 1 }));
+        },
+        catch: toStorageError("listDeviceAliasPolicies"),
+      }),
+    setDeviceAliasPolicy: (deviceId, alias, allowWrite) =>
+      Effect.try({
+        try: () => {
+          upsertDevicePolicy.run(deviceId, alias, allowWrite ? 1 : 0);
+        },
+        catch: toStorageError("setDeviceAliasPolicy"),
+      }),
+    deleteDeviceAliasPolicies: (deviceId) =>
+      Effect.try({
+        try: () => {
+          deleteDevicePoliciesStmt.run(deviceId);
+        },
+        catch: toStorageError("deleteDeviceAliasPolicies"),
+      }),
+    getRemoteSettingsRow: () =>
+      Effect.try({
+        try: () => {
+          const row = selectRemoteSettings.get() as { enabled: number; host: string; port: number; require_auth_remote_approval: number } | undefined;
+          if (row === undefined) {
+            return { enabled: false, host: "127.0.0.1", port: 7078, requireAuthForRemoteApproval: true };
+          }
+          return {
+            enabled: row.enabled === 1,
+            host: row.host,
+            port: row.port,
+            requireAuthForRemoteApproval: row.require_auth_remote_approval === 1,
+          };
+        },
+        catch: toStorageError("getRemoteSettingsRow"),
+      }),
+    setRemoteSettingsRow: (row) =>
+      Effect.try({
+        try: () => {
+          upsertRemoteSettings.run(row.enabled ? 1 : 0, row.host, row.port, row.requireAuthForRemoteApproval ? 1 : 0);
+        },
+        catch: toStorageError("setRemoteSettingsRow"),
       }),
   };
 }

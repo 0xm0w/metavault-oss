@@ -6,6 +6,10 @@ export interface CapabilityRequest {
   verified?: boolean;
   clientPid?: number | undefined;
   clientProcess?: string | undefined;
+  // Remote origin, set only for requests that arrived through the gateway.
+  deviceId?: string | undefined;
+  origin?: "local" | "remote" | undefined;
+  transport?: string | undefined;
 }
 export interface MarshalDecision {
   risk: Risk; recommendedScope: string; requireApproval: boolean; explanation: string;
@@ -20,4 +24,8 @@ export interface AuditEvent {
   verified?: boolean;
   clientPid?: number | undefined;
   clientProcess?: string | undefined;
+  // Remote origin, set only for requests that arrived through the gateway.
+  deviceId?: string | undefined;
+  origin?: "local" | "remote" | undefined;
+  transport?: string | undefined;
 }

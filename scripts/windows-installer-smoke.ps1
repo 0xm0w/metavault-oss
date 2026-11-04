@@ -72,6 +72,92 @@ function Test-PackagedMcp {
   if ($LASTEXITCODE -ne 0) { throw 'Installed MCP subprocess check failed' }
 }
 
+
+function Test-Tcp([int]$port) {
+  try {
+    $c = New-Object Net.Sockets.TcpClient
+    $iar = $c.BeginConnect("127.0.0.1", $port, $null, $null)
+    $ok = $iar.AsyncWaitHandle.WaitOne(800)
+    if ($ok -and $c.Connected) { $c.Close(); return $true }
+    $c.Close(); return $false
+  } catch { return $false }
+}
+
+function Test-PackagedGateway {
+  # The packaged remote-access gateway: bundled with the app, off until
+  # remote is explicitly enabled, then two loopback listeners - pairing
+  # (server-only TLS, inert without an open pairing window) and devices
+  # (strict mTLS). Remote off by default is checked first: no listeners
+  # may exist before enablement.
+  Log "Checking packaged remote gateway (off by default, two listeners)"
+  $gwScript = Join-Path $installDir "resources\vaultd\gateway.cjs"
+  Check (Test-Path $gwScript) "installed: resources\vaultd\gateway.cjs"
+  Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7080)) "gateway listeners absent while remote is disabled"
+  if (-not (Test-Path $gwScript)) { return }
+
+  # Fail-closed without configuration.
+  $psi = New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  $psi.Arguments = "`"$gwScript`""
+  $psi.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1"
+  $psi.EnvironmentVariables.Remove("METAVAULT_VAULT_DIR") | Out-Null
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardError = $true
+  $unconfigured = [Diagnostics.Process]::Start($psi)
+  $unconfiguredErr = $unconfigured.StandardError.ReadToEnd()
+  $null = $unconfigured.WaitForExit(15000)
+  if (-not $unconfigured.HasExited) { $unconfigured.Kill(); $null = $unconfigured.WaitForExit(5000) }
+  Check ($unconfigured.ExitCode -ne 0 -and $unconfiguredErr -match "METAVAULT_VAULT_DIR") "packaged gateway refuses to start unconfigured"
+  $unconfiguredErr = $null
+
+  # Enable remote through the daemon: mints the vault CA, gateway
+  # certificate and gateway secret inside the vault directory.
+  $remote = Invoke-Daemon "PATCH" "/settings/remote" @{ enabled = $true }
+  Log "PATCH /settings/remote -> $($remote | ConvertTo-Json -Compress)"
+  Check ($null -ne $remote -and $remote.enabled -eq $true) "remote access enabled through daemon"
+  foreach ($f in @("metavault-ca.cert.pem", "metavault-ca.key.pem", "metavault-gateway.cert.pem", "metavault-gateway.key.pem", "metavault.gateway-token")) {
+    Check (Test-Path (Join-Path $dataDir $f)) "remote material exists: $f"
+  }
+  $remote = $null
+
+  # Launch the packaged gateway exactly as the app spawns it.
+  $psi2 = New-Object Diagnostics.ProcessStartInfo
+  $psi2.FileName = $exe
+  $psi2.Arguments = "`"$gwScript`""
+  $psi2.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1"
+  $psi2.EnvironmentVariables["METAVAULT_VAULT_DIR"] = $dataDir
+  $psi2.EnvironmentVariables["METAVAULT_DAEMON_URL"] = "http://127.0.0.1:$Port"
+  $psi2.UseShellExecute = $false
+  $psi2.RedirectStandardError = $true
+  $gw = [Diagnostics.Process]::Start($psi2)
+  $pairingOpen = $false
+  $deviceOpen = $false
+  $deadline = (Get-Date).AddSeconds(30)
+  while ((Get-Date) -lt $deadline -and -not ($pairingOpen -and $deviceOpen)) {
+    if (-not $pairingOpen) { $pairingOpen = Test-Tcp 7078 }
+    if (-not $deviceOpen) { $deviceOpen = Test-Tcp 7080 }
+    if (-not ($pairingOpen -and $deviceOpen)) { Start-Sleep -Milliseconds 500 }
+  }
+  Check $pairingOpen "packaged gateway pairing listener on 127.0.0.1:7078"
+  Check $deviceOpen "packaged gateway strict-mTLS device listener on 127.0.0.1:7080"
+  $listenersUp = $pairingOpen -and $deviceOpen
+  # Shutdown: killing the child must close BOTH listeners.
+  if (-not $gw.HasExited) { $gw.Kill() }
+  $null = $gw.WaitForExit(10000)
+  if (-not $listenersUp) {
+    $gwErrPeek = ""
+    try { $gwErrPeek = $gw.StandardError.ReadToEnd() } catch { }
+    Log "gateway stderr: $gwErrPeek"
+  }
+  Start-Sleep -Seconds 1
+  Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7080)) "both gateway listeners close on shutdown"
+
+  # Disable remote again so later stages run with the default posture.
+  $off = Invoke-Daemon "PATCH" "/settings/remote" @{ enabled = $false }
+  Check ($null -ne $off -and $off.enabled -eq $false) "remote access disabled again"
+  $off = $null
+}
+
 $smokePassphrase = "smoke-ci-passphrase-7f3a"
 $smokeAlias = "smoke-ci-credential"
 $smokeSecret = "smoke-secret-value-9c81"
@@ -152,6 +238,7 @@ function Check-Installed-Layout {
       (Join-Path $installDir "resources\vaultd\vaultd.cjs"),
       (Join-Path $installDir "resources\vaultd\metavault.cjs"),
       (Join-Path $installDir "resources\vaultd\mcp.cjs"),
+      (Join-Path $installDir "resources\vaultd\gateway.cjs"),
       (Join-Path $installDir "resources\vaultd\native\better-sqlite3\prebuilds\win32-x64.node"),
       (Join-Path $binDir "metavault.cmd"),
       (Join-Path $binDir "vaultd.cmd"),
@@ -283,6 +370,9 @@ $aliases = Invoke-Daemon "GET" "/aliases"
 Log "GET /aliases -> $($aliases | ConvertTo-Json -Compress)"
 Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "credential alias listed"
 $setup = $null; $add = $null
+
+# === 2b. packaged remote gateway: off by default, two listeners, shutdown ===
+Test-PackagedGateway
 
 # Actual identified IDE host proof, no model account or external connector call.
 $hostAgent = Invoke-Daemon "POST" "/agents" @{id='vscode';name='VS Code'}

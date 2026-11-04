@@ -367,3 +367,30 @@ Validation-only109 closed NOT merged. No release was made.
 This correction supersedes any earlier implication that differential PR zero
 findings established a clean full baseline. Query coverage remains bounded;
 zero results are not a formal absence-of-vulnerabilities guarantee.
+
+## Remote Connections candidate - November 4, 2026
+
+Unreleased candidate evidence, not a production certification. Covers the
+loopback-isolated gateway, mTLS 1.3 pairing/session/revocation, and remote
+approval presence enforcement documented in [REMOTE.md](REMOTE.md). All
+numbers below are on the exact candidate branch head recorded at merge time.
+
+| Gate | Current evidence | Limit |
+| --- | --- | --- |
+| Unit/integration suite (Ubuntu) | 630 passed / 7 skipped at head 1596256 (`npm test`); tsc and eslint clean | 3 skips are pre-existing live-model tests; 4 skips are Windows-only ACL tests that run on the Windows CI leg |
+| Dependency audit | `npm audit`: 0 vulnerabilities at head 1596256 | Point-in-time; advisory feed changes |
+| Remote approval presence | Daemon route tests: direct `/approve` and `/approve-always` without proof rejected 403, with PIN proof executed, replay rejected, expired proof rejected, opt-out honored only while explicitly off; main-process guard fails closed on unknown/unreadable grant origin | Presence protects the remote client and app/renderer paths; NOT local-admin resistance (daemon token is full local admin by design). Windows Hello never mints proofs (caller-attested) |
+| Direct mutation resistance | Token-authenticated `PATCH /settings/remote` disabling presence rejected 403 without proof and setting verified unchanged; PIN replacement without current PIN rejected; biometric route mints nothing; disabling local-auth keeps the PIN hash | First-PIN setup by a local caller is unrestricted when no PIN exists (vault already fully local-admin at that point) |
+| Black-box probes | `scripts/pentest.mjs` probes 8-11 run live against an ephemeral daemon via `test/security/pentest-remote-live.test.ts`: 23 PASS / 0 FAIL / 0 SKIP - device-stamp spoofing without valid gateway MAC (plain and fully forged) 403, `/internal/*` raw-secret guard 401, pairing routes token-guarded, settings weakening 403 + unchanged | One defect found and fixed by these probes: unknown pairingId on confirm returned 500, now 409 `PairingNotConfirmable` |
+| UI pixel verification | Real built renderer bundle (CSP `script-src 'self'`) driven in headless Chrome against a stubbed bridge: remote-origin approval banner, Connections tab (loopback copy, gateway bind, PIN-requirement row, SAS comparison, paired devices, revoke) | Mock-bridge pixels prove layout only. Two real defects found and fixed this way: the Connections tab was unreachable by click (dispatcher whitelist), and the PIN-requirement row never rendered (element built but not appended) |
+| Pairing/e2e | Gateway suite 32 passed / 4 skipped (16 device-client tests incl. mTLS handshake, pairing code/SAS lifecycle, SAS-bound device-port cross-check, inert pairing window, revocation, in-flight revoke next-request rejection) plus daemon route tests | Loopback-only; no tailnet/LAN/public listener shipped. The 4 skips are the Windows ACL tests below |
+| Windows ACL verification | Trustee SIDs are read through mscorlib APIs (`Directory.GetAccessControl` / `File.GetAccessControl` + `IdentityReference.Translate`) via Windows PowerShell - never account names, icacls text, or `/save` SDDL. SDDL aliases are machine-relative: the runner's hardened ACL `D:PAI(A;;FA;;;LA)` is owner-only with `LA` aliasing S-1-5-21-<machine>-500, so no static alias table can resolve it. `Get-Acl` is avoided because `Microsoft.PowerShell.Security` module autoload fails on hosted runners. Unresolvable trustees and PowerShell absence fail closed (credential storage refused) | Verified on a real windows-2025 runner through the exact node spawn path: focused diagnostic run 41778610721 (directory + file PASS) and the CI integration tests below |
+| Windows CI leg (windows-latest) | All 4 Windows ACL integration tests pass on the real runner (CI run 41778615619): directory and credential file, positive and preexisting-`Everyone`-grant strip, effective trustee SIDs == exactly the current user's SID | The same run's only other failure was a POSIX mode-bit assertion (mode bits are no-ops on Windows; owner-only is the verified ACL), now platform-gated at head 1596256 |
+| Packaged gateway smoke (installer CI) | Clean-install smoke passes on three consecutive heads (runs 41770201090, 41773296043, 41778615579): `gateway.cjs` installed; both listeners absent while remote is disabled; fail-closed unconfigured start; `PATCH /settings/remote` mints the vault CA, gateway cert and gateway token; pairing listener up on 127.0.0.1:7078; strict-mTLS device listener up on 127.0.0.1:7080; both close on shutdown | Packaged proof of the two-listener topology; pairing/session behavior is covered by the gateway e2e tests |
+| Merge gates | Full-baseline CodeQL zero findings on exact head (consecutive runs incl. 41778615837 on 2e31545); ubuntu-latest + windows-latest CI legs green; installer clean-install smoke green. Final exact-head gate runs on the merge head are recorded on PR #111 checks | CodeQL zero is a static-query result; the two-listener security claims rest on the behavioral tests and probes above |
+
+This candidate does not change the preserved limits from the local-hardening
+candidate above: packaged target PRF custody unproved, legacy 0.1.0
+compatibility unproved, no automatic legacy adoption or encrypted export,
+other IDE/model chat/platform onboarding unproved, saved-key-only Warden
+Test/Delete unchanged. No new public release is authorized by these tests.

@@ -80,3 +80,21 @@ export class ConnectorFailed extends Data.TaggedError("ConnectorFailed")<{
     super(props);
   }
 }
+
+export class PresenceRequired extends Data.TaggedError("PresenceRequired")<{
+  readonly message?: string;
+  readonly grantId?: string;
+}> {
+  constructor(props: { readonly message?: string; readonly grantId?: string } = {}) {
+    super(props);
+  }
+}
+
+export class PairingNotConfirmable extends Data.TaggedError("PairingNotConfirmable")<{
+  readonly message?: string;
+  readonly pairingId?: string;
+}> {
+  constructor(props: { readonly message?: string; readonly pairingId?: string } = {}) {
+    super(props);
+  }
+}

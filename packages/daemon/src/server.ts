@@ -1,5 +1,5 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
@@ -12,6 +12,7 @@ import { DEFAULT_AGENT_SECURITY_SETTINGS, WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGT
 import { inspectProcess } from "./process-inspector.js";
 import { decryptSecret } from "../../core/src/crypto.js";
 import { metavaultEnv } from "../../core/src/env.js";
+import { ensureGatewayCertificate, ensureVaultCa } from "../../core/src/vault-ca.js";
 import { retrieveMasterKey } from "../../core/src/keychain.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
@@ -71,9 +72,11 @@ export function statusForErrorTag(tag: string): number {
   switch (tag) {
     case "GrantExpired":
     case "GrantRevoked":
+    case "PairingNotConfirmable":
       return 409;
     case "PolicyDenied":
     case "UnknownAlias":
+    case "PresenceRequired":
       return 403;
     case "ConnectorFailed":
       return 502;
@@ -121,7 +124,7 @@ export class HttpBodyError extends Error {
   }
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBodyWithText(req: IncomingMessage): Promise<{ parsed: unknown; text: string }> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -134,13 +137,99 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
   const text = Buffer.concat(chunks).toString("utf8");
   if (text === "") {
-    return {};
+    return { parsed: {}, text };
   }
   try {
-    return JSON.parse(text) as unknown;
+    return { parsed: JSON.parse(text) as unknown, text };
   } catch {
     throw new HttpBodyError(400, "malformed JSON body");
   }
+}
+
+// Gateway request stamps. The gateway proves it (and only it) forwarded a
+// request by MACing the device identity, method, path, exact body bytes, a
+// timestamp and a single-use nonce with the loopback-shared secret. The
+// daemon recomputes and compares in constant time, enforces a freshness
+// window and rejects replayed nonces. The stamp authenticates the gateway
+// as the transport; it is not independent proof of device intent beyond
+// what the gateway verified (mTLS certificate + revocation status).
+export const GATEWAY_STAMP_WINDOW_SECONDS = 120;
+const GATEWAY_STAMP_NONCE_CACHE_LIMIT = 50_000;
+const seenStampNonces = new Map<string, number>();
+
+export function computeGatewayStampMac(
+  secret: string,
+  fields: {
+    readonly deviceId: string;
+    readonly transport: string;
+    readonly method: string;
+    readonly path: string;
+    readonly bodyText: string;
+    readonly timestamp: string;
+    readonly nonce: string;
+  },
+): string {
+  const bodyHash = createHash("sha256").update(fields.bodyText, "utf8").digest("hex");
+  return createHmac("sha256", secret)
+    .update(
+      [
+        fields.deviceId,
+        fields.transport,
+        fields.method,
+        fields.path,
+        bodyHash,
+        fields.timestamp,
+        fields.nonce,
+      ].join("\n"),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+export function validateGatewayStamp(
+  secret: string,
+  fields: {
+    readonly mac: string;
+    readonly deviceId: string;
+    readonly transport: string;
+    readonly method: string;
+    readonly path: string;
+    readonly bodyText: string;
+    readonly timestamp: string;
+    readonly nonce: string;
+  },
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): boolean {
+  const ts = Number(fields.timestamp);
+  if (!Number.isInteger(ts) || Math.abs(nowSeconds - ts) > GATEWAY_STAMP_WINDOW_SECONDS) {
+    return false;
+  }
+  if (!/^[0-9a-f]{64}$/.test(fields.mac) || !/^[0-9a-f]{32}$/.test(fields.nonce)) {
+    return false;
+  }
+  const expected = computeGatewayStampMac(secret, fields);
+  const macOk = tokenMatches(expected, fields.mac);
+  if (!macOk) {
+    return false;
+  }
+  // Replay defense: a nonce may be used once within the freshness window.
+  for (const [nonce, expiry] of seenStampNonces) {
+    if (expiry <= nowSeconds) {
+      seenStampNonces.delete(nonce);
+    }
+  }
+  if (seenStampNonces.has(fields.nonce)) {
+    return false;
+  }
+  if (seenStampNonces.size >= GATEWAY_STAMP_NONCE_CACHE_LIMIT) {
+    return false;
+  }
+  seenStampNonces.set(fields.nonce, ts + GATEWAY_STAMP_WINDOW_SECONDS);
+  return true;
+}
+
+export function clearGatewayStampNoncesForTests(): void {
+  seenStampNonces.clear();
 }
 
 export function isSafeAlias(alias: string): boolean {
@@ -201,6 +290,35 @@ export function daemonTokenFilePath(dbPath: string): string {
   return join(dirname(dbPath), "metavault.token");
 }
 
+export function gatewaySecretFilePath(dbPath: string): string {
+  return join(dirname(dbPath), "metavault.gateway-token");
+}
+
+// The gateway secret authenticates the sibling gateway process over
+// loopback so local processes cannot stamp forged device identity headers.
+// It is created only when remote access is enabled; until then every
+// stamped request fails closed.
+export function loadGatewaySecret(dbPath: string): string | undefined {
+  const fromEnv = metavaultEnv("GATEWAY_TOKEN");
+  if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
+  try {
+    if (existsSync(gatewaySecretFilePath(dbPath))) {
+      return readFileSync(gatewaySecretFilePath(dbPath), "utf8").trim();
+    }
+  } catch {
+    // Unreadable secret: fail closed (no gateway validation possible).
+  }
+  return undefined;
+}
+
+export function ensureGatewaySecret(dbPath: string): string {
+  const existing = loadGatewaySecret(dbPath);
+  if (existing !== undefined && existing !== "") return existing;
+  const secret = randomBytes(32).toString("hex");
+  writeFileSync(gatewaySecretFilePath(dbPath), secret, { encoding: "utf8", mode: 0o600 });
+  return secret;
+}
+
 export function resolveDaemonToken(dbPath: string): string {
   const fromEnv = metavaultEnv("DAEMON_TOKEN");
   if (fromEnv !== undefined && fromEnv !== "") {
@@ -223,6 +341,19 @@ export interface VaultRequestOptions {
   readonly providedToken?: string;
   readonly providedAgentToken?: string;
   readonly clientPid?: number | undefined;
+  // Loopback gateway authentication and device identity stamps. The
+  // configured secret is server state; the provided one comes from the
+  // caller. Device headers are honored only with a valid gateway secret.
+  readonly gatewaySecret?: string;
+  // Raw loopback secret presented on /internal/* routes only.
+  readonly providedGatewaySecret?: string;
+  // Set only after the HTTP layer validated the gateway stamp MAC,
+  // freshness window and nonce. Never set from raw header presence.
+  readonly gatewayStampValid?: boolean;
+  readonly deviceId?: string;
+  readonly transport?: string;
+  // Vault directory for remote-enable asset creation (CA, gateway cert).
+  readonly vaultDir?: string;
 }
 
 const UNAUTHORIZED: { status: number; body: unknown } = {
@@ -253,7 +384,10 @@ function isTokenProtected(method: string, path: string): boolean {
   if ((method === "PATCH" || method === "DELETE") && path.startsWith("/credentials/")) {
     return true;
   }
-  if ((path === "/settings/warden" || path === "/settings/security") && (method === "GET" || method === "PATCH")) {
+  if ((path === "/settings/warden" || path === "/settings/security" || path === "/settings/remote") && (method === "GET" || method === "PATCH")) {
+    return true;
+  }
+  if ((path === "/devices" || path.startsWith("/devices/")) && (method === "GET" || method === "POST" || method === "PATCH" || method === "DELETE")) {
     return true;
   }
   if (path === "/settings/warden" && (method === "GET" || method === "PATCH")) {
@@ -295,6 +429,31 @@ export async function handleVaultRequest(
   body?: unknown,
   options?: VaultRequestOptions,
 ): Promise<{ status: number; body: unknown }> {
+  // Gateway stamp validation runs before anything else: any request
+  // carrying device-identity headers or a gateway secret that does not
+  // validate is rejected outright, so a local process can never spoof a
+  // remote device and a remote caller can never pose as local.
+  const gatewayConfigured = options?.gatewaySecret !== undefined && options.gatewaySecret !== "";
+  const gatewayValid = gatewayConfigured && options.gatewayStampValid === true;
+  const stampPresent =
+    options?.gatewayStampValid !== undefined ||
+    options?.deviceId !== undefined ||
+    options?.transport !== undefined;
+  if (stampPresent && !gatewayValid) {
+    return {
+      status: 403,
+      body: { error: { _tag: "Forbidden", message: "device identity stamps require a valid gateway stamp" } },
+    };
+  }
+  const deviceCtx =
+    gatewayValid && options.deviceId !== undefined
+      ? { deviceId: options.deviceId, transport: options.transport ?? "unknown" }
+      : undefined;
+  // A remote-origin request can never exercise human-decision routes even
+  // if the daemon token leaked to the remote machine: the gateway strips
+  // it, and the daemon ignores any token on a device-stamped request.
+  const effectiveProvidedToken = deviceCtx !== undefined ? undefined : options?.providedToken;
+
   // Fail closed: a protected route with no configured token is denied,
   // never open. Callers that bypass the token (in-process service calls)
   // do not go through this handler's protected routes.
@@ -302,10 +461,85 @@ export async function handleVaultRequest(
     isTokenProtected(method, path) &&
     (options?.daemonToken === undefined ||
       options.daemonToken === "" ||
-      !tokenMatches(options.daemonToken, options.providedToken))
+      !tokenMatches(options.daemonToken, effectiveProvidedToken))
   ) {
     return UNAUTHORIZED;
   }
+
+  // Gateway-internal routes: the sibling gateway process only. Not open,
+  // not daemon-token routes: the gateway secret alone authorizes them.
+  if (path.startsWith("/internal/")) {
+    const internalSecretValid =
+      gatewayConfigured && tokenMatches(options.gatewaySecret, options.providedGatewaySecret);
+    if (!internalSecretValid) {
+      return UNAUTHORIZED;
+    }
+    if (method === "POST" && path === "/internal/pair-begin") {
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (
+        typeof b["code"] !== "string" ||
+        typeof b["deviceName"] !== "string" ||
+        typeof b["clientPublicKeyPem"] !== "string" ||
+        typeof b["clientNonce"] !== "string" ||
+        b["code"] === "" ||
+        b["clientPublicKeyPem"].length > 4096 ||
+        b["clientNonce"] === ""
+      ) {
+        return BAD_REQUEST;
+      }
+      const either = await Effect.runPromise(
+        Effect.either(
+          service.pairBegin({
+            code: b["code"],
+            deviceName: b["deviceName"],
+            platform: typeof b["platform"] === "string" ? (b["platform"]) : "",
+            clientPublicKeyPem: b["clientPublicKeyPem"],
+            clientNonce: b["clientNonce"],
+          }),
+        ),
+      );
+      return either._tag === "Right"
+        ? { status: 200, body: either.right }
+        : { status: 403, body: { error: { _tag: "PairingFailed", message: either.left } } };
+    }
+    if (method === "POST" && path === "/internal/pair-sas") {
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (typeof b["pairingId"] !== "string" || typeof b["sas"] !== "string") {
+        return BAD_REQUEST;
+      }
+      return run(service.attachPairingSas(b["pairingId"], b["sas"]).pipe(Effect.map(() => ({ status: "ok" as const }))));
+    }
+    if (method === "POST" && path === "/internal/pair-open") {
+      // Whether a live, unconfirmed, unexpired pairing session exists.
+      // The gateway checks this before doing ANY pairing work so its
+      // pairing listener stays inert outside an explicit pairing window.
+      return run(service.pairingOpen());
+    }
+    if (method === "POST" && path === "/internal/pair-status") {
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (typeof b["pairingId"] !== "string") {
+        return BAD_REQUEST;
+      }
+      return run(service.pairingInternalStatus(b["pairingId"]));
+    }
+    if (method === "POST" && path === "/internal/device-status") {
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (typeof b["fingerprint"] !== "string" || b["fingerprint"] === "") {
+        return BAD_REQUEST;
+      }
+      return run(
+        service.getDeviceByFingerprint(b["fingerprint"]).pipe(
+          Effect.map((device) =>
+            device === undefined
+              ? { known: false, revoked: true }
+              : { known: true, revoked: device.revoked, deviceId: device.id, name: device.name },
+          ),
+        ),
+      );
+    }
+    return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
+  }
+
   // Liveness probe for the desktop app and the installer smoke test. It
   // is open (no token) and says nothing about the vault's contents.
   if (method === "GET" && path === "/health") {
@@ -727,10 +961,13 @@ export async function handleVaultRequest(
     }
 
     // Defense-in-depth Layer 2: Caller Process & Binary Inspection
-    const clientPid = decoded.clientPid ?? options?.clientPid;
-    let clientProcess: string | undefined = undefined;
+    // Remote requests carry no meaningful PID: a remote clientPid is
+    // self-reported by an untrusted host and is ignored entirely. The
+    // authenticated device session is the identity (DD3).
+    const clientPid = deviceCtx !== undefined ? undefined : (decoded.clientPid ?? options?.clientPid);
+    let clientProcess: string | undefined = deviceCtx !== undefined ? "remote-gateway" : undefined;
 
-    if (secSettings.verifyCallerProcess) {
+    if (secSettings.verifyCallerProcess && deviceCtx === undefined) {
       if (clientPid === undefined) {
         return {
           status: 403,
@@ -777,21 +1014,23 @@ export async function handleVaultRequest(
       ...(clientPid !== undefined ? { clientPid } : {}),
       ...(clientProcess !== undefined ? { clientProcess } : {}),
     };
-    return run(service.requestCapability(request, token?.trim()));
+    return run(service.requestCapability(request, token?.trim(), deviceCtx));
   }
   if (method === "POST" && path === "/approve") {
     const decoded = await decode(GrantIdSchema, body ?? {});
     if (decoded === null) {
       return BAD_REQUEST;
     }
-    return run(service.approve(decoded.grantId));
+    const proof = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["presenceProof"] : undefined;
+    return run(service.approve(decoded.grantId, typeof proof === "string" ? proof : undefined));
   }
   if (method === "POST" && path === "/approve-always") {
     const decoded = await decode(GrantIdSchema, body ?? {});
     if (decoded === null) {
       return BAD_REQUEST;
     }
-    return run(service.approveAlways(decoded.grantId));
+    const proof = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["presenceProof"] : undefined;
+    return run(service.approveAlways(decoded.grantId, typeof proof === "string" ? proof : undefined));
   }
   if (method === "POST" && path === "/deny") {
     const decoded = await decode(GrantIdSchema, body ?? {});
@@ -807,11 +1046,134 @@ export async function handleVaultRequest(
     }
     return run(service.revoke(decoded.target).pipe(Effect.map(() => ({ status: "revoked" as const }))));
   }
+
+  // Device management and pairing control: every route here is
+  // token-guarded (isTokenProtected) and loopback-only. The gateway never
+  // forwards them, so remote callers cannot reach device administration.
+  if (method === "GET" && path === "/devices") {
+    return run(service.listDevices().pipe(Effect.map((devices) => ({ devices }))));
+  }
+  if (method === "POST" && path === "/devices/pair") {
+    return run(service.createPairingSession());
+  }
+  if (method === "GET" && path === "/devices/pairing") {
+    return run(service.getPairingSession().pipe(Effect.map((session) => ({ session: session ?? null }))));
+  }
+  if (method === "POST" && path === "/devices/pairing/confirm") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    if (typeof b["pairingId"] !== "string" || b["pairingId"] === "") {
+      return BAD_REQUEST;
+    }
+    return run(service.confirmPairing(b["pairingId"]));
+  }
+  if (method === "POST" && path === "/devices/pairing/cancel") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    if (typeof b["pairingId"] !== "string" || b["pairingId"] === "") {
+      return BAD_REQUEST;
+    }
+    return run(service.cancelPairingSession(b["pairingId"]).pipe(Effect.map(() => ({ status: "canceled" as const }))));
+  }
+  if (method === "POST" && path === "/devices/rename") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    if (typeof b["id"] !== "string" || typeof b["name"] !== "string" || b["name"].trim() === "" || b["name"].length > 64) {
+      return BAD_REQUEST;
+    }
+    return run(service.renameDevice(b["id"], b["name"]).pipe(Effect.map(() => ({ status: "renamed" as const }))));
+  }
+  if (method === "POST" && path === "/devices/revoke") {
+    const decoded = await decode(RevokeSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    return run(service.revokeDevice(decoded.target).pipe(Effect.map(() => ({ status: "revoked" as const }))));
+  }
+  if (method === "POST" && path === "/devices/policy") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    if (
+      typeof b["deviceId"] !== "string" ||
+      typeof b["alias"] !== "string" ||
+      typeof b["allowWrite"] !== "boolean" ||
+      b["alias"].trim() === ""
+    ) {
+      return BAD_REQUEST;
+    }
+    return run(
+      service.setDeviceAliasPolicy(b["deviceId"], b["alias"].trim(), b["allowWrite"]).pipe(
+        Effect.map(() => ({ status: "ok" as const })),
+      ),
+    );
+  }
+  if (method === "GET" && path.startsWith("/devices/policies/")) {
+    const deviceId = decodeURIComponent(path.slice("/devices/policies/".length));
+    if (deviceId === "") {
+      return BAD_REQUEST;
+    }
+    return run(service.listDeviceAliasPolicies(deviceId).pipe(Effect.map((policies) => ({ policies }))));
+  }
+  if (method === "GET" && path === "/settings/remote") {
+    return run(service.getRemoteSettings());
+  }
+  if (method === "PATCH" && path === "/settings/remote") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const patch: { enabled?: boolean; host?: string; port?: number; requireAuthForRemoteApproval?: boolean } = {};
+    if (b["enabled"] !== undefined) {
+      if (typeof b["enabled"] !== "boolean") return BAD_REQUEST;
+      patch.enabled = b["enabled"];
+    }
+    if (b["host"] !== undefined) {
+      if (typeof b["host"] !== "string" || b["host"].trim() === "") return BAD_REQUEST;
+      const host = b["host"].trim();
+      // The gateway never binds a wildcard or plain LAN address. Loopback
+      // is always allowed; an overlay address (CGNAT 100.64.0.0/10 or the
+      // overlay ULA range) requires the explicit overlay flag.
+      // Loopback-only until an explicit transport/interface decision
+      // approves anything broader. Overlay ranges alone do not establish
+      // tailnet membership, so they are not accepted here.
+      const isLoopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+      if (!isLoopback) {
+        return {
+          status: 400,
+          body: { error: { _tag: "BadRequest", message: "gateway host must be a loopback address" } },
+        };
+      }
+      patch.host = host;
+    }
+    if (b["port"] !== undefined) {
+      if (typeof b["port"] !== "number" || !Number.isInteger(b["port"]) || b["port"] < 1024 || b["port"] > 65535) return BAD_REQUEST;
+      patch.port = b["port"];
+    }
+    if (b["requireAuthForRemoteApproval"] !== undefined) {
+      if (typeof b["requireAuthForRemoteApproval"] !== "boolean") return BAD_REQUEST;
+      patch.requireAuthForRemoteApproval = b["requireAuthForRemoteApproval"];
+    }
+    const presenceProof = b["presenceProof"];
+    const updated = await run(service.updateRemoteSettings(patch, typeof presenceProof === "string" ? presenceProof : undefined));
+    if (updated.status !== 200) {
+      return updated;
+    }
+    // Enabling creates the local CA, gateway certificate and gateway
+    // secret (all loopback-local, 0600 where secret-bearing). Idempotent.
+    if (patch.enabled === true && options?.vaultDir !== undefined) {
+      try {
+        const ca = ensureVaultCa(options.vaultDir);
+        ensureGatewayCertificate(options.vaultDir, ca);
+        ensureGatewaySecret(join(options.vaultDir, "metavault.db"));
+      } catch (err) {
+        return {
+          status: 500,
+          body: { error: { _tag: "InternalError", message: `failed to prepare remote access: ${err instanceof Error ? err.message : "unknown"}` } },
+        };
+      }
+    }
+    return updated;
+  }
   return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
 }
 
 export interface VaultHttpServerOptions {
   readonly daemonToken?: string;
+  readonly gatewaySecret?: string;
+  readonly vaultDir?: string;
 }
 
 export function createVaultHttpServer(
@@ -829,10 +1191,10 @@ export function createVaultHttpServer(
       try {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         const reqMethod = req.method ?? "GET";
-        const body: unknown =
-          reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT"
-            ? await readBody(req)
-            : undefined;
+        const hasBody = reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT";
+        const bodyResult = hasBody ? await readBodyWithText(req) : undefined;
+        const body: unknown = bodyResult?.parsed;
+        const bodyText = bodyResult?.text ?? "";
         const header = req.headers[DAEMON_TOKEN_HEADER];
         const authHeader = req.headers["authorization"];
         const bearerToken =
@@ -848,11 +1210,66 @@ export function createVaultHttpServer(
         const rawClientPid = Array.isArray(clientPidHeader) ? clientPidHeader[0] : clientPidHeader;
         const parsedPid = rawClientPid !== undefined ? parseInt(rawClientPid, 10) : undefined;
         const clientPid = parsedPid !== undefined && !Number.isNaN(parsedPid) ? parsedPid : undefined;
+        const stampMacHeader = req.headers["x-metavault-gateway-mac"];
+        const stampTsHeader = req.headers["x-metavault-gateway-ts"];
+        const stampNonceHeader = req.headers["x-metavault-gateway-nonce"];
+        const devHeader = req.headers["x-metavault-device-id"];
+        const transHeader = req.headers["x-metavault-transport"];
+        const legacyStampHeader = req.headers["x-metavault-gateway-secret"];
+        const stampMac = Array.isArray(stampMacHeader) ? stampMacHeader[0] : stampMacHeader;
+        const stampTs = Array.isArray(stampTsHeader) ? stampTsHeader[0] : stampTsHeader;
+        const stampNonce = Array.isArray(stampNonceHeader) ? stampNonceHeader[0] : stampNonceHeader;
+        const deviceId = Array.isArray(devHeader) ? devHeader[0] : devHeader;
+        const transport = Array.isArray(transHeader) ? transHeader[0] : transHeader;
+        // /internal/* routes authenticate with the raw loopback secret and
+        // are exempt from device-stamp validation; every other path with
+        // any stamp material fails closed unless the MAC validates.
+        const isInternalPath = url.pathname.startsWith("/internal/");
+        const providedInternalSecret = Array.isArray(legacyStampHeader) ? legacyStampHeader[0] : legacyStampHeader;
+        const anyStampHeader =
+          !isInternalPath &&
+          (stampMac !== undefined ||
+            stampTs !== undefined ||
+            stampNonce !== undefined ||
+            deviceId !== undefined ||
+            transport !== undefined ||
+            legacyStampHeader !== undefined);
+        const stampFields =
+          stampMac !== undefined &&
+          stampTs !== undefined &&
+          stampNonce !== undefined &&
+          deviceId !== undefined &&
+          transport !== undefined
+            ? {
+                mac: stampMac,
+                deviceId,
+                transport,
+                method: reqMethod,
+                path: url.pathname,
+                bodyText,
+                timestamp: stampTs,
+                nonce: stampNonce,
+              }
+            : undefined;
+        // Valid only when every stamp field is present, the MAC matches,
+        // the timestamp is fresh and the nonce is new. Anything else that
+        // carries stamp headers fails closed below.
+        const gatewayStampValid =
+          options.gatewaySecret !== undefined &&
+          options.gatewaySecret !== "" &&
+          stampFields !== undefined &&
+          validateGatewayStamp(options.gatewaySecret, stampFields);
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
           ...(clientPid !== undefined ? { clientPid } : {}),
           daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
           ...(providedAgentToken !== undefined ? { providedAgentToken } : {}),
+          ...(options.gatewaySecret !== undefined ? { gatewaySecret: options.gatewaySecret } : {}),
+          ...(anyStampHeader ? { gatewayStampValid } : {}),
+          ...(isInternalPath && providedInternalSecret !== undefined ? { providedGatewaySecret: providedInternalSecret } : {}),
+          ...(gatewayStampValid && deviceId !== undefined ? { deviceId } : {}),
+          ...(gatewayStampValid && transport !== undefined ? { transport } : {}),
+          ...(options.vaultDir !== undefined ? { vaultDir: options.vaultDir } : {}),
         });
         sendJson(res, out.status, out.body);
       } catch (err) {
@@ -987,6 +1404,8 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
       ? createKeySession({ mode: "injected", key: options.masterKey })
       : resolveDaemonKeySession(dbPath));
   const daemonToken = options.daemonToken ?? resolveDaemonToken(dbPath);
+  const gatewaySecret = loadGatewaySecret(dbPath);
+  const vaultDir = dirname(dbPath);
   // The real connector layer (Task 6): approved grants execute against the
   // preset upstream URLs with the secret injected inside the daemon.
   const connectorLayer =
@@ -1037,14 +1456,18 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
     connectorLayer,
   );
   const runtime = ManagedRuntime.make(
-    Layer.provide(makeVaultServiceLive({ keySession }), layers),
+    Layer.provide(makeVaultServiceLive({ keySession, vaultDir }), layers),
   );
   const service = await runtime.runPromise(
     Effect.gen(function* () {
       return yield* VaultService;
     }),
   );
-  const server = createVaultHttpServer(service, { daemonToken });
+  const server = createVaultHttpServer(service, {
+    daemonToken,
+    ...(gatewaySecret !== undefined ? { gatewaySecret } : {}),
+    vaultDir,
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", () => {

@@ -121,7 +121,13 @@ and destructive deliberate uninstall with update preservation. See
 [recovery](docs/RECOVERY.md) before upgrading or uninstalling, and
 [current evidence and limits](docs/VERIFICATION.md#local-hardening-candidate---november-4-2026).
 Windows Hello screen-lock verification is not passkey-backed encryption. PRF
-key custody and remote Connections are not implemented by this local candidate.
+key custody is not implemented by this candidate.
+
+Remote Connections (pairing a second device over mutual TLS) are included as an
+**unreleased, loopback-isolated candidate**: off by default, loopback-only in
+this build, with remote approvals gated by your app PIN. See
+[remote connections](docs/REMOTE.md) for architecture, the exact authority
+statement and current limits.
 
 ## Install via MCP (one snippet per IDE)
 

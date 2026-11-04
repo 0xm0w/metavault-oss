@@ -38,6 +38,11 @@ export interface PendingApproval {
   readonly verified?: boolean;
   readonly clientPid?: number;
   readonly clientProcess?: string;
+  // Remote origin, present only for requests that arrived through the
+  // gateway. Drives the remote banner and the remote-approval auth gate.
+  readonly deviceId?: string;
+  readonly origin?: "local" | "remote";
+  readonly transport?: string;
 }
 
 
@@ -234,6 +239,47 @@ export interface LocalAuthStatusLike {
   readonly autoLockMinutes: number;
 }
 
+// Remote Connections state mirrored from the daemon. All fields readonly;
+// the renderer never holds tokens, keys, or pairing codes after use.
+export interface RemoteSettingsLike {
+  readonly enabled: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly requireAuthForRemoteApproval?: boolean;
+}
+
+export interface PresenceProofRequestLike {
+  readonly scope: "approve" | "settings-remote";
+  readonly grantId?: string;
+  readonly pin?: string;
+  readonly hello?: boolean;
+}
+
+export interface RemoteSettingsPatchLike {
+  readonly enabled?: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly requireAuthForRemoteApproval?: boolean;
+}
+
+export interface DeviceLike {
+  readonly id: string;
+  readonly name: string;
+  readonly platform?: string;
+  readonly pairedAt?: string;
+  readonly revoked?: boolean;
+  readonly lastSeenAt?: string;
+}
+
+export interface PairingSessionLike {
+  readonly pairingId?: string;
+  readonly status: string;
+  readonly sas?: string;
+  readonly deviceName?: string;
+  readonly platform?: string;
+  readonly expiresAt?: string;
+}
+
 export interface LocalAuthPatchLike {
   readonly enabled?: boolean;
   readonly biometricEnabled?: boolean;
@@ -274,9 +320,9 @@ export interface VaultApi {
   readonly revokeAgent: (id: string) => Promise<unknown>;
   readonly runtimePaths: () => Promise<{ command: string; args: string[]; env: Record<string, string>; dbPath: string }>;
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
-  readonly approve: (grantId: string) => Promise<unknown>;
+  readonly approve: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly deny: (grantId: string) => Promise<unknown>;
-  readonly approveAlways: (grantId: string) => Promise<unknown>;
+  readonly approveAlways: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly revoke: (target: string) => Promise<unknown>;
   readonly aliases: () => Promise<unknown>;
   readonly audit: () => Promise<unknown>;
@@ -301,6 +347,18 @@ export interface VaultApi {
   readonly testWarden: () => Promise<unknown>;
   readonly getLocalAuthStatus: () => Promise<unknown>;
   readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
+  readonly getRemoteSettings: () => Promise<unknown>;
+  readonly updateRemoteSettings: (patch: RemoteSettingsPatchLike, presenceProof?: string) => Promise<unknown>;
+  readonly requestPresenceProof: (req: PresenceProofRequestLike) => Promise<{ token: string }>;
+  readonly listDevices: () => Promise<unknown>;
+  readonly startPairing: () => Promise<unknown>;
+  readonly getPairingSession: () => Promise<unknown>;
+  readonly confirmPairing: (pairingId: string) => Promise<unknown>;
+  readonly cancelPairing: (pairingId: string) => Promise<unknown>;
+  readonly renameDevice: (id: string, name: string) => Promise<unknown>;
+  readonly revokeDevice: (target: string) => Promise<unknown>;
+  readonly setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) => Promise<unknown>;
+  readonly listDeviceAliasPolicies: (deviceId: string) => Promise<unknown>;
   readonly getAgentSecuritySettings: () => Promise<unknown>;
   readonly updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => Promise<unknown>;
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;

@@ -477,6 +477,17 @@ button:disabled { cursor: default; }
   flex: none;
 }
 
+/* The pairing comparison row holds two long labels: let it wrap and stay
+   inside the card instead of bleeding past the section padding. */
+.settings-body .btns.btns-wrap {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.settings-body .btns.btns-wrap .action {
+  white-space: normal;
+  flex: 1 1 220px;
+}
+
 button.action, .vault-btn, .pagination-btn, .audit-reset-btn, .audit-toggle {
   display: inline-flex;
   align-items: center;

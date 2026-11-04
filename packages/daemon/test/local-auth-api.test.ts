@@ -84,7 +84,8 @@ describe("Local Authentication & Biometric API (#19)", () => {
       auth,
     );
     expect(checkValid.status).toBe(200);
-    expect(checkValid.body).toEqual({ ok: true });
+    expect(checkValid.body).toMatchObject({ ok: true });
+    expect(typeof (checkValid.body as { presenceProof?: unknown }).presenceProof).toBe("string");
 
     const checkInvalid = await handleVaultRequest(
       service,
