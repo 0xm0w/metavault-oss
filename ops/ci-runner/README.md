@@ -13,23 +13,53 @@ container can see. Do not run untrusted code on it.
 The runner label is `metavault-ci`. The CI workflow requires
 `[self-hosted, linux, metavault-ci]`, so other repos' runners never match it.
 
-## One-time setup (on the PC with Docker)
+## One-time setup (PowerShell on the PC with Docker Desktop)
 
-0. Get the files from the PR branch (this is not merged to main):
-   `git clone https://github.com/0xm0w/metavault-oss.git; cd metavault-oss; git checkout feat/local-ui-cleanup-lock-grant-status; cd ops/ci-runner`
+Do not merge anything for this. The CI run for the PR branch uses the runner as
+soon as it is online.
+
+```powershell
+git clone https://github.com/0xm0w/metavault-oss.git
+cd metavault-oss
+git checkout feat/local-ui-cleanup-lock-grant-status
+cd ops\ci-runner
+docker compose build
+```
+
 1. In GitHub: repo Settings > Actions > Runners > New self-hosted runner. Copy
    the registration token. GitHub documents that it expires after one hour.
-2. In `ops/ci-runner`, save it to `runner-token.txt` (git-ignored):
-   `Set-Content -NoNewline runner-token.txt '<token>'`
-3. `docker compose build`
-4. `docker compose -f compose.yml -f compose.register.yml run --rm register`
-   This is a one-shot container. The token is mounted only into it. It stores
-   the runner credential in the `mv_state` volume and exits.
-5. Delete `runner-token.txt`. Restarts and recreates never need it.
-6. `docker compose up -d`
-7. Check the runner shows Idle in the repo's Runners page.
+2. Back in PowerShell, enter the token locally (it is typed here, never sent in
+   chat):
+   ```powershell
+   $t = Read-Host "Paste registration token"
+   Set-Content -NoNewline -Encoding ascii runner-token.txt $t
+   Remove-Variable t
+   ```
+3. Register once (a one-shot container that gets the token file, stores the
+   runner credential in the `mv_state` volume and exits):
+   ```powershell
+   docker compose -f compose.yml -f compose.register.yml run --rm register
+   ```
+4. Delete the token file. Restarts and recreates never need it:
+   ```powershell
+   Remove-Item runner-token.txt
+   ```
+5. Start the runner:
+   ```powershell
+   docker compose up -d
+   docker compose logs --tail 20 runner
+   ```
+6. Check the runner shows **Idle** with the label `metavault-ci` under the
+   repo's Settings > Actions > Runners. Queued Ubuntu jobs for the PR then start
+   by themselves. Jobs queued for more than 24 hours fail, so a new push or a
+   re-run of the Ubuntu job may be needed.
 
 To remove it: `docker compose down -v`, then remove the runner in GitHub.
+
+This only touches the `metavault-ci` project, its container
+`metavault-ci-1` and the volumes `metavault-ci_mv_state` and
+`metavault-ci_mv_work`. Other containers, including the grm runners, are not
+touched.
 
 ## Resource use
 

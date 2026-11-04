@@ -24,7 +24,8 @@ RUN curl -fsSL -o runner.tgz "https://github.com/actions/runner/releases/downloa
  && chown -R runner:runner /home/runner
 
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
-RUN chmod 0755 /home/runner/entrypoint.sh
+# Strip CR in case the file was checked out with Windows line endings.
+RUN sed -i 's/\r$//' /home/runner/entrypoint.sh && chmod 0755 /home/runner/entrypoint.sh
 USER runner
 
 ENTRYPOINT ["/home/runner/entrypoint.sh"]
