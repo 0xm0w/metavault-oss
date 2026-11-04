@@ -17,12 +17,23 @@ concurrency:
 jobs:
   test:
     name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    # The self-hosted Linux leg runs only for pushes and same-repo pull
+    # requests, never for fork PRs.
+    if: matrix.hosted || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            runner: '"windows-latest"'
+            hosted: true
+          # Local Docker runner, see ops/ci-runner. The metavault-ci label keeps
+          # other repos' runners from ever matching.
+          - os: ubuntu-latest
+            runner: '["self-hosted", "linux", "metavault-ci"]'
+            hosted: false
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -42,7 +53,7 @@ jobs:
       # Real sshd for the tunnel integration test (positive + negative proof
       # of the generated authorized_keys line; skips when unavailable).
       - name: Install OpenSSH server (Ubuntu only)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.hosted
         run: sudo apt-get update && sudo apt-get install -y openssh-server
 
       - name: Lint
