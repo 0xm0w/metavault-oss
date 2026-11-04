@@ -25,6 +25,15 @@ import {
 } from "../src/device-client.js";
 import { DAEMON_TOKEN, GATEWAY_SECRET, makeStack, type Stack } from "./stack.js";
 
+/** Poll until the condition holds (fixed sleeps are racy on a loaded CI runner). */
+async function until(cond: () => boolean, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!cond()) {
+    if (Date.now() >= deadline) throw new Error("condition not met in time");
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
 describe("device-client", () => {
   let stack: Stack;
   beforeAll(async () => {
@@ -70,7 +79,7 @@ describe("device-client", () => {
       pollIntervalMs: 50,
     });
     // Wait for the SAS to appear on both screens; they must match exactly.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await until(() => shownSas !== "");
     expect(shownSas).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
     const view = await (await fetch(`${stack.daemonBase}/devices/pairing`, { headers: { "x-metavault-token": DAEMON_TOKEN } })).json() as { session: { sas?: string } | null };
     expect(view.session?.sas).toBe(shownSas);
@@ -125,16 +134,17 @@ describe("device-client", () => {
 
   it("fails pairing when the vault human cancels instead of confirming", async () => {
     const session = await newSession();
+    let sasSeen = false;
     const handshake = runPairingHandshake({
       host: "127.0.0.1",
       port: stack.gatewayPort,
       code: session.code,
       deviceName: "cancel-me",
       platform: "linux",
-      onSas: () => undefined,
+      onSas: () => { sasSeen = true; },
       pollIntervalMs: 50,
     });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await until(() => sasSeen);
     await fetch(`${stack.daemonBase}/devices/pairing/cancel`, {
       method: "POST",
       headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
@@ -174,16 +184,17 @@ describe("device-client", () => {
 
   it("shim refuses to talk to a gateway whose fingerprint changed", async () => {
     const session = await newSession();
+    let sasSeen = false;
     const handshake = runPairingHandshake({
       host: "127.0.0.1",
       port: stack.gatewayPort,
       code: session.code,
       deviceName: "pin-check",
       platform: "linux",
-      onSas: () => undefined,
+      onSas: () => { sasSeen = true; },
       pollIntervalMs: 50,
     });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await until(() => sasSeen);
     const deviceId = await confirmOnVault(session.pairingId);
     const material = await handshake;
     const dir = mkdtempSync(join(tmpdir(), "mv-device-pin-"));
@@ -204,16 +215,17 @@ describe("device-client", () => {
 
   it("shim demands its local token and refuses browser-style callers", async () => {
     const session = await newSession();
+    let sasSeen = false;
     const handshake = runPairingHandshake({
       host: "127.0.0.1",
       port: stack.gatewayPort,
       code: session.code,
       deviceName: "shim-auth",
       platform: "linux",
-      onSas: () => undefined,
+      onSas: () => { sasSeen = true; },
       pollIntervalMs: 50,
     });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await until(() => sasSeen);
     const deviceId = await confirmOnVault(session.pairingId);
     const material = await handshake;
     const dir = mkdtempSync(join(tmpdir(), "mv-device-auth-"));
@@ -300,7 +312,7 @@ describe("device-client", () => {
       platform: "linux",
       onSas: (sas) => { sasSeen = sas; },
     });
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await until(() => sasSeen !== "", 15_000);
     expect(sasSeen).toMatch(/^[0-9A-F]{4}-/);
     const deviceId = await confirmOnVault(session.pairingId);
     const material = await handshake;
