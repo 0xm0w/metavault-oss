@@ -9,7 +9,7 @@ Current source version: `0.1.2-alpha` (reported as `serverInfo.version` in the
 MCP handshake; exported in code as `MCP_VERSION` from
 `packages/mcp/src/server.ts`).
 
-Tools (exactly five): `request_capability`, `list_aliases`,
+Tools (exactly eight): `request_capability`, `list_aliases`,
 `request_enrollment`, `enrollment_status`, `revoke`.
 
 ## Installed Windows app (no source checkout or separate Node required)

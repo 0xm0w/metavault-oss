@@ -95,7 +95,7 @@ afterAll(async () => {
 });
 
 describe("MetaVault OSS MCP server (in-process client)", () => {
-  it("handshake reports MCP_VERSION and tools/list is exactly the six tools", async () => {
+  it("handshake reports MCP_VERSION and tools/list is exactly the eight tools", async () => {
     expect(MCP_VERSION).toBe("0.1.2-alpha");
     expect(client.getServerVersion()?.version).toBe(MCP_VERSION);
     const listed = await client.listTools();
@@ -103,16 +103,18 @@ describe("MetaVault OSS MCP server (in-process client)", () => {
       "enrollment_status",
       "grant_status",
       "list_aliases",
+      "register_agent",
+      "registration_status",
       "request_capability",
       "request_enrollment",
       "revoke",
     ]);
   });
 
-  it("lists the six tools with object input schemas", async () => {
+  it("lists the eight tools with object input schemas", async () => {
     const listed = await client.listTools();
     const names = listed.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["enrollment_status", "grant_status", "list_aliases", "request_capability", "request_enrollment", "revoke"]);
+    expect(names).toEqual(["enrollment_status", "grant_status", "list_aliases", "register_agent", "registration_status", "request_capability", "request_enrollment", "revoke"]);
     for (const tool of listed.tools) {
       expect(tool.inputSchema.type).toBe("object");
     }

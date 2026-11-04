@@ -9,6 +9,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
+import { createHash, randomBytes } from "node:crypto";
+import { defaultCredentialPath, loadStoredCredential, storeCredentialPrivately } from "./credential-store.js";
 import { metavaultEnv } from "../../core/src/env.js";
 
 export const MCP_VERSION: string = "0.1.2-alpha";
@@ -28,6 +30,9 @@ export interface MetavaultMcpOptions {
   // outlives a client's own tool timeout. 0 disables waiting.
   readonly approvalWaitMs?: number;
   readonly approvalPollMs?: number;
+  // Where the credential from a verified registration is kept. Defaults to
+  // ~/.metavault/agents/<agent id>.token.
+  readonly credentialPath?: string;
 }
 
 // Tool-edge input for request_capability. The translated daemon request is
@@ -95,6 +100,18 @@ const TOOLS: readonly Tool[] = [
     inputSchema: toolInputSchema(GrantStatusToolSchema),
   },
   {
+    name: "register_agent",
+    description:
+      "Ask the user to register this agent as a Verified agent in MetaVault OSS. Returns a registrationId and a 6-digit code: tell the user the code and ask them to approve the matching request in MetaVault OSS. Then call registration_status. The credential is stored privately by this MCP process and is never shown to you. Verified means the user approved this agent's credential; it does not prove which program you are.",
+    inputSchema: toolInputSchema(NoArgsSchema),
+  },
+  {
+    name: "registration_status",
+    description:
+      "Finish registration after the user approves it. Returns pending, verified, denied or expired. Never returns the credential.",
+    inputSchema: toolInputSchema(NoArgsSchema),
+  },
+  {
     name: "revoke",
     description: "Revoke pending and future grants for an agent id or alias target.",
     inputSchema: toolInputSchema(RevokeSchema),
@@ -136,7 +153,8 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
   while (daemonUrlEnd > 0 && rawDaemonUrl[daemonUrlEnd - 1] === "/") daemonUrlEnd--;
   const daemonUrl = rawDaemonUrl.slice(0, daemonUrlEnd);
   const agentId = options.agentId ?? metavaultEnv("AGENT_ID") ?? "mcp-agent";
-  const agentToken = options.agentToken ?? metavaultEnv("AGENT_TOKEN");
+  const credentialPath = options.credentialPath ?? defaultCredentialPath(agentId);
+  let agentToken: string | undefined = options.agentToken ?? metavaultEnv("AGENT_TOKEN") ?? loadStoredCredential(credentialPath);
   // When daemonUrl points at a remote-access shim (DD7 loopback channel),
   // the shim requires this local token; unset it is simply not sent.
   const shimToken = options.shimToken ?? metavaultEnv("SHIM_TOKEN");
@@ -344,6 +362,58 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [...TOOLS] }));
 
+  // Verified-agent registration. The claim secret lives only in this process;
+  // the daemon holds its hash. The credential goes daemon -> this process ->
+  // an owner-only file, never through the model.
+  let claim: { registrationId: string; secret: string } | null = null;
+  const handleRegisterAgent = async (): Promise<CallToolResult> => {
+    if (agentToken !== undefined && agentToken !== "") {
+      return verbatimResult({ status: "verified", message: "This agent already holds an approved credential." }, true);
+    }
+    const secret = randomBytes(32).toString("hex");
+    const res = await callDaemon("POST", "/agent-registrations", {
+      agentId, name: ide === "mcp" ? agentId : ide, ide, claimHash: createHash("sha256").update(secret).digest("hex"),
+    });
+    let body: unknown;
+    try { body = JSON.parse(textOfResult(res)) as unknown; } catch { body = null; }
+    const rec = typeof body === "object" && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : null;
+    if (res.isError === true || rec === null || typeof rec["registrationId"] !== "string") {
+      return errorResult(`Registration could not be started: ${textOfResult(res).slice(0, 160)}`);
+    }
+    claim = { registrationId: rec["registrationId"], secret };
+    return verbatimResult({
+      status: "pending", registrationId: rec["registrationId"], code: rec["code"],
+      message: `Tell the user to open MetaVault OSS and approve the registration request that shows code ${String(rec["code"])}. Then call registration_status. Do not retry registration while it is pending.`,
+    }, true);
+  };
+  const handleRegistrationStatus = async (): Promise<CallToolResult> => {
+    if (agentToken !== undefined && agentToken !== "") return verbatimResult({ status: "verified", message: "This agent holds an approved credential." }, true);
+    if (claim === null) return verbatimResult({ status: "none", message: "No registration is in progress. Call register_agent." }, true);
+    const res = await callDaemon("POST", `/agent-registrations/${encodeURIComponent(claim.registrationId)}/claim`, { claim: claim.secret });
+    let body: unknown;
+    try { body = JSON.parse(textOfResult(res)) as unknown; } catch { body = null; }
+    const rec = typeof body === "object" && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : null;
+    if (rec === null) return errorResult("Could not read the registration status. This is not a decision. Try again shortly.");
+    if (rec["status"] === "claimed" && typeof rec["token"] === "string") {
+      const stored = storeCredentialPrivately(credentialPath, rec["token"]);
+      if (!stored.ok) {
+        claim = null;
+        return verbatimResult({ status: "failed", message: `The credential could not be stored privately (${stored.reason}), so it was not kept. Ask the user to revoke this agent in MetaVault OSS, then register again.` }, false);
+      }
+      agentToken = rec["token"];
+      claim = null;
+      return verbatimResult({ status: "verified", message: "Registered. Requests from this agent are now sent as a Verified agent. Capabilities still need the user's approval." }, true);
+    }
+    const st = typeof rec["status"] === "string" ? rec["status"] : "unknown";
+    if (st === "denied" || st === "expired" || st === "claimed" || st === "bad-claim") claim = null;
+    const messages: Record<string, string> = {
+      pending: "Still waiting for the user to approve in MetaVault OSS. Do not register again.",
+      denied: "The user denied the registration. Stop and ask the user.",
+      expired: "The registration expired. Ask the user before registering again.",
+    };
+    return verbatimResult({ status: st, message: messages[st] ?? "Registration did not complete. Ask the user." }, true);
+  };
+
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     switch (name) {
@@ -362,6 +432,10 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         return handleEnrollmentStatus(args);
       case "grant_status":
         return handleGrantStatus(args);
+      case "register_agent":
+        return await handleRegisterAgent();
+      case "registration_status":
+        return await handleRegistrationStatus();
       case "revoke":
         return handleRevoke(args);
       default:
