@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
@@ -6,6 +6,7 @@ import { DAEMON_CALL_CHANNEL, DAEMON_BASE_URL, callDaemon } from "./daemon-clien
 import { PRESENCE_PROOF_CHANNEL, defaultGuardDeps, guardedDaemonCall, issuePresenceProof } from "./remote-approval-ipc.js";
 import { PresenceProofIssuer } from "./remote-approval-guard.js";
 import { bundledDaemonPaths, ensureBundledDaemon } from "./daemon-launcher.js";
+import { autostartGatewayWhenRemoteEnabled } from "./gateway-autostart.js";
 import { bundledGatewayPaths, ensureBundledGateway, gatewayListening, GATEWAY_HOST, GATEWAY_PORT, GATEWAY_DEVICE_PORT, type GatewayLaunchResult } from "./gateway-launcher.js";
 import { SshTunnelManager, resolveSshBinaries, sshTunnelPaths } from "./ssh-tunnel.js";
 import { SSH_TUNNEL_CHANNEL, SSH_TUNNEL_STATUS_CHANNEL, handleSshTunnelRequest } from "./ssh-tunnel-ipc.js";
@@ -223,25 +224,31 @@ if (!hasLock) {
       // whenever it is enabled, independent of the SSH tunnel. Nothing
       // launched it before; start it once the daemon answers. The gateway
       // refuses to run unconfigured, so this is a no-op until remote is on.
-      void (async () => {
+      // Diagnostics land in gateway.log (collected by the installer smoke).
+      {
         const gatewayPaths = bundledGatewayPaths(process.resourcesPath, dataDir);
-        for (let attempt = 0; attempt < 30; attempt += 1) {
-          try {
-            const remote = (await callDaemon({ method: "GET", path: "/settings/remote" })) as { enabled?: boolean };
-            if (remote.enabled === true) {
-              adoptGatewayChild(await ensureBundledGateway({
-                execPath: process.execPath,
-                paths: gatewayPaths,
-                vaultDir: dataDir,
-                daemonBaseUrl: DAEMON_BASE_URL,
-              }));
+        void autostartGatewayWhenRemoteEnabled({
+          callDaemonFn: (input) => callDaemon(input),
+          ensureGatewayFn: async () => {
+            const launched = await ensureBundledGateway({
+              execPath: process.execPath,
+              paths: gatewayPaths,
+              vaultDir: dataDir,
+              daemonBaseUrl: DAEMON_BASE_URL,
+            });
+            adoptGatewayChild(launched);
+            return launched.status;
+          },
+          waitFn: async (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          logFn: (line) => {
+            try {
+              appendFileSync(gatewayPaths.logPath, `[main ${new Date().toISOString()}] ${line}\n`);
+            } catch {
+              // Logging must never break startup.
             }
-            return;
-          } catch {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-        }
-      })();
+          },
+        }).catch(() => undefined);
+      }
     }
     const presenceIssuer = new PresenceProofIssuer();
     const guardDeps = defaultGuardDeps(presenceIssuer);

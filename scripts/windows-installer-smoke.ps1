@@ -165,6 +165,17 @@ function Test-PackagedGateway {
     if (-not $autoDev) { $autoDev = Test-Tcp 7080 }
     if (-not ($autoPair -and $autoDev)) { Start-Sleep -Milliseconds 500 }
   }
+  if (-not ($autoPair -and $autoDev)) {
+    # Bound the failure with real evidence: the app's autostart and the
+    # gateway child both log here. Without this the failure mode is a guess.
+    $gwLog = Join-Path $dataDir "gateway.log"
+    if (Test-Path $gwLog) {
+      Log "gateway.log tail (autostart diagnostics):"
+      Get-Content $gwLog -Tail 40 | ForEach-Object { Log "  gw| $_" }
+    } else {
+      Log "gateway.log missing at $gwLog - app autostart never wrote diagnostics"
+    }
+  }
   Check $autoPair "app itself auto-started gateway pairing listener 127.0.0.1:7078"
   Check $autoDev "app itself auto-started gateway device listener 127.0.0.1:7080"
   # Clean up the app-owned gateway so later stages reinstall cleanly.
