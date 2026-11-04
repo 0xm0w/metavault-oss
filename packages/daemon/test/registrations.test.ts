@@ -10,6 +10,7 @@ const none = async (): Promise<boolean> => false;
 function make(now = { t: 1_000_000 }) {
   const revoked: string[] = [];
   const regs = new AgentRegistrations(async (id) => { revoked.push(id); }, () => now.t);
+  // the callback receives (agentId, issuedToken); tests record the agent id
   return { regs, revoked, now };
 }
 const input = { agentId: "ide-one", name: "IDE One", ide: "Synthetic IDE", claimHash: hash(SECRET) };

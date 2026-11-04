@@ -116,4 +116,34 @@ describe("verified agent registration through the MCP process", () => {
     expect(res.isError === true || res.structuredContent?.["status"] === "denied").toBe(true);
     expect(res.structuredContent?.["status"]).not.toBe("awaiting-approval");
   });
+
+  it("a locked vault cannot decide registrations, even with the daemon token", async () => {
+    const c = await connect("synthetic-ide-d", join(dir, "agent-d.token"));
+    const code = String((await call(c, "register_agent")).structuredContent?.["code"]);
+    const pending = (await daemon("GET", "/agent-registrations")).body as { registrations: { id: string; code: string }[] };
+    const id = pending.registrations.find((r) => r.code === code)?.id ?? "";
+    const lockedService = { ...service, keyStatus: () => Effect.succeed({ mode: "passphrase", fingerprint: null, locked: true, autoLockMs: null, kdf: null, lockedUntilRetryMs: null }) } as unknown as VaultServiceService;
+    const opts = { daemonToken: DAEMON_TOKEN, providedToken: DAEMON_TOKEN } as never;
+    expect((await handleVaultRequest(lockedService, "POST", `/agent-registrations/${id}/approve`, { code }, opts)).status).toBe(423);
+    expect((await handleVaultRequest(lockedService, "POST", `/agent-registrations/${id}/deny`, {}, opts)).status).toBe(423);
+    expect(await call(c, "registration_status")).toMatchObject({ structuredContent: { status: "pending" } });
+  });
+
+  it("wrong claims never revoke an existing agent's credential", async () => {
+    const path = join(dir, "agent-e.token");
+    const e = await connect("synthetic-ide-e", path);
+    const code = String((await call(e, "register_agent")).structuredContent?.["code"]);
+    const pending = (await daemon("GET", "/agent-registrations")).body as { registrations: { id: string; code: string }[] };
+    const id = pending.registrations.find((r) => r.code === code)?.id ?? "";
+    await daemon("POST", `/agent-registrations/${id}/approve`, { code });
+    await call(e, "registration_status");
+    // A second program tries to register the same, now verified, agent id.
+    const other = await connect("synthetic-ide-e", join(dir, "agent-e2.token"));
+    expect((await call(other, "register_agent")).isError).toBe(true);
+    for (let i = 0; i < 8; i += 1) {
+      await handleVaultRequest(service, "POST", `/agent-registrations/${id}/claim`, { claim: "z".repeat(40) }, {});
+    }
+    const agents = (await daemon("GET", "/agents")).body as readonly { id: string; revoked?: boolean }[];
+    expect(agents.find((a) => a.id === "synthetic-ide-e")?.revoked).not.toBe(true);
+  });
 });

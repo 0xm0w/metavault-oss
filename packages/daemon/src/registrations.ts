@@ -41,7 +41,7 @@ export class AgentRegistrations {
   private readonly entries = new Map<string, Entry>();
   private creates: number[] = [];
   constructor(
-    private readonly revokeUnclaimed: (agentId: string) => Promise<void>,
+    private readonly revokeUnclaimed: (agentId: string, issuedToken: string) => Promise<void>,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -49,10 +49,10 @@ export class AgentRegistrations {
     const t = this.now();
     for (const [id, e] of this.entries) {
       if (e.expiresAt <= t && e.status !== "claimed" && e.status !== "denied" && e.status !== "expired") {
-        const hadToken = e.token !== undefined;
+        const issued = e.token;
         e.status = "expired";
         delete e.token;
-        if (hadToken) await this.revokeUnclaimed(e.agentId).catch(() => undefined);
+        if (issued !== undefined) await this.revokeUnclaimed(e.agentId, issued).catch(() => undefined);
       }
       if (e.expiresAt + TTL_MS <= t) this.entries.delete(id);
     }
@@ -125,9 +125,12 @@ export class AgentRegistrations {
     if (!timingSafeEqual(given, e.claimHash)) {
       e.attempts += 1;
       if (e.attempts >= MAX_CLAIM_ATTEMPTS) {
+        const issued = e.token;
         e.status = "denied";
         delete e.token;
-        await this.revokeUnclaimed(e.agentId).catch(() => undefined);
+        // Only the credential this registration itself issued is revoked, and
+        // only if it is still the live one for that agent id.
+        await this.revokeUnclaimed(e.agentId, issued).catch(() => undefined);
       }
       return { ok: false, status: 403, status2: "bad-claim", error: "claim proof rejected" };
     }

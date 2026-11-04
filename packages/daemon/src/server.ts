@@ -391,7 +391,10 @@ const registrationStores = new WeakMap<object, AgentRegistrations>();
 function registrationsFor(service: VaultServiceService): AgentRegistrations {
   let r = registrationStores.get(service);
   if (r === undefined) {
-    r = new AgentRegistrations((agentId) => Effect.runPromise(service.revokeAgentToken(agentId)));
+    r = new AgentRegistrations(async (agentId, issuedToken) => {
+      const holder = await Effect.runPromise(service.getAgentByToken(issuedToken));
+      if (holder !== undefined && holder.id === agentId && !holder.revoked) await Effect.runPromise(service.revokeAgentToken(agentId));
+    });
     registrationStores.set(service, r);
   }
   return r;
@@ -625,6 +628,10 @@ export async function handleVaultRequest(
         const out = await regs.claim(id, secret);
         return out.ok ? { status: 200, body: { status: "claimed", agentId: out.agentId, token: out.token } } : fail(out.status, out.error, { status: out.status2 });
       }
+      // Deciding a registration needs an unlocked vault, so a locked app
+      // (or a caller holding only the daemon token) cannot approve anything.
+      const ks = await Effect.runPromise(service.keyStatus());
+      if (ks.locked) return { status: 423, body: { error: { _tag: "VaultLocked", message: "unlock the vault before deciding an agent registration" } } };
       if (m[2] === "deny") return (await regs.deny(id)) ? { status: 200, body: { status: "denied" } } : fail(404, "registration not found or no longer pending");
       const code = input["code"];
       if (typeof code !== "string" || !/^[0-9]{6}$/.test(code)) return BAD_REQUEST;
