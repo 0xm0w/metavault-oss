@@ -199,7 +199,7 @@ describe("sanitizeConfig", () => {
 describe("installLine", () => {
   it("restricts the key to exactly the two loopback forwards", () => {
     const line = installLine(`ssh-ed25519 ${GH_KEY} metavault-oss-remote`, 7078, 7080);
-    expect(line.startsWith('restrict,permitlisten="127.0.0.1:7078",permitlisten="127.0.0.1:7080" ')).toBe(true);
+    expect(line.startsWith('restrict,port-forwarding,command="false",permitlisten="127.0.0.1:7078",permitlisten="127.0.0.1:7080",permitopen="127.0.0.1:1" ')).toBe(true);
     expect(line).toContain(GH_KEY);
   });
 });
@@ -285,7 +285,7 @@ describe("SshTunnelManager setup", () => {
     const proposal = await manager.beginSetup({ address: "mow@relay.example.com", currentUser: "localuser" });
     if ("error" in proposal) throw new Error(proposal.error);
     expect(proposal.fingerprint).toBe(GH_FP);
-    expect(proposal.installLine).toContain("restrict,permitlisten");
+    expect(proposal.installLine).toContain("restrict,port-forwarding");
     const done = await manager.completeSetup(GH_FP);
     expect(done).toMatchObject({ configured: true, verified: true });
     expect(manager.getStatus().state).toBe("off");

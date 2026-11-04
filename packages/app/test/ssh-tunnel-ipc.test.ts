@@ -77,7 +77,7 @@ describe("handleSshTunnelRequest", () => {
     const result = await handleSshTunnelRequest(manager, { action: "begin-setup", address: "mow@relay.example.com" });
     if (result.kind !== "proposal") throw new Error("expected proposal");
     expect(result.proposal.fingerprint).toBe("SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU");
-    expect(result.proposal.installLine).toContain("restrict,permitlisten");
+    expect(result.proposal.installLine).toContain("restrict,port-forwarding");
     const cancel = await handleSshTunnelRequest(manager, { action: "cancel-setup" });
     expect(cancel.kind).toBe("ok");
   });

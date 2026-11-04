@@ -1,4 +1,5 @@
-import { spawn as nodeSpawn, execFile as nodeExecFile } from "node:child_process";
+import { spawn as nodeSpawn, execFile as nodeExecFile, spawnSync } from "node:child_process";
+import { userInfo } from "node:os";
 import { createHash } from "node:crypto";
 import {
   createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
@@ -298,12 +299,46 @@ export function resolveSshBinaries(
   return { ssh: "ssh", keygen: "ssh-keygen", keyscan: "ssh-keyscan" };
 }
 
-// The authorized_keys line the user installs on the relay. "restrict" turns
-// off shell/exec/pty/agent+X11 forwarding for this key; permitlisten pins
-// exactly the two loopback reverse forwards the tunnel needs.
+// POSIX mode bits are set at write time; on Windows they are mostly a no-op,
+// so the same owner-only guarantee needs real ACLs: strip inheritance and
+// grant full control to the current user alone. Applied to the tunnel
+// directory and every file in it. Throws when icacls fails - for the
+// keypair and pinned files a weak ACL is a security failure, not a warning.
+const icaclsRun = (command: string, args: string[]): { status: number | null; stderr: string } => {
+  const res = spawnSync(command, args, { encoding: "utf8", windowsHide: true });
+  return { status: res.status, stderr: res.stderr };
+};
+
+export function hardenPathPermissions(
+  target: string,
+  platform: NodeJS.Platform = process.platform,
+  run: (command: string, args: string[]) => { status: number | null; stderr: string } = icaclsRun,
+): void {
+  if (platform !== "win32") return;
+  const user = userInfo().username;
+  const res = run("icacls", [target, "/inheritance:r", "/grant:r", `${user}:(F)`]);
+  if (res.status !== 0) {
+    throw new Error(`icacls failed for ${target}: ${res.stderr}`);
+  }
+}
+
+// The authorized_keys line the user installs on the relay. Verified against
+// OpenSSH 8.9 sshd (see test/ssh-tunnel-sshd.integration.test.ts):
+// - "restrict" disables forwarding/pty/agent/X11/rc, and "port-forwarding" is
+//   REQUIRED to opt tcp forwarding back in (permitlisten alone only narrows,
+//   it does not re-enable - restrict,permitlisten=... rejects every -R).
+// - "restrict" does NOT block shell/exec; command="false" is the forced
+//   command that makes shell and exec attempts exit 1 with no output.
+// - port-forwarding also enables -L; permitopen="127.0.0.1:1" blackholes
+//   every useful local-forward target (connections are refused per-open).
+// - permitlisten pins the only two reverse-forward listens; the client binds
+//   127.0.0.1 explicitly so the match is literal and GatewayPorts-safe.
+// Residual, by design and documented: sshd subsystem (sftp) ignores forced
+// commands, so server-side account policy (dedicated locked-down user) is
+// the control there - the key cannot fix it.
 export function installLine(publicKeyLine: string, remotePairingPort: number, remoteDevicePort: number): string {
   const key = publicKeyLine.trim();
-  return `restrict,permitlisten="127.0.0.1:${String(remotePairingPort)}",permitlisten="127.0.0.1:${String(remoteDevicePort)}" ${key}`;
+  return `restrict,port-forwarding,command="false",permitlisten="127.0.0.1:${String(remotePairingPort)}",permitlisten="127.0.0.1:${String(remoteDevicePort)}",permitopen="127.0.0.1:1" ${key}`;
 }
 
 // --- Config persistence -----------------------------------------------------
@@ -371,6 +406,8 @@ export interface SshTunnelManagerDeps {
   readonly binaries: SshBinaries;
   readonly spawnFn?: SpawnFn;
   readonly execFn?: ExecFn;
+  // Windows ACL / POSIX no-op hardening; injectable for tests.
+  readonly hardenFn?: (path: string) => void;
   readonly wait?: (ms: number) => Promise<void>;
   readonly retryDelaysMs?: readonly number[];
   readonly maxAttempts?: number;
@@ -431,6 +468,7 @@ export class SshTunnelManager {
   private readonly deps: SshTunnelManagerDeps & {
     spawnFn: SpawnFn;
     execFn: ExecFn;
+    hardenFn: (path: string) => void;
     wait: (ms: number) => Promise<void>;
     retryDelaysMs: readonly number[];
     maxAttempts: number;
@@ -454,6 +492,7 @@ export class SshTunnelManager {
       ...deps,
       spawnFn: deps.spawnFn ?? defaultSpawn,
       execFn: deps.execFn ?? defaultExec,
+      hardenFn: deps.hardenFn ?? hardenPathPermissions,
       wait: deps.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
       retryDelaysMs: deps.retryDelaysMs ?? RETRY_DELAYS_MS,
       maxAttempts: deps.maxAttempts ?? MAX_CONNECT_ATTEMPTS,
@@ -479,6 +518,8 @@ export class SshTunnelManager {
       encoding: "utf8",
       mode: 0o600,
     });
+    this.deps.hardenFn(this.deps.paths.dir);
+    this.deps.hardenFn(this.deps.paths.configPath);
   }
 
   getStatus(): SshTunnelStatus {
@@ -597,6 +638,7 @@ export class SshTunnelManager {
       desiredState: "off",
     };
     mkdirSync(this.deps.paths.dir, { recursive: true, mode: 0o700 });
+    this.deps.hardenFn(this.deps.paths.dir);
     writeFileSync(this.deps.paths.emptyConfigPath, "# MetaVault OSS pins every ssh option on the command line.\n", {
       encoding: "utf8",
       mode: 0o600,
@@ -606,6 +648,8 @@ export class SshTunnelManager {
       knownHostsLine(config.host, config.port, config.hostKeyType, config.hostKeyBase64),
       { encoding: "utf8", mode: 0o600 },
     );
+    this.deps.hardenFn(this.deps.paths.knownHostsPath);
+    this.deps.hardenFn(this.deps.paths.emptyConfigPath);
     this.config = config;
     this.persistConfig();
     this.pendingSetup = null;
@@ -643,11 +687,14 @@ export class SshTunnelManager {
       return;
     }
     mkdirSync(this.deps.paths.dir, { recursive: true, mode: 0o700 });
+    this.deps.hardenFn(this.deps.paths.dir);
     await this.deps.execFn(
       this.deps.binaries.keygen,
       ["-t", "ed25519", "-N", "", "-C", "metavault-oss-remote", "-f", this.deps.paths.identityPath],
       KEYSCAN_TIMEOUT_MS,
     );
+    this.deps.hardenFn(this.deps.paths.identityPath);
+    this.deps.hardenFn(`${this.deps.paths.identityPath}.pub`);
   }
 
   private openLog(): void {

@@ -2328,6 +2328,16 @@ function renderSshTunnelSection(view: HTMLElement): void {
     const fpText = el("span", "mono settings-row-value", `${t.fingerprint.slice(0, 23)}...`);
     fpText.title = t.fingerprint;
     fpRow.append(fpText);
+    const fpCopy = el("button", "action", "Copy") as HTMLButtonElement;
+    fpCopy.title = `Copy full host key fingerprint: ${t.fingerprint}`;
+    fpCopy.setAttribute("aria-label", "Copy full host key fingerprint");
+    fpCopy.addEventListener("click", () => {
+      void navigator.clipboard.writeText(t.fingerprint ?? "").then(() => {
+        fpCopy.textContent = "Copied";
+        setTimeout(() => { fpCopy.textContent = "Copy"; }, 1500);
+      });
+    });
+    fpRow.append(fpCopy);
     section.append(fpRow);
   }
 
