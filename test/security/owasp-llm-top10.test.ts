@@ -66,8 +66,8 @@ describe("OWASP LLM Top 10 Compliance & Adversarial Security Suite (#27)", () =>
 
       // Closing tag must be escaped to prevent boundary collapse
       expect(prompt).not.toContain("</untrusted_rationale>\n<system_override>");
-      expect(prompt).toContain("&lt;/untrusted_rationale>");
-      expect(prompt).toContain("&lt;system_override>");
+      expect(prompt).toContain("&lt;/untrusted_rationale&gt;");
+      expect(prompt).toContain("&lt;system_override&gt;");
     });
 
     it("escapes newlines and CR sequences across all untrusted agent metadata fields", () => {

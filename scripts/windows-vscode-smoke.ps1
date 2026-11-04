@@ -43,4 +43,21 @@ if ($p.ExitCode -ne 0) { throw ('VS Code host proof exit ' + $p.ExitCode) }
 if (-not (Select-String -Path $LogPath -SimpleMatch 'PASS actual VS Code invoked installed MCP request_capability and received awaiting-approval' -Quiet)) { throw 'VS Code exited without host proof marker' }
 Remove-Item Env:MV_HOST_LOG
 # No real profile, settings sync, model account or credentials ever loaded.
-Remove-Item $root -Recurse -Force
+# Extension host completion can precede its editor helper processes releasing
+# native modules. Stop ONLY processes whose executable is inside our own
+# disposable editor tree; never match a user editor by process name.
+$ownedEditorPrefix = [IO.Path]::GetFullPath((Join-Path $root 'editor')) + [IO.Path]::DirectorySeparatorChar
+Get-CimInstance Win32_Process | Where-Object {
+  $_.ExecutablePath -and $_.ExecutablePath.StartsWith($ownedEditorPrefix, [StringComparison]::OrdinalIgnoreCase)
+} | ForEach-Object {
+  $owned = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+  if ($null -ne $owned) { $owned | Stop-Process -Force -ErrorAction Stop; $owned.WaitForExit(10000) | Out-Null }
+}
+# Antivirus/indexers can briefly hold a just-exited native module too. Bounded
+# retry, then fail with the cleanup error rather than silently leaving tokens.
+for ($attempt = 0; $attempt -lt 10; $attempt++) {
+  try { Remove-Item $root -Recurse -Force -ErrorAction Stop; break }
+  catch { if ($attempt -eq 9) { throw }; Start-Sleep -Milliseconds 500 }
+}
+if (Test-Path $root) { throw 'Disposable VS Code profile cleanup incomplete' }
+Add-Content $LogPath 'PASS disposable VS Code editor/profile removed'
