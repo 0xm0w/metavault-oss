@@ -250,9 +250,8 @@ Gates for this task (run in-session, 2026-10-31; historical): `npm run test` —
 (33 files); `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
 Site redeploy: `npx -y wrangler deploy --config wrangler.worker.jsonc` (the `metahackathon-vault` Worker serves `metahackathon.whativedone.xyz`; the `metavault` Pages project is a preview mirror only). Deployment and route
-checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) are
-recorded in the Task 10 report
-(`.superpowers/sdd/2026-10-31-metavault-hardening-release/task-10-report.md`).
+checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) were
+recorded at the time of that deploy.
 
 ## Task 11 — v0.1.0-alpha.1 local release build (2026-10-31)
 

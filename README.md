@@ -45,9 +45,9 @@ npm run pack:win    # build + bundle + electron-builder --win --publish never
 ### From source (works today)
 
 ```powershell
-git clone <this repo> metavault-oss
+git clone https://github.com/0xm0w/metavault-oss.git
 cd metavault-oss
-npm install
+npm ci               # Node 22; installs exactly from the lockfile
 npm test            # full suite (see docs/VERIFICATION.md for current counts)
 ```
 
