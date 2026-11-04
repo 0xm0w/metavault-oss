@@ -9,8 +9,9 @@ Current source version: `0.1.2-alpha` (reported as `serverInfo.version` in the
 MCP handshake; exported in code as `MCP_VERSION` from
 `packages/mcp/src/server.ts`).
 
-Tools (exactly eight): `request_capability`, `list_aliases`,
-`request_enrollment`, `enrollment_status`, `revoke`.
+Tools (exactly eight): `request_capability`, `grant_status`, `list_aliases`,
+`request_enrollment`, `enrollment_status`, `register_agent`,
+`registration_status`, `revoke`.
 
 ## Installed Windows app (no source checkout or separate Node required)
 
@@ -20,6 +21,13 @@ The app supplies absolute paths to its own executable and bundled MCP server,
 plus `ELECTRON_RUN_AS_NODE=1`, so spaces in the install path and a stale PATH
 in an already-running IDE do not require a workaround. Reload the host MCP
 connection after changing config. Keep the agent token private.
+
+At launch the app self-checks the bundled MCP server: it starts it once,
+completes the MCP handshake and confirms exactly the eight tools above
+answer, without any token. The result is shown in Settings > Daemon as the
+MCP server status (ready / checking / failed with a reason). This proves
+the local runtime is ready to connect; the IDE still launches and connects
+the server through its own MCP configuration.
 
 The installer also includes `bin/metavault-mcp.cmd` and
 `bin/metavault-mcp.ps1` for terminal use. The GUI-generated config uses the
@@ -172,7 +180,7 @@ METAVAULT_IDE = "Codex"
 
 With the daemon running and the repo built, the two-host gate boots a
 daemon plus two independent MCP stdio clients and asserts both hosts can
-list aliases, request a capability, and see exactly the five tools above —
+list aliases, request a capability, and see exactly the eight tools above —
 without any secret reaching the MCP transcript:
 
 ```bash

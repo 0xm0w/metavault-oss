@@ -1,4 +1,4 @@
-import { AGENT_INSTRUCTIONS } from "./onboarding.js";
+import { buildAgentInstructions, type AgentInstructionsContext } from "./onboarding.js";
 import {
   filterAuditGroups,
   paginate,
@@ -72,6 +72,9 @@ import {
   projectKeyGate,
   type KeyGate,
   isSettingsTab,
+  mcpStatusText,
+  projectMcpStatus,
+  type McpStatus,
   type SettingsTab,} from "./model.js";
 import type {
   AgentSecuritySettingsLike,
@@ -119,6 +122,17 @@ let openQueuedDeeplink: (() => void) | null = null;
 const registrationDrafts = new Map<string, string>();
 const newAgentTokens = new Map<string, string>();
 let mcpRuntime: { command: string; args: string[]; env: Record<string, string>; dbPath: string } | null = null;
+let mcpStatus: McpStatus | null = null;
+// Wizard inline Meta API key form (step 2). The key itself is only ever
+// sent to the daemon; the draft is cleared on save.
+let wizardKeyDraft = "";
+let wizardKeyMessage: { text: string; ok: boolean } | null = null;
+let wizardKeyBusy = false;
+
+function agentInstructionsContext(): AgentInstructionsContext | null {
+  if (mcpRuntime === null) return null;
+  return { daemonUrl: DAEMON_URL_DISPLAY, command: mcpRuntime.command, args: mcpRuntime.args, env: mcpRuntime.env, dbPath: mcpRuntime.dbPath };
+}
 let remoteSettings: RemoteSettingsLike | null = null;
 let devicesData: DeviceLike[] = [];
 let pairingSession: PairingSessionLike | null = null;
@@ -2846,6 +2860,10 @@ function renderSettings(view: HTMLElement): void {
           ? " The key typed in the field is not saved yet; this tested the saved key. Click Save key to replace it."
           : "";
       settingsMessage = { text: `${result.message}${draftNote}`, ok: result.ok };
+      // Refresh the saved-key status so it reflects this test's outcome.
+      const keyRaw = await window.metavault.wardenKeyStatus();
+      const projectedKey = projectWardenKeyStatus(keyRaw);
+      if (projectedKey !== null) wardenKeyStatusState = projectedKey;
      } finally {
       settingsPending = null;
      }
@@ -3298,6 +3316,7 @@ function renderSettings(view: HTMLElement): void {
     daemonSection.append(row);
   };
   addDaemonRow("Version", `MetaVault OSS ${APP_VERSION_DISPLAY}`, false);
+  addDaemonRow("MCP server", mcpStatusText(mcpStatus), true);
   const detailsBtn = el("button", "action btn-always", daemonDetailsOpen ? "Hide details" : "Show details") as HTMLButtonElement;
   detailsBtn.type = "button";
   detailsBtn.id = "daemon-details-toggle";
@@ -3341,7 +3360,7 @@ function renderSettings(view: HTMLElement): void {
   instructionsBtn.type = "button";
   instructionsBtn.id = "copy-agent-instructions";
   instructionsBtn.addEventListener("click", () => {
-    void navigator.clipboard.writeText(AGENT_INSTRUCTIONS).then(
+    void navigator.clipboard.writeText(buildAgentInstructions(agentInstructionsContext())).then(
       () => { instructionsBtn.textContent = "Copied"; },
       () => { instructionsBtn.textContent = "Could not copy"; },
     ).finally(() => {
@@ -3356,6 +3375,138 @@ function renderSettings(view: HTMLElement): void {
   advanced.addEventListener("toggle", () => { agentAdvancedOpen = advanced.open; });
   advanced.append(el("summary", "", "Advanced: client config and agent tokens"));
   agentSection.append(advanced);
+  renderAgentIntegrationBox(advanced);
+  view.append(agentSection);
+
+  // 6. Security defaults (read-only summary)
+  const policySection = settingsSection("Security defaults", "", "security");
+  const ceilingCount = Object.keys(policiesData.ceilings).length;
+  policySection.append(el("p", "settings-copy", `Deterministic policy is the floor and never moves: ${String(ceilingCount)} alias ceiling${ceilingCount === 1 ? "" : "s"} on record, ${String(policiesData.standingApprovals.length)} standing approval${policiesData.standingApprovals.length === 1 ? "" : "s"} in force. The warden may narrow or escalate a request, never widen it. Editing policy stays on the Policies view.`));
+  const policiesBtn = el("button", "action settings-link", "Open Policies") as HTMLButtonElement;
+  policiesBtn.type = "button";
+  policiesBtn.addEventListener("click", () => {
+    settingsOpen = false;
+    currentView = "policies";
+    render();
+  });
+  const policiesRow = el("div", "settings-row");
+  policiesRow.append(el("span", "settings-row-label", "Ceilings and standing approvals"));
+  policiesRow.append(policiesBtn);
+  policySection.append(policiesRow);
+  view.append(policySection);
+
+
+  // 6b. Agent Anti-Spoofing & Process Protection
+  const agentSecSection = settingsSection(
+    "Agent Anti-Spoofing & Process Protection",
+    "Defense-in-depth security layers to prevent agent identity spoofing, token theft, and unauthorized script injection.",
+    "security",
+  );
+
+  const strictRow = el("div", "settings-row");
+  const strictLabel = el(
+    "span",
+    "settings-row-label",
+    "Strict Agent Verification Mode (Reject unverified callers without token)",
+  );
+  const strictToggle = document.createElement("input");
+  strictToggle.type = "checkbox";
+  strictToggle.checked = agentSecuritySettings.strictMode;
+  strictToggle.addEventListener("change", () => {
+    void runSettingsAction(async () => {
+      await window.metavault.updateAgentSecuritySettings({ strictMode: strictToggle.checked });
+      agentSecuritySettings = { ...agentSecuritySettings, strictMode: strictToggle.checked };
+      render();
+    });
+  });
+  strictRow.append(strictLabel, strictToggle);
+  agentSecSection.append(strictRow);
+
+  const procRow = el("div", "settings-row");
+  const procLabel = el(
+    "span",
+    "settings-row-label",
+    "Caller Process Inspection (Verify PID & binary against approved agent runtimes)",
+  );
+  const procToggle = document.createElement("input");
+  procToggle.type = "checkbox";
+  procToggle.checked = agentSecuritySettings.verifyCallerProcess;
+  procToggle.addEventListener("change", () => {
+    void runSettingsAction(async () => {
+      await window.metavault.updateAgentSecuritySettings({ verifyCallerProcess: procToggle.checked });
+      agentSecuritySettings = { ...agentSecuritySettings, verifyCallerProcess: procToggle.checked };
+      render();
+    });
+  });
+  procRow.append(procLabel, procToggle);
+  agentSecSection.append(procRow);
+  view.append(agentSecSection);
+  // 7. Auto-updater & releases (#16)
+  const updateSection = settingsSection("Auto-updater & releases", "Keep MetaVault OSS secure with signed background updates directly from GitHub Releases.", "general");
+  const updateStatusRow = el("div", "settings-row");
+  let statusText = `Current version: v${APP_VERSION_DISPLAY}`;
+  let statusBadgeClass = "tag-ok";
+
+  if (updaterStatus.status === "checking") {
+    statusText = "Checking for updates...";
+    statusBadgeClass = "tag-policy";
+  } else if (updaterStatus.status === "available") {
+    statusText = `Update available: v${updaterStatus.version ?? ""}`;
+    statusBadgeClass = "tag-warn";
+  } else if (updaterStatus.status === "downloading") {
+    statusText = `Downloading update: ${String(updaterStatus.percent ?? 0)}%`;
+    statusBadgeClass = "tag-policy";
+  } else if (updaterStatus.status === "downloaded") {
+    statusText = `Update v${updaterStatus.version ?? ""} ready to install!`;
+    statusBadgeClass = "tag-ok";
+  } else if (updaterStatus.status === "error") {
+    statusText = updaterStatus.message ?? "Update check failed";
+    statusBadgeClass = "tag-danger";
+  }
+
+  updateStatusRow.append(el("span", "settings-row-label", "Version & release status"));
+  updateStatusRow.append(el("span", `tag ${statusBadgeClass}`, statusText));
+  updateSection.append(updateStatusRow);
+
+  const updateBtns = el("div", "settings-btns");
+  const checkUpdateBtn = el("button", "action", "Check for updates") as HTMLButtonElement;
+  checkUpdateBtn.type = "button";
+  checkUpdateBtn.disabled = updaterStatus.status === "checking" || updaterStatus.status === "downloading";
+  checkUpdateBtn.addEventListener("click", () => {
+    updaterStatus = { status: "checking" };
+    render();
+    if (typeof window.metavault.checkForUpdates === "function") {
+      void window.metavault.checkForUpdates();
+    }
+  });
+  updateBtns.append(checkUpdateBtn);
+
+  if (updaterStatus.status === "downloaded") {
+    const installBtn = el("button", "action btn-always", "Restart & install update") as HTMLButtonElement;
+    installBtn.type = "button";
+    installBtn.addEventListener("click", () => {
+      if (typeof window.metavault.quitAndInstallUpdate === "function") {
+        void window.metavault.quitAndInstallUpdate();
+      }
+    });
+    updateBtns.append(installBtn);
+  }
+
+  const updateActionRow = el("div", "settings-row");
+  updateActionRow.append(el("span", "settings-row-label", "Updates"));
+  updateActionRow.append(updateBtns);
+  updateSection.append(updateActionRow);
+  view.append(updateSection);
+}
+
+// First-run guide. Shown on the Vault page until dismissed. It only reflects
+// real state (a verified agent, a saved credential) and never claims a step
+// is done that MetaVault cannot see.
+// The connect-your-IDE surface: per-host tabs, one-time token generation,
+// and the copyable MCP config with this installation's real paths. Shown in
+// the first-run wizard and under Settings > Daemon > Agent Integration &
+// MCP (Advanced), so both always offer the exact same config.
+function renderAgentIntegrationBox(host: HTMLElement): void {
   const tabsRow = el("div", "agent-tab-btns");
   const tabs = [
     { id: "claude", label: "Claude Code" },
@@ -3375,7 +3526,7 @@ function renderSettings(view: HTMLElement): void {
     });
     tabsRow.append(tabBtn);
   }
-  advanced.append(tabsRow);
+  host.append(tabsRow);
 
   const management = el("div", "agent-skill-box");
   management.append(el("p", "settings-copy", "Tokens are shown only when generated. Rotate to replace an existing IDE token, then update that IDE config. Rotation cancels pending requests and standing approvals. Existing configs keep working after migration until you rotate them."));
@@ -3395,7 +3546,7 @@ function renderSettings(view: HTMLElement): void {
   for (const agent of agentsData) {
     const row = el("div", "btns");
     row.append(el("span", "settings-copy", `${agent.name} (${agent.id})${agent.revoked ? " - inactive" : ""}`));
-    const generate = el("button", "action", agent.revoked ? "Generate token" : "Rotate token") as HTMLButtonElement;
+    const generate = el("button", "action", agent.revoked || agent.tokenPrefix === undefined || agent.tokenPrefix === "" ? "Generate token" : "Rotate token") as HTMLButtonElement;
     generate.type = "button"; generate.disabled = settingsBusy;
     generate.addEventListener("click", () => { if (agent.revoked || window.confirm(`Rotate ${agent.name}? Its old config will stop working, and pending requests and standing approvals will be cancelled.`)) createControl(agent.id, agent.name, !agent.revoked); });
     const revoke = el("button", "action btn-deny", "Revoke token") as HTMLButtonElement;
@@ -3419,7 +3570,7 @@ function renderSettings(view: HTMLElement): void {
     copy.addEventListener("click", () => { void navigator.clipboard.writeText(token); });
     management.append(once, copy);
   }
-  advanced.append(management);
+  host.append(management);
   const codeBox = el("div", "agent-code-block");
   let codeSnippet = "";
   let configPath = "";
@@ -3547,6 +3698,7 @@ function renderSettings(view: HTMLElement): void {
   copyBtn.type = "button";
   copyBtn.disabled = activeAgentTab !== "skill" && mcpRuntime === null;
   copyBtn.addEventListener("click", () => {
+    localStorage.setItem("metavault_wizard_config_copied", "1");
     void navigator.clipboard.writeText(codeSnippet);
     copyBtn.textContent = "Copied!";
     window.setTimeout(() => {
@@ -3559,8 +3711,8 @@ function renderSettings(view: HTMLElement): void {
   pre.tabIndex = 0;
   pre.setAttribute("aria-label", "MCP configuration, scroll horizontally to view long lines");
   codeBox.append(copyBtn, pre);
-  advanced.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
-  advanced.append(codeBox);
+  host.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
+  host.append(codeBox);
   const skillInfo = el("div", "agent-skill-box");
   skillInfo.append(el("div", "agent-skill-title", "Zero Secret Leakage Invariant"));
   skillInfo.append(
@@ -3570,133 +3722,92 @@ function renderSettings(view: HTMLElement): void {
       "Secrets never pass through MCP, agents, terminal stdout, or audit trails. AI agents request scoped capabilities; vaultd holds the encrypted secrets and executes calls; the MetaVault OSS UI prompts the human for approval."
     )
   );
-  advanced.append(skillInfo);
-  view.append(agentSection);
-
-  // 6. Security defaults (read-only summary)
-  const policySection = settingsSection("Security defaults", "", "security");
-  const ceilingCount = Object.keys(policiesData.ceilings).length;
-  policySection.append(el("p", "settings-copy", `Deterministic policy is the floor and never moves: ${String(ceilingCount)} alias ceiling${ceilingCount === 1 ? "" : "s"} on record, ${String(policiesData.standingApprovals.length)} standing approval${policiesData.standingApprovals.length === 1 ? "" : "s"} in force. The warden may narrow or escalate a request, never widen it. Editing policy stays on the Policies view.`));
-  const policiesBtn = el("button", "action settings-link", "Open Policies") as HTMLButtonElement;
-  policiesBtn.type = "button";
-  policiesBtn.addEventListener("click", () => {
-    settingsOpen = false;
-    currentView = "policies";
-    render();
-  });
-  const policiesRow = el("div", "settings-row");
-  policiesRow.append(el("span", "settings-row-label", "Ceilings and standing approvals"));
-  policiesRow.append(policiesBtn);
-  policySection.append(policiesRow);
-  view.append(policySection);
-
-
-  // 6b. Agent Anti-Spoofing & Process Protection
-  const agentSecSection = settingsSection(
-    "Agent Anti-Spoofing & Process Protection",
-    "Defense-in-depth security layers to prevent agent identity spoofing, token theft, and unauthorized script injection.",
-    "security",
-  );
-
-  const strictRow = el("div", "settings-row");
-  const strictLabel = el(
-    "span",
-    "settings-row-label",
-    "Strict Agent Verification Mode (Reject unverified callers without token)",
-  );
-  const strictToggle = document.createElement("input");
-  strictToggle.type = "checkbox";
-  strictToggle.checked = agentSecuritySettings.strictMode;
-  strictToggle.addEventListener("change", () => {
-    void runSettingsAction(async () => {
-      await window.metavault.updateAgentSecuritySettings({ strictMode: strictToggle.checked });
-      agentSecuritySettings = { ...agentSecuritySettings, strictMode: strictToggle.checked };
-      render();
-    });
-  });
-  strictRow.append(strictLabel, strictToggle);
-  agentSecSection.append(strictRow);
-
-  const procRow = el("div", "settings-row");
-  const procLabel = el(
-    "span",
-    "settings-row-label",
-    "Caller Process Inspection (Verify PID & binary against approved agent runtimes)",
-  );
-  const procToggle = document.createElement("input");
-  procToggle.type = "checkbox";
-  procToggle.checked = agentSecuritySettings.verifyCallerProcess;
-  procToggle.addEventListener("change", () => {
-    void runSettingsAction(async () => {
-      await window.metavault.updateAgentSecuritySettings({ verifyCallerProcess: procToggle.checked });
-      agentSecuritySettings = { ...agentSecuritySettings, verifyCallerProcess: procToggle.checked };
-      render();
-    });
-  });
-  procRow.append(procLabel, procToggle);
-  agentSecSection.append(procRow);
-  view.append(agentSecSection);
-  // 7. Auto-updater & releases (#16)
-  const updateSection = settingsSection("Auto-updater & releases", "Keep MetaVault OSS secure with signed background updates directly from GitHub Releases.", "general");
-  const updateStatusRow = el("div", "settings-row");
-  let statusText = `Current version: v${APP_VERSION_DISPLAY}`;
-  let statusBadgeClass = "tag-ok";
-
-  if (updaterStatus.status === "checking") {
-    statusText = "Checking for updates...";
-    statusBadgeClass = "tag-policy";
-  } else if (updaterStatus.status === "available") {
-    statusText = `Update available: v${updaterStatus.version ?? ""}`;
-    statusBadgeClass = "tag-warn";
-  } else if (updaterStatus.status === "downloading") {
-    statusText = `Downloading update: ${String(updaterStatus.percent ?? 0)}%`;
-    statusBadgeClass = "tag-policy";
-  } else if (updaterStatus.status === "downloaded") {
-    statusText = `Update v${updaterStatus.version ?? ""} ready to install!`;
-    statusBadgeClass = "tag-ok";
-  } else if (updaterStatus.status === "error") {
-    statusText = updaterStatus.message ?? "Update check failed";
-    statusBadgeClass = "tag-danger";
-  }
-
-  updateStatusRow.append(el("span", "settings-row-label", "Version & release status"));
-  updateStatusRow.append(el("span", `tag ${statusBadgeClass}`, statusText));
-  updateSection.append(updateStatusRow);
-
-  const updateBtns = el("div", "settings-btns");
-  const checkUpdateBtn = el("button", "action", "Check for updates") as HTMLButtonElement;
-  checkUpdateBtn.type = "button";
-  checkUpdateBtn.disabled = updaterStatus.status === "checking" || updaterStatus.status === "downloading";
-  checkUpdateBtn.addEventListener("click", () => {
-    updaterStatus = { status: "checking" };
-    render();
-    if (typeof window.metavault.checkForUpdates === "function") {
-      void window.metavault.checkForUpdates();
-    }
-  });
-  updateBtns.append(checkUpdateBtn);
-
-  if (updaterStatus.status === "downloaded") {
-    const installBtn = el("button", "action btn-always", "Restart & install update") as HTMLButtonElement;
-    installBtn.type = "button";
-    installBtn.addEventListener("click", () => {
-      if (typeof window.metavault.quitAndInstallUpdate === "function") {
-        void window.metavault.quitAndInstallUpdate();
-      }
-    });
-    updateBtns.append(installBtn);
-  }
-
-  const updateActionRow = el("div", "settings-row");
-  updateActionRow.append(el("span", "settings-row-label", "Updates"));
-  updateActionRow.append(updateBtns);
-  updateSection.append(updateActionRow);
-  view.append(updateSection);
+  host.append(skillInfo);
 }
 
-// First-run guide. Shown on the Vault page until dismissed. It only reflects
-// real state (a verified agent, a saved credential) and never claims a step
-// is done that MetaVault cannot see.
+function renderWizardWardenStep(item: HTMLElement): void {
+  const form = el("div", "wizard-key-form");
+  const status = el("p", "settings-copy", !wardenKeyStatusState.configured ? "No key saved yet." : wardenKeyStatusState.verified === true ? "Meta API key saved and the connection test passed." : "A Meta API key is saved but its connection test has not passed yet. Test it before connecting your IDE.");
+  form.append(status);
+  const input = document.createElement("input");
+  input.className = "vault-input";
+  input.id = "wizard-warden-key";
+  input.type = "password";
+  input.placeholder = "Paste Meta API key";
+  input.autocomplete = "new-password";
+  input.value = wizardKeyDraft;
+  input.disabled = wizardKeyBusy;
+  const btns = el("div", "btns");
+  const save = el("button", "action btn-approve", "Save key") as HTMLButtonElement;
+  save.type = "button";
+  save.id = "wizard-warden-save";
+  save.disabled = wizardKeyBusy || wizardKeyDraft.trim() === "";
+  input.addEventListener("input", () => {
+    wizardKeyDraft = input.value;
+    save.disabled = wizardKeyBusy || input.value.trim() === "";
+  });
+  save.addEventListener("click", () => {
+    const doSave = (): void => {
+      wizardKeyBusy = true;
+      wizardKeyMessage = null;
+      render();
+      void (async () => {
+        try {
+          const raw = await window.metavault.setWardenKey(wizardKeyDraft);
+          const projected = projectWardenKeyStatus(raw);
+          if (projected !== null) wardenKeyStatusState = projected;
+          wizardKeyDraft = "";
+          wizardKeyMessage = { text: "Meta API key saved. It is stored encrypted and never shown again.", ok: true };
+        } catch (err) {
+          wizardKeyMessage = { text: err instanceof Error ? err.message : "Could not save the key", ok: false };
+        } finally {
+          wizardKeyBusy = false;
+          render();
+        }
+      })();
+    };
+    if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to save key", doSave); else doSave();
+  });
+  const test = el("button", "action", wizardKeyBusy ? "Testing\u2026" : "Test connection") as HTMLButtonElement;
+  test.type = "button";
+  test.id = "wizard-warden-test";
+  test.disabled = wizardKeyBusy || !wardenKeyStatusState.configured;
+  test.addEventListener("click", () => {
+    wizardKeyBusy = true;
+    wizardKeyMessage = null;
+    render();
+    void (async () => {
+      try {
+        const raw = await window.metavault.testWarden();
+        const projected = projectWardenTestResult(raw);
+        if (projected === null) {
+          wizardKeyMessage = { text: "Warden test failed - vaultd returned an unexpected response.", ok: false };
+        } else {
+          const result = wardenTestMessage(projected);
+          wizardKeyMessage = { text: result.message, ok: result.ok };
+        }
+        // The daemon records whether the saved key's last test passed;
+        // refresh so the step's Done state follows the test outcome.
+        const keyRaw = await window.metavault.wardenKeyStatus();
+        const projectedKey = projectWardenKeyStatus(keyRaw);
+        if (projectedKey !== null) wardenKeyStatusState = projectedKey;
+      } catch (err) {
+        wizardKeyMessage = { text: err instanceof Error ? err.message : "Warden test failed", ok: false };
+      } finally {
+        wizardKeyBusy = false;
+        render();
+      }
+    })();
+  });
+  btns.append(save, test);
+  form.append(input, btns);
+  if (wizardKeyMessage !== null) {
+    form.append(el("p", wizardKeyMessage.ok ? "settings-message is-ok" : "settings-message is-error", wizardKeyMessage.text));
+  }
+  form.append(el("p", "settings-copy", "The key is typed here in the app, never in a chat, is stored encrypted, and is never shown again. The test calls Meta's API once with no vault data; everything else stays local. Without a key, policy still decides every request. You can also do this later in Settings > Warden."));
+  item.append(form);
+}
+
 function renderOnboardingWizard(view: HTMLElement): void {
   if (localStorage.getItem("metavault_wizard_done") === "1") {
     const show = el("button", "wizard-reopen", "Show the setup guide") as HTMLButtonElement;
@@ -3706,13 +3817,26 @@ function renderOnboardingWizard(view: HTMLElement): void {
     return;
   }
   const card = el("section", "wizard-card");
-  card.append(el("h3", "", "Get started: connect your IDE"));
+  card.append(el("h3", "", "Get started"));
   const hasAgent = agentsData.some((agent) => !agent.revoked);
   const hasCredential = aliases.length > 0;
   const copied = localStorage.getItem("metavault_wizard_copied") === "1";
+  const mcpReady = mcpStatus?.state === "ready";
   const steps: { title: string; body: string; done: boolean; action?: HTMLElement }[] = [
-    { title: "Your vault is ready", body: "It is encrypted with your password on this computer.", done: true },
-    { title: "Copy the agent instructions", body: "Paste them into your IDE agent. They contain no secrets.", done: copied },
+    {
+      title: mcpStatus?.state === "failed" ? "MCP launch check failed" : "MetaVault is running",
+      body: mcpReady
+        ? "The vault service is running locally, and the launch check confirmed the bundled MCP server answers with all 8 tools. Nothing leaves this computer."
+        : mcpStatusText(mcpStatus),
+      done: mcpReady,
+    },
+    { title: "Add your Meta API key", body: "The warden vets each agent request from metadata only. Save the key here and test it before connecting an IDE.", done: wardenKeyStatusState.configured && wardenKeyStatusState.verified === true },
+    {
+      title: "Connect your IDE",
+      body: "Pick your IDE below, generate its token, copy the config into your IDE's MCP config file, then fully restart the IDE. This is what makes the metavault tools appear; pasting the instructions into a chat alone does not connect anything.",
+      done: agentsData.some((agent) => auditEvents.some((event) => event.agentId === agent.id)),
+    },
+    { title: "Copy the agent instructions", body: "Paste them into your IDE agent. They already carry this installation's local connection details and no secrets.", done: copied },
     { title: "Let your IDE register", body: "The agent shows a 6-digit code. Approve the matching request here. That makes it a Verified agent. It gives it no access to anything.", done: hasAgent },
     { title: "Add a token to test", body: "Tell your IDE: \"I will add a token to test.\" MetaVault opens in front with the secure input. Type the token here, never in the chat.", done: hasCredential },
     { title: "Check it works", body: "Ask your IDE to use that token for one read-only check, for example reading traffic for one of your sites. You approve that access separately.", done: localStorage.getItem("metavault_wizard_tested") === "1" },
@@ -3720,20 +3844,29 @@ function renderOnboardingWizard(view: HTMLElement): void {
   const nextIndex = steps.findIndex((step) => !step.done);
   const list = el("ol", "wizard-steps");
   steps.forEach((step, index) => {
-    const item = el("li", step.done ? "is-done" : index === nextIndex ? "is-next" : "");
-    item.append(el("strong", "", `${step.done ? "Done: " : ""}${step.title}`), el("span", "", step.body));
+    // A failed launch check is not "next", it needs attention first.
+    const attention = index === 0 && mcpStatus?.state === "failed";
+    const item = el("li", step.done ? "is-done" : attention ? "is-attention" : index === nextIndex ? "is-next" : "");
+    const prefix = step.done ? "Done: " : attention ? "Attention: " : "";
+    item.append(el("strong", "", `${prefix}${step.title}`), el("span", attention ? "wizard-attention-body" : "", step.body));
     if (index === 1) {
+      renderWizardWardenStep(item);
+    }
+    if (index === 2) {
+      renderAgentIntegrationBox(item);
+    }
+    if (index === 3) {
       const copy = el("button", "action btn-approve", copied ? "Copy again" : "Copy agent instructions") as HTMLButtonElement;
       copy.type = "button";
       copy.addEventListener("click", () => {
-        void navigator.clipboard.writeText(AGENT_INSTRUCTIONS).then(
+        void navigator.clipboard.writeText(buildAgentInstructions(agentInstructionsContext())).then(
           () => { localStorage.setItem("metavault_wizard_copied", "1"); copy.textContent = "Copied"; },
           () => { copy.textContent = "Could not copy"; },
         );
       });
       item.append(copy);
     }
-    if (index === 4 && !step.done && hasCredential) {
+    if (index === 6 && !step.done && hasCredential) {
       const mark = el("button", "action", "It worked") as HTMLButtonElement;
       mark.type = "button";
       mark.addEventListener("click", () => { localStorage.setItem("metavault_wizard_tested", "1"); render(); });
@@ -4138,6 +4271,9 @@ function render(): void {
 async function refresh(): Promise<void> {
   try {
     mcpRuntime ??= await window.metavault.runtimePaths().catch(() => null);
+    if (mcpStatus === null || mcpStatus.state === "pending") {
+      mcpStatus = projectMcpStatus(await window.metavault.mcpStatus().catch(() => null));
+    }
     const keyStatusRaw = await window.metavault.keyStatus().catch(() => null);
     vaultKeyFingerprint = keyStatusRaw !== null && typeof keyStatusRaw === "object" && "fingerprint" in keyStatusRaw && typeof keyStatusRaw.fingerprint === "string" && /^[a-f0-9]{24}$/.test(keyStatusRaw.fingerprint) ? keyStatusRaw.fingerprint : null;
     keyGate = projectKeyGate(keyStatusRaw);

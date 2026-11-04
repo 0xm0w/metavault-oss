@@ -148,7 +148,7 @@ describe("warden settings routes", () => {
     expect(changed[0]?.detail).not.toContain("api.meta.ai");
   });
 
-  it("PUT key stores it encrypted: status is exactly {configured}, raw key appears nowhere, DELETE clears", async () => {
+  it("PUT key stores it encrypted: status is exactly {configured, verified}, raw key appears nowhere, DELETE clears", async () => {
     const service = await makeService();
 
     const statusBefore = await handleVaultRequest(
@@ -159,7 +159,7 @@ describe("warden settings routes", () => {
       withToken,
     );
     expect(statusBefore.status).toBe(200);
-    expect(statusBefore.body).toEqual({ configured: false });
+    expect(statusBefore.body).toEqual({ configured: false, verified: false });
 
     const putNoToken = await handleVaultRequest(
       service,
@@ -179,7 +179,7 @@ describe("warden settings routes", () => {
       withToken,
     );
     expect(put.status).toBe(200);
-    expect(put.body).toEqual({ configured: true });
+    expect(put.body).toEqual({ configured: true, verified: false });
     expect(JSON.stringify(put.body)).not.toContain(META_KEY);
 
     const status = await handleVaultRequest(
@@ -189,8 +189,8 @@ describe("warden settings routes", () => {
       undefined,
       withToken,
     );
-    expect(status.body).toEqual({ configured: true });
-    expect(Object.keys(status.body as object).sort()).toEqual(["configured"]);
+    expect(status.body).toEqual({ configured: true, verified: false });
+    expect(Object.keys(status.body as object).sort()).toEqual(["configured", "verified"]);
 
     const settings = await handleVaultRequest(service, "GET", "/settings/warden", undefined, withToken);
     expect(JSON.stringify(settings.body)).not.toContain(META_KEY);
@@ -244,7 +244,7 @@ describe("warden settings routes", () => {
     expect(delNoToken.status).toBe(401);
     const del = await handleVaultRequest(service, "DELETE", "/settings/warden/key", undefined, withToken);
     expect(del.status).toBe(200);
-    expect(del.body).toEqual({ configured: false });
+    expect(del.body).toEqual({ configured: false, verified: false });
     const after = await handleVaultRequest(
       service,
       "GET",
@@ -252,7 +252,7 @@ describe("warden settings routes", () => {
       undefined,
       withToken,
     );
-    expect(after.body).toEqual({ configured: false });
+    expect(after.body).toEqual({ configured: false, verified: false });
   });
 
   it("rejects short warden keys (<=4 chars and <8 chars) with 400, stores nothing, and echoes nothing", async () => {
@@ -274,14 +274,14 @@ describe("warden settings routes", () => {
         undefined,
         withToken,
       );
-      expect(status.body).toEqual({ configured: false });
+      expect(status.body).toEqual({ configured: false, verified: false });
       expect(JSON.stringify(status.body)).not.toContain(shortKey);
     }
     // Service-level callers must not be able to store/echo a short key either.
     const exit = await Effect.runPromiseExit(service.setWardenKey("abcd"));
     expect(exit._tag).toBe("Failure");
     const status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
-    expect(status.body).toEqual({ configured: false });
+    expect(status.body).toEqual({ configured: false, verified: false });
   });
 
   it("status never echoes a pre-existing short warden key in full (status carries no key hint)", async () => {
@@ -302,7 +302,7 @@ describe("warden settings routes", () => {
         Effect.provide(Layer.mergeAll(VaultStoreTest(masterKey), BrainLowRisk, FakeConnector)),
       ),
     );
-    expect(planted).toEqual({ configured: true });
+    expect(planted).toEqual({ configured: true, verified: false });
     expect(JSON.stringify(planted)).not.toContain("abcd");
   });
 
@@ -327,7 +327,7 @@ describe("warden settings routes", () => {
       });
       expect(put.status).toBe(200);
       const body: unknown = await put.json();
-      expect(body).toEqual({ configured: true });
+      expect(body).toEqual({ configured: true, verified: false });
       expect(JSON.stringify(body)).not.toContain(META_KEY);
     } finally {
       await new Promise<void>((resolve) => {
@@ -384,6 +384,64 @@ describe("warden settings routes", () => {
     expect(JSON.stringify(res.body)).not.toContain("provider exploded");
     expect(await Effect.runPromise(service.listAudit())).toHaveLength(auditBefore.length);
     expect(await Effect.runPromise(service.listPendingApprovals())).toHaveLength(0);
+  });
+
+  it("key status verified flag follows save, passed test, replace, and delete", async () => {
+    const service = await makeService();
+    let status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: false, verified: false });
+    await handleVaultRequest(service, "PUT", "/settings/warden/key", { key: META_KEY }, withToken);
+    status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: false });
+    const test = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect((test.body as { ok: unknown }).ok).toBe(true);
+    status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: true });
+    // Replacing the key resets verified until the new key passes a test.
+    await handleVaultRequest(service, "PUT", "/settings/warden/key", { key: `${META_KEY}-replaced` }, withToken);
+    status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: false });
+    await handleVaultRequest(service, "DELETE", "/settings/warden/key", undefined, withToken);
+    status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: false, verified: false });
+    expect(JSON.stringify(status.body)).not.toContain(META_KEY);
+  });
+
+  it("a rejected key clears the verified flag; a network failure keeps it", async () => {
+    let mode: "ok" | "unauthorized" | "network" = "ok";
+    const flip = Layer.succeed(Brain, {
+      assess: () => {
+        if (mode === "ok") return Effect.succeed({ risk: "low" as const, recommendedScope: "selfcheck.read", requireApproval: false, explanation: "ok" });
+        const message = mode === "unauthorized" ? "Meta API returned HTTP 401" : "request to Meta API failed";
+        return Effect.fail(new MarshalUnavailable({ message }));
+      },
+    });
+    const service = await makeService(flip);
+    await handleVaultRequest(service, "PUT", "/settings/warden/key", { key: META_KEY }, withToken);
+    await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    let status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: true });
+    mode = "network";
+    let res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect((res.body as { reason?: unknown }).reason).toBe("network");
+    status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: true });
+    mode = "unauthorized";
+    res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect((res.body as { reason?: unknown }).reason).toBe("unauthorized");
+    status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: false });
+    expect(JSON.stringify(status.body)).not.toContain(META_KEY);
+  });
+
+  it("policy-only provider none test does not mark the saved key verified", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "PUT", "/settings/warden/key", { key: META_KEY }, withToken);
+    await handleVaultRequest(service, "PATCH", "/settings/warden", { provider: "none" }, withToken);
+    const res = await handleVaultRequest(service, "POST", "/settings/warden/test", undefined, withToken);
+    expect((res.body as { detail: unknown }).detail).toBe("policy-only");
+    const status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(status.body).toEqual({ configured: true, verified: false });
   });
 
   describe("warden test failure reasons", () => {
@@ -506,6 +564,6 @@ describe("warden settings routes", () => {
     const settings = await handleVaultRequest(service, "GET", "/settings/warden", undefined, withToken);
     expect(settings.body).toEqual(DEFAULTS);
     const status = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
-    expect(status.body).toEqual({ configured: false });
+    expect(status.body).toEqual({ configured: false, verified: false });
   });
 });

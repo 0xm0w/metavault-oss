@@ -113,12 +113,12 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
     );
     const svc: VaultServiceService = built.service;
 
-    // The canary is also the warden key: status shows only {configured}.
+    // The canary is also the warden key: status shows only {configured, verified}.
     const putKey = await handleVaultRequest(svc, "PUT", "/settings/warden/key", { key: CANARY }, withToken);
     expect(putKey.status).toBe(200);
-    expect(putKey.body).toEqual({ configured: true });
+    expect(putKey.body).toEqual({ configured: true, verified: false });
     const keyStatus = await handleVaultRequest(svc, "GET", "/settings/warden/key", undefined, withToken);
-    expect(Object.keys(keyStatus.body as object).sort()).toEqual(["configured"]);
+    expect(Object.keys(keyStatus.body as object).sort()).toEqual(["configured", "verified"]);
     const settingsGet = await handleVaultRequest(svc, "GET", "/settings/warden", undefined, withToken);
     const settingsPatch = await handleVaultRequest(
       svc,

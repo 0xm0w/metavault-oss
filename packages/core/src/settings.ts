@@ -106,6 +106,8 @@ export const WARDEN_KEY_MIN_LENGTH = 8;
 
 export interface WardenKeyStatus {
   readonly configured: boolean;
+  // True only when the saved key's last completed connection test passed.
+  readonly verified: boolean;
 }
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";

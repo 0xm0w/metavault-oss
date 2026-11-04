@@ -609,6 +609,7 @@ export function projectAgentsResponse(raw: unknown): RegisteredAgent[] {
           id: item["id"],
           name: item["name"],
           token: item["token"],
+          ...(typeof item["tokenPrefix"] === "string" && item["tokenPrefix"] !== "" ? { tokenPrefix: item["tokenPrefix"] } : {}),
           createdAt: typeof item["createdAt"] === "string" ? item["createdAt"] : "",
           revoked: Boolean(item["revoked"]),
         });
@@ -1359,16 +1360,58 @@ export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null
   // Strict shape: exactly configured. Any extra field (a key hint or a
   // key-shaped one) fails closed \u2014 status must never carry key material.
   for (const key of Object.keys(raw)) {
-    if (key !== "configured") return null;
+    if (key !== "configured" && key !== "verified") return null;
   }
   const configured = raw["configured"];
   if (typeof configured !== "boolean") return null;
-  return { configured };
+  const verified = raw["verified"];
+  if (verified !== undefined && typeof verified !== "boolean") return null;
+  return { configured, verified: verified === true };
+}
+
+export interface McpStatus {
+  readonly state: "pending" | "ready" | "failed" | "unavailable";
+  readonly toolCount: number;
+  readonly serverName: string;
+  readonly serverVersion: string;
+  readonly detail: string;
+  readonly checkedAt: string;
+}
+
+export function projectMcpStatus(raw: unknown): McpStatus | null {
+  if (!isRecord(raw)) return null;
+  const state = raw["state"];
+  if (state !== "pending" && state !== "ready" && state !== "failed" && state !== "unavailable") return null;
+  const rawTools = raw["tools"];
+  const tools = Array.isArray(rawTools) ? rawTools : [];
+  return {
+    state,
+    toolCount: tools.length,
+    serverName: typeof raw["serverName"] === "string" ? (raw["serverName"]) : "",
+    serverVersion: typeof raw["serverVersion"] === "string" ? (raw["serverVersion"]) : "",
+    detail: typeof raw["detail"] === "string" ? (raw["detail"]) : "",
+    checkedAt: typeof raw["checkedAt"] === "string" ? (raw["checkedAt"]) : "",
+  };
+}
+
+// One plain-language line for Settings > Daemon and the setup wizard. The
+// IDE still launches the MCP server itself; this only reports whether the
+// app's launch-time check proved the bundled runtime ready for that.
+export function mcpStatusText(status: McpStatus | null): string {
+  if (status === null || status.state === "pending") return "Checking the bundled MCP server\u2026";
+  if (status.state === "ready") {
+    const version = status.serverVersion !== "" ? ` ${status.serverVersion}` : "";
+    return `Ready at launch - the app started the bundled MCP server${version} and confirmed all ${String(status.toolCount)} tools. Your IDE still connects it through its own MCP config.`;
+  }
+  if (status.state === "unavailable") {
+    return status.detail !== "" ? `Not checked - ${status.detail}.` : "Not checked in this build.";
+  }
+  return status.detail !== "" ? `Failed at launch - ${status.detail}. Your IDE will not be able to connect until this is fixed.` : "Failed at launch. Your IDE will not be able to connect until this is fixed.";
 }
 
 export function wardenKeyStatusText(status: WardenKeyStatusLike): string {
   if (!status.configured) return "Not configured";
-  return "Configured";
+  return status.verified === true ? "Configured (connection test passed)" : "Configured (connection test not passed yet)";
 }
 
 export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPatch {

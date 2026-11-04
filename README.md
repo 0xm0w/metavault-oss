@@ -131,7 +131,10 @@ statement and current limits.
 
 ## Install via MCP (one snippet per IDE)
 
-**Installed Windows app:** open Settings > Daemon > Agent Integration & MCP,
+**Installed Windows app:** on first launch the app starts the local daemon and
+self-checks the bundled MCP server (status in Settings > Daemon). The setup
+guide on the Vault page walks through the Meta API key, then connecting your
+IDE. Or directly: open Settings > Daemon > Agent Integration & MCP,
 generate or rotate the host token and copy the generated config. It uses the
 installed executable and bundled server, with no source checkout or separate Node.
 Copy the static agent instructions there too. Raw tokens are shown only at creation;

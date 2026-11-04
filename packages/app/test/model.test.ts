@@ -55,7 +55,10 @@ import {
   META_API_MODEL_OPTIONS,
   DEFAULT_META_API_MODEL_ID,
   isKnownMetaApiModel,
+  projectAgentsResponse,
   projectWardenKeyStatus,
+  projectMcpStatus,
+  mcpStatusText,
   projectWardenSettings,
   wardenKeyStatusText,
   projectWardenTestResult,
@@ -903,14 +906,51 @@ describe("warden settings form state (Task 6)", () => {
     expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "fast", metaApiBaseUrl: "u", apiKey: "canary" })).toBeNull();
   });
 
+  it("projects the launch MCP self-check status", () => {
+    expect(projectMcpStatus(null)).toBeNull();
+    expect(projectMcpStatus({ state: "weird" })).toBeNull();
+    const ready = projectMcpStatus({ state: "ready", tools: ["a", "b"], serverName: "metavault", serverVersion: "0.1.2-alpha", checkedAt: "t" });
+    expect(ready?.state).toBe("ready");
+    expect(ready?.toolCount).toBe(2);
+    expect(projectMcpStatus({ state: "failed", detail: "boom" })?.detail).toBe("boom");
+  });
+
+  it("describes the MCP launch status without implying the IDE is connected", () => {
+    expect(mcpStatusText(null)).toContain("Checking");
+    const ready = projectMcpStatus({ state: "ready", tools: [1, 2, 3, 4, 5, 6, 7, 8], serverVersion: "0.1.2-alpha" });
+    const readyText = mcpStatusText(ready);
+    expect(readyText).toContain("Ready at launch");
+    expect(readyText).toContain("8 tools");
+    expect(readyText).toContain("still connects");
+    expect(mcpStatusText(projectMcpStatus({ state: "failed", detail: "did not answer" }))).toContain("did not answer");
+    expect(mcpStatusText(projectMcpStatus({ state: "unavailable", detail: "MCP server file not found" }))).toContain("Not checked");
+  });
+
   it("projects key status without ever exposing a key and formats status text", () => {
-    expect(projectWardenKeyStatus({ configured: true })).toEqual({ configured: true });
-    expect(projectWardenKeyStatus({ configured: false })).toEqual({ configured: false });
+    expect(projectWardenKeyStatus({ configured: true })).toEqual({ configured: true, verified: false });
+    expect(projectWardenKeyStatus({ configured: false })).toEqual({ configured: false, verified: false });
+    expect(projectWardenKeyStatus({ configured: true, verified: true })).toEqual({ configured: true, verified: true });
+    expect(projectWardenKeyStatus({ configured: true, verified: "yes" })).toBeNull();
     expect(projectWardenKeyStatus({ configured: true, last4: "1234" })).toBeNull();
     expect(projectWardenKeyStatus({ configured: true, key: "canary" })).toBeNull();
     expect(projectWardenKeyStatus("nope")).toBeNull();
     expect(wardenKeyStatusText({ configured: false })).toBe("Not configured");
-    expect(wardenKeyStatusText({ configured: true })).toBe("Configured");
+    expect(wardenKeyStatusText({ configured: true })).toBe("Configured (connection test not passed yet)");
+    expect(wardenKeyStatusText({ configured: true, verified: true })).toBe("Configured (connection test passed)");
+  });
+
+  it("projectAgentsResponse carries tokenPrefix only when present and non-empty", () => {
+    const agents = projectAgentsResponse({
+      agents: [
+        { id: "opencode", name: "OpenCode", token: "", tokenPrefix: "mvt_ab12", createdAt: "2026-11-05T00:00:00Z", revoked: false },
+        { id: "cursor", name: "Cursor", token: "", tokenPrefix: "", createdAt: "2026-11-05T00:00:00Z", revoked: true },
+        { id: "codex", name: "Codex", token: "", createdAt: "2026-11-05T00:00:00Z", revoked: true },
+      ],
+    });
+    expect(agents).toHaveLength(3);
+    expect(agents[0]?.tokenPrefix).toBe("mvt_ab12");
+    expect(agents[1]?.tokenPrefix).toBeUndefined();
+    expect(agents[2]?.tokenPrefix).toBeUndefined();
   });
 
   it("builds a trimmed patch and checks form completeness", () => {
