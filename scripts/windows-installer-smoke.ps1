@@ -92,7 +92,7 @@ function Test-PackagedGateway {
   Log "Checking packaged remote gateway (off by default, two listeners)"
   $gwScript = Join-Path $installDir "resources\vaultd\gateway.cjs"
   Check (Test-Path $gwScript) "installed: resources\vaultd\gateway.cjs"
-  Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7079)) "gateway listeners absent while remote is disabled"
+  Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7080)) "gateway listeners absent while remote is disabled"
   if (-not (Test-Path $gwScript)) { return }
 
   # Fail-closed without configuration.
@@ -135,11 +135,11 @@ function Test-PackagedGateway {
   $deadline = (Get-Date).AddSeconds(30)
   while ((Get-Date) -lt $deadline -and -not ($pairingOpen -and $deviceOpen)) {
     if (-not $pairingOpen) { $pairingOpen = Test-Tcp 7078 }
-    if (-not $deviceOpen) { $deviceOpen = Test-Tcp 7079 }
+    if (-not $deviceOpen) { $deviceOpen = Test-Tcp 7080 }
     if (-not ($pairingOpen -and $deviceOpen)) { Start-Sleep -Milliseconds 500 }
   }
   Check $pairingOpen "packaged gateway pairing listener on 127.0.0.1:7078"
-  Check $deviceOpen "packaged gateway strict-mTLS device listener on 127.0.0.1:7079"
+  Check $deviceOpen "packaged gateway strict-mTLS device listener on 127.0.0.1:7080"
   $listenersUp = $pairingOpen -and $deviceOpen
   # Shutdown: killing the child must close BOTH listeners.
   if (-not $gw.HasExited) { $gw.Kill() }
@@ -150,7 +150,7 @@ function Test-PackagedGateway {
     Log "gateway stderr: $gwErrPeek"
   }
   Start-Sleep -Seconds 1
-  Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7079)) "both gateway listeners close on shutdown"
+  Check (-not (Test-Tcp 7078) -and -not (Test-Tcp 7080)) "both gateway listeners close on shutdown"
 
   # Disable remote again so later stages run with the default posture.
   $off = Invoke-Daemon "PATCH" "/settings/remote" @{ enabled = $false }

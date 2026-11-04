@@ -25,11 +25,16 @@ the desktop as usual.
     below. Outside an explicit pairing window (a live, unconfirmed,
     unexpired vault-side session) the listener is inert: `/pair/begin` is
     refused before any body is read or code is compared.
-  - **Devices** on `127.0.0.1:7079` (pairing port + 1): strict mutual TLS
-    1.3. A client certificate chaining to the vault CA is required at the
-    TLS handshake itself, so certificate-less and foreign-CA connections
-    are refused before any HTTP exists. This listener forwards allowlisted
-    requests to vaultd over the loopback daemon socket.
+  - **Devices** on `127.0.0.1:7080`: strict mutual TLS 1.3. A client
+    certificate chaining to the vault CA is required at the TLS handshake
+    itself, so certificate-less and foreign-CA connections are refused
+    before any HTTP exists. This listener forwards allowlisted requests to
+    vaultd over the loopback daemon socket.
+
+  Port allocation is collision-free on one host: 7077 vaultd, 7078 gateway
+  pairing, 7080 gateway devices, and 7079 belongs to the device-side shim's
+  own IDE-facing channel - so a device client and this vault can run on the
+  same machine.
 - Either listener failing to bind stops the whole gateway; it never runs
   half-configured.
 - vaultd and the gateway share a **gateway secret** (loopback-only file, 0600).

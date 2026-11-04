@@ -11,7 +11,10 @@ import { join } from "node:path";
 // APIs so the pieces below are unit-testable headlessly.
 
 export const GATEWAY_PORT = 7078;
-export const GATEWAY_DEVICE_PORT = 7079;
+// 7079 belongs to the device-side shim (its IDE-facing local channel), so
+// the gateway's strict-mTLS device listener defaults to 7080: a device
+// client and this vault can run on the same host without a collision.
+export const GATEWAY_DEVICE_PORT = 7080;
 export const GATEWAY_HOST = "127.0.0.1";
 
 export interface BundledGatewayPaths {
@@ -43,7 +46,7 @@ export function bundledGatewayEnv(
     METAVAULT_DAEMON_URL: options.daemonBaseUrl,
     METAVAULT_GATEWAY_HOST: GATEWAY_HOST,
     METAVAULT_GATEWAY_PORT: String(pairingPort),
-    METAVAULT_GATEWAY_DEVICE_PORT: String(options.devicePort ?? pairingPort + 1),
+    METAVAULT_GATEWAY_DEVICE_PORT: String(options.devicePort ?? GATEWAY_DEVICE_PORT),
     METAVAULT_TRANSPORT: "loopback",
   };
 }
@@ -86,7 +89,7 @@ export async function ensureBundledGateway(options: {
 }): Promise<GatewayLaunchResult> {
   const host = options.host ?? GATEWAY_HOST;
   const port = options.port ?? GATEWAY_PORT;
-  const devicePort = options.devicePort ?? port + 1;
+  const devicePort = options.devicePort ?? GATEWAY_DEVICE_PORT;
   if ((await gatewayListening(host, port)) && (await gatewayListening(host, devicePort))) {
     return { status: "already-running" };
   }

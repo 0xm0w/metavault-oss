@@ -45,7 +45,7 @@ describe("bundled gateway launcher", () => {
     expect(env["METAVAULT_GATEWAY_HOST"]).toBe("127.0.0.1");
     expect(env["METAVAULT_TRANSPORT"]).toBe("loopback");
     expect(env["METAVAULT_GATEWAY_PORT"]).toBe("7078");
-    expect(env["METAVAULT_GATEWAY_DEVICE_PORT"]).toBe("7079");
+    expect(env["METAVAULT_GATEWAY_DEVICE_PORT"]).toBe("7080");
     expect(env["METAVAULT_VAULT_DIR"]).toBe("/vault");
     expect(env["METAVAULT_DAEMON_URL"]).toBe("http://127.0.0.1:7077");
   });

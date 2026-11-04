@@ -11,7 +11,9 @@
 //                              validate the vault's identity until the
 //                              human SAS comparison), pairing routes only
 //   METAVAULT_GATEWAY_DEVICE_PORT
-//                              device listener port (default pairing + 1):
+//                              device listener port (default 7080; 7079 is
+//                              the device-side shim's IDE-facing port, so
+//                              same-host client+vault never collides):
 //                              strict mTLS, client cert required at the
 //                              TLS handshake
 //   METAVAULT_TRANSPORT        audit label: "loopback" (default) | "overlay"
@@ -58,7 +60,7 @@ export function main(): void {
   }
   const port = Number(process.env["METAVAULT_GATEWAY_PORT"] ?? "7078");
   if (!Number.isInteger(port) || port < 1024 || port > 65535) fail("invalid gateway port");
-  const devicePort = Number(process.env["METAVAULT_GATEWAY_DEVICE_PORT"] ?? String(port + 1));
+  const devicePort = Number(process.env["METAVAULT_GATEWAY_DEVICE_PORT"] ?? "7080");
   if (!Number.isInteger(devicePort) || devicePort < 1024 || devicePort > 65535 || devicePort === port) {
     fail("invalid gateway device port");
   }

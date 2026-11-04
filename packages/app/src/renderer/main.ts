@@ -2668,7 +2668,7 @@ function renderSettings(view: HTMLElement): void {
   if (remoteSettings !== null) {
     const bindRow = el("div", "settings-row");
     bindRow.append(el("span", "settings-row-label", "Gateway bind"));
-    bindRow.append(el("span", "mono", `${remoteSettings.host ?? "127.0.0.1"}:${String(remoteSettings.port ?? 7078)} pairing + ${String((remoteSettings.port ?? 7078) + 1)} devices`));
+    bindRow.append(el("span", "mono", `${remoteSettings.host ?? "127.0.0.1"}:${String(remoteSettings.port ?? 7078)} pairing + 7080 devices`));
     remoteSection.append(bindRow);
   }
   const reauthRow = el("div", "settings-row");
