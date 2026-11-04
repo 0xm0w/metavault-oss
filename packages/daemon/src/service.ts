@@ -28,6 +28,7 @@ import {
   GrantExpired,
   GrantRevoked,
   PolicyDenied,
+  PairingNotConfirmable,
   PresenceRequired,
   StorageError,
 } from "../../core/src/errors.js";
@@ -362,7 +363,7 @@ export interface VaultServiceService {
   readonly cancelPairingSession: (pairingId: string) => Effect.Effect<void, StorageError>;
   readonly pairBegin: (input: PairBeginInput) => Effect.Effect<PairBeginResult, PairBeginError | StorageError>;
   readonly attachPairingSas: (pairingId: string, sas: string) => Effect.Effect<void, StorageError>;
-  readonly confirmPairing: (pairingId: string) => Effect.Effect<{ deviceId: string; certFingerprint: string }, StorageError>;
+  readonly confirmPairing: (pairingId: string) => Effect.Effect<{ deviceId: string; certFingerprint: string }, PairingNotConfirmable | StorageError>;
   readonly pairingInternalStatus: (pairingId: string) => Effect.Effect<PairingInternalStatus, StorageError>;
   readonly getAgentSecuritySettings: () => Effect.Effect<AgentSecuritySettings, StorageError>;
   readonly updateAgentSecuritySettings: (
@@ -1754,7 +1755,7 @@ export function makeVaultServiceLive(
               session.clientFingerprint === undefined ||
               session.expiresAtMs <= now
             ) {
-              return yield* Effect.fail(new StorageError({ message: "pairing not confirmable", operation: "confirmPairing" }));
+              return yield* Effect.fail(new PairingNotConfirmable({ message: "pairing not confirmable", pairingId }));
             }
             const ca = yield* loadVaultCa();
             const deviceId = `dev-${session.clientFingerprint.slice(0, 12)}`;

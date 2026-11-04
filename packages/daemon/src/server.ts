@@ -72,6 +72,7 @@ export function statusForErrorTag(tag: string): number {
   switch (tag) {
     case "GrantExpired":
     case "GrantRevoked":
+    case "PairingNotConfirmable":
       return 409;
     case "PolicyDenied":
     case "UnknownAlias":

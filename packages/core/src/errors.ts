@@ -89,3 +89,12 @@ export class PresenceRequired extends Data.TaggedError("PresenceRequired")<{
     super(props);
   }
 }
+
+export class PairingNotConfirmable extends Data.TaggedError("PairingNotConfirmable")<{
+  readonly message?: string;
+  readonly pairingId?: string;
+}> {
+  constructor(props: { readonly message?: string; readonly pairingId?: string } = {}) {
+    super(props);
+  }
+}

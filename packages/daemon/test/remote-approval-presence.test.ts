@@ -224,6 +224,13 @@ describe("daemon-side remote approval presence enforcement", () => {
     expect(typeof right.presenceProof).toBe("string");
   });
 
+  it("pairing confirm/cancel with an unknown pairingId is 4xx, never 500", async () => {
+    const { svc } = await makeHarness();
+    const confirm = await handleVaultRequest(svc, "POST", "/devices/pairing/confirm", { pairingId: "no-such-pairing" }, withToken);
+    expect(confirm.status).toBe(409);
+    expect((confirm.body as { error: { _tag: string } }).error._tag).toBe("PairingNotConfirmable");
+  });
+
   it("does not gate local grants", async () => {
     const { svc } = await makeHarness();
     const created = await handleVaultRequest(svc, "POST", "/request", req);
