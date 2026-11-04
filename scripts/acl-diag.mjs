@@ -2,10 +2,10 @@
 // runner, that the mscorlib ACL APIs used by device-client's
 // defaultListAclSids work through the exact node execFileSync spawn path,
 // for BOTH directories and files. Prints only SIDs and SDDL - no secrets.
-const { execFileSync } = require("node:child_process");
-const { mkdtempSync, writeFileSync } = require("node:fs");
-const { tmpdir } = require("node:os");
-const { join } = require("node:path");
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 function listSids(path) {
   const escaped = path.replace(/'/g, "''");

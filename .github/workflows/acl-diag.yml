@@ -3,7 +3,8 @@ on:
   push:
     branches:
       - hardening/remote-gateway
-permissions: {}
+permissions:
+  contents: read
 jobs:
   acl-diag:
     runs-on: windows-latest
@@ -11,4 +12,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Probe mscorlib ACL APIs through the exact node spawn path
-        run: node scripts/acl-diag.cjs
+        run: node scripts/acl-diag.mjs
