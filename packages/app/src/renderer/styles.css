@@ -1683,5 +1683,24 @@ body.is-locked .view { padding: 0; max-width: none; }
 .wizard-reopen { margin-bottom: 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; cursor: pointer; }
 @media (max-width: 720px) {
   .data-table-wrap { overflow-x: auto; }
-  .data-table { min-width: 640px; }
+  .agents-table, .agents-table tbody, .agents-table tr, .agents-table td { display: block; width: 100%; }
+  .agents-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .agents-table tr { padding: 10px 14px; border-bottom: 1px solid #eef0f3; }
+  .agents-table td { display: flex; justify-content: space-between; gap: 12px; height: auto; max-height: none; padding: 4px 0; border: 0; white-space: normal; overflow-wrap: anywhere; text-align: right; }
+  .agents-table td::before { content: attr(data-label); flex: none; color: #3f3f46; font-weight: 600; text-align: left; }
+  .agents-table td.data-table-action { justify-content: flex-end; }
+}
+@media (max-width: 480px) {
+  .settings-row { flex-wrap: wrap; }
+  .settings-row-label { white-space: normal; }
+}
+@media (max-width: 480px) {
+  .settings-row > div { flex-wrap: wrap; max-width: 100%; }
+}
+@media (max-width: 480px) {
+  .settings-row > .btns { width: 100%; justify-content: flex-start; }
+}
+@media (max-width: 480px) {
+  .settings-row > .btns { flex-wrap: wrap !important; }
+  .settings-row > .btns > button { flex: 0 1 auto; }
 }

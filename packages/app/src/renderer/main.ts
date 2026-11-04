@@ -3820,9 +3820,10 @@ function renderPolicies(view: HTMLElement): void {
   if (rows.length > 0) {
     view.append(el("div", "data-table-caption", "Agents"));
     const wrap = el("div", "data-table-wrap");
-    const table = el("table", "data-table");
+    const table = el("table", "data-table agents-table");
     const head = el("tr", "");
-    for (const label of ["Agent", "Status", "Requests", "Last seen", "Observed", "Ceilings", "Standing", ""]) {
+    const agentColumns = ["Agent", "Status", "Requests", "Last seen", "Observed", "Ceilings", "Standing", ""];
+    for (const label of agentColumns) {
       head.append(el("th", label === "" ? "data-table-action" : "", label));
     }
     const thead = el("thead", "");
@@ -3865,6 +3866,11 @@ function renderPolicies(view: HTMLElement): void {
       revokeBtn.addEventListener("click", () => { revokeAgentFlow(row.agentId); });
       action.append(revokeBtn);
       tr.append(action);
+      // Labels let the narrow layout show each row as a labelled card.
+      agentColumns.forEach((label, index) => {
+        const td = tr.children[index];
+        if (td !== undefined && label !== "") td.setAttribute("data-label", label);
+      });
       tbody.append(tr);
     }
     table.append(thead, tbody);
