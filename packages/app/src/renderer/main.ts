@@ -3974,9 +3974,10 @@ function render(): void {
   document.body.classList.toggle("is-locked", lockedNow);
   if (lockedNow) {
     showBanner(null);
+    // Sensitive details never stay open across a lock.
+    daemonDetailsOpen = false;
   } else {
     lockedSettingsOpen = false;
-    daemonDetailsOpen = false;
     if (queuedDeeplink !== null && openQueuedDeeplink !== null) window.setTimeout(openQueuedDeeplink, 0);
   }
   if (keyGate !== null) {
