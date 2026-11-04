@@ -364,8 +364,10 @@ describe("device-client", () => {
       });
     }).toThrow(/owner-only/);
     // No SID resolved: fail closed, never fall back to name matching.
+    // (Explicit null forces the unresolved path even on a real Windows
+    // machine, where whoami would otherwise resolve.)
     expect(() => {
-      hardenOwnerOnly("C:\\x", false, "win32", () => "", { allowedRoots: ["C:\\"] });
+      hardenOwnerOnly("C:\\x", false, "win32", () => "", { allowedRoots: ["C:\\"], userSid: null });
     }).toThrow(/SID/);
   });
 

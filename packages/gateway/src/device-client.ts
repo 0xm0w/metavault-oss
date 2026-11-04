@@ -278,20 +278,24 @@ export type AclSidList = (path: string) => string[];
 // check fails closed. If PowerShell itself is unavailable the listing
 // throws and the caller refuses to store credentials.
 export const defaultListAclSids: AclSidList = (path) => {
-  const out = execFileSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$a = Get-Acl -LiteralPath $args[0]; " +
-        "$a.Access | ForEach-Object { " +
-        "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
-        "catch { $_.IdentityReference.Value } }",
-      path,
-    ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-  );
+  // The path is embedded in the script: with -Command, trailing argv is
+  // appended to the command text, not bound to $args. Single quotes are
+  // doubled (PowerShell escaping); inside single quotes nothing interpolates.
+  const escaped = path.replace(/'/g, "''");
+  const script =
+    `$a = Get-Acl -LiteralPath '${escaped}'; ` +
+    "$a.Access | ForEach-Object { " +
+    "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
+    "catch { $_.IdentityReference.Value } }";
+  let out: string;
+  try {
+    out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+    });
+  } catch (err) {
+    const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message;
+    throw new Error(`could not read ACL trustee SIDs for ${path}: ${detail}`);
+  }
   return out
     .split(/\r?\n/)
     .map((line) => line.trim().toUpperCase())
@@ -318,7 +322,9 @@ export interface HardenOptions {
   // Current user's SID (from whoami /user). REQUIRED on Windows: secret
   // material ACLs are verified against this exact SID only, never against
   // account names, and the operation fails closed when it is unavailable.
-  userSid?: string | undefined;
+  // Explicit null simulates an unresolvable SID (tests on real Windows);
+  // undefined resolves via whoami.
+  userSid?: string | null | undefined;
   // Canonical absolute roots the path must live under. ACL-reset operations
   // are never applied outside these roots, so an arbitrary user-selected
   // existing directory cannot be re-ACLed through this code path.
@@ -376,7 +382,7 @@ export function hardenOwnerOnly(
     assertWithinRoots(path, opts.allowedRoots);
   }
   if (platform === "win32") {
-    const sid = opts?.userSid ?? currentWindowsUserSid();
+    const sid = opts?.userSid === undefined ? currentWindowsUserSid() : (opts.userSid ?? undefined);
     if (sid === undefined || sid === "") {
       throw new Error("cannot harden device credentials on Windows: current user SID is unavailable");
     }
