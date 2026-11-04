@@ -320,7 +320,6 @@ Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come fro
 | Two-host MCP check | PASS for VS Code + Claude Code host configs |
 | Electron GUI | Approval, Deny, Audit, Vault verified live (screenshots) |
 | Windows installer | NSIS `MetaVault-OSS-0.1.0-alpha-win-x64.exe`, 121,940,486 bytes, unsigned; clean-install smoke test PASS in CI |
-| Demo walkthrough video | docs/verification/demo-walkthrough.mp4 (21 s) |
 
 Known limitations, honestly:
 

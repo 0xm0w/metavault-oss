@@ -209,12 +209,6 @@ certificate). The same run's clean-install smoke test passed:
 declared but building it requires a Mac; it is the one remaining
 packaging item, along with code signing.
 
-## Demo video
-
-`demo-walkthrough.mp4` (21 s) is assembled from the live screenshots
-above. It is a walkthrough, not a screen recording of a live session;
-record the full 3-minute script (README) on demo day as the fallback.
-
 ## Task 10 — docs screenshots + agent flows (2026-10-31)
 
 Four screenshots were captured from the **real running app** (built
