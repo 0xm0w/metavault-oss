@@ -112,19 +112,37 @@ jobs:
       - name: Install verification dependencies
         run: npm ci
 
-      # Only this read-only release download receives the short-lived job token.
-      # No personal token is stored in this workflow or in the test fixtures.
-      - name: Fetch published previous installer
+      # Upgrade baseline: build the previous release from its tag inside this
+      # job. The installer stays on the runner (never uploaded or published),
+      # so the test needs no public release asset. It is a rebuild from the
+      # tag, not the byte-identical published binary.
+      - name: Checkout previous release tag
+        uses: actions/checkout@v7
+        with:
+          ref: v0.1.2-alpha
+          path: baseline-src
+          persist-credentials: false
+
+      - name: Build previous release installer from tag
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
+        working-directory: baseline-src
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force previous-installer | Out-Null
-          gh release download v0.1.2-alpha --repo "$env:GITHUB_REPOSITORY" --pattern 'MetaVault-OSS-0.1.2-alpha-win-x64.exe' --pattern 'SHA256SUMS' --dir previous-installer
-          if ($LASTEXITCODE -ne 0) { throw 'Published previous installer download failed' }
+          npm ci
+          Push-Location packages/app
+          npm run build
+          npm run bundle
+          npx electron-builder --win --publish never
+          if ($LASTEXITCODE -ne 0) { throw 'Previous installer build failed' }
+          Pop-Location
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE/previous-installer" | Out-Null
+          $exe = Get-ChildItem packages/app/release -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $exe) { throw 'No previous installer built' }
+          Copy-Item $exe.FullName "$env:GITHUB_WORKSPACE/previous-installer/"
+          $h = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$h  $($exe.Name)" | Set-Content "$env:GITHUB_WORKSPACE/previous-installer/SHA256SUMS" -Encoding ascii
 
-      - name: Install, published upgrade, /health, uninstall
+      - name: Install, upgrade from previous build, /health, uninstall
         shell: pwsh
         run: ./scripts/windows-installer-smoke.ps1 -InstallerDir installer -PreviousInstallerDir previous-installer -LogPath "$env:RUNNER_TEMP/windows-installer-smoke.txt"
 

@@ -1,6 +1,15 @@
 {
   "name": "metavault-mcp",
   "version": "0.1.2-alpha",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xm0w/metavault-oss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0xm0w/metavault-oss/issues"
+  },
+  "homepage": "https://github.com/0xm0w/metavault-oss#readme",
   "private": true,
   "type": "module",
   "description": "MetaVault OSS MCP server — stdio adapter over vaultd. Holds no secrets.",
