@@ -113,11 +113,14 @@ async function decode<A, I>(schema: Schema.Schema<A, I>, value: unknown): Promis
 // Schema, not the SDK's Zod dialect — the SDK's own "advanced use case".
 // eslint-disable-next-line @typescript-eslint/no-deprecated
 export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Server {
-  const daemonUrl = (
+  const rawDaemonUrl = (
     options.daemonUrl ??
     metavaultEnv("DAEMON_URL") ??
     "http://127.0.0.1:7077"
-  ).replace(/\/+$/, "");
+  );
+  let daemonUrlEnd = rawDaemonUrl.length;
+  while (daemonUrlEnd > 0 && rawDaemonUrl[daemonUrlEnd - 1] === "/") daemonUrlEnd--;
+  const daemonUrl = rawDaemonUrl.slice(0, daemonUrlEnd);
   const agentId = options.agentId ?? metavaultEnv("AGENT_ID") ?? "mcp-agent";
   const agentToken = options.agentToken ?? metavaultEnv("AGENT_TOKEN");
   const ide = options.ide ?? metavaultEnv("IDE") ?? "mcp";

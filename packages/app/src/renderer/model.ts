@@ -118,6 +118,10 @@ export function faviconUrl(website: string): string | null {
   if (domain === "" || !domain.includes(".")) {
     return null;
   }
+  // Hostname only, never URL syntax supplied by a DOM field. Length bound
+  // also prevents oversized browser requests. International domains must use
+  // their ASCII punycode spelling here.
+  if (domain.length > 253 || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(domain)) return null;
   return `https://${domain}/favicon.ico`;
 }
 
