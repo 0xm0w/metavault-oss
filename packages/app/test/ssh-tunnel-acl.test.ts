@@ -72,10 +72,20 @@ describe("hardenPathPermissions", () => {
     ).toThrow(/could not make .* owner-only/);
   });
 
-  it("non-Windows ignores icacls entirely", () => {
+  it("non-Windows never invokes icacls", () => {
     const f = join(dir, "posix-file");
     writeFileSync(f, "key");
-    hardenPathPermissions(f, false, { platform: "linux", run: () => { throw new Error("icacls must not run"); } });
-    expect(statSync(f).mode & 0o777).toBe(0o600);
+    let icaclsRan = false;
+    const run = (): string => { icaclsRan = true; return ""; };
+    if (process.platform === "win32") {
+      // chmodSync cannot set POSIX mode bits on a Windows host, so the POSIX
+      // branch correctly fails closed here; production Windows runs never
+      // take it (their platform is win32).
+      expect(() => { hardenPathPermissions(f, false, { platform: "linux", run }); }).toThrow(/owner-only/);
+    } else {
+      hardenPathPermissions(f, false, { platform: "linux", run });
+      expect(statSync(f).mode & 0o777).toBe(0o600);
+    }
+    expect(icaclsRan).toBe(false);
   });
 });
