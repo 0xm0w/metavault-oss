@@ -181,17 +181,9 @@ and requested a capability; neither transcript contained the secret.
 This is the protocol-level equivalent of pasting the snippet into two
 IDEs; both IDEs are present on this machine and use this exact transport.
 
-## Electron GUI (live screenshots)
+## Electron GUI
 
-- `electron-approval.png` — a real pending request in the Approval hero:
-  marshal assessment, expiry countdown, Approve/Deny/Always allow.
-  (The previous local marshal labelled this one LOW RISK while still requiring
-  approval — the human gate held. We show it because it is honest.)
-- `electron-audit.png` — the Audit timeline after clicking **Deny** in
-  the real window: Requested → Marshal → Policy → Denied by human, each
-  marshal row naming the previous local model (screenshot predates #70).
-- `electron-vault.png` — the Vault home: `stripe · charges.read`,
-  values never displayed.
+The GUI was exercised live (approval, deny, audit, vault). The old screenshots from that run showed superseded UI and were removed. Current screenshots are listed in the docs table below.
 
 Two real bugs were found by this gate and fixed: the preload was
 emitted as ESM (blank app) and sandboxed preloads cannot fetch (daemon
