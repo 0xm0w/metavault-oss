@@ -372,6 +372,8 @@ export interface UpdaterStatusLike {
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly registerAgent: (id: string, name: string, rotate: boolean) => Promise<unknown>;
+  readonly agentRegistrations: () => Promise<unknown>;
+  readonly decideAgentRegistration: (id: string, action: "approve" | "deny", code?: string) => Promise<unknown>;
   readonly revokeAgent: (id: string) => Promise<unknown>;
   readonly runtimePaths: () => Promise<{ command: string; args: string[]; env: Record<string, string>; dbPath: string }>;
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;

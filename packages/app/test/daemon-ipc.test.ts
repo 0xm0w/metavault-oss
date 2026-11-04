@@ -86,6 +86,7 @@ describe("main-process daemon whitelist", () => {
       { method: "POST", path: "/devices/rename" },
       { method: "POST", path: "/devices/revoke" },
       { method: "POST", path: "/devices/policy" },
+      { method: "GET", path: "/agent-registrations" },
     ]);
     for (const call of ALLOWED_DAEMON_CALLS) {
       expect(isAllowedDaemonCall(call.method, call.path)).toBe(true);
@@ -94,6 +95,15 @@ describe("main-process daemon whitelist", () => {
         path: call.path,
       });
     }
+  });
+
+  it("allows agent registration approve/deny only for a well-formed registration id", () => {
+    expect(isAllowedDaemonCall("POST", "/agent-registrations/reg_0123456789abcdef01234567/approve")).toBe(true);
+    expect(isAllowedDaemonCall("POST", "/agent-registrations/reg_0123456789abcdef01234567/deny")).toBe(true);
+    // The claim route is for the agent's own process, never this window.
+    expect(isAllowedDaemonCall("POST", "/agent-registrations/reg_0123456789abcdef01234567/claim")).toBe(false);
+    expect(isAllowedDaemonCall("POST", "/agent-registrations")).toBe(false);
+    expect(isAllowedDaemonCall("POST", "/agent-registrations/x/approve")).toBe(false);
   });
 
   it("allows GET only for a single device policies path", () => {

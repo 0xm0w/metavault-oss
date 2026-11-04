@@ -1630,3 +1630,11 @@ body.is-locked .view { padding: 0; max-width: none; }
 .lock-shell.lock-shell .field-error, .lock-shell.lock-shell .vault-modal-error { min-height: 0; }
 .lock-shell.lock-shell > p { line-height: 1.55; font-size: 13.5px; max-width: 340px; text-wrap: pretty; }
 .lock-shell.lock-shell h2 { line-height: 1.2; }
+
+.registration-cards { display: grid; gap: 12px; margin-bottom: 16px; }
+.registration-card { padding: 16px; border: 1px solid var(--pink-deep); background: var(--pink-soft); border-radius: 12px; }
+.registration-card h3 { margin: 0 0 6px; font-size: 15px; }
+.registration-card p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
+.registration-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.registration-code { flex: 1 1 180px; min-width: 0; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; letter-spacing: 0.12em; }
+.registration-note { color: var(--muted); font-size: 12px !important; margin-bottom: 0 !important; }

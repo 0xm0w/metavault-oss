@@ -111,6 +111,10 @@ let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let agentsData: RegisteredAgent[] = [];
+interface PendingRegistration { readonly id: string; readonly agentId: string; readonly name: string; readonly ide: string; readonly code: string }
+let pendingRegistrations: PendingRegistration[] = [];
+let registrationError = "";
+const registrationDrafts = new Map<string, string>();
 const newAgentTokens = new Map<string, string>();
 let mcpRuntime: { command: string; args: string[]; env: Record<string, string>; dbPath: string } | null = null;
 let remoteSettings: RemoteSettingsLike | null = null;
@@ -3688,6 +3692,44 @@ function renderSettings(view: HTMLElement): void {
   view.append(updateSection);
 }
 
+function renderRegistrationCards(view: HTMLElement): void {
+  if (pendingRegistrations.length === 0 && registrationError === "") return;
+  const wrap = el("div", "registration-cards");
+  if (registrationError !== "") wrap.append(el("p", "field-error", registrationError));
+  for (const reg of pendingRegistrations) {
+    const card = el("section", "registration-card");
+    card.append(el("h3", "", "An agent wants to be a Verified agent"));
+    card.append(el("p", "", `${reg.name} (agent id ${reg.agentId}) asked to register. Approve only if the code it showed you in its chat is the one you type below.`));
+    const input = document.createElement("input");
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.maxLength = 6;
+    input.placeholder = "6-digit code from the agent";
+    input.setAttribute("aria-label", `Code for ${reg.agentId}`);
+    input.className = "registration-code";
+    input.value = registrationDrafts.get(reg.id) ?? "";
+    input.addEventListener("input", () => { registrationDrafts.set(reg.id, input.value); });
+    const approve = el("button", "action btn-approve", "Approve") as HTMLButtonElement;
+    const deny = el("button", "action", "Deny") as HTMLButtonElement;
+    approve.type = "button"; deny.type = "button";
+    const decide = (action: "approve" | "deny"): void => {
+      approve.disabled = true; deny.disabled = true;
+      registrationError = "";
+      void window.metavault.decideAgentRegistration(reg.id, action, input.value.trim())
+        .catch(() => { registrationError = action === "approve" ? "Not approved. Check the code matches the one the agent showed you." : "Could not deny the request."; })
+        .then(() => refreshTracked());
+    };
+    approve.addEventListener("click", () => { decide("approve"); });
+    deny.addEventListener("click", () => { decide("deny"); });
+    const actions = el("div", "registration-actions");
+    actions.append(input, approve, deny);
+    card.append(actions);
+    card.append(el("p", "registration-note", "Verified means you approved this agent's own credential. It does not prove which program it is, and it gives the agent no access to any secret. Each request still needs its own approval."));
+    wrap.append(card);
+  }
+  view.prepend(wrap);
+}
+
 function renderPolicies(view: HTMLElement): void {
   view.append(el("h1", "", "Policies"));
   view.append(el("p", "sub", "Deterministic ceilings are enforced inside vaultd policy; the marshal can only narrow them. Revoking an agent disables its token and cancels its pending requests; it stays revoked until you rotate it."));
@@ -4014,6 +4056,7 @@ function render(): void {
   } else {
     renderPolicies(view);
   }
+  renderRegistrationCards(view);
   view.querySelectorAll("h1").forEach((node) => {
     node.setAttribute("aria-hidden", "true");
   });
@@ -4095,6 +4138,18 @@ async function refresh(): Promise<void> {
     auditEvents = projectAuditResponse(auditRaw);
     policiesData = projectPoliciesResponse(policiesRaw);
     agentsData = projectAgentsResponse(agentsRaw);
+    const regsRaw: unknown = await window.metavault.agentRegistrations().catch(() => null);
+    const regList = typeof regsRaw === "object" && regsRaw !== null && Array.isArray((regsRaw as { registrations?: unknown }).registrations) ? (regsRaw as { registrations: unknown[] }).registrations : [];
+    const nextRegs: PendingRegistration[] = [];
+    for (const r of regList) {
+      if (typeof r !== "object" || r === null) continue;
+      const o = r as Record<string, unknown>;
+      if (typeof o["id"] === "string" && typeof o["agentId"] === "string" && typeof o["name"] === "string" && typeof o["ide"] === "string" && typeof o["code"] === "string") {
+        nextRegs.push({ id: o["id"], agentId: o["agentId"], name: o["name"], ide: o["ide"], code: o["code"] });
+      }
+    }
+    if (nextRegs.some((r) => !pendingRegistrations.some((p) => p.id === r.id))) window.metavault.bringToFront();
+    pendingRegistrations = nextRegs;
     securityPosture = projectSecurityPosture(postureRaw);
     const projAuth = projectLocalAuthStatus(localAuthRaw);
     if (projAuth !== null) {
