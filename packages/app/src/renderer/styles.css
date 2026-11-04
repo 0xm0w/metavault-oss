@@ -1678,3 +1678,6 @@ body.is-locked .view { padding: 0; max-width: none; }
   .sidebar-nav { flex: none; }
   .sidebar-foot { margin-left: 4px; }
 }
+.wizard-steps li:not(.is-done):not(.is-next) { opacity: 0.65; }
+.wizard-steps li.is-next strong::before { content: "Next: "; color: var(--primary); }
+.wizard-reopen { margin-bottom: 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; cursor: pointer; }

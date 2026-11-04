@@ -114,6 +114,8 @@ let agentsData: RegisteredAgent[] = [];
 interface PendingRegistration { readonly id: string; readonly agentId: string; readonly name: string; readonly ide: string; readonly code: string }
 let pendingRegistrations: PendingRegistration[] = [];
 let registrationError = "";
+let queuedDeeplink: DeeplinkAddParams | null = null;
+let openQueuedDeeplink: (() => void) | null = null;
 const registrationDrafts = new Map<string, string>();
 const newAgentTokens = new Map<string, string>();
 let mcpRuntime: { command: string; args: string[]; env: Record<string, string>; dbPath: string } | null = null;
@@ -3696,7 +3698,13 @@ function renderSettings(view: HTMLElement): void {
 // real state (a verified agent, a saved credential) and never claims a step
 // is done that MetaVault cannot see.
 function renderOnboardingWizard(view: HTMLElement): void {
-  if (localStorage.getItem("metavault_wizard_done") === "1") return;
+  if (localStorage.getItem("metavault_wizard_done") === "1") {
+    const show = el("button", "wizard-reopen", "Show the setup guide") as HTMLButtonElement;
+    show.type = "button";
+    show.addEventListener("click", () => { localStorage.removeItem("metavault_wizard_done"); render(); });
+    view.prepend(show);
+    return;
+  }
   const card = el("section", "wizard-card");
   card.append(el("h3", "", "Get started: connect your IDE"));
   const hasAgent = agentsData.some((agent) => !agent.revoked);
@@ -3707,11 +3715,12 @@ function renderOnboardingWizard(view: HTMLElement): void {
     { title: "Copy the agent instructions", body: "Paste them into your IDE agent. They contain no secrets.", done: copied },
     { title: "Let your IDE register", body: "The agent shows a 6-digit code. Approve the matching request here. That makes it a Verified agent. It gives it no access to anything.", done: hasAgent },
     { title: "Add a token to test", body: "Tell your IDE: \"I will add a token to test.\" MetaVault opens in front with the secure input. Type the token here, never in the chat.", done: hasCredential },
-    { title: "Check it works", body: "Ask your IDE to use that token for one read-only check, for example reading traffic for one of your sites. You approve that access separately.", done: false },
+    { title: "Check it works", body: "Ask your IDE to use that token for one read-only check, for example reading traffic for one of your sites. You approve that access separately.", done: localStorage.getItem("metavault_wizard_tested") === "1" },
   ];
+  const nextIndex = steps.findIndex((step) => !step.done);
   const list = el("ol", "wizard-steps");
   steps.forEach((step, index) => {
-    const item = el("li", step.done ? "is-done" : "");
+    const item = el("li", step.done ? "is-done" : index === nextIndex ? "is-next" : "");
     item.append(el("strong", "", `${step.done ? "Done: " : ""}${step.title}`), el("span", "", step.body));
     if (index === 1) {
       const copy = el("button", "action btn-approve", copied ? "Copy again" : "Copy agent instructions") as HTMLButtonElement;
@@ -3724,9 +3733,16 @@ function renderOnboardingWizard(view: HTMLElement): void {
       });
       item.append(copy);
     }
+    if (index === 4 && !step.done && hasCredential) {
+      const mark = el("button", "action", "It worked") as HTMLButtonElement;
+      mark.type = "button";
+      mark.addEventListener("click", () => { localStorage.setItem("metavault_wizard_tested", "1"); render(); });
+      item.append(mark);
+    }
     list.append(item);
   });
-  const dismiss = el("button", "action", "Hide this guide") as HTMLButtonElement;
+  if (nextIndex === -1) card.append(el("p", "", "All set. Your IDE is connected."));
+  const dismiss = el("button", "action", nextIndex === -1 ? "Close the guide" : "Skip for now") as HTMLButtonElement;
   dismiss.type = "button";
   dismiss.addEventListener("click", () => { localStorage.setItem("metavault_wizard_done", "1"); render(); });
   card.append(list, dismiss);
@@ -3961,6 +3977,7 @@ function render(): void {
   } else {
     lockedSettingsOpen = false;
     daemonDetailsOpen = false;
+    if (queuedDeeplink !== null && openQueuedDeeplink !== null) window.setTimeout(openQueuedDeeplink, 0);
   }
   if (keyGate !== null) {
     settingsOpen = false;
@@ -4377,6 +4394,20 @@ function tickExpiryLabels(): void {
 
 function start(): void {
   document.body.classList.toggle("is-simple-mode", uiMode === "simple");  window.metavault.onDeeplinkAdd((params) => {
+    // While the vault or app is locked nothing opens over the lock screen.
+    // The request is kept and the add form opens right after unlock.
+    if (vaultLocked || keyGate !== null) {
+      queuedDeeplink = params;
+      return;
+    }
+    openDeeplinkAdd(params);
+  });
+  openQueuedDeeplink = () => {
+    const queued = queuedDeeplink;
+    queuedDeeplink = null;
+    if (queued !== null) openDeeplinkAdd(queued);
+  };
+  function openDeeplinkAdd(params: DeeplinkAddParams): void {
     // Sequenced by runDeeplinkAddFlow: the prefilled Add modal opens only
     // after the Vault render (and any refresh already in flight) has fully
     // completed, replacing any modal that is open. A failure surfaces in
@@ -4406,7 +4437,7 @@ function start(): void {
     }).catch((err: unknown) => {
       showBanner(err instanceof Error ? err.message : "Could not open the add-credential dialog");
     });
-  });
+  }
   const versionNode = document.querySelector("#app-version");
   if (versionNode !== null) versionNode.textContent = `v${APP_VERSION_DISPLAY}`;
   const scroller = document.querySelector("#view");
