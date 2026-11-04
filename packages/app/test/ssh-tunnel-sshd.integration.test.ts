@@ -162,8 +162,9 @@ describeIfSshd("ssh-tunnel against a real sshd (integration)", () => {
   }, 15000);
 
   it("binds a local forward but refuses its traffic (permitopen blackhole)", async () => {
-    const attempt = sshAttempt(["-N", "-L", "19998:127.0.0.1:22"], 6000);
-    await new Promise((r) => setTimeout(r, 1500));
+    const attempt = sshAttempt(["-N", "-L", "19998:127.0.0.1:22"], 7500);
+    // Wait for the local bind instead of a fixed sleep: handshakes are slow on a busy CI runner.
+    await waitForPort(19998, 5000);
     const refused = await new Promise<boolean>((resolve) => {
       const s = createConnection({ host: "127.0.0.1", port: 19998 }, () => {
         s.on("data", () => { s.end(); resolve(false); }); // any banner = traffic flowed
@@ -175,7 +176,7 @@ describeIfSshd("ssh-tunnel against a real sshd (integration)", () => {
     expect(refused).toBe(true);
     const res = await attempt;
     expect(res.alive).toBe(true); // bind held; only the traffic is refused
-  }, 20000);
+  }, 30000);
 });
 
 if (!haveTools) {
