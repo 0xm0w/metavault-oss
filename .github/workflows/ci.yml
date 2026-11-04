@@ -18,9 +18,9 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ fromJSON(matrix.runner) }}
-    # The self-hosted Linux leg runs only for pushes and same-repo pull
-    # requests, never for fork PRs.
-    if: matrix.hosted || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Never run fork PRs: one leg is on a self-hosted runner. The matrix
+    # context is not available in a job-level if, so this guards both legs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 30
     strategy:
       fail-fast: false
