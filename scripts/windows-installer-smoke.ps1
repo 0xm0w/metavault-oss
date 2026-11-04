@@ -4,13 +4,12 @@
 # Covers the full data-preservation contract with a REAL encrypted vault:
 #   1. silent install, files/shortcuts/registry/PATH, launch, /health
 #   2. first-run passphrase setup + a stored credential (real encrypted DB)
-#   3. silent uninstall -> vault data (db, key file, token) must survive
-#   4. reinstall -> vault must come back locked, wrong passphrase rejected,
-#      right passphrase unlocks and the credential is still there
+#   3. deliberate silent uninstall -> fixed app profile must be removed
+#   4. reinstall -> fresh password setup, old credentials/token absent
 #   5. install-over-install (the update path, NSIS --updated flag) must
 #      never touch vault data
 #   6. final silent uninstall -> everything the installer added is gone,
-#      vault data still kept
+#      vault data removed
 # No API keys are set, so nothing here calls the Meta API. The vault
 # created here is synthetic CI data and is deleted at the end.
 param(
@@ -19,6 +18,13 @@ param(
   [int]$Port = 7077,
   [int]$HealthTimeoutSec = 90
 )
+
+# WinRT PasswordVault requires Windows PowerShell/.NET Framework, not pwsh7.
+# Match the runtime used by installed cleanup and the app's legacy keychain.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -InstallerDir $InstallerDir -LogPath $LogPath -Port $Port -HealthTimeoutSec $HealthTimeoutSec
+  exit $LASTEXITCODE
+}
 
 $ErrorActionPreference = "Stop"
 $script:failures = 0
@@ -60,37 +66,9 @@ $keyFile = Join-Path $dataDir "metavault.key.json"
 $tokenFile = Join-Path $dataDir "metavault.token"
 
 function Test-PackagedMcp {
-  Check (Test-Path (Join-Path $binDir "metavault-mcp.cmd")) "MCP cmd launcher installed"
-  Check (Test-Path (Join-Path $binDir "metavault-mcp.ps1")) "MCP PowerShell launcher installed"
-  $info = New-Object Diagnostics.ProcessStartInfo
-  $info.FileName = $exe
-  $info.Arguments = '"' + (Join-Path $installDir "resources\vaultd\mcp.cjs") + '"'
-  $info.UseShellExecute = $false
-  $info.RedirectStandardInput = $true
-  $info.RedirectStandardOutput = $true
-  $info.RedirectStandardError = $true
-  $info.CreateNoWindow = $true
-  $info.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1"
-  $p = New-Object Diagnostics.Process
-  $p.StartInfo = $info
-  try {
-    [void]$p.Start()
-    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"installed-smoke","version":"1"}}}')
-    $read = $p.StandardOutput.ReadLineAsync()
-    if (-not $read.Wait(15000)) { throw "Installed MCP initialize timed out" }
-    $reply = $read.Result | ConvertFrom-Json
-    Check ($reply.id -eq 1 -and $null -ne $reply.result.serverInfo) "installed runtime completes MCP initialize without source checkout or Node"
-    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized"}')
-    $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-    $read = $p.StandardOutput.ReadLineAsync()
-    if (-not $read.Wait(15000)) { throw "Installed MCP tools/list timed out" }
-    $reply = $read.Result | ConvertFrom-Json
-    Check ($reply.id -eq 2 -and @($reply.result.tools).Count -eq 5) "installed MCP exposes exactly five secret-blind tools"
-    Check (@($reply.result.tools.name) -contains "request_capability") "installed MCP includes request_capability"
-  } finally {
-    if ($p.Id -and -not $p.HasExited) { $p.Kill() }
-    $p.Dispose()
-  }
+  # Keep known-good Core stdio runtime separate from Framework-only WinRT tests.
+  & pwsh.exe -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'windows-mcp-smoke.ps1') -InstallDir $installDir -LogPath $LogPath
+  if ($LASTEXITCODE -ne 0) { throw 'Installed MCP subprocess check failed' }
 }
 
 $smokePassphrase = "smoke-ci-passphrase-7f3a"
@@ -169,6 +147,7 @@ function Check-Installed-Layout {
       $exe,
       $uninstaller,
       (Join-Path $installDir "resources\app.asar"),
+      (Join-Path $installDir "resources\cleanup-profile.ps1"),
       (Join-Path $installDir "resources\vaultd\vaultd.cjs"),
       (Join-Path $installDir "resources\vaultd\metavault.cjs"),
       (Join-Path $installDir "resources\vaultd\mcp.cjs"),
@@ -247,30 +226,121 @@ Log "GET /aliases -> $($aliases | ConvertTo-Json -Compress)"
 Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "credential alias listed"
 $setup = $null; $add = $null
 
-# === 3. silent uninstall keeps the vault ===============================
+# === 3. deliberate uninstall wipes only the fixed app-owned profile ====
 Stop-App
-Uninstall-App "after first install"
+$outside = Join-Path $env:RUNNER_TEMP "unrelated-vault-sentinel.txt"
+Set-Content $outside "must survive MetaVault uninstall"
+Set-Content (Join-Path $dataDir "settings-test-sentinel.json") '{"dummy":true}'
+$backupDir = Join-Path $dataDir "metavault.db.before-agent-hash-smoke"
+New-Item $backupDir -ItemType Directory | Out-Null
+Set-Content (Join-Path $backupDir "vault.db.bak") "synthetic backup"
+# Link refusal: cleanup must stop before touching an outside target or DB.
+$outsideDir = Join-Path $env:RUNNER_TEMP "unrelated-vault-directory"
+New-Item $outsideDir -ItemType Directory | Out-Null
+Set-Content (Join-Path $outsideDir "keep.txt") "outside data"
+$link = Join-Path $dataDir "do-not-follow"
+New-Item -Path $link -ItemType Junction -Target $outsideDir | Out-Null
+$blockedCleanup = Start-Process powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"' + (Join-Path $installDir 'resources\cleanup-profile.ps1') + '"') -Wait -PassThru
+Check ($blockedCleanup.ExitCode -ne 0) "cleanup rejects junction before recursive deletion"
+Check ((Test-Path $dbFile) -and (Test-Path (Join-Path $outsideDir 'keep.txt'))) "link rejection preserves vault and outside file"
+[IO.Directory]::Delete($link)
+$null = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
+$testKeychain = New-Object Windows.Security.Credentials.PasswordVault
+# A real external encrypted fixture depends on the shared legacy key.
+$sharedKey = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($sharedKey)
+$aes = [Security.Cryptography.Aes]::Create(); $aes.Key = $sharedKey; $aes.GenerateIV()
+$clear = [Text.Encoding]::UTF8.GetBytes('external-legacy-vault-dummy')
+$encrypted = $aes.CreateEncryptor().TransformFinalBlock($clear,0,$clear.Length)
+$externalEncryptedFile = Join-Path $outsideDir 'legacy-fixture.encrypted'
+[IO.File]::WriteAllBytes($externalEncryptedFile,$encrypted)
+$testKeychain.Add((New-Object Windows.Security.Credentials.PasswordCredential('metavault','master-key',[Convert]::ToBase64String($sharedKey))))
+$blockedShared = Start-Process powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"' + (Join-Path $installDir 'resources\cleanup-profile.ps1') + '"') -Wait -PassThru
+Check ($blockedShared.ExitCode -ne 0) "cleanup refuses shared legacy key before any deletion"
+Check (Test-Path $dbFile) "shared-key refusal preserves app vault"
+$sharedCredential = $testKeychain.Retrieve('metavault','master-key'); $sharedCredential.RetrievePassword()
+$aes.Key = [Convert]::FromBase64String($sharedCredential.Password)
+$recovered = $aes.CreateDecryptor().TransformFinalBlock([IO.File]::ReadAllBytes($externalEncryptedFile),0,$encrypted.Length)
+Check ([Text.Encoding]::UTF8.GetString($recovered) -eq 'external-legacy-vault-dummy') "preserved external fixture remains decryptable with shared key"
+# Fixture-only removal after validation, never a production cleanup action.
+$testKeychain.Remove($sharedCredential)
+$sharedKey = $null; $sharedCredential = $null; $aes.Dispose()
+
+$testKeychain.Add((New-Object Windows.Security.Credentials.PasswordCredential('metavault-unrelated-ci','test-account','synthetic-unrelated')))
+$oldToken = Get-Content $tokenFile -Raw
+# Interactive destructive warning must precede any change; Cancel preserves all.
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+Start-Process -FilePath $uninstaller | Out-Null
+$warning = $null
+$deadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $deadline) {
+  $desktop = [Windows.Automation.AutomationElement]::RootElement
+  $texts = $desktop.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
+  foreach ($text in $texts) { if (($text.Current.Name -replace "\s+", " ") -like "*Uninstall MetaVault OSS and permanently delete*") { $warning = $text; break } }
+  if ($null -ne $warning) { break }
+  Start-Sleep -Milliseconds 500
+}
+Check ($null -ne $warning) "interactive uninstall displays destructive warning before removal"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$bounds = [Windows.Forms.SystemInformation]::VirtualScreen
+$bitmap = New-Object Drawing.Bitmap $bounds.Width,$bounds.Height
+$graphics = [Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($bounds.Left,$bounds.Top,0,0,$bitmap.Size)
+$stream = New-Object IO.MemoryStream
+$bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
+Log ("WARNING_SCREENSHOT_BASE64=" + [Convert]::ToBase64String($stream.ToArray()))
+$graphics.Dispose(); $bitmap.Dispose(); $stream.Dispose()
+Get-Process | Where-Object { $_.MainWindowTitle -ne '' -or $_.ProcessName -like '*Uninstall*' } | ForEach-Object { Log ("WINDOW pid=" + $_.Id + " process=" + $_.ProcessName + " title=" + $_.MainWindowTitle + " session=" + $_.SessionId) }
+$topWindows = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,[Windows.Automation.Condition]::TrueCondition)
+foreach ($window in $topWindows) { Log ("UIA_WINDOW name=" + $window.Current.Name + " type=" + $window.Current.ControlType.ProgrammaticName) }
+if ($null -eq $warning) { throw "No interactive warning; stopping before data wipe" }
+
+# Native MessageBox has visible Cancel (IDCANCEL=2); hosted-runner UIA does
+# not expose its button subtree consistently. Send the same native command to
+# the exact observed uninstaller window, never a screen-coordinate guess.
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class UninstallDialog {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string windowName);
+  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr parent, int id);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+}
+'@
+$dialog = [UninstallDialog]::FindWindow('#32770','MetaVault OSS Uninstall')
+if ($dialog -eq [IntPtr]::Zero) { throw 'Exact warning dialog not found' }
+$cancelHandle = [UninstallDialog]::GetDlgItem($dialog,2)
+if ($cancelHandle -eq [IntPtr]::Zero) { throw 'Warning has no native IDCANCEL control' }
+[void][UninstallDialog]::SendMessage($dialog,0x0111,[IntPtr]2,$cancelHandle)
+Start-Sleep -Seconds 3
+Check (Test-Path $exe) "Cancel retains installed program"
+Check-VaultDataKept "interactive Cancel"
+Check ((Get-Content $tokenFile -Raw) -eq $oldToken) "Cancel preserves existing token"
+Uninstall-App "deliberate wipe"
 Check-Cleanup
-Check-VaultDataKept "silent uninstall answers No to deleting vault data, by design"
+Check (-not (Test-Path $dataDir)) "deliberate uninstall removes vault, key, token, settings and backups"
+Check ((Get-Content $outside -Raw).Trim() -eq "must survive MetaVault uninstall") "unrelated external data survives"
+$other = $testKeychain.Retrieve('metavault-unrelated-ci','test-account')
+Check ($null -ne $other) "unrelated keychain entry retained"
+$testKeychain.Remove($other)
 
-# === 4. reinstall: vault must return locked and decrypt ================
-Install-App "reinstall over kept vault data"
-Launch-App-Wait-Health "reinstall"
+
+# === 4. reinstall is fresh, old password/credential/token not retained ==
+Install-App "fresh reinstall after wipe"
+Launch-App-Wait-Health "fresh reinstall"
 $status = Invoke-Daemon "GET" "/key/status"
-Log "GET /key/status (reinstall) -> $($status | ConvertTo-Json -Compress)"
-Check ($null -ne $status -and $status.mode -eq "passphrase") "reinstall finds the existing passphrase-protected vault (no first-run reset)"
-Check ($null -ne $status -and $status.locked -eq $true) "reinstalled vault starts locked"
-
-$bad = Invoke-Daemon "POST" "/unlock" @{ passphrase = "definitely-wrong-passphrase" }
-Check ($null -ne $bad -and $bad.__httpStatus -eq 401) "wrong passphrase rejected with 401"
-$bad = $null
-$unlock = Invoke-Daemon "POST" "/unlock" @{ passphrase = $smokePassphrase }
-Log "POST /unlock (reinstall) -> $($unlock | ConvertTo-Json -Compress)"
-Check ($null -ne $unlock -and ($unlock.status -eq "unlocked" -or $unlock.status -eq "already-unlocked")) "correct passphrase unlocks after reinstall"
-$unlock = $null
+Check ($null -ne $status -and $status.mode -eq "uninitialized") "reinstall starts first-run setup, not previous password gate"
+Check ((Get-Content $tokenFile -Raw) -ne $oldToken) "reinstall generates a different daemon token"
+$oldToken = $null
+$smokePassphrase = "new-fresh-smoke-passphrase-84c2"
+$setup = Invoke-Daemon "POST" "/setup" @{ passphrase = $smokePassphrase }
+Check ($null -ne $setup -and $setup.status -eq "initialized") "fresh password setup succeeds"
 $aliases = Invoke-Daemon "GET" "/aliases"
-Log "GET /aliases (reinstall) -> $($aliases | ConvertTo-Json -Compress)"
-Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "stored credential survives uninstall + reinstall (encrypted round-trip)"
+Check ($null -ne $aliases -and -not @($aliases.aliases).Contains($smokeAlias)) "old credential alias is absent after wipe"
+$add = Invoke-Daemon "POST" "/credentials" @{ alias = $smokeAlias; scope = "smoke"; secret = $smokeSecret }
+Check ($null -ne $add -and $null -eq $add.__httpStatus) "fresh vault stores a new dummy credential"
 
 # === 5. install-over-install (update path) keeps the vault =============
 Stop-App
@@ -279,18 +349,23 @@ Launch-App-Wait-Health "update path"
 $status = Invoke-Daemon "GET" "/key/status"
 Log "GET /key/status (update) -> $($status | ConvertTo-Json -Compress)"
 Check ($null -ne $status -and $status.mode -eq "passphrase") "update path keeps the vault (NSIS --updated guard)"
+Check ($status.locked -eq $true) "updated vault starts locked"
+$bad = Invoke-Daemon "POST" "/unlock" @{ passphrase = "old-or-wrong-passphrase" }
+Check ($bad.__httpStatus -eq 401) "update path rejects wrong password"
 $unlock = Invoke-Daemon "POST" "/unlock" @{ passphrase = $smokePassphrase }
 Check ($null -ne $unlock -and ($unlock.status -eq "unlocked" -or $unlock.status -eq "already-unlocked")) "vault unlocks after update-path install"
 $unlock = $null
 $aliases = Invoke-Daemon "GET" "/aliases"
 Check ($null -ne $aliases -and @($aliases.aliases).Contains($smokeAlias)) "stored credential survives install-over-install"
 
-# === 6. final silent uninstall: cleanup + data kept ====================
+# === 6. final deliberate uninstall wipes the fresh vault ==============
 Stop-App
 Uninstall-App "final uninstall"
 Check-Cleanup
-Check-VaultDataKept "final silent uninstall"
-Remove-Item $dataDir -Recurse -Force -ErrorAction SilentlyContinue
+Check (-not (Test-Path $dataDir)) "final deliberate uninstall wipes app data"
+Check (Test-Path $outside) "unrelated sentinel still exists"
+Remove-Item $outside -Force
+Remove-Item $outsideDir -Recurse -Force
 
 Log "Result: $(if ($script:failures -eq 0) { 'PASS' } else { "FAIL ($script:failures checks failed)" })"
 if ($script:failures -ne 0) { exit 1 }
