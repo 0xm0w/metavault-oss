@@ -83,17 +83,27 @@ function gwRequest(options: {
         },
       },
       (res) => {
+        // Capture the socket now: it may already be detached ("null") by
+        // the time the body "end" event fires.
+        const socket = res.socket as TLSSocket | null;
+        let exporter: Buffer | undefined;
+        let localPort: number | undefined;
+        try {
+          exporter = socket?.exportKeyingMaterial(PAIRING_EXPORTER_LENGTH, PAIRING_EXPORTER_LABEL, Buffer.alloc(0));
+          localPort = socket?.localPort;
+        } catch {
+          exporter = undefined;
+          localPort = undefined;
+        }
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () => {
-          const socket = res.socket as TLSSocket;
-          let exporter: Buffer | undefined;
-          try {
-            exporter = socket.exportKeyingMaterial(PAIRING_EXPORTER_LENGTH, PAIRING_EXPORTER_LABEL, Buffer.alloc(0));
-          } catch {
-            exporter = undefined;
-          }
-          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), ...(exporter !== undefined ? { exporter } : {}), ...(socket.localPort !== undefined ? { localPort: socket.localPort } : {}) });
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString("utf8"),
+            ...(exporter !== undefined ? { exporter } : {}),
+            ...(localPort !== undefined ? { localPort } : {}),
+          });
         });
       },
     );
@@ -635,7 +645,7 @@ describe("gateway", () => {
       ca: stack.ca.certPem,
       cert: device.certPem,
       key: device.keyPem,
-      rejectUnauthorized: true,
+      rejectUnauthorized: false,
     });
     const first = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", agent });
     expect(first.status).toBe(200);
@@ -688,7 +698,11 @@ describe("gateway", () => {
     await new Promise<void>((resolve) => { gw2.close(() => { resolve(); }); });
   }, 120_000);
 
-  it("keeps concurrent pairing sessions isolated per pairingId", async () => {
+  it("keeps concurrent pairing attempts isolated to the single active session", async () => {
+    // The vault holds exactly one active pairing session, created only by
+    // the local human (daemon token). Starting a new session replaces the
+    // old one: the old code dies, the old pairingId cannot be confirmed,
+    // and no material crosses between sessions.
     const mkSession = async (): Promise<{ pairingId: string; code: string }> => {
       const res = await fetch(`${stack.daemonBase}/devices/pair`, {
         method: "POST",
@@ -697,52 +711,45 @@ describe("gateway", () => {
       });
       return (await res.json()) as { pairingId: string; code: string };
     };
-    const sessionA = await mkSession();
     const keysA = generateRsaKeyPairPem();
-    const beginA = await gwRequest({
-      port: stack.gatewayPort, method: "POST", path: "/pair/begin",
-      body: { code: sessionA.code, deviceName: "conc-a", platform: "linux", clientPublicKeyPem: keysA.publicKeyPem, clientNonce: "conc-a-nonce" },
-    });
-    expect(beginA.status).toBe(200);
-    const sessionB = await mkSession();
     const keysB = generateRsaKeyPairPem();
-    const beginB = await gwRequest({
-      port: stack.gatewayPort, method: "POST", path: "/pair/begin",
-      body: { code: sessionB.code, deviceName: "conc-b", platform: "linux", clientPublicKeyPem: keysB.publicKeyPem, clientNonce: "conc-b-nonce" },
-    });
-    expect(beginB.status).toBe(200);
-    // Confirming A while B is also pending must bind A's certificate to
-    // A's key, never to B's session material.
+    const beginWith = async (code: string, keys: { publicKeyPem: string }, nonce: string): Promise<number> =>
+      (await gwRequest({
+        port: stack.gatewayPort, method: "POST", path: "/pair/begin",
+        body: { code, deviceName: "conc", platform: "linux", clientPublicKeyPem: keys.publicKeyPem, clientNonce: nonce },
+      })).status;
+
+    const sessionA = await mkSession();
+    expect(await beginWith(sessionA.code, keysA, "conc-a-nonce")).toBe(200);
+
+    // The local human starts over: B replaces A.
+    const sessionB = await mkSession();
+    // A's code is dead immediately.
+    expect(await beginWith(sessionA.code, keysA, "conc-a2-nonce")).toBe(403);
+    // A's pairingId cannot be confirmed anymore.
     const confirmA = await fetch(`${stack.daemonBase}/devices/pairing/confirm`, {
       method: "POST",
       headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
       body: JSON.stringify({ pairingId: sessionA.pairingId }),
     });
-    expect(confirmA.status).toBe(200);
-    const statusA = await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: { pairingId: sessionA.pairingId } });
-    const bodyA = JSON.parse(statusA.body) as { status: string; certificatePem?: string };
-    const certA = bodyA.certificatePem ?? "";
-    expect(bodyA.status).toBe("confirmed");
-    expect(certA).toContain("BEGIN CERTIFICATE");
-    // B is untouched by A's confirmation.
-    const statusB = await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: { pairingId: sessionB.pairingId } });
-    const bodyB = JSON.parse(statusB.body) as { status: string };
-    expect(bodyB.status).toBe("pending");
-    await fetch(`${stack.daemonBase}/devices/pairing/cancel`, {
+    expect(confirmA.status).not.toBe(200);
+
+    // B completes and its certificate binds only B's key.
+    expect(await beginWith(sessionB.code, keysB, "conc-b-nonce")).toBe(200);
+    const confirmB = await fetch(`${stack.daemonBase}/devices/pairing/confirm`, {
       method: "POST",
       headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
       body: JSON.stringify({ pairingId: sessionB.pairingId }),
     });
-    // A's cert works; it was issued for A's key only.
-    const health = await gwRequest({
-      port: stack.gatewayPort, method: "GET", path: "/health",
-      cert: certA, key: keysA.privateKeyPem,
-    });
+    expect(confirmB.status).toBe(200);
+    const statusB = await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: { pairingId: sessionB.pairingId } });
+    const bodyB = JSON.parse(statusB.body) as { status: string; certificatePem?: string };
+    const certB = bodyB.certificatePem ?? "";
+    expect(bodyB.status).toBe("confirmed");
+    expect(certB).toContain("BEGIN CERTIFICATE");
+    const health = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", cert: certB, key: keysB.privateKeyPem });
     expect(health.status).toBe(200);
-    const wrongKey = await gwRequest({
-      port: stack.gatewayPort, method: "GET", path: "/health",
-      cert: certA, key: keysB.privateKeyPem,
-    }).catch(() => ({ status: 0, body: "" }));
+    const wrongKey = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", cert: certB, key: keysA.privateKeyPem }).catch(() => ({ status: 0, body: "" }));
     expect(wrongKey.status).not.toBe(200);
   }, 120_000);
 

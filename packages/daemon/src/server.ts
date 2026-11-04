@@ -122,11 +122,6 @@ export class HttpBodyError extends Error {
   }
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
-  const { parsed } = await readBodyWithText(req);
-  return parsed;
-}
-
 async function readBodyWithText(req: IncomingMessage): Promise<{ parsed: unknown; text: string }> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -348,6 +343,8 @@ export interface VaultRequestOptions {
   // configured secret is server state; the provided one comes from the
   // caller. Device headers are honored only with a valid gateway secret.
   readonly gatewaySecret?: string;
+  // Raw loopback secret presented on /internal/* routes only.
+  readonly providedGatewaySecret?: string;
   // Set only after the HTTP layer validated the gateway stamp MAC,
   // freshness window and nonce. Never set from raw header presence.
   readonly gatewayStampValid?: boolean;
@@ -435,7 +432,7 @@ export async function handleVaultRequest(
   // validate is rejected outright, so a local process can never spoof a
   // remote device and a remote caller can never pose as local.
   const gatewayConfigured = options?.gatewaySecret !== undefined && options.gatewaySecret !== "";
-  const gatewayValid = gatewayConfigured && options?.gatewayStampValid === true;
+  const gatewayValid = gatewayConfigured && options.gatewayStampValid === true;
   const stampPresent =
     options?.gatewayStampValid !== undefined ||
     options?.deviceId !== undefined ||
@@ -470,7 +467,9 @@ export async function handleVaultRequest(
   // Gateway-internal routes: the sibling gateway process only. Not open,
   // not daemon-token routes: the gateway secret alone authorizes them.
   if (path.startsWith("/internal/")) {
-    if (!gatewayValid) {
+    const internalSecretValid =
+      gatewayConfigured && tokenMatches(options.gatewaySecret, options.providedGatewaySecret);
+    if (!internalSecretValid) {
       return UNAUTHORIZED;
     }
     if (method === "POST" && path === "/internal/pair-begin") {
@@ -1211,13 +1210,19 @@ export function createVaultHttpServer(
         const stampNonce = Array.isArray(stampNonceHeader) ? stampNonceHeader[0] : stampNonceHeader;
         const deviceId = Array.isArray(devHeader) ? devHeader[0] : devHeader;
         const transport = Array.isArray(transHeader) ? transHeader[0] : transHeader;
+        // /internal/* routes authenticate with the raw loopback secret and
+        // are exempt from device-stamp validation; every other path with
+        // any stamp material fails closed unless the MAC validates.
+        const isInternalPath = url.pathname.startsWith("/internal/");
+        const providedInternalSecret = Array.isArray(legacyStampHeader) ? legacyStampHeader[0] : legacyStampHeader;
         const anyStampHeader =
-          stampMac !== undefined ||
-          stampTs !== undefined ||
-          stampNonce !== undefined ||
-          deviceId !== undefined ||
-          transport !== undefined ||
-          legacyStampHeader !== undefined;
+          !isInternalPath &&
+          (stampMac !== undefined ||
+            stampTs !== undefined ||
+            stampNonce !== undefined ||
+            deviceId !== undefined ||
+            transport !== undefined ||
+            legacyStampHeader !== undefined);
         const stampFields =
           stampMac !== undefined &&
           stampTs !== undefined &&
@@ -1250,6 +1255,7 @@ export function createVaultHttpServer(
           ...(providedAgentToken !== undefined ? { providedAgentToken } : {}),
           ...(options.gatewaySecret !== undefined ? { gatewaySecret: options.gatewaySecret } : {}),
           ...(anyStampHeader ? { gatewayStampValid } : {}),
+          ...(isInternalPath && providedInternalSecret !== undefined ? { providedGatewaySecret: providedInternalSecret } : {}),
           ...(gatewayStampValid && deviceId !== undefined ? { deviceId } : {}),
           ...(gatewayStampValid && transport !== undefined ? { transport } : {}),
           ...(options.vaultDir !== undefined ? { vaultDir: options.vaultDir } : {}),
