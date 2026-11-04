@@ -30,7 +30,7 @@ const clients: Client[] = [];
 const dir = mkdtempSync(join(tmpdir(), "mv-reg-"));
 
 const daemon = (method: string, path: string, body?: unknown, extra: Record<string, string> = {}): ReturnType<typeof handleVaultRequest> =>
-  handleVaultRequest(service, method, path, body, { daemonToken: DAEMON_TOKEN, providedToken: DAEMON_TOKEN, ...(extra["agent"] !== undefined ? { providedAgentToken: extra["agent"] } : {}) } as never);
+  handleVaultRequest(service, method, path, body, { daemonToken: DAEMON_TOKEN, providedToken: DAEMON_TOKEN, ...(extra["agent"] !== undefined ? { providedAgentToken: extra["agent"] } : {}) });
 
 async function connect(agentId: string, credentialPath: string): Promise<Client> {
   const fetchFn: DaemonFetch = async (input, init) => {

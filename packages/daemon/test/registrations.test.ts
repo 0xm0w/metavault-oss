@@ -4,12 +4,12 @@ import { AgentRegistrations } from "../src/registrations.js";
 
 const hash = (s: string): string => createHash("sha256").update(s).digest("hex");
 const SECRET = "synthetic-claim-secret-0123456789";
-const issue = async (id: string): Promise<string> => `synthetic-token-${id}`;
-const none = async (): Promise<boolean> => false;
+const issue = (id: string): Promise<string> => Promise.resolve(`synthetic-token-${id}`);
+const none = (): Promise<boolean> => Promise.resolve(false);
 
 function make(now = { t: 1_000_000 }) {
   const revoked: string[] = [];
-  const regs = new AgentRegistrations(async (id) => { revoked.push(id); }, () => now.t);
+  const regs = new AgentRegistrations((id) => { revoked.push(id); return Promise.resolve(); }, () => now.t);
   // the callback receives (agentId, issuedToken); tests record the agent id
   return { regs, revoked, now };
 }
@@ -51,7 +51,7 @@ describe("agent registrations", () => {
     const { regs } = make();
     expect((await regs.create(input, none)).ok).toBe(true);
     expect(await regs.create({ ...input, claimHash: hash("other-secret-other-secret-0") }, none)).toMatchObject({ ok: false, status: 409 });
-    expect(await regs.create({ ...input, agentId: "ide-two" }, async () => true)).toMatchObject({ ok: false, status: 409 });
+    expect(await regs.create({ ...input, agentId: "ide-two" }, () => Promise.resolve(true))).toMatchObject({ ok: false, status: 409 });
   });
 
   it("concurrent requests for one id create only one registration", async () => {

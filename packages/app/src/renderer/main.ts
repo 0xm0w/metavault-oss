@@ -4278,7 +4278,7 @@ function decorateLockScreen(box: HTMLElement, heading: HTMLElement, hello: HTMLE
       uiMode = value;
       localStorage.setItem("metavault_ui_mode", value);
       document.body.classList.toggle("is-simple-mode", value === "simple");
-      modeRow.querySelectorAll(".lock-mode-btn").forEach((n) => n.classList.remove("is-selected"));
+      modeRow.querySelectorAll(".lock-mode-btn").forEach((n) => { n.classList.remove("is-selected"); });
       b.classList.add("is-selected");
     });
     modeRow.append(b);
