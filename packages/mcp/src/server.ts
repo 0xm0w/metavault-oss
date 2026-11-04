@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Effect, Exit, JSONSchema, Schema } from "effect";
 import { CapabilityRequestSchema, EnrollmentIdSchema, EnrollmentRequestSchema, RevokeSchema } from "../../daemon/src/schemas.js";
+import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { defaultCredentialPath, loadStoredCredential, storeCredentialPrivately } from "./credential-store.js";
 import { metavaultEnv } from "../../core/src/env.js";
@@ -33,6 +34,26 @@ export interface MetavaultMcpOptions {
   // Where the credential from a verified registration is kept. Defaults to
   // ~/.metavault/agents/<agent id>.token.
   readonly credentialPath?: string;
+  // Opens a metavault:// link with the OS so the app comes to the front.
+  // Injected in tests. Defaults to the platform's protocol opener.
+  readonly launchDeeplink?: (url: string) => Promise<boolean>;
+}
+
+const ENROLLMENT_LINK = /^metavault:\/\/add\?[A-Za-z0-9%=&._~:@+-]{1,2000}$/;
+
+function defaultLaunchDeeplink(url: string): Promise<boolean> {
+  if (!ENROLLMENT_LINK.test(url)) return Promise.resolve(false);
+  const [cmd, args]: [string, string[]] =
+    process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
+    : process.platform === "darwin" ? ["open", [url]]
+    : ["xdg-open", [url]];
+  return new Promise((resolve) => {
+    try {
+      execFile(cmd, args, { timeout: 5000, windowsHide: true }, (err) => { resolve(err === null); });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 // Tool-edge input for request_capability. The translated daemon request is
@@ -334,7 +355,18 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
     const parsed: unknown = JSON.parse(textOfResult(result)) as unknown;
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>;
-      const enriched = { ...record, instruction: "Show this deeplink to the user and ask them to open it, paste the secret in MetaVault OSS, and save. Then poll enrollment_status until completed, then test the credential with request_capability and report the outcome." };
+      // Open MetaVault in front on this PC with the secure input ready. Only a
+      // same-machine daemon is launched; a remote shim gets the link instead.
+      const link = typeof record["deeplink"] === "string" ? record["deeplink"] : "";
+      const sameMachine = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(daemonUrl);
+      const launched = sameMachine && link !== "" ? await (options.launchDeeplink ?? defaultLaunchDeeplink)(link).catch(() => false) : false;
+      const enriched = {
+        ...record,
+        launched,
+        instruction: launched
+          ? "MetaVault OSS was opened on the user's computer with the add-credential form ready. Tell the user to type the secret there, never in this chat, and save. Then poll enrollment_status until completed. To test it, run one read-only request_capability and report the outcome; the user approves access separately."
+          : "MetaVault OSS could not be opened automatically. Show this deeplink to the user and ask them to open it, enter the secret in MetaVault OSS, and save. Then poll enrollment_status until completed, then run one read-only request_capability to test it and report the outcome.",
+      };
       return verbatimResult(enriched, true);
     }
     return result;
