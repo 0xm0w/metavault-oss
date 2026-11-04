@@ -106,7 +106,8 @@ for (const dir of [...pkgDirs].sort()) {
   const texts = lic.map((f) => readFileSync(join(dir, f), "utf8").trim());
   sections.push(
     `=== ${pj.name}@${pj.version} (declared license: ${typeof pj.license === "string" ? pj.license : JSON.stringify(pj.license ?? "none declared")}) ===\n` +
-      (texts.length ? texts.join("\n\n") : "(no license file shipped in the package; see its package.json and registry page)"),
+      `Author: ${typeof pj.author === "string" ? pj.author : (pj.author?.name ?? "not declared")}; repository: ${typeof pj.repository === "string" ? pj.repository : (pj.repository?.url ?? "not declared")}\n` +
+      (texts.length ? texts.join("\n\n") : "(the upstream repository and npm package publish no license or copyright text; only the license identifier above is declared by the author)"),
   );
 }
 writeFileSync(
