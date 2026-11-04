@@ -6,6 +6,7 @@
 //   bundle/vaultd/vaultd.cjs   the vault daemon
 //   bundle/vaultd/metavault.cjs  the CLI
 //   bundle/vaultd/mcp.cjs      the MCP server for agents
+//   bundle/vaultd/gateway.cjs  the remote-access gateway (remote off by default)
 // bundle/vaultd ships as resources/vaultd and runs under the app's own
 // Electron binary with ELECTRON_RUN_AS_NODE=1, so users need no Node.
 // better-sqlite3 stays external: its Node-API prebuild for the target
@@ -57,6 +58,7 @@ const entries = [
   ["daemon/src/server.ts", "vaultd.cjs"],
   ["cli/src/cli.ts", "metavault.cjs"],
   ["mcp/src/server.ts", "mcp.cjs"],
+  ["gateway/src/index.ts", "gateway.cjs"],
 ];
 for (const [entry, out] of entries) {
   await build({
@@ -81,4 +83,4 @@ cpSync(join(sqliteSrc, "lib"), join(sqliteDst, "lib"), { recursive: true });
 cpSync(prebuild, join(sqliteDst, "prebuilds", `${target}.node`));
 writeFileSync(join(outVaultd, "package.json"), `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`);
 
-console.log(`bundle: dist/main.bundle.cjs, bundle/vaultd/{vaultd,metavault,mcp}.cjs, better-sqlite3 ${target}`);
+console.log(`bundle: dist/main.bundle.cjs, bundle/vaultd/{vaultd,metavault,mcp,gateway}.cjs, better-sqlite3 ${target}`);
