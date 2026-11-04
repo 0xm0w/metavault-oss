@@ -69,7 +69,8 @@ import {
   passphraseSetupError,
   projectKeyGate,
   type KeyGate,
-} from "./model.js";
+  isSettingsTab,
+  type SettingsTab,} from "./model.js";
 import type {
   AgentSecuritySettingsLike,
   DeviceLike,
@@ -153,7 +154,7 @@ let settingsBusy = false;
 let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
 let localAuthNotice: { readonly text: string; readonly ok: boolean } | null = null;
 let updaterStatus: UpdaterStatusLike = { status: "idle" };
-type SettingsTab = "general" | "warden" | "daemon" | "security" | "connections";
+
 let settingsOpen = false;
 let settingsTab: SettingsTab = "general";
 let settingsFocusOnOpen = false;
@@ -2671,17 +2672,17 @@ function renderSettings(view: HTMLElement): void {
     remoteSection.append(bindRow);
   }
   const reauthRow = el("div", "settings-row");
-  reauthRow.append(el("span", "settings-row-label", "Require PIN or Hello for remote approvals"));
+  reauthRow.append(el("span", "settings-row-label", "Require app PIN for remote approvals"));
   const reauthOn = remoteSettings?.requireAuthForRemoteApproval ?? true;
   const reauthBtn = el("button", "action", reauthOn ? "On" : "Off") as HTMLButtonElement;
   reauthBtn.type = "button";
   reauthBtn.disabled = settingsBusy;
-  reauthBtn.title = "When on, approving a request that arrived from a paired device asks for your app PIN or Windows Hello first.";
+  reauthBtn.title = "When on, approving a request that arrived from a paired device asks for your app PIN first. Windows Hello cannot authorize remote approvals.";
   reauthBtn.addEventListener("click", () => {
     if (reauthOn) {
       // Weakening protection: requires fresh local presence, enforced in
       // the main process. The UI states the weakened protection plainly.
-      pairingNotice = { text: "Turning this off lets paired devices get approvals without your PIN or Hello.", ok: false };
+      pairingNotice = { text: "Turning this off lets paired devices get approvals without your app PIN.", ok: false };
       obtainPresenceProof({ scope: "settings-remote" }, (token) => {
         void runSettingsAction(async () => {
           await window.metavault.updateRemoteSettings({ requireAuthForRemoteApproval: false }, token);
@@ -2696,6 +2697,7 @@ function renderSettings(view: HTMLElement): void {
     });
   });
   reauthRow.append(reauthBtn);
+  remoteSection.append(reauthRow);
   view.append(remoteSection);
 
   // Pairing flow. The code is shown once here and typed into the device
@@ -3777,7 +3779,7 @@ function start(): void {
   document.querySelectorAll<HTMLButtonElement>(".settings-tab").forEach((button) => {
     button.addEventListener("click", () => {
       const next = button.dataset["settingsTab"];
-      if (next === "general" || next === "warden" || next === "daemon" || next === "security") {
+      if (isSettingsTab(next)) {
         settingsTab = next;
         applySettingsTab();
       }

@@ -111,7 +111,7 @@ export async function guardApprovalCall(options: {
   } catch {
     // Daemon state unreadable: origin cannot be established, so fail closed.
     return {
-      decision: { allow: false, reason: "remote approval requires fresh local presence (PIN or Windows Hello)" },
+      decision: { allow: false, reason: "remote approval requires fresh local presence (app PIN)" },
       body: record,
     };
   }
@@ -126,7 +126,7 @@ export async function guardApprovalCall(options: {
     return { decision: { allow: true }, body: record };
   }
   return {
-    decision: { allow: false, reason: "remote approval requires fresh local presence (PIN or Windows Hello)" },
+    decision: { allow: false, reason: "remote approval requires fresh local presence (app PIN)" },
     body: record,
   };
 }

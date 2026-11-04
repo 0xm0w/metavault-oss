@@ -71,7 +71,8 @@ import {
   localAuthFactorLabel,
   isAutoLockDue,
   canLockSessionNow,
-} from "../src/renderer/model.js";
+  isSettingsTab,
+  SETTINGS_TABS,} from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
 const approval = (over: Partial<PendingApproval> = {}): PendingApproval => ({
@@ -1420,5 +1421,18 @@ describe("remote connections model", () => {
       pairingId: "p1",
     });
     expect(projectPairingSession({})).toBeNull();
+  });
+});
+
+describe("settings tabs", () => {
+  it("every tab the UI renders passes the dispatcher predicate", () => {
+    // Regression: a Connections tab unreachable by click because the
+    // dispatcher whitelist dropped it.
+    for (const tab of ["general", "warden", "daemon", "security", "connections"]) {
+      expect(isSettingsTab(tab)).toBe(true);
+    }
+    expect(isSettingsTab("admin")).toBe(false);
+    expect(isSettingsTab(undefined)).toBe(false);
+    expect(SETTINGS_TABS).toHaveLength(5);
   });
 });

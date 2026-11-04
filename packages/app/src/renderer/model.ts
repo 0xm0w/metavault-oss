@@ -288,13 +288,21 @@ export function projectApproval(raw: unknown): PendingApproval | null {
 }
 
 // The remote-approval gate: a request that arrived through the gateway
-// requires local PIN/Hello before approval whenever the setting is on.
+// requires the local app PIN before approval whenever the setting is on.
 // Default TRUE when settings are unavailable: fail closed for remote.
 export function shouldRequireAuthForRemoteApproval(
   settings: RemoteSettingsLike | null,
   approval: { readonly origin?: "local" | "remote" | undefined },
 ): boolean {
   return approval.origin === "remote" && (settings?.requireAuthForRemoteApproval ?? true);
+}
+
+// Canonical settings tabs. The settings click dispatcher uses isSettingsTab
+// so a tab that exists in the UI can never be dropped from dispatch again.
+export const SETTINGS_TABS = ["general", "warden", "daemon", "security", "connections"] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+export function isSettingsTab(value: unknown): value is SettingsTab {
+  return typeof value === "string" && (SETTINGS_TABS as readonly string[]).includes(value);
 }
 
 export function projectRemoteSettings(raw: unknown): RemoteSettingsLike | null {
