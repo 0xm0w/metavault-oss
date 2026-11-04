@@ -74,6 +74,11 @@ export interface GatewayOptions {
   // Global cap on pairing attempts across all source addresses, so a
   // distributed code brute-force cannot scale with address count.
   readonly maxPairingAttemptsPerMinuteGlobal?: number;
+  // /pair/status carries no secret (the 128-bit pairingId comes from a
+  // successful begin), so it gets its own, looser budget: a human-paced
+  // comparison with backoff polling must never exhaust the brute-force
+  // budget that guards code entry.
+  readonly maxPairStatusPerMinutePerAddress?: number;
 }
 
 interface RateBucket {
@@ -130,6 +135,7 @@ export function createGatewayServer(options: GatewayOptions): HttpsServer {
   const deviceLimiter = makeRateLimiter(options.maxRequestsPerMinutePerDevice ?? 60);
   const pairingLimiter = makeRateLimiter(options.maxPairingAttemptsPerMinutePerAddress ?? 10);
   const globalPairingLimiter = makeRateLimiter(options.maxPairingAttemptsPerMinuteGlobal ?? 30);
+  const pairStatusLimiter = makeRateLimiter(options.maxPairStatusPerMinutePerAddress ?? 60);
   const daemonBase = options.daemonBaseUrl.replace(/\/+$/, "");
 
   const server = createHttpsServer(
@@ -162,13 +168,20 @@ export function createGatewayServer(options: GatewayOptions): HttpsServer {
               });
               return;
             }
-            if (!globalPairingLimiter("global")) {
-              json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts (global)" } });
-              return;
-            }
-            if (!pairingLimiter(remoteAddress)) {
-              json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts (address)" } });
-              return;
+            if (path === "/pair/status") {
+              if (!pairStatusLimiter(remoteAddress)) {
+                json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing status polls" } });
+                return;
+              }
+            } else {
+              if (!globalPairingLimiter("global")) {
+                json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts (global)" } });
+                return;
+              }
+              if (!pairingLimiter(remoteAddress)) {
+                json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts (address)" } });
+                return;
+              }
             }
             const bodyText = await readBody(req);
             let body: Record<string, unknown>;

@@ -2,8 +2,7 @@
 // allowlist completeness, fail-closed device authentication, spoof
 // resistance, device-bound tokens, device ceilings, pairing handshake
 // (single-use codes, SAS transcript binding, revocation).
-import { mkdtempSync, rmSync } from "node:fs";
-import { createServer as createHttpsServer } from "node:https";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, createHmac, randomBytes } from "node:crypto";
@@ -20,14 +19,12 @@ import {
   ensureGatewayCertificate,
   ensureVaultCa,
   generateRsaKeyPairPem,
-  signLeafCertificate,
-  spkiFingerprintFromPublicKeyPem,
 } from "../../core/src/vault-ca.js";
-import { computePairingSas, PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/pairing.js";
+import { PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/pairing.js";
 import { createVaultHttpServer } from "../../daemon/src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../../daemon/src/service.js";
 import { makeDaemonBackend } from "../src/daemon-backend.js";
-import { createGatewayServer, GATEWAY_ALLOWLIST } from "../src/server.js";
+import { createGatewayServer } from "../src/server.js";
 
 export const MASTER_KEY = Buffer.alloc(32, 7);
 export const GATEWAY_SECRET = "test-gateway-secret";

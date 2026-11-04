@@ -9,8 +9,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createGatewayServer } from "../src/server.js";
 import { makeDaemonBackend } from "../src/daemon-backend.js";
 import {
+  hardenOwnerOnly,
+  isOwnerOnlyAcl,
   loadDeviceProfile,
+  nextPollDelay,
   PairingError,
+  PAIRING_POLL_CAP_MS,
+  PAIRING_POLL_START_MS,
+  parseIcaclsAces,
   runPairingHandshake,
   saveDeviceProfile,
   startShim,
@@ -313,4 +319,66 @@ describe("device-client", () => {
     await expect(handshake2).rejects.toMatchObject({ reason: "expired" });
     await new Promise<void>((resolve) => { prodGw.close(() => { resolve(); }); });
   }, 120_000);
+
+  it("verifies Windows ACLs by parsing effective grants, never exit codes", () => {
+    const good = "key.pem DESKTOP-ABC\\morriz:(F)\nSuccessfully processed 1 files";
+    expect(parseIcaclsAces(good, "key.pem")).toEqual([{ principal: "DESKTOP-ABC\\morriz", permissions: "(F)" }]);
+    expect(isOwnerOnlyAcl(good, "morriz", "key.pem")).toBe(true);
+    // A preexisting explicit grant to another principal must fail closed.
+    const straggler = "key.pem DESKTOP-ABC\\morriz:(F)\nkey.pem DESKTOP-ABC\\other:(R)\n";
+    expect(isOwnerOnlyAcl(straggler, "morriz", "key.pem")).toBe(false);
+    // Inherited ACEs still present (inheritance not stripped) must fail.
+    const inherited = "key.pem DESKTOP-ABC\\morriz:(F)(OI)(CI)\nBUILTIN\\Administrators:(I)(F)\n";
+    expect(isOwnerOnlyAcl(inherited, "morriz", "key.pem")).toBe(false);
+    expect(isOwnerOnlyAcl("Successfully processed 1 files", "morriz", "key.pem")).toBe(false);
+    // hardenOwnerOnly runs reset -> strip -> grant -> verify, and any
+    // unexpected ACE in the final read is fatal.
+    const calls: string[][] = [];
+    hardenOwnerOnly("C:\\x", false, "win32", (args) => {
+      calls.push([...args]);
+      return "C:\\x DESKTOP-ABC\\morriz:(F)\n";
+    }, "morriz");
+    expect(calls.map((c) => c.slice(1).join(" "))).toEqual(["/reset", "/inheritance:r", "/grant:r morriz:(F)", ""]);
+    expect(() => {
+      hardenOwnerOnly(
+        "C:\\x",
+        false,
+        "win32",
+        () => "C:\\x DESKTOP-ABC\\morriz:(F)\nC:\\x DESKTOP-ABC\\svc:(R)\n",
+        "morriz",
+      );
+    }).toThrow(/owner-only/);
+  });
+
+  it("keeps the pairing poll budget inside production limits for a 5-minute comparison", () => {
+    // Simulated clock: count requests per rolling 60s window over the
+    // full 5-minute pairing TTL using the shipped backoff schedule.
+    const delays: number[] = [];
+    let d = PAIRING_POLL_START_MS;
+    let elapsed = 0;
+    while (elapsed < 5 * 60_000) {
+      delays.push(d);
+      elapsed += d;
+      d = nextPollDelay(d, PAIRING_POLL_CAP_MS);
+    }
+    const starts = [0];
+    let acc = 0;
+    for (const delay of delays) {
+      acc += delay;
+      starts.push(acc);
+    }
+    // Production budget: 10 pair/begin+status... begin is separate;
+    // /pair/status allows 60/min/address. Worst rolling window must fit.
+    let worst = 0;
+    for (let i = 0; i < starts.length; i += 1) {
+      const windowStart = starts[i] ?? 0;
+      const count = starts.filter((t) => t >= windowStart && t < windowStart + 60_000).length;
+      worst = Math.max(worst, count);
+    }
+    expect(worst).toBeLessThanOrEqual(20);
+    // And a >1 minute delayed human still completes: total requests for a
+    // 90s comparison are a fraction of the 60/min status budget.
+    const at90s = starts.filter((t) => t <= 90_000).length;
+    expect(at90s).toBeLessThanOrEqual(25);
+  });
 });

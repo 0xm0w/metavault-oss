@@ -25,6 +25,16 @@ import { computePairingSas, PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } fr
 import { generateRsaKeyPairPem, spkiFingerprintFromPublicKeyPem } from "../../core/src/vault-ca.js";
 import { isAllowlisted } from "./server.js";
 
+// The client poll cadence: 1s, 2s, 4s, then a 5s cap. Exported so tests
+// can prove the request budget against production gateway limits over a
+// long human comparison without wall-clock sleeps.
+export function nextPollDelay(currentMs: number, capMs: number): number {
+  return Math.min(currentMs * 2, capMs);
+}
+
+export const PAIRING_POLL_START_MS = 1_000;
+export const PAIRING_POLL_CAP_MS = 5_000;
+
 export class PairingError extends Error {
   readonly reason: "rejected" | "expired" | "timeout" | "transport";
   constructor(reason: PairingError["reason"], message: string) {
@@ -181,7 +191,7 @@ export async function runPairingHandshake(options: {
       throw new PairingError("timeout", "pairing was not confirmed on the vault in time");
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
-    pollMs = Math.min(pollMs * 2, pollCap);
+    pollMs = nextPollDelay(pollMs, pollCap);
     const status = await gatewayPost({
       host: options.host,
       port: options.port,
@@ -222,12 +232,74 @@ export interface DeviceProfile {
 
 // Owner-only enforcement. POSIX mode bits are real protection there; on
 // Windows they are a no-op, so owner-only ACLs are applied with icacls and
-// any failure is fatal rather than silently unprotected.
-export function hardenOwnerOnly(path: string, isDir: boolean, platform: NodeJS.Platform = process.platform): void {
+// then VERIFIED by parsing the effective ACL: inheritance stripping alone
+// does not remove another principal's preexisting explicit grant, and an
+// icacls exit code alone is never accepted as proof.
+export interface IcaclsRun {
+  (args: readonly string[]): string;
+}
+
+const defaultIcaclsRun: IcaclsRun = (args) =>
+  execFileSync("icacls", [...args], { encoding: "utf8" });
+
+// Parses icacls output into (principal, permissions) ACE entries. The
+// first ACE line carries the queried path as a prefix; continuation ACE
+// lines are indented. Anything unrecognized is kept as an opaque principal
+// so verification fails closed rather than silently ignoring an ACE.
+export function parseIcaclsAces(output: string, path?: string): { principal: string; permissions: string }[] {
+  const aces: { principal: string; permissions: string }[] = [];
+  for (const rawLine of output.split("\n")) {
+    let line = rawLine;
+    if (path !== undefined && line.startsWith(`${path} `)) {
+      line = line.slice(path.length + 1);
+    }
+    line = line.trim();
+    if (line === "" || !line.includes(":")) continue;
+    const match = line.match(/^(.+?):(\([^)]*\)(?:\([^)]*\))*)\s*$/);
+    if (match === null) {
+      aces.push({ principal: line, permissions: "" });
+      continue;
+    }
+    const principal = match[1] ?? "";
+    const permissions = match[2] ?? "";
+    if (principal !== "") {
+      aces.push({ principal, permissions });
+    }
+  }
+  return aces;
+}
+
+// True only when every ACE in the output belongs to the expected user.
+export function isOwnerOnlyAcl(icaclsOutput: string, expectedUser: string, path?: string): boolean {
+  const aces = parseIcaclsAces(icaclsOutput, path);
+  if (aces.length === 0) return false;
+  const expected = expectedUser.toLowerCase();
+  return aces.every((ace) => {
+    const principal = ace.principal.toLowerCase();
+    return principal === expected || principal.endsWith(`\\${expected}`);
+  });
+}
+
+export function hardenOwnerOnly(
+  path: string,
+  isDir: boolean,
+  platform: NodeJS.Platform = process.platform,
+  run: IcaclsRun = defaultIcaclsRun,
+  user: string = process.env["USERNAME"] ?? "",
+): void {
   if (platform === "win32") {
-    // icacls: strip inheritance, grant full control to the current user only.
-    execFileSync("icacls", [path, "/inheritance:r"], { stdio: "ignore" });
-    execFileSync("icacls", [path, "/grant:r", `${process.env["USERNAME"] ?? ""}:(F)`], { stdio: "ignore" });
+    if (user === "") {
+      throw new Error("cannot harden device credentials: USERNAME is unknown");
+    }
+    // Reset to inherited defaults (drops stray explicit grants), strip
+    // inheritance, grant the current user alone - then verify the result.
+    run([path, "/reset"]);
+    run([path, "/inheritance:r"]);
+    run([path, "/grant:r", `${user}:(F)`]);
+    const verified = run([path]);
+    if (!isOwnerOnlyAcl(verified, user, path)) {
+      throw new Error(`refusing to store device credentials: could not make ${path} owner-only`);
+    }
     return;
   }
   chmodSync(path, isDir ? 0o700 : 0o600);
