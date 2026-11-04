@@ -1466,6 +1466,7 @@ export function passphraseSetupError(passphrase: string, confirm: string): strin
 
 // Plain words for the daemon's tagged setup/unlock errors.
 export function keyGateErrorMessage(message: string): string {
+  if (message.includes("VaultRecoveryRequired")) return "The key does not match this vault, or vault data is damaged. Stop MetaVault and restore the matching database and key backup.";
   if (message.includes("WrongPassphrase")) return "Wrong password or damaged key file.";
   if (message.includes("UnlockThrottled")) return "Too many tries. Wait a moment and try again.";
   if (message.includes("PassphraseTooShort")) return `Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters.`;

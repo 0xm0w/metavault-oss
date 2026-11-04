@@ -30,6 +30,15 @@ describe("key session", () => {
     expect(() => s.key()).toThrow(VaultLockedError);
     s.dispose();
   });
+  it("does not accept or retain a key rejected by database validation", async () => {
+    let rejected: Buffer | undefined;
+    const s = createKeySession({ mode: "passphrase", wrapped: await wrapMasterKey(KEY, PASS, FAST), sweepMs: 0, validateKey: (key) => { rejected = key; throw new Error("mismatch"); } });
+    expect(await s.unlock(PASS)).toBe("key-mismatch");
+    expect(rejected?.every((b) => b === 0)).toBe(true);
+    expect(s.status().fingerprint).toBeNull();
+    expect(() => s.key()).toThrow(VaultLockedError);
+    s.dispose();
+  });
   it("zero-fills the key buffer when it locks", async () => {
     const s = createKeySession({ mode: "passphrase", wrapped: await wrapMasterKey(KEY, PASS, FAST), sweepMs: 0 });
     await s.unlock(PASS);

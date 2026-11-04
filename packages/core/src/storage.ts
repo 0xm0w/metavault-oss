@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
 import Database from "better-sqlite3";
+import { dirname, join } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
 import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, LEGACY_LOCAL_PROVIDERS, SUGGESTED_LOCAL_BASE_URL, defaultWardenSettings, normalizeWardenProvider, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
@@ -300,6 +301,16 @@ function makeStore(db: Database.Database): VaultStoreService {
         execFileSync("icacls.exe", [backupDir, "/inheritance:r", "/grant:r", `${identity}:(OI)(CI)(F)`, "SYSTEM:(OI)(CI)(F)"], {stdio:"pipe"});
       }
       const backup = `${backupDir}/vault.db.bak`;
+      // Keep matching wrapped key and local daemon token with the private DB
+      // snapshot. Never move originals or export this directory to agents.
+      for (const name of ["metavault.key.json", "metavault.token"]) {
+        const source = join(dirname(db.name), name);
+        if (existsSync(source)) {
+          const target = join(backupDir, name);
+          copyFileSync(source, target);
+          if (process.platform !== "win32") chmodSync(target, 0o600);
+        }
+      }
       db.prepare("VACUUM INTO ?").run(backup);
       if (process.platform !== "win32") chmodSync(backup, 0o600);
     }

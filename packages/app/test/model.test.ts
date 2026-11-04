@@ -1335,6 +1335,7 @@ describe("vault key gate", () => {
     expect(keyGateErrorMessage("daemon error (400): PassphraseTooShort")).toContain("12");
     expect(keyGateErrorMessage("daemon error (409): AlreadyInitialized")).toContain("Unlock");
     expect(keyGateErrorMessage("MetaVault OSS daemon unreachable — is vaultd running?")).toContain("background service");
+    expect(keyGateErrorMessage("daemon error (409): VaultRecoveryRequired")).toContain("matching database and key backup");
     expect(keyGateErrorMessage("something else")).toBe("That did not work. Try again.");
   });
 });

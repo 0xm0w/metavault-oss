@@ -531,6 +531,8 @@ export async function handleVaultRequest(
       case "unlocked":
       case "already-unlocked":
         return { status: 200, body: { status: result.body } };
+      case "key-mismatch":
+        return { status: 409, body: { error: { _tag: "VaultRecoveryRequired", message: "key does not match stored records, or vault data is damaged; restore the matching database and key backup" } } };
       case "wrong-passphrase":
         return { status: 401, body: { error: { _tag: "WrongPassphrase", message: "wrong passphrase" } } };
       case "throttled":
@@ -912,31 +914,49 @@ export function assertFirstRunDatabaseEmpty(dbPath: string): void {
   }
 }
 
+// Read-only authentication of every stored record. A damaged record and an
+// unrelated readable key cannot be distinguished reliably, so report both.
+// Never expose plaintext or mutate DB/key files during this check.
+export function assertDatabaseKeyMatches(dbPath: string, key: Buffer): void {
+  if (dbPath === ":memory:" || !existsSync(dbPath)) return;
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    for (const row of db.prepare("SELECT ciphertext FROM credentials").iterate() as Iterable<{ciphertext: string}>) {
+      decryptSecret(key, row.ciphertext);
+    }
+  } catch {
+    throw new Error("Vault recovery required: the key does not authenticate the stored records, or the database is damaged. Stop MetaVault and restore the matching database and key backup. No new key was created.");
+  } finally { db?.close(); }
+}
+
 export function resolveDaemonKeySession(
   dbPath: string,
   warn: (line: string) => void = (l) => process.stderr.write(`${l}\n`),
   allowFirstRun: boolean = firstRunSetupEnabled(),
 ): KeySession {
+  const validateKey = (key: Buffer) => { assertDatabaseKeyMatches(dbPath, key); };
   const wrapped = readWrappedKeyFile(wrappedKeyFilePath(dbPath));
   if (wrapped !== null) {
     const autoLockMs = autoLockMsFromEnv();
-    return createKeySession({ mode: "passphrase", wrapped, ...(autoLockMs !== undefined ? { autoLockMs } : {}) });
+    return createKeySession({ mode: "passphrase", wrapped, validateKey, ...(autoLockMs !== undefined ? { autoLockMs } : {}) });
   }
   const fromEnv = envMasterKeyIfAllowed();
   if (fromEnv !== undefined) {
     warn("warning: using METAVAULT_MASTER_KEY from the environment (opt-in legacy mode; no auto-lock).");
-    return createKeySession({ mode: "env", key: fromEnv });
+    return createKeySession({ mode: "env", key: fromEnv, validateKey });
   }
   const fromKeychain = retrieveMasterKey();
   if (fromKeychain !== null) {
     warn("warning: master key read unwrapped from the OS keychain (legacy mode; no auto-lock). Run `metavault key protect` to migrate.");
-    return createKeySession({ mode: "keychain-legacy", key: fromKeychain });
+    return createKeySession({ mode: "keychain-legacy", key: fromKeychain, validateKey });
   }
   if (allowFirstRun) {
     assertFirstRunDatabaseEmpty(dbPath);
     const autoLockMs = autoLockMsFromEnv();
     return createFirstRunKeySession({
       wrappedKeyPath: wrappedKeyFilePath(dbPath),
+      validateKey,
       ...(autoLockMs !== undefined ? { autoLockMs } : {}),
     });
   }

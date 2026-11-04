@@ -9,7 +9,7 @@
 // passphrase to re-derive the key, so they never auto-lock. That is the
 // main reason to migrate (see docs/SECURITY.md#master-key-protection).
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   checkPassphraseStrength,
   readWrappedKeyFile,
@@ -39,6 +39,7 @@ export class VaultLockedError extends Error {
 
 export interface KeySessionStatus {
   readonly mode: KeyMode;
+  readonly fingerprint: string | null;
   readonly locked: boolean;
   readonly autoLockMs: number | null;
   readonly kdf: string | null;
@@ -51,7 +52,8 @@ export type UnlockResult =
   | "wrong-passphrase"
   | "throttled"
   | "not-passphrase-mode"
-  | "not-initialized";
+  | "not-initialized"
+  | "key-mismatch";
 
 export type SetupResult = "initialized" | "already-initialized" | "too-short";
 
@@ -75,6 +77,8 @@ export interface KeySessionOptions {
   readonly now?: () => number;
   // Proactive sweep interval; 0 disables the timer (tests use lazy checks).
   readonly sweepMs?: number;
+  // Fail closed before accepting a readable key for an existing database.
+  readonly validateKey?: (key: Buffer) => void;
 }
 
 export function createKeySession(options: KeySessionOptions): KeySession {
@@ -88,6 +92,9 @@ export function createKeySession(options: KeySessionOptions): KeySession {
     throw new Error("master key must be 32 bytes");
   }
   let key: Buffer | null = options.key !== undefined ? Buffer.from(options.key) : null;
+  if (key !== null) {
+    try { options.validateKey?.(key); } catch (err) { key.fill(0); throw err; }
+  }
   let lastUsed = now();
   let failures = 0;
   let blockedUntil = 0;
@@ -135,6 +142,10 @@ export function createKeySession(options: KeySessionOptions): KeySession {
       if (now() < blockedUntil) return "throttled";
       try {
         const unwrapped = await unwrapMasterKey(options.wrapped, passphrase);
+        try { options.validateKey?.(unwrapped); } catch {
+          unwrapped.fill(0);
+          return "key-mismatch";
+        }
         key = unwrapped;
         lastUsed = now();
         failures = 0;
@@ -155,6 +166,7 @@ export function createKeySession(options: KeySessionOptions): KeySession {
       const t = now();
       return {
         mode: options.mode,
+        fingerprint: key === null ? null : createHash("sha256").update(key).digest("hex").slice(0, 24),
         locked: key === null,
         autoLockMs,
         kdf: options.wrapped?.kdf ?? null,
@@ -204,6 +216,8 @@ export interface FirstRunKeySessionOptions {
   readonly autoLockMs?: number;
   readonly now?: () => number;
   readonly sweepMs?: number;
+  // Fail closed before accepting a readable key for an existing database.
+  readonly validateKey?: (key: Buffer) => void;
   // Seams for tests; production uses the real keywrap helpers.
   readonly readWrapped?: (path: string) => WrappedMasterKey | null;
   readonly writeWrapped?: (path: string, wrapped: WrappedMasterKey) => void;
@@ -224,6 +238,7 @@ export function createFirstRunKeySession(options: FirstRunKeySessionOptions): Ke
     ...(options.autoLockMs !== undefined ? { autoLockMs: options.autoLockMs } : {}),
     ...(options.now !== undefined ? { now: options.now } : {}),
     ...(options.sweepMs !== undefined ? { sweepMs: options.sweepMs } : {}),
+    ...(options.validateKey !== undefined ? { validateKey: options.validateKey } : {}),
   };
   let inner: KeySession | null = null;
   let settingUp = false;
@@ -257,6 +272,7 @@ export function createFirstRunKeySession(options: FirstRunKeySessionOptions): Ke
     status: () =>
       current()?.status() ?? {
         mode: "uninitialized",
+        fingerprint: null,
         locked: true,
         autoLockMs: null,
         kdf: null,
@@ -274,6 +290,7 @@ export function createFirstRunKeySession(options: FirstRunKeySessionOptions): Ke
         const wrapped = await wrap(key, passphrase);
         // Another writer (e.g. `metavault init`) may have won the race.
         if (current() !== null) return "already-initialized";
+        options.validateKey?.(key);
         writeWrapped(options.wrappedKeyPath, wrapped);
         inner = createKeySession({ mode: "passphrase", wrapped, key, ...base });
         return "initialized";

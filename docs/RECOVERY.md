@@ -32,14 +32,25 @@ recovers a lost encryption key.
 A password that fails to unlock may be wrong, or the wrapped key may be damaged.
 Authenticated encryption cannot reliably distinguish these causes. A readable
 but unrelated key file can also unlock itself without being the key for the DB.
-This guard detects missing keys, not every wrong-key pairing. Do not claim that
-successful key-file unlock proves credential recovery. Verify a harmless known
-record after restoring a matching backup, before deleting the backup.
+On unlock, every stored credential ciphertext must authenticate with the readable
+key before the session accepts it. An unrelated readable key, damaged record,
+unknown schema or unreadable database fails closed with recovery guidance. This
+does not tell corruption from an unrelated key, and an empty DB has no encrypted
+record to prove a pairing. No records or key files are rewritten by the check.
+
+Settings shows a 24-hex SHA-256 key fingerprint while unlocked. Compare it with a
+privately recorded fingerprint after a restore; locking clears the display. It
+identifies the key, not its location, contents or backup age. It is not a password
+or recovery key. Verify a harmless known record after restoring a matching backup,
+before deleting the backup.
 
 ## Agent hash migration and rollback
 
 The `before-agent-hash` snapshot keeps the old DB schema, including plaintext
-agent bearer tokens. Keep it private. It is not a backup of the wrapped key.
+agent bearer tokens. Keep it private. When present, the matching wrapped key
+and local daemon token are copied into that same private snapshot directory
+before migration. Legacy external OS keychain keys are not exported. Keep a
+separate stopped full-directory backup before upgrading; do not distribute snapshots.
 The new app can read migrated token hashes; an old app cannot read that schema.
 A rollback requires the old DB snapshot and its matching original encryption
 key, with all processes stopped. Retain the current state separately before a

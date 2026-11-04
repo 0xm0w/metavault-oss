@@ -228,6 +228,15 @@ if ($PreviousInstallerDir -ne "") {
   Check ((Get-FileHash $keyFile -Algorithm SHA256).Hash -eq $keyBeforeUpgrade) 'published upgrade retains exact wrapped key file'
   $result = Invoke-Daemon 'POST' '/unlock' @{passphrase=$smokePassphrase}
   Check ($result.status -eq 'unlocked') 'published vault password unlocks candidate'
+  $identity = Invoke-Daemon 'GET' '/key/status'
+  Check ($identity.fingerprint -match '^[a-f0-9]{24}$') 'upgraded vault exposes non-secret key fingerprint only after unlock'
+  $fingerprint = $identity.fingerprint
+  Invoke-Daemon 'POST' '/lock' | Out-Null
+  $identity = Invoke-Daemon 'GET' '/key/status'
+  Check ($null -eq $identity.fingerprint) 'lock clears fingerprint display'
+  Invoke-Daemon 'POST' '/unlock' @{passphrase=$smokePassphrase} | Out-Null
+  $identity = Invoke-Daemon 'GET' '/key/status'
+  Check ($identity.fingerprint -eq $fingerprint) 'reunlock retains same key fingerprint'
   $aliases = Invoke-Daemon 'GET' '/aliases'
   Check (@($aliases.aliases).Contains('previous-release-dummy')) 'published credential alias remains in candidate'
   Stop-App
