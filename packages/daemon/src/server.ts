@@ -1,3 +1,4 @@
+import { AgentRegistrations } from "./registrations.js";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
@@ -386,7 +387,19 @@ const UNAUTHORIZED: { status: number; body: unknown } = {
   body: { error: { _tag: "Unauthorized", message: "unauthorized" } },
 };
 
+const registrationStores = new WeakMap<object, AgentRegistrations>();
+function registrationsFor(service: VaultServiceService): AgentRegistrations {
+  let r = registrationStores.get(service);
+  if (r === undefined) {
+    r = new AgentRegistrations((agentId) => Effect.runPromise(service.revokeAgentToken(agentId)));
+    registrationStores.set(service, r);
+  }
+  return r;
+}
+
 function isTokenProtected(method: string, path: string): boolean {
+  if (path === "/agent-registrations" && method === "GET") return true;
+  if (method === "POST" && /^\/agent-registrations\/[^/]+\/(approve|deny)$/.test(path)) return true;
   if ((path === "/agents" || path.startsWith("/agents/")) && (method === "GET" || method === "POST")) {
     return true;
   }
@@ -588,6 +601,37 @@ export async function handleVaultRequest(
   }
   if (method === "GET" && path === "/audit") {
     return run(service.listAudit().pipe(Effect.map((events) => ({ events }))));
+  }
+  if (path === "/agent-registrations" || path.startsWith("/agent-registrations/")) {
+    const regs = registrationsFor(service);
+    const input = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    const fail = (status: number, error: string, extra: Record<string, unknown> = {}) => ({ status, body: { error: { _tag: "Registration", message: error }, ...extra } });
+    if (method === "POST" && path === "/agent-registrations") {
+      const agentId = input["agentId"]; const name = input["name"]; const ide = input["ide"]; const claimHash = input["claimHash"];
+      if (typeof agentId !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(agentId) || typeof name !== "string" || name.trim().length === 0 || name.length > 100 || /[\x00-\x1f\x7f]/.test(name) || typeof ide !== "string" || ide.length > 100 || /[\x00-\x1f\x7f]/.test(ide) || typeof claimHash !== "string") return BAD_REQUEST;
+      const made = await regs.create({ agentId, name: name.trim(), ide: ide.trim(), claimHash }, async (id) => {
+        const agents = await Effect.runPromise(service.listAgents());
+        return agents.some((a) => a.id === id && !a.revoked);
+      });
+      return made.ok ? { status: 200, body: { registrationId: made.id, code: made.code, expiresAt: made.expiresAt, status: "pending" } } : fail(made.status, made.error);
+    }
+    if (method === "GET" && path === "/agent-registrations") return { status: 200, body: { registrations: await regs.list() } };
+    const m = /^\/agent-registrations\/([^/]+)\/(approve|deny|claim)$/.exec(path);
+    if (method === "POST" && m !== null) {
+      const id = m[1] ?? "";
+      if (m[2] === "claim") {
+        const secret = input["claim"];
+        if (typeof secret !== "string" || secret.length < 16 || secret.length > 256) return BAD_REQUEST;
+        const out = await regs.claim(id, secret);
+        return out.ok ? { status: 200, body: { status: "claimed", agentId: out.agentId, token: out.token } } : fail(out.status, out.error, { status: out.status2 });
+      }
+      if (m[2] === "deny") return (await regs.deny(id)) ? { status: 200, body: { status: "denied" } } : fail(404, "registration not found or no longer pending");
+      const code = input["code"];
+      if (typeof code !== "string" || !/^[0-9]{6}$/.test(code)) return BAD_REQUEST;
+      const out = await regs.approve(id, code, async (agentId, name) => (await Effect.runPromise(service.registerAgent(agentId, name))).token);
+      return out.ok ? { status: 200, body: { status: "approved" } } : fail(out.status, out.error);
+    }
+    return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
   }
   if (method === "POST" && (path === "/agents" || path === "/agents/rotate")) {
     const input = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
