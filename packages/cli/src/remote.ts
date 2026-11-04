@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import {
+  generateShimToken,
   loadDeviceProfile,
   PairingError,
   runPairingHandshake,
@@ -17,6 +18,7 @@ import { DaemonError, UsageError } from "./cli.js";
 interface RemoteIo {
   readonly out: (text: string) => void;
   readonly err: (text: string) => void;
+  readonly readSecret: (prompt: string) => Promise<string>;
 }
 
 function flagValue(args: readonly string[], name: string): string | undefined {
@@ -32,9 +34,20 @@ function defaultProfileDir(): string {
 
 export function pairProgram(io: RemoteIo, args: readonly string[]): Effect.Effect<string, UsageError | DaemonError> {
   return Effect.gen(function* () {
-    const code = flagValue(args, "--code");
-    if (code === undefined) {
-      return yield* Effect.fail(new UsageError({ message: "pair requires --code <pairing-code from the vault screen>" }));
+    // The pairing code is a secret: interactive no-echo entry is the
+    // default so it never lands in shell history or process listings.
+    // --code remains for automation but warns on every use.
+    let code = flagValue(args, "--code");
+    if (code !== undefined) {
+      io.err("warning: --code exposes the pairing code via shell history and process listings; prefer interactive entry\n");
+    } else {
+      code = (yield* Effect.tryPromise({
+        try: () => io.readSecret("pairing code shown on the vault screen: "),
+        catch: () => new UsageError({ message: "could not read the pairing code" }),
+      })).trim();
+      if (code === "") {
+        return yield* Effect.fail(new UsageError({ message: "pairing code is required" }));
+      }
     }
     const host = flagValue(args, "--host") ?? "127.0.0.1";
     const portRaw = flagValue(args, "--port");
@@ -70,7 +83,7 @@ export function pairProgram(io: RemoteIo, args: readonly string[]): Effect.Effec
         port,
         pairedAt: new Date().toISOString(),
         serverCertFingerprint: result.serverCertFingerprint,
-      }, result);
+      }, result, generateShimToken());
     });
     return `paired as ${result.deviceId}; credentials saved to ${profileDir}\nnext: run \`metavault shim\` and point the IDE MCP config at http://127.0.0.1:7079\n`;
   });

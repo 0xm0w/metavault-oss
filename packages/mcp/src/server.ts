@@ -19,6 +19,7 @@ export interface MetavaultMcpOptions {
   readonly daemonUrl?: string;
   readonly agentId?: string;
   readonly agentToken?: string;
+  readonly shimToken?: string;
   readonly ide?: string;
   readonly defaultTool?: string;
   readonly fetchFn?: DaemonFetch;
@@ -123,6 +124,9 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
   const daemonUrl = rawDaemonUrl.slice(0, daemonUrlEnd);
   const agentId = options.agentId ?? metavaultEnv("AGENT_ID") ?? "mcp-agent";
   const agentToken = options.agentToken ?? metavaultEnv("AGENT_TOKEN");
+  // When daemonUrl points at a remote-access shim (DD7 loopback channel),
+  // the shim requires this local token; unset it is simply not sent.
+  const shimToken = options.shimToken ?? metavaultEnv("SHIM_TOKEN");
   const ide = options.ide ?? metavaultEnv("IDE") ?? "mcp";
   const defaultTool = options.defaultTool ?? "http";
   const fetchFn: DaemonFetch = options.fetchFn ?? fetch;
@@ -141,6 +145,9 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
           "x-metavault-client-pid": String(process.pid),
           ...(agentToken !== undefined && agentToken !== ""
             ? { "x-metavault-agent-token": agentToken }
+            : {}),
+          ...(shimToken !== undefined && shimToken !== ""
+            ? { "x-metavault-shim-token": shimToken }
             : {}),
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

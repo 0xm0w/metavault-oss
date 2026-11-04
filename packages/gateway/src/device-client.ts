@@ -14,8 +14,9 @@
 // - Pairing codes, SAS values and session identifiers are never written to
 //   logs or persisted; only the issued certificate, CA, key and fingerprint
 //   land on disk, owner-only.
-import { createHash, randomBytes, X509Certificate } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes, timingSafeEqual, X509Certificate } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
@@ -171,12 +172,16 @@ export async function runPairingHandshake(options: {
   options.onSas(sas);
 
   const deadline = Date.now() + (options.timeoutMs ?? 5 * 60_000);
-  const pollMs = options.pollIntervalMs ?? 2_000;
+  // Bounded backoff: gentle on the vault's pairing rate budget under
+  // production limits, still responsive to a human comparison.
+  let pollMs = options.pollIntervalMs ?? 1_000;
+  const pollCap = options.pollIntervalMs ?? 5_000;
   for (;;) {
     if (Date.now() > deadline) {
       throw new PairingError("timeout", "pairing was not confirmed on the vault in time");
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
+    pollMs = Math.min(pollMs * 2, pollCap);
     const status = await gatewayPost({
       host: options.host,
       port: options.port,
@@ -215,12 +220,39 @@ export interface DeviceProfile {
   readonly serverCertFingerprint: string;
 }
 
-export function saveDeviceProfile(dir: string, profile: DeviceProfile, material: PairingResult): void {
+// Owner-only enforcement. POSIX mode bits are real protection there; on
+// Windows they are a no-op, so owner-only ACLs are applied with icacls and
+// any failure is fatal rather than silently unprotected.
+export function hardenOwnerOnly(path: string, isDir: boolean, platform: NodeJS.Platform = process.platform): void {
+  if (platform === "win32") {
+    // icacls: strip inheritance, grant full control to the current user only.
+    execFileSync("icacls", [path, "/inheritance:r"], { stdio: "ignore" });
+    execFileSync("icacls", [path, "/grant:r", `${process.env["USERNAME"] ?? ""}:(F)`], { stdio: "ignore" });
+    return;
+  }
+  chmodSync(path, isDir ? 0o700 : 0o600);
+  const mode = statSync(path).mode & 0o777;
+  const expected = isDir ? 0o700 : 0o600;
+  if (mode !== expected) {
+    throw new Error(`refusing to store device credentials without owner-only permissions on ${path}`);
+  }
+}
+
+export function saveDeviceProfile(dir: string, profile: DeviceProfile, material: PairingResult, shimToken: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  hardenOwnerOnly(dir, true);
   writeFileSync(join(dir, "key.pem"), material.keyPem, { mode: 0o600 });
   writeFileSync(join(dir, "cert.pem"), material.certPem, { mode: 0o600 });
   writeFileSync(join(dir, "ca.pem"), material.caCertPem, { mode: 0o600 });
   writeFileSync(join(dir, "device.json"), JSON.stringify(profile, null, 2) + "\n", { mode: 0o600 });
+  writeFileSync(join(dir, "shim-token"), shimToken + "\n", { mode: 0o600 });
+  for (const file of ["key.pem", "cert.pem", "ca.pem", "device.json", "shim-token"]) {
+    hardenOwnerOnly(join(dir, file), false);
+  }
+}
+
+export function generateShimToken(): string {
+  return `mvshim_${randomBytes(24).toString("hex")}`;
 }
 
 export interface LoadedDevice {
@@ -228,6 +260,7 @@ export interface LoadedDevice {
   readonly keyPem: string;
   readonly certPem: string;
   readonly caCertPem: string;
+  readonly shimToken: string;
 }
 
 export function loadDeviceProfile(dir: string): LoadedDevice {
@@ -237,6 +270,7 @@ export function loadDeviceProfile(dir: string): LoadedDevice {
     keyPem: readFileSync(join(dir, "key.pem"), "utf8"),
     certPem: readFileSync(join(dir, "cert.pem"), "utf8"),
     caCertPem: readFileSync(join(dir, "ca.pem"), "utf8"),
+    shimToken: readFileSync(join(dir, "shim-token"), "utf8").trim(),
   };
 }
 
@@ -313,11 +347,34 @@ export function startShim(options: {
     return Promise.reject(new Error("shim host must be loopback"));
   }
   const device = loadDeviceProfile(options.profileDir);
+  // Loopback is not an authentication boundary: any local process (or a
+  // browser page, via DNS rebinding) can reach this port. Every request
+  // must carry the owner-only shim token, present a loopback Host header,
+  // and must not look like a cross-site browser request.
+  const shimToken = device.shimToken;
   const server: HttpServer = createHttpServer((req, res) => {
     void (async () => {
       try {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         const method = req.method ?? "GET";
+        const hostHeader = req.headers.host ?? "";
+        const hostOk = /^\s*(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\s*$/i.test(hostHeader);
+        const origin = req.headers["origin"];
+        const fetchSite = req.headers["sec-fetch-site"];
+        const shimTokenHeader = req.headers["x-metavault-shim-token"];
+        const presented = Array.isArray(shimTokenHeader) ? shimTokenHeader[0] : shimTokenHeader;
+        if (!hostOk || origin !== undefined || (fetchSite !== undefined && fetchSite !== "none")) {
+          res.writeHead(403, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { _tag: "Forbidden", message: "not a local shim client" } }));
+          return;
+        }
+        const presentedBuf = Buffer.from(presented ?? "", "utf8");
+        const expectedBuf = Buffer.from(shimToken, "utf8");
+        if (presentedBuf.length !== expectedBuf.length || !timingSafeEqual(presentedBuf, expectedBuf)) {
+          res.writeHead(401, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { _tag: "Unauthorized", message: "shim token required" } }));
+          return;
+        }
         if (!isAllowlisted(method, url.pathname)) {
           res.writeHead(403, { "content-type": "application/json" });
           res.end(JSON.stringify({ error: { _tag: "Forbidden", message: "route not exposed to remote devices" } }));

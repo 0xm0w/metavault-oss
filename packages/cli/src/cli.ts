@@ -128,7 +128,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|pair --code <code> [--host <h>] [--port <p>] [--name <n>] [--profile-dir <d>]|shim [--port <p>] [--profile-dir <d>]>\n";
+  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|pair [--host <h>] [--port <p>] [--name <n>] [--profile-dir <d>]|shim [--port <p>] [--profile-dir <d>]>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
