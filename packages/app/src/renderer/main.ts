@@ -3836,8 +3836,11 @@ function renderOnboardingWizard(view: HTMLElement): void {
   const nextIndex = steps.findIndex((step) => !step.done);
   const list = el("ol", "wizard-steps");
   steps.forEach((step, index) => {
-    const item = el("li", step.done ? "is-done" : index === nextIndex ? "is-next" : "");
-    item.append(el("strong", "", `${step.done ? "Done: " : ""}${step.title}`), el("span", "", step.body));
+    // A failed launch check is not "next", it needs attention first.
+    const attention = index === 0 && mcpStatus?.state === "failed";
+    const item = el("li", step.done ? "is-done" : attention ? "is-attention" : index === nextIndex ? "is-next" : "");
+    const prefix = step.done ? "Done: " : attention ? "Attention: " : "";
+    item.append(el("strong", "", `${prefix}${step.title}`), el("span", attention ? "wizard-attention-body" : "", step.body));
     if (index === 1) {
       renderWizardWardenStep(item);
     }
