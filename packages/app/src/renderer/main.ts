@@ -3745,7 +3745,7 @@ function renderRegistrationCards(view: HTMLElement): void {
     input.type = "text";
     input.inputMode = "numeric";
     input.maxLength = 6;
-    input.placeholder = "6-digit code from the agent";
+    input.placeholder = "6-digit code";
     input.setAttribute("aria-label", `Code for ${reg.agentId}`);
     input.className = "registration-code";
     input.value = registrationDrafts.get(reg.id) ?? "";
