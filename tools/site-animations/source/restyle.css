@@ -1,0 +1,1093 @@
+@import "./fonts.css";
+.w-full{width:100%}
+.h-full{height:100%}
+.mx-auto{margin-left:auto;margin-right:auto}
+.relative{position:relative}
+.absolute{position:absolute}
+.inset-0{inset:0}
+.inset-x-0{left:0;right:0}
+.top-0{top:0}
+.top-2{top:8px}
+.bottom-2{bottom:8px}
+.left-1\/2{left:50%}
+.right-6{right:24px}
+.right-12{right:48px}
+.z-10{z-index:10}
+.flex{display:flex}
+.flex-col{flex-direction:column}
+.flex-1{flex:1}
+.items-center{align-items:center}
+.items-start{align-items:flex-start}
+.justify-between{justify-content:space-between}
+.justify-center{justify-content:center}
+.pointer-events-none{pointer-events:none}
+.overflow-hidden{overflow:hidden}
+.select-none{user-select:none}
+.cursor-pointer{cursor:pointer}
+.text-center{text-align:center}
+.uppercase{text-transform:uppercase}
+.font-medium{font-weight:500}
+.font-semibold{font-weight:600}
+.font-bold{font-weight:700}
+.font-mono{font-family:'Geist Mono',monospace}
+.font-sans{font-family:Inter,sans-serif}
+.whitespace-nowrap{white-space:nowrap}
+.tracking-tight{letter-spacing:-.025em}
+.tracking-wide{letter-spacing:.025em}
+.tracking-wider{letter-spacing:.05em}
+.tracking-widest{letter-spacing:.1em}
+.leading-snug{line-height:1.375}
+.inline-block{display:inline-block}
+.ml-auto{margin-left:auto}
+.-translate-x-1\/2{transform:translateX(-50%)}
+.transition{transition:color .2s ease,background-color .2s ease}
+.transition-all{transition:opacity .25s ease,border-color .25s ease,color .25s ease,background-color .25s ease}
+.h-\[620px\]{height:640px}
+.top-\[165px\]{top:165px}
+.-bottom-7{bottom:-28px}
+.w-72{width:288px}
+.w-60{width:240px}
+.w-64{width:256px}
+.w-80{width:320px}
+.max-w-4xl{max-width:960px}
+.gap-1\.5{gap:6px}
+.gap-2{gap:8px}
+.gap-2\.5{gap:10px}
+.gap-4{gap:16px}
+.p-0{padding:0px}
+.p-1{padding:4px}
+.p-1\.5{padding:6.0px}
+.p-2{padding:8px}
+.p-2\.5{padding:10.0px}
+.p-3{padding:12px}
+.p-3\.5{padding:14.0px}
+.p-4{padding:16px}
+.p-6{padding:24px}
+.p-8{padding:32px}
+.px-0{padding-inline:0px}
+.px-1{padding-inline:4px}
+.px-1\.5{padding-inline:6.0px}
+.px-2{padding-inline:8px}
+.px-2\.5{padding-inline:10.0px}
+.px-3{padding-inline:12px}
+.px-3\.5{padding-inline:14.0px}
+.px-4{padding-inline:16px}
+.px-6{padding-inline:24px}
+.px-8{padding-inline:32px}
+.py-0{padding-block:0px}
+.py-1{padding-block:4px}
+.py-1\.5{padding-block:6.0px}
+.py-2{padding-block:8px}
+.py-2\.5{padding-block:10.0px}
+.py-3{padding-block:12px}
+.py-3\.5{padding-block:14.0px}
+.py-4{padding-block:16px}
+.py-6{padding-block:24px}
+.py-8{padding-block:32px}
+.mt-0{margin-top:0px}
+.mt-1{margin-top:4px}
+.mt-1\.5{margin-top:6.0px}
+.mt-2{margin-top:8px}
+.mt-2\.5{margin-top:10.0px}
+.mt-3{margin-top:12px}
+.mt-3\.5{margin-top:14.0px}
+.mt-4{margin-top:16px}
+.mt-6{margin-top:24px}
+.mt-8{margin-top:32px}
+.mb-0{margin-bottom:0px}
+.mb-1{margin-bottom:4px}
+.mb-1\.5{margin-bottom:6.0px}
+.mb-2{margin-bottom:8px}
+.mb-2\.5{margin-bottom:10.0px}
+.mb-3{margin-bottom:12px}
+.mb-3\.5{margin-bottom:14.0px}
+.mb-4{margin-bottom:16px}
+.mb-6{margin-bottom:24px}
+.mb-8{margin-bottom:32px}
+.ml-0{margin-left:0px}
+.ml-1{margin-left:4px}
+.ml-1\.5{margin-left:6.0px}
+.ml-2{margin-left:8px}
+.ml-2\.5{margin-left:10.0px}
+.ml-3{margin-left:12px}
+.ml-3\.5{margin-left:14.0px}
+.ml-4{margin-left:16px}
+.ml-6{margin-left:24px}
+.ml-8{margin-left:32px}
+.mr-0{margin-right:0px}
+.mr-1{margin-right:4px}
+.mr-1\.5{margin-right:6.0px}
+.mr-2{margin-right:8px}
+.mr-2\.5{margin-right:10.0px}
+.mr-3{margin-right:12px}
+.mr-3\.5{margin-right:14.0px}
+.mr-4{margin-right:16px}
+.mr-6{margin-right:24px}
+.mr-8{margin-right:32px}
+.w-2{width:8px}
+.h-2{height:8px}
+.w-3{width:12px}
+.h-3{height:12px}
+.w-6{width:24px}
+.h-6{height:24px}
+.w-14{width:56px}
+.h-14{height:56px}
+.text-xs{font-size:12px}
+.text-sm{font-size:14px}
+.text-lg{font-size:18px}
+.text-\[9px\]{font-size:9px}
+.text-\[10px\]{font-size:10px}
+.text-\[11px\]{font-size:11px}
+.rounded-md{border-radius:6px}
+.rounded-lg{border-radius:8px}
+.rounded-xl{border-radius:12px}
+.rounded-2xl{border-radius:16px}
+.rounded-full{border-radius:999px}
+.rounded{border-radius:4px}
+.border{border:1px solid #e4e4e7}
+.border-2{border:1.5px solid #e4e4e7}
+.border-t{border-top:1px solid #e4e4e7}
+.border-b{border-bottom:1px solid #e4e4e7}
+.bg-slate-950{background-color:#ffffff}
+.bg-slate-950\/10{background-color:color-mix(in srgb,#ffffff 10%,white)}
+.bg-slate-950\/15{background-color:color-mix(in srgb,#ffffff 15%,white)}
+.bg-slate-950\/20{background-color:color-mix(in srgb,#ffffff 20%,white)}
+.bg-slate-950\/30{background-color:color-mix(in srgb,#ffffff 30%,white)}
+.bg-slate-950\/40{background-color:color-mix(in srgb,#ffffff 40%,white)}
+.bg-slate-950\/50{background-color:color-mix(in srgb,#ffffff 50%,white)}
+.bg-slate-950\/60{background-color:color-mix(in srgb,#ffffff 60%,white)}
+.bg-slate-950\/70{background-color:color-mix(in srgb,#ffffff 70%,white)}
+.bg-slate-950\/80{background-color:color-mix(in srgb,#ffffff 80%,white)}
+.bg-slate-950\/90{background-color:color-mix(in srgb,#ffffff 90%,white)}
+.bg-slate-950\/95{background-color:color-mix(in srgb,#ffffff 95%,white)}
+.bg-slate-900{background-color:#ffffff}
+.bg-slate-900\/10{background-color:color-mix(in srgb,#ffffff 10%,white)}
+.bg-slate-900\/15{background-color:color-mix(in srgb,#ffffff 15%,white)}
+.bg-slate-900\/20{background-color:color-mix(in srgb,#ffffff 20%,white)}
+.bg-slate-900\/30{background-color:color-mix(in srgb,#ffffff 30%,white)}
+.bg-slate-900\/40{background-color:color-mix(in srgb,#ffffff 40%,white)}
+.bg-slate-900\/50{background-color:color-mix(in srgb,#ffffff 50%,white)}
+.bg-slate-900\/60{background-color:color-mix(in srgb,#ffffff 60%,white)}
+.bg-slate-900\/70{background-color:color-mix(in srgb,#ffffff 70%,white)}
+.bg-slate-900\/80{background-color:color-mix(in srgb,#ffffff 80%,white)}
+.bg-slate-900\/90{background-color:color-mix(in srgb,#ffffff 90%,white)}
+.bg-slate-900\/95{background-color:color-mix(in srgb,#ffffff 95%,white)}
+.bg-slate-800{background-color:#f4f4f5}
+.bg-slate-800\/10{background-color:color-mix(in srgb,#f4f4f5 10%,white)}
+.bg-slate-800\/15{background-color:color-mix(in srgb,#f4f4f5 15%,white)}
+.bg-slate-800\/20{background-color:color-mix(in srgb,#f4f4f5 20%,white)}
+.bg-slate-800\/30{background-color:color-mix(in srgb,#f4f4f5 30%,white)}
+.bg-slate-800\/40{background-color:color-mix(in srgb,#f4f4f5 40%,white)}
+.bg-slate-800\/50{background-color:color-mix(in srgb,#f4f4f5 50%,white)}
+.bg-slate-800\/60{background-color:color-mix(in srgb,#f4f4f5 60%,white)}
+.bg-slate-800\/70{background-color:color-mix(in srgb,#f4f4f5 70%,white)}
+.bg-slate-800\/80{background-color:color-mix(in srgb,#f4f4f5 80%,white)}
+.bg-slate-800\/90{background-color:color-mix(in srgb,#f4f4f5 90%,white)}
+.bg-slate-800\/95{background-color:color-mix(in srgb,#f4f4f5 95%,white)}
+.bg-slate-700{background-color:#d4d4d8}
+.bg-slate-700\/10{background-color:color-mix(in srgb,#d4d4d8 10%,white)}
+.bg-slate-700\/15{background-color:color-mix(in srgb,#d4d4d8 15%,white)}
+.bg-slate-700\/20{background-color:color-mix(in srgb,#d4d4d8 20%,white)}
+.bg-slate-700\/30{background-color:color-mix(in srgb,#d4d4d8 30%,white)}
+.bg-slate-700\/40{background-color:color-mix(in srgb,#d4d4d8 40%,white)}
+.bg-slate-700\/50{background-color:color-mix(in srgb,#d4d4d8 50%,white)}
+.bg-slate-700\/60{background-color:color-mix(in srgb,#d4d4d8 60%,white)}
+.bg-slate-700\/70{background-color:color-mix(in srgb,#d4d4d8 70%,white)}
+.bg-slate-700\/80{background-color:color-mix(in srgb,#d4d4d8 80%,white)}
+.bg-slate-700\/90{background-color:color-mix(in srgb,#d4d4d8 90%,white)}
+.bg-slate-700\/95{background-color:color-mix(in srgb,#d4d4d8 95%,white)}
+.bg-slate-500{background-color:#71717a}
+.bg-slate-500\/10{background-color:color-mix(in srgb,#71717a 10%,white)}
+.bg-slate-500\/15{background-color:color-mix(in srgb,#71717a 15%,white)}
+.bg-slate-500\/20{background-color:color-mix(in srgb,#71717a 20%,white)}
+.bg-slate-500\/30{background-color:color-mix(in srgb,#71717a 30%,white)}
+.bg-slate-500\/40{background-color:color-mix(in srgb,#71717a 40%,white)}
+.bg-slate-500\/50{background-color:color-mix(in srgb,#71717a 50%,white)}
+.bg-slate-500\/60{background-color:color-mix(in srgb,#71717a 60%,white)}
+.bg-slate-500\/70{background-color:color-mix(in srgb,#71717a 70%,white)}
+.bg-slate-500\/80{background-color:color-mix(in srgb,#71717a 80%,white)}
+.bg-slate-500\/90{background-color:color-mix(in srgb,#71717a 90%,white)}
+.bg-slate-500\/95{background-color:color-mix(in srgb,#71717a 95%,white)}
+.bg-slate-400{background-color:#52525b}
+.bg-slate-400\/10{background-color:color-mix(in srgb,#52525b 10%,white)}
+.bg-slate-400\/15{background-color:color-mix(in srgb,#52525b 15%,white)}
+.bg-slate-400\/20{background-color:color-mix(in srgb,#52525b 20%,white)}
+.bg-slate-400\/30{background-color:color-mix(in srgb,#52525b 30%,white)}
+.bg-slate-400\/40{background-color:color-mix(in srgb,#52525b 40%,white)}
+.bg-slate-400\/50{background-color:color-mix(in srgb,#52525b 50%,white)}
+.bg-slate-400\/60{background-color:color-mix(in srgb,#52525b 60%,white)}
+.bg-slate-400\/70{background-color:color-mix(in srgb,#52525b 70%,white)}
+.bg-slate-400\/80{background-color:color-mix(in srgb,#52525b 80%,white)}
+.bg-slate-400\/90{background-color:color-mix(in srgb,#52525b 90%,white)}
+.bg-slate-400\/95{background-color:color-mix(in srgb,#52525b 95%,white)}
+.bg-slate-300{background-color:#3f3f46}
+.bg-slate-300\/10{background-color:color-mix(in srgb,#3f3f46 10%,white)}
+.bg-slate-300\/15{background-color:color-mix(in srgb,#3f3f46 15%,white)}
+.bg-slate-300\/20{background-color:color-mix(in srgb,#3f3f46 20%,white)}
+.bg-slate-300\/30{background-color:color-mix(in srgb,#3f3f46 30%,white)}
+.bg-slate-300\/40{background-color:color-mix(in srgb,#3f3f46 40%,white)}
+.bg-slate-300\/50{background-color:color-mix(in srgb,#3f3f46 50%,white)}
+.bg-slate-300\/60{background-color:color-mix(in srgb,#3f3f46 60%,white)}
+.bg-slate-300\/70{background-color:color-mix(in srgb,#3f3f46 70%,white)}
+.bg-slate-300\/80{background-color:color-mix(in srgb,#3f3f46 80%,white)}
+.bg-slate-300\/90{background-color:color-mix(in srgb,#3f3f46 90%,white)}
+.bg-slate-300\/95{background-color:color-mix(in srgb,#3f3f46 95%,white)}
+.bg-slate-200{background-color:#18181b}
+.bg-slate-200\/10{background-color:color-mix(in srgb,#18181b 10%,white)}
+.bg-slate-200\/15{background-color:color-mix(in srgb,#18181b 15%,white)}
+.bg-slate-200\/20{background-color:color-mix(in srgb,#18181b 20%,white)}
+.bg-slate-200\/30{background-color:color-mix(in srgb,#18181b 30%,white)}
+.bg-slate-200\/40{background-color:color-mix(in srgb,#18181b 40%,white)}
+.bg-slate-200\/50{background-color:color-mix(in srgb,#18181b 50%,white)}
+.bg-slate-200\/60{background-color:color-mix(in srgb,#18181b 60%,white)}
+.bg-slate-200\/70{background-color:color-mix(in srgb,#18181b 70%,white)}
+.bg-slate-200\/80{background-color:color-mix(in srgb,#18181b 80%,white)}
+.bg-slate-200\/90{background-color:color-mix(in srgb,#18181b 90%,white)}
+.bg-slate-200\/95{background-color:color-mix(in srgb,#18181b 95%,white)}
+.bg-slate-100{background-color:#09090b}
+.bg-slate-100\/10{background-color:color-mix(in srgb,#09090b 10%,white)}
+.bg-slate-100\/15{background-color:color-mix(in srgb,#09090b 15%,white)}
+.bg-slate-100\/20{background-color:color-mix(in srgb,#09090b 20%,white)}
+.bg-slate-100\/30{background-color:color-mix(in srgb,#09090b 30%,white)}
+.bg-slate-100\/40{background-color:color-mix(in srgb,#09090b 40%,white)}
+.bg-slate-100\/50{background-color:color-mix(in srgb,#09090b 50%,white)}
+.bg-slate-100\/60{background-color:color-mix(in srgb,#09090b 60%,white)}
+.bg-slate-100\/70{background-color:color-mix(in srgb,#09090b 70%,white)}
+.bg-slate-100\/80{background-color:color-mix(in srgb,#09090b 80%,white)}
+.bg-slate-100\/90{background-color:color-mix(in srgb,#09090b 90%,white)}
+.bg-slate-100\/95{background-color:color-mix(in srgb,#09090b 95%,white)}
+.bg-white{background-color:#09090b}
+.bg-white\/10{background-color:color-mix(in srgb,#09090b 10%,white)}
+.bg-white\/15{background-color:color-mix(in srgb,#09090b 15%,white)}
+.bg-white\/20{background-color:color-mix(in srgb,#09090b 20%,white)}
+.bg-white\/30{background-color:color-mix(in srgb,#09090b 30%,white)}
+.bg-white\/40{background-color:color-mix(in srgb,#09090b 40%,white)}
+.bg-white\/50{background-color:color-mix(in srgb,#09090b 50%,white)}
+.bg-white\/60{background-color:color-mix(in srgb,#09090b 60%,white)}
+.bg-white\/70{background-color:color-mix(in srgb,#09090b 70%,white)}
+.bg-white\/80{background-color:color-mix(in srgb,#09090b 80%,white)}
+.bg-white\/90{background-color:color-mix(in srgb,#09090b 90%,white)}
+.bg-white\/95{background-color:color-mix(in srgb,#09090b 95%,white)}
+.bg-sky-300{background-color:#731ee6}
+.bg-sky-300\/10{background-color:color-mix(in srgb,#731ee6 10%,white)}
+.bg-sky-300\/15{background-color:color-mix(in srgb,#731ee6 15%,white)}
+.bg-sky-300\/20{background-color:color-mix(in srgb,#731ee6 20%,white)}
+.bg-sky-300\/30{background-color:color-mix(in srgb,#731ee6 30%,white)}
+.bg-sky-300\/40{background-color:color-mix(in srgb,#731ee6 40%,white)}
+.bg-sky-300\/50{background-color:color-mix(in srgb,#731ee6 50%,white)}
+.bg-sky-300\/60{background-color:color-mix(in srgb,#731ee6 60%,white)}
+.bg-sky-300\/70{background-color:color-mix(in srgb,#731ee6 70%,white)}
+.bg-sky-300\/80{background-color:color-mix(in srgb,#731ee6 80%,white)}
+.bg-sky-300\/90{background-color:color-mix(in srgb,#731ee6 90%,white)}
+.bg-sky-300\/95{background-color:color-mix(in srgb,#731ee6 95%,white)}
+.bg-sky-400{background-color:#8629ff}
+.bg-sky-400\/10{background-color:color-mix(in srgb,#8629ff 10%,white)}
+.bg-sky-400\/15{background-color:color-mix(in srgb,#8629ff 15%,white)}
+.bg-sky-400\/20{background-color:color-mix(in srgb,#8629ff 20%,white)}
+.bg-sky-400\/30{background-color:color-mix(in srgb,#8629ff 30%,white)}
+.bg-sky-400\/40{background-color:color-mix(in srgb,#8629ff 40%,white)}
+.bg-sky-400\/50{background-color:color-mix(in srgb,#8629ff 50%,white)}
+.bg-sky-400\/60{background-color:color-mix(in srgb,#8629ff 60%,white)}
+.bg-sky-400\/70{background-color:color-mix(in srgb,#8629ff 70%,white)}
+.bg-sky-400\/80{background-color:color-mix(in srgb,#8629ff 80%,white)}
+.bg-sky-400\/90{background-color:color-mix(in srgb,#8629ff 90%,white)}
+.bg-sky-400\/95{background-color:color-mix(in srgb,#8629ff 95%,white)}
+.bg-sky-500{background-color:#8629ff}
+.bg-sky-500\/10{background-color:color-mix(in srgb,#8629ff 10%,white)}
+.bg-sky-500\/15{background-color:color-mix(in srgb,#8629ff 15%,white)}
+.bg-sky-500\/20{background-color:color-mix(in srgb,#8629ff 20%,white)}
+.bg-sky-500\/30{background-color:color-mix(in srgb,#8629ff 30%,white)}
+.bg-sky-500\/40{background-color:color-mix(in srgb,#8629ff 40%,white)}
+.bg-sky-500\/50{background-color:color-mix(in srgb,#8629ff 50%,white)}
+.bg-sky-500\/60{background-color:color-mix(in srgb,#8629ff 60%,white)}
+.bg-sky-500\/70{background-color:color-mix(in srgb,#8629ff 70%,white)}
+.bg-sky-500\/80{background-color:color-mix(in srgb,#8629ff 80%,white)}
+.bg-sky-500\/90{background-color:color-mix(in srgb,#8629ff 90%,white)}
+.bg-sky-500\/95{background-color:color-mix(in srgb,#8629ff 95%,white)}
+.bg-indigo-300{background-color:#731ee6}
+.bg-indigo-300\/10{background-color:color-mix(in srgb,#731ee6 10%,white)}
+.bg-indigo-300\/15{background-color:color-mix(in srgb,#731ee6 15%,white)}
+.bg-indigo-300\/20{background-color:color-mix(in srgb,#731ee6 20%,white)}
+.bg-indigo-300\/30{background-color:color-mix(in srgb,#731ee6 30%,white)}
+.bg-indigo-300\/40{background-color:color-mix(in srgb,#731ee6 40%,white)}
+.bg-indigo-300\/50{background-color:color-mix(in srgb,#731ee6 50%,white)}
+.bg-indigo-300\/60{background-color:color-mix(in srgb,#731ee6 60%,white)}
+.bg-indigo-300\/70{background-color:color-mix(in srgb,#731ee6 70%,white)}
+.bg-indigo-300\/80{background-color:color-mix(in srgb,#731ee6 80%,white)}
+.bg-indigo-300\/90{background-color:color-mix(in srgb,#731ee6 90%,white)}
+.bg-indigo-300\/95{background-color:color-mix(in srgb,#731ee6 95%,white)}
+.bg-indigo-400{background-color:#8629ff}
+.bg-indigo-400\/10{background-color:color-mix(in srgb,#8629ff 10%,white)}
+.bg-indigo-400\/15{background-color:color-mix(in srgb,#8629ff 15%,white)}
+.bg-indigo-400\/20{background-color:color-mix(in srgb,#8629ff 20%,white)}
+.bg-indigo-400\/30{background-color:color-mix(in srgb,#8629ff 30%,white)}
+.bg-indigo-400\/40{background-color:color-mix(in srgb,#8629ff 40%,white)}
+.bg-indigo-400\/50{background-color:color-mix(in srgb,#8629ff 50%,white)}
+.bg-indigo-400\/60{background-color:color-mix(in srgb,#8629ff 60%,white)}
+.bg-indigo-400\/70{background-color:color-mix(in srgb,#8629ff 70%,white)}
+.bg-indigo-400\/80{background-color:color-mix(in srgb,#8629ff 80%,white)}
+.bg-indigo-400\/90{background-color:color-mix(in srgb,#8629ff 90%,white)}
+.bg-indigo-400\/95{background-color:color-mix(in srgb,#8629ff 95%,white)}
+.bg-indigo-500{background-color:#8629ff}
+.bg-indigo-500\/10{background-color:color-mix(in srgb,#8629ff 10%,white)}
+.bg-indigo-500\/15{background-color:color-mix(in srgb,#8629ff 15%,white)}
+.bg-indigo-500\/20{background-color:color-mix(in srgb,#8629ff 20%,white)}
+.bg-indigo-500\/30{background-color:color-mix(in srgb,#8629ff 30%,white)}
+.bg-indigo-500\/40{background-color:color-mix(in srgb,#8629ff 40%,white)}
+.bg-indigo-500\/50{background-color:color-mix(in srgb,#8629ff 50%,white)}
+.bg-indigo-500\/60{background-color:color-mix(in srgb,#8629ff 60%,white)}
+.bg-indigo-500\/70{background-color:color-mix(in srgb,#8629ff 70%,white)}
+.bg-indigo-500\/80{background-color:color-mix(in srgb,#8629ff 80%,white)}
+.bg-indigo-500\/90{background-color:color-mix(in srgb,#8629ff 90%,white)}
+.bg-indigo-500\/95{background-color:color-mix(in srgb,#8629ff 95%,white)}
+.bg-indigo-600{background-color:#8629ff}
+.bg-indigo-600\/10{background-color:color-mix(in srgb,#8629ff 10%,white)}
+.bg-indigo-600\/15{background-color:color-mix(in srgb,#8629ff 15%,white)}
+.bg-indigo-600\/20{background-color:color-mix(in srgb,#8629ff 20%,white)}
+.bg-indigo-600\/30{background-color:color-mix(in srgb,#8629ff 30%,white)}
+.bg-indigo-600\/40{background-color:color-mix(in srgb,#8629ff 40%,white)}
+.bg-indigo-600\/50{background-color:color-mix(in srgb,#8629ff 50%,white)}
+.bg-indigo-600\/60{background-color:color-mix(in srgb,#8629ff 60%,white)}
+.bg-indigo-600\/70{background-color:color-mix(in srgb,#8629ff 70%,white)}
+.bg-indigo-600\/80{background-color:color-mix(in srgb,#8629ff 80%,white)}
+.bg-indigo-600\/90{background-color:color-mix(in srgb,#8629ff 90%,white)}
+.bg-indigo-600\/95{background-color:color-mix(in srgb,#8629ff 95%,white)}
+.bg-emerald-300{background-color:#15803d}
+.bg-emerald-300\/10{background-color:color-mix(in srgb,#15803d 10%,white)}
+.bg-emerald-300\/15{background-color:color-mix(in srgb,#15803d 15%,white)}
+.bg-emerald-300\/20{background-color:color-mix(in srgb,#15803d 20%,white)}
+.bg-emerald-300\/30{background-color:color-mix(in srgb,#15803d 30%,white)}
+.bg-emerald-300\/40{background-color:color-mix(in srgb,#15803d 40%,white)}
+.bg-emerald-300\/50{background-color:color-mix(in srgb,#15803d 50%,white)}
+.bg-emerald-300\/60{background-color:color-mix(in srgb,#15803d 60%,white)}
+.bg-emerald-300\/70{background-color:color-mix(in srgb,#15803d 70%,white)}
+.bg-emerald-300\/80{background-color:color-mix(in srgb,#15803d 80%,white)}
+.bg-emerald-300\/90{background-color:color-mix(in srgb,#15803d 90%,white)}
+.bg-emerald-300\/95{background-color:color-mix(in srgb,#15803d 95%,white)}
+.bg-emerald-400{background-color:#15803d}
+.bg-emerald-400\/10{background-color:color-mix(in srgb,#15803d 10%,white)}
+.bg-emerald-400\/15{background-color:color-mix(in srgb,#15803d 15%,white)}
+.bg-emerald-400\/20{background-color:color-mix(in srgb,#15803d 20%,white)}
+.bg-emerald-400\/30{background-color:color-mix(in srgb,#15803d 30%,white)}
+.bg-emerald-400\/40{background-color:color-mix(in srgb,#15803d 40%,white)}
+.bg-emerald-400\/50{background-color:color-mix(in srgb,#15803d 50%,white)}
+.bg-emerald-400\/60{background-color:color-mix(in srgb,#15803d 60%,white)}
+.bg-emerald-400\/70{background-color:color-mix(in srgb,#15803d 70%,white)}
+.bg-emerald-400\/80{background-color:color-mix(in srgb,#15803d 80%,white)}
+.bg-emerald-400\/90{background-color:color-mix(in srgb,#15803d 90%,white)}
+.bg-emerald-400\/95{background-color:color-mix(in srgb,#15803d 95%,white)}
+.bg-emerald-500{background-color:#16a34a}
+.bg-emerald-500\/10{background-color:color-mix(in srgb,#16a34a 10%,white)}
+.bg-emerald-500\/15{background-color:color-mix(in srgb,#16a34a 15%,white)}
+.bg-emerald-500\/20{background-color:color-mix(in srgb,#16a34a 20%,white)}
+.bg-emerald-500\/30{background-color:color-mix(in srgb,#16a34a 30%,white)}
+.bg-emerald-500\/40{background-color:color-mix(in srgb,#16a34a 40%,white)}
+.bg-emerald-500\/50{background-color:color-mix(in srgb,#16a34a 50%,white)}
+.bg-emerald-500\/60{background-color:color-mix(in srgb,#16a34a 60%,white)}
+.bg-emerald-500\/70{background-color:color-mix(in srgb,#16a34a 70%,white)}
+.bg-emerald-500\/80{background-color:color-mix(in srgb,#16a34a 80%,white)}
+.bg-emerald-500\/90{background-color:color-mix(in srgb,#16a34a 90%,white)}
+.bg-emerald-500\/95{background-color:color-mix(in srgb,#16a34a 95%,white)}
+.bg-emerald-950{background-color:#f0fdf4}
+.bg-emerald-950\/10{background-color:color-mix(in srgb,#f0fdf4 10%,white)}
+.bg-emerald-950\/15{background-color:color-mix(in srgb,#f0fdf4 15%,white)}
+.bg-emerald-950\/20{background-color:color-mix(in srgb,#f0fdf4 20%,white)}
+.bg-emerald-950\/30{background-color:color-mix(in srgb,#f0fdf4 30%,white)}
+.bg-emerald-950\/40{background-color:color-mix(in srgb,#f0fdf4 40%,white)}
+.bg-emerald-950\/50{background-color:color-mix(in srgb,#f0fdf4 50%,white)}
+.bg-emerald-950\/60{background-color:color-mix(in srgb,#f0fdf4 60%,white)}
+.bg-emerald-950\/70{background-color:color-mix(in srgb,#f0fdf4 70%,white)}
+.bg-emerald-950\/80{background-color:color-mix(in srgb,#f0fdf4 80%,white)}
+.bg-emerald-950\/90{background-color:color-mix(in srgb,#f0fdf4 90%,white)}
+.bg-emerald-950\/95{background-color:color-mix(in srgb,#f0fdf4 95%,white)}
+.bg-rose-300{background-color:#b91c1c}
+.bg-rose-300\/10{background-color:color-mix(in srgb,#b91c1c 10%,white)}
+.bg-rose-300\/15{background-color:color-mix(in srgb,#b91c1c 15%,white)}
+.bg-rose-300\/20{background-color:color-mix(in srgb,#b91c1c 20%,white)}
+.bg-rose-300\/30{background-color:color-mix(in srgb,#b91c1c 30%,white)}
+.bg-rose-300\/40{background-color:color-mix(in srgb,#b91c1c 40%,white)}
+.bg-rose-300\/50{background-color:color-mix(in srgb,#b91c1c 50%,white)}
+.bg-rose-300\/60{background-color:color-mix(in srgb,#b91c1c 60%,white)}
+.bg-rose-300\/70{background-color:color-mix(in srgb,#b91c1c 70%,white)}
+.bg-rose-300\/80{background-color:color-mix(in srgb,#b91c1c 80%,white)}
+.bg-rose-300\/90{background-color:color-mix(in srgb,#b91c1c 90%,white)}
+.bg-rose-300\/95{background-color:color-mix(in srgb,#b91c1c 95%,white)}
+.bg-rose-500{background-color:#dc2626}
+.bg-rose-500\/10{background-color:color-mix(in srgb,#dc2626 10%,white)}
+.bg-rose-500\/15{background-color:color-mix(in srgb,#dc2626 15%,white)}
+.bg-rose-500\/20{background-color:color-mix(in srgb,#dc2626 20%,white)}
+.bg-rose-500\/30{background-color:color-mix(in srgb,#dc2626 30%,white)}
+.bg-rose-500\/40{background-color:color-mix(in srgb,#dc2626 40%,white)}
+.bg-rose-500\/50{background-color:color-mix(in srgb,#dc2626 50%,white)}
+.bg-rose-500\/60{background-color:color-mix(in srgb,#dc2626 60%,white)}
+.bg-rose-500\/70{background-color:color-mix(in srgb,#dc2626 70%,white)}
+.bg-rose-500\/80{background-color:color-mix(in srgb,#dc2626 80%,white)}
+.bg-rose-500\/90{background-color:color-mix(in srgb,#dc2626 90%,white)}
+.bg-rose-500\/95{background-color:color-mix(in srgb,#dc2626 95%,white)}
+.bg-amber-300{background-color:#92400e}
+.bg-amber-300\/10{background-color:color-mix(in srgb,#92400e 10%,white)}
+.bg-amber-300\/15{background-color:color-mix(in srgb,#92400e 15%,white)}
+.bg-amber-300\/20{background-color:color-mix(in srgb,#92400e 20%,white)}
+.bg-amber-300\/30{background-color:color-mix(in srgb,#92400e 30%,white)}
+.bg-amber-300\/40{background-color:color-mix(in srgb,#92400e 40%,white)}
+.bg-amber-300\/50{background-color:color-mix(in srgb,#92400e 50%,white)}
+.bg-amber-300\/60{background-color:color-mix(in srgb,#92400e 60%,white)}
+.bg-amber-300\/70{background-color:color-mix(in srgb,#92400e 70%,white)}
+.bg-amber-300\/80{background-color:color-mix(in srgb,#92400e 80%,white)}
+.bg-amber-300\/90{background-color:color-mix(in srgb,#92400e 90%,white)}
+.bg-amber-300\/95{background-color:color-mix(in srgb,#92400e 95%,white)}
+.bg-amber-400{background-color:#a16207}
+.bg-amber-400\/10{background-color:color-mix(in srgb,#a16207 10%,white)}
+.bg-amber-400\/15{background-color:color-mix(in srgb,#a16207 15%,white)}
+.bg-amber-400\/20{background-color:color-mix(in srgb,#a16207 20%,white)}
+.bg-amber-400\/30{background-color:color-mix(in srgb,#a16207 30%,white)}
+.bg-amber-400\/40{background-color:color-mix(in srgb,#a16207 40%,white)}
+.bg-amber-400\/50{background-color:color-mix(in srgb,#a16207 50%,white)}
+.bg-amber-400\/60{background-color:color-mix(in srgb,#a16207 60%,white)}
+.bg-amber-400\/70{background-color:color-mix(in srgb,#a16207 70%,white)}
+.bg-amber-400\/80{background-color:color-mix(in srgb,#a16207 80%,white)}
+.bg-amber-400\/90{background-color:color-mix(in srgb,#a16207 90%,white)}
+.bg-amber-400\/95{background-color:color-mix(in srgb,#a16207 95%,white)}
+.bg-amber-500{background-color:#a16207}
+.bg-amber-500\/10{background-color:color-mix(in srgb,#a16207 10%,white)}
+.bg-amber-500\/15{background-color:color-mix(in srgb,#a16207 15%,white)}
+.bg-amber-500\/20{background-color:color-mix(in srgb,#a16207 20%,white)}
+.bg-amber-500\/30{background-color:color-mix(in srgb,#a16207 30%,white)}
+.bg-amber-500\/40{background-color:color-mix(in srgb,#a16207 40%,white)}
+.bg-amber-500\/50{background-color:color-mix(in srgb,#a16207 50%,white)}
+.bg-amber-500\/60{background-color:color-mix(in srgb,#a16207 60%,white)}
+.bg-amber-500\/70{background-color:color-mix(in srgb,#a16207 70%,white)}
+.bg-amber-500\/80{background-color:color-mix(in srgb,#a16207 80%,white)}
+.bg-amber-500\/90{background-color:color-mix(in srgb,#a16207 90%,white)}
+.bg-amber-500\/95{background-color:color-mix(in srgb,#a16207 95%,white)}
+.text-slate-950{color:#ffffff}
+.text-slate-950\/10{color:#ffffff}
+.text-slate-950\/15{color:#ffffff}
+.text-slate-950\/20{color:#ffffff}
+.text-slate-950\/30{color:#ffffff}
+.text-slate-950\/40{color:#ffffff}
+.text-slate-950\/50{color:#ffffff}
+.text-slate-950\/60{color:#ffffff}
+.text-slate-950\/70{color:#ffffff}
+.text-slate-950\/80{color:#ffffff}
+.text-slate-950\/90{color:#ffffff}
+.text-slate-950\/95{color:#ffffff}
+.text-slate-900{color:#ffffff}
+.text-slate-900\/10{color:#ffffff}
+.text-slate-900\/15{color:#ffffff}
+.text-slate-900\/20{color:#ffffff}
+.text-slate-900\/30{color:#ffffff}
+.text-slate-900\/40{color:#ffffff}
+.text-slate-900\/50{color:#ffffff}
+.text-slate-900\/60{color:#ffffff}
+.text-slate-900\/70{color:#ffffff}
+.text-slate-900\/80{color:#ffffff}
+.text-slate-900\/90{color:#ffffff}
+.text-slate-900\/95{color:#ffffff}
+.text-slate-800{color:#f4f4f5}
+.text-slate-800\/10{color:#f4f4f5}
+.text-slate-800\/15{color:#f4f4f5}
+.text-slate-800\/20{color:#f4f4f5}
+.text-slate-800\/30{color:#f4f4f5}
+.text-slate-800\/40{color:#f4f4f5}
+.text-slate-800\/50{color:#f4f4f5}
+.text-slate-800\/60{color:#f4f4f5}
+.text-slate-800\/70{color:#f4f4f5}
+.text-slate-800\/80{color:#f4f4f5}
+.text-slate-800\/90{color:#f4f4f5}
+.text-slate-800\/95{color:#f4f4f5}
+.text-slate-700{color:#d4d4d8}
+.text-slate-700\/10{color:#d4d4d8}
+.text-slate-700\/15{color:#d4d4d8}
+.text-slate-700\/20{color:#d4d4d8}
+.text-slate-700\/30{color:#d4d4d8}
+.text-slate-700\/40{color:#d4d4d8}
+.text-slate-700\/50{color:#d4d4d8}
+.text-slate-700\/60{color:#d4d4d8}
+.text-slate-700\/70{color:#d4d4d8}
+.text-slate-700\/80{color:#d4d4d8}
+.text-slate-700\/90{color:#d4d4d8}
+.text-slate-700\/95{color:#d4d4d8}
+.text-slate-500{color:#71717a}
+.text-slate-500\/10{color:#71717a}
+.text-slate-500\/15{color:#71717a}
+.text-slate-500\/20{color:#71717a}
+.text-slate-500\/30{color:#71717a}
+.text-slate-500\/40{color:#71717a}
+.text-slate-500\/50{color:#71717a}
+.text-slate-500\/60{color:#71717a}
+.text-slate-500\/70{color:#71717a}
+.text-slate-500\/80{color:#71717a}
+.text-slate-500\/90{color:#71717a}
+.text-slate-500\/95{color:#71717a}
+.text-slate-400{color:#52525b}
+.text-slate-400\/10{color:#52525b}
+.text-slate-400\/15{color:#52525b}
+.text-slate-400\/20{color:#52525b}
+.text-slate-400\/30{color:#52525b}
+.text-slate-400\/40{color:#52525b}
+.text-slate-400\/50{color:#52525b}
+.text-slate-400\/60{color:#52525b}
+.text-slate-400\/70{color:#52525b}
+.text-slate-400\/80{color:#52525b}
+.text-slate-400\/90{color:#52525b}
+.text-slate-400\/95{color:#52525b}
+.text-slate-300{color:#3f3f46}
+.text-slate-300\/10{color:#3f3f46}
+.text-slate-300\/15{color:#3f3f46}
+.text-slate-300\/20{color:#3f3f46}
+.text-slate-300\/30{color:#3f3f46}
+.text-slate-300\/40{color:#3f3f46}
+.text-slate-300\/50{color:#3f3f46}
+.text-slate-300\/60{color:#3f3f46}
+.text-slate-300\/70{color:#3f3f46}
+.text-slate-300\/80{color:#3f3f46}
+.text-slate-300\/90{color:#3f3f46}
+.text-slate-300\/95{color:#3f3f46}
+.text-slate-200{color:#18181b}
+.text-slate-200\/10{color:#18181b}
+.text-slate-200\/15{color:#18181b}
+.text-slate-200\/20{color:#18181b}
+.text-slate-200\/30{color:#18181b}
+.text-slate-200\/40{color:#18181b}
+.text-slate-200\/50{color:#18181b}
+.text-slate-200\/60{color:#18181b}
+.text-slate-200\/70{color:#18181b}
+.text-slate-200\/80{color:#18181b}
+.text-slate-200\/90{color:#18181b}
+.text-slate-200\/95{color:#18181b}
+.text-slate-100{color:#09090b}
+.text-slate-100\/10{color:#09090b}
+.text-slate-100\/15{color:#09090b}
+.text-slate-100\/20{color:#09090b}
+.text-slate-100\/30{color:#09090b}
+.text-slate-100\/40{color:#09090b}
+.text-slate-100\/50{color:#09090b}
+.text-slate-100\/60{color:#09090b}
+.text-slate-100\/70{color:#09090b}
+.text-slate-100\/80{color:#09090b}
+.text-slate-100\/90{color:#09090b}
+.text-slate-100\/95{color:#09090b}
+.text-white{color:#09090b}
+.text-white\/10{color:#09090b}
+.text-white\/15{color:#09090b}
+.text-white\/20{color:#09090b}
+.text-white\/30{color:#09090b}
+.text-white\/40{color:#09090b}
+.text-white\/50{color:#09090b}
+.text-white\/60{color:#09090b}
+.text-white\/70{color:#09090b}
+.text-white\/80{color:#09090b}
+.text-white\/90{color:#09090b}
+.text-white\/95{color:#09090b}
+.text-sky-300{color:#731ee6}
+.text-sky-300\/10{color:#731ee6}
+.text-sky-300\/15{color:#731ee6}
+.text-sky-300\/20{color:#731ee6}
+.text-sky-300\/30{color:#731ee6}
+.text-sky-300\/40{color:#731ee6}
+.text-sky-300\/50{color:#731ee6}
+.text-sky-300\/60{color:#731ee6}
+.text-sky-300\/70{color:#731ee6}
+.text-sky-300\/80{color:#731ee6}
+.text-sky-300\/90{color:#731ee6}
+.text-sky-300\/95{color:#731ee6}
+.text-sky-400{color:#8629ff}
+.text-sky-400\/10{color:#8629ff}
+.text-sky-400\/15{color:#8629ff}
+.text-sky-400\/20{color:#8629ff}
+.text-sky-400\/30{color:#8629ff}
+.text-sky-400\/40{color:#8629ff}
+.text-sky-400\/50{color:#8629ff}
+.text-sky-400\/60{color:#8629ff}
+.text-sky-400\/70{color:#8629ff}
+.text-sky-400\/80{color:#8629ff}
+.text-sky-400\/90{color:#8629ff}
+.text-sky-400\/95{color:#8629ff}
+.text-sky-500{color:#8629ff}
+.text-sky-500\/10{color:#8629ff}
+.text-sky-500\/15{color:#8629ff}
+.text-sky-500\/20{color:#8629ff}
+.text-sky-500\/30{color:#8629ff}
+.text-sky-500\/40{color:#8629ff}
+.text-sky-500\/50{color:#8629ff}
+.text-sky-500\/60{color:#8629ff}
+.text-sky-500\/70{color:#8629ff}
+.text-sky-500\/80{color:#8629ff}
+.text-sky-500\/90{color:#8629ff}
+.text-sky-500\/95{color:#8629ff}
+.text-indigo-300{color:#731ee6}
+.text-indigo-300\/10{color:#731ee6}
+.text-indigo-300\/15{color:#731ee6}
+.text-indigo-300\/20{color:#731ee6}
+.text-indigo-300\/30{color:#731ee6}
+.text-indigo-300\/40{color:#731ee6}
+.text-indigo-300\/50{color:#731ee6}
+.text-indigo-300\/60{color:#731ee6}
+.text-indigo-300\/70{color:#731ee6}
+.text-indigo-300\/80{color:#731ee6}
+.text-indigo-300\/90{color:#731ee6}
+.text-indigo-300\/95{color:#731ee6}
+.text-indigo-400{color:#8629ff}
+.text-indigo-400\/10{color:#8629ff}
+.text-indigo-400\/15{color:#8629ff}
+.text-indigo-400\/20{color:#8629ff}
+.text-indigo-400\/30{color:#8629ff}
+.text-indigo-400\/40{color:#8629ff}
+.text-indigo-400\/50{color:#8629ff}
+.text-indigo-400\/60{color:#8629ff}
+.text-indigo-400\/70{color:#8629ff}
+.text-indigo-400\/80{color:#8629ff}
+.text-indigo-400\/90{color:#8629ff}
+.text-indigo-400\/95{color:#8629ff}
+.text-indigo-500{color:#8629ff}
+.text-indigo-500\/10{color:#8629ff}
+.text-indigo-500\/15{color:#8629ff}
+.text-indigo-500\/20{color:#8629ff}
+.text-indigo-500\/30{color:#8629ff}
+.text-indigo-500\/40{color:#8629ff}
+.text-indigo-500\/50{color:#8629ff}
+.text-indigo-500\/60{color:#8629ff}
+.text-indigo-500\/70{color:#8629ff}
+.text-indigo-500\/80{color:#8629ff}
+.text-indigo-500\/90{color:#8629ff}
+.text-indigo-500\/95{color:#8629ff}
+.text-indigo-600{color:#8629ff}
+.text-indigo-600\/10{color:#8629ff}
+.text-indigo-600\/15{color:#8629ff}
+.text-indigo-600\/20{color:#8629ff}
+.text-indigo-600\/30{color:#8629ff}
+.text-indigo-600\/40{color:#8629ff}
+.text-indigo-600\/50{color:#8629ff}
+.text-indigo-600\/60{color:#8629ff}
+.text-indigo-600\/70{color:#8629ff}
+.text-indigo-600\/80{color:#8629ff}
+.text-indigo-600\/90{color:#8629ff}
+.text-indigo-600\/95{color:#8629ff}
+.text-emerald-300{color:#15803d}
+.text-emerald-300\/10{color:#15803d}
+.text-emerald-300\/15{color:#15803d}
+.text-emerald-300\/20{color:#15803d}
+.text-emerald-300\/30{color:#15803d}
+.text-emerald-300\/40{color:#15803d}
+.text-emerald-300\/50{color:#15803d}
+.text-emerald-300\/60{color:#15803d}
+.text-emerald-300\/70{color:#15803d}
+.text-emerald-300\/80{color:#15803d}
+.text-emerald-300\/90{color:#15803d}
+.text-emerald-300\/95{color:#15803d}
+.text-emerald-400{color:#15803d}
+.text-emerald-400\/10{color:#15803d}
+.text-emerald-400\/15{color:#15803d}
+.text-emerald-400\/20{color:#15803d}
+.text-emerald-400\/30{color:#15803d}
+.text-emerald-400\/40{color:#15803d}
+.text-emerald-400\/50{color:#15803d}
+.text-emerald-400\/60{color:#15803d}
+.text-emerald-400\/70{color:#15803d}
+.text-emerald-400\/80{color:#15803d}
+.text-emerald-400\/90{color:#15803d}
+.text-emerald-400\/95{color:#15803d}
+.text-emerald-500{color:#16a34a}
+.text-emerald-500\/10{color:#16a34a}
+.text-emerald-500\/15{color:#16a34a}
+.text-emerald-500\/20{color:#16a34a}
+.text-emerald-500\/30{color:#16a34a}
+.text-emerald-500\/40{color:#16a34a}
+.text-emerald-500\/50{color:#16a34a}
+.text-emerald-500\/60{color:#16a34a}
+.text-emerald-500\/70{color:#16a34a}
+.text-emerald-500\/80{color:#16a34a}
+.text-emerald-500\/90{color:#16a34a}
+.text-emerald-500\/95{color:#16a34a}
+.text-emerald-950{color:#f0fdf4}
+.text-emerald-950\/10{color:#f0fdf4}
+.text-emerald-950\/15{color:#f0fdf4}
+.text-emerald-950\/20{color:#f0fdf4}
+.text-emerald-950\/30{color:#f0fdf4}
+.text-emerald-950\/40{color:#f0fdf4}
+.text-emerald-950\/50{color:#f0fdf4}
+.text-emerald-950\/60{color:#f0fdf4}
+.text-emerald-950\/70{color:#f0fdf4}
+.text-emerald-950\/80{color:#f0fdf4}
+.text-emerald-950\/90{color:#f0fdf4}
+.text-emerald-950\/95{color:#f0fdf4}
+.text-rose-300{color:#b91c1c}
+.text-rose-300\/10{color:#b91c1c}
+.text-rose-300\/15{color:#b91c1c}
+.text-rose-300\/20{color:#b91c1c}
+.text-rose-300\/30{color:#b91c1c}
+.text-rose-300\/40{color:#b91c1c}
+.text-rose-300\/50{color:#b91c1c}
+.text-rose-300\/60{color:#b91c1c}
+.text-rose-300\/70{color:#b91c1c}
+.text-rose-300\/80{color:#b91c1c}
+.text-rose-300\/90{color:#b91c1c}
+.text-rose-300\/95{color:#b91c1c}
+.text-rose-500{color:#dc2626}
+.text-rose-500\/10{color:#dc2626}
+.text-rose-500\/15{color:#dc2626}
+.text-rose-500\/20{color:#dc2626}
+.text-rose-500\/30{color:#dc2626}
+.text-rose-500\/40{color:#dc2626}
+.text-rose-500\/50{color:#dc2626}
+.text-rose-500\/60{color:#dc2626}
+.text-rose-500\/70{color:#dc2626}
+.text-rose-500\/80{color:#dc2626}
+.text-rose-500\/90{color:#dc2626}
+.text-rose-500\/95{color:#dc2626}
+.text-amber-300{color:#92400e}
+.text-amber-300\/10{color:#92400e}
+.text-amber-300\/15{color:#92400e}
+.text-amber-300\/20{color:#92400e}
+.text-amber-300\/30{color:#92400e}
+.text-amber-300\/40{color:#92400e}
+.text-amber-300\/50{color:#92400e}
+.text-amber-300\/60{color:#92400e}
+.text-amber-300\/70{color:#92400e}
+.text-amber-300\/80{color:#92400e}
+.text-amber-300\/90{color:#92400e}
+.text-amber-300\/95{color:#92400e}
+.text-amber-400{color:#a16207}
+.text-amber-400\/10{color:#a16207}
+.text-amber-400\/15{color:#a16207}
+.text-amber-400\/20{color:#a16207}
+.text-amber-400\/30{color:#a16207}
+.text-amber-400\/40{color:#a16207}
+.text-amber-400\/50{color:#a16207}
+.text-amber-400\/60{color:#a16207}
+.text-amber-400\/70{color:#a16207}
+.text-amber-400\/80{color:#a16207}
+.text-amber-400\/90{color:#a16207}
+.text-amber-400\/95{color:#a16207}
+.text-amber-500{color:#a16207}
+.text-amber-500\/10{color:#a16207}
+.text-amber-500\/15{color:#a16207}
+.text-amber-500\/20{color:#a16207}
+.text-amber-500\/30{color:#a16207}
+.text-amber-500\/40{color:#a16207}
+.text-amber-500\/50{color:#a16207}
+.text-amber-500\/60{color:#a16207}
+.text-amber-500\/70{color:#a16207}
+.text-amber-500\/80{color:#a16207}
+.text-amber-500\/90{color:#a16207}
+.text-amber-500\/95{color:#a16207}
+.border-slate-950{border-color:#ffffff}
+.border-slate-950\/10{border-color:#ffffff}
+.border-slate-950\/15{border-color:#ffffff}
+.border-slate-950\/20{border-color:#ffffff}
+.border-slate-950\/30{border-color:#ffffff}
+.border-slate-950\/40{border-color:#ffffff}
+.border-slate-950\/50{border-color:#ffffff}
+.border-slate-950\/60{border-color:#ffffff}
+.border-slate-950\/70{border-color:#ffffff}
+.border-slate-950\/80{border-color:#ffffff}
+.border-slate-950\/90{border-color:#ffffff}
+.border-slate-950\/95{border-color:#ffffff}
+.border-slate-900{border-color:#ffffff}
+.border-slate-900\/10{border-color:#ffffff}
+.border-slate-900\/15{border-color:#ffffff}
+.border-slate-900\/20{border-color:#ffffff}
+.border-slate-900\/30{border-color:#ffffff}
+.border-slate-900\/40{border-color:#ffffff}
+.border-slate-900\/50{border-color:#ffffff}
+.border-slate-900\/60{border-color:#ffffff}
+.border-slate-900\/70{border-color:#ffffff}
+.border-slate-900\/80{border-color:#ffffff}
+.border-slate-900\/90{border-color:#ffffff}
+.border-slate-900\/95{border-color:#ffffff}
+.border-slate-800{border-color:#f4f4f5}
+.border-slate-800\/10{border-color:#f4f4f5}
+.border-slate-800\/15{border-color:#f4f4f5}
+.border-slate-800\/20{border-color:#f4f4f5}
+.border-slate-800\/30{border-color:#f4f4f5}
+.border-slate-800\/40{border-color:#f4f4f5}
+.border-slate-800\/50{border-color:#f4f4f5}
+.border-slate-800\/60{border-color:#f4f4f5}
+.border-slate-800\/70{border-color:#f4f4f5}
+.border-slate-800\/80{border-color:#f4f4f5}
+.border-slate-800\/90{border-color:#f4f4f5}
+.border-slate-800\/95{border-color:#f4f4f5}
+.border-slate-700{border-color:#d4d4d8}
+.border-slate-700\/10{border-color:#d4d4d8}
+.border-slate-700\/15{border-color:#d4d4d8}
+.border-slate-700\/20{border-color:#d4d4d8}
+.border-slate-700\/30{border-color:#d4d4d8}
+.border-slate-700\/40{border-color:#d4d4d8}
+.border-slate-700\/50{border-color:#d4d4d8}
+.border-slate-700\/60{border-color:#d4d4d8}
+.border-slate-700\/70{border-color:#d4d4d8}
+.border-slate-700\/80{border-color:#d4d4d8}
+.border-slate-700\/90{border-color:#d4d4d8}
+.border-slate-700\/95{border-color:#d4d4d8}
+.border-slate-500{border-color:#71717a}
+.border-slate-500\/10{border-color:#71717a}
+.border-slate-500\/15{border-color:#71717a}
+.border-slate-500\/20{border-color:#71717a}
+.border-slate-500\/30{border-color:#71717a}
+.border-slate-500\/40{border-color:#71717a}
+.border-slate-500\/50{border-color:#71717a}
+.border-slate-500\/60{border-color:#71717a}
+.border-slate-500\/70{border-color:#71717a}
+.border-slate-500\/80{border-color:#71717a}
+.border-slate-500\/90{border-color:#71717a}
+.border-slate-500\/95{border-color:#71717a}
+.border-slate-400{border-color:#52525b}
+.border-slate-400\/10{border-color:#52525b}
+.border-slate-400\/15{border-color:#52525b}
+.border-slate-400\/20{border-color:#52525b}
+.border-slate-400\/30{border-color:#52525b}
+.border-slate-400\/40{border-color:#52525b}
+.border-slate-400\/50{border-color:#52525b}
+.border-slate-400\/60{border-color:#52525b}
+.border-slate-400\/70{border-color:#52525b}
+.border-slate-400\/80{border-color:#52525b}
+.border-slate-400\/90{border-color:#52525b}
+.border-slate-400\/95{border-color:#52525b}
+.border-slate-300{border-color:#3f3f46}
+.border-slate-300\/10{border-color:#3f3f46}
+.border-slate-300\/15{border-color:#3f3f46}
+.border-slate-300\/20{border-color:#3f3f46}
+.border-slate-300\/30{border-color:#3f3f46}
+.border-slate-300\/40{border-color:#3f3f46}
+.border-slate-300\/50{border-color:#3f3f46}
+.border-slate-300\/60{border-color:#3f3f46}
+.border-slate-300\/70{border-color:#3f3f46}
+.border-slate-300\/80{border-color:#3f3f46}
+.border-slate-300\/90{border-color:#3f3f46}
+.border-slate-300\/95{border-color:#3f3f46}
+.border-slate-200{border-color:#18181b}
+.border-slate-200\/10{border-color:#18181b}
+.border-slate-200\/15{border-color:#18181b}
+.border-slate-200\/20{border-color:#18181b}
+.border-slate-200\/30{border-color:#18181b}
+.border-slate-200\/40{border-color:#18181b}
+.border-slate-200\/50{border-color:#18181b}
+.border-slate-200\/60{border-color:#18181b}
+.border-slate-200\/70{border-color:#18181b}
+.border-slate-200\/80{border-color:#18181b}
+.border-slate-200\/90{border-color:#18181b}
+.border-slate-200\/95{border-color:#18181b}
+.border-slate-100{border-color:#09090b}
+.border-slate-100\/10{border-color:#09090b}
+.border-slate-100\/15{border-color:#09090b}
+.border-slate-100\/20{border-color:#09090b}
+.border-slate-100\/30{border-color:#09090b}
+.border-slate-100\/40{border-color:#09090b}
+.border-slate-100\/50{border-color:#09090b}
+.border-slate-100\/60{border-color:#09090b}
+.border-slate-100\/70{border-color:#09090b}
+.border-slate-100\/80{border-color:#09090b}
+.border-slate-100\/90{border-color:#09090b}
+.border-slate-100\/95{border-color:#09090b}
+.border-white{border-color:#09090b}
+.border-white\/10{border-color:#09090b}
+.border-white\/15{border-color:#09090b}
+.border-white\/20{border-color:#09090b}
+.border-white\/30{border-color:#09090b}
+.border-white\/40{border-color:#09090b}
+.border-white\/50{border-color:#09090b}
+.border-white\/60{border-color:#09090b}
+.border-white\/70{border-color:#09090b}
+.border-white\/80{border-color:#09090b}
+.border-white\/90{border-color:#09090b}
+.border-white\/95{border-color:#09090b}
+.border-sky-300{border-color:#731ee6}
+.border-sky-300\/10{border-color:#731ee6}
+.border-sky-300\/15{border-color:#731ee6}
+.border-sky-300\/20{border-color:#731ee6}
+.border-sky-300\/30{border-color:#731ee6}
+.border-sky-300\/40{border-color:#731ee6}
+.border-sky-300\/50{border-color:#731ee6}
+.border-sky-300\/60{border-color:#731ee6}
+.border-sky-300\/70{border-color:#731ee6}
+.border-sky-300\/80{border-color:#731ee6}
+.border-sky-300\/90{border-color:#731ee6}
+.border-sky-300\/95{border-color:#731ee6}
+.border-sky-400{border-color:#8629ff}
+.border-sky-400\/10{border-color:#8629ff}
+.border-sky-400\/15{border-color:#8629ff}
+.border-sky-400\/20{border-color:#8629ff}
+.border-sky-400\/30{border-color:#8629ff}
+.border-sky-400\/40{border-color:#8629ff}
+.border-sky-400\/50{border-color:#8629ff}
+.border-sky-400\/60{border-color:#8629ff}
+.border-sky-400\/70{border-color:#8629ff}
+.border-sky-400\/80{border-color:#8629ff}
+.border-sky-400\/90{border-color:#8629ff}
+.border-sky-400\/95{border-color:#8629ff}
+.border-sky-500{border-color:#8629ff}
+.border-sky-500\/10{border-color:#8629ff}
+.border-sky-500\/15{border-color:#8629ff}
+.border-sky-500\/20{border-color:#8629ff}
+.border-sky-500\/30{border-color:#8629ff}
+.border-sky-500\/40{border-color:#8629ff}
+.border-sky-500\/50{border-color:#8629ff}
+.border-sky-500\/60{border-color:#8629ff}
+.border-sky-500\/70{border-color:#8629ff}
+.border-sky-500\/80{border-color:#8629ff}
+.border-sky-500\/90{border-color:#8629ff}
+.border-sky-500\/95{border-color:#8629ff}
+.border-indigo-300{border-color:#731ee6}
+.border-indigo-300\/10{border-color:#731ee6}
+.border-indigo-300\/15{border-color:#731ee6}
+.border-indigo-300\/20{border-color:#731ee6}
+.border-indigo-300\/30{border-color:#731ee6}
+.border-indigo-300\/40{border-color:#731ee6}
+.border-indigo-300\/50{border-color:#731ee6}
+.border-indigo-300\/60{border-color:#731ee6}
+.border-indigo-300\/70{border-color:#731ee6}
+.border-indigo-300\/80{border-color:#731ee6}
+.border-indigo-300\/90{border-color:#731ee6}
+.border-indigo-300\/95{border-color:#731ee6}
+.border-indigo-400{border-color:#8629ff}
+.border-indigo-400\/10{border-color:#8629ff}
+.border-indigo-400\/15{border-color:#8629ff}
+.border-indigo-400\/20{border-color:#8629ff}
+.border-indigo-400\/30{border-color:#8629ff}
+.border-indigo-400\/40{border-color:#8629ff}
+.border-indigo-400\/50{border-color:#8629ff}
+.border-indigo-400\/60{border-color:#8629ff}
+.border-indigo-400\/70{border-color:#8629ff}
+.border-indigo-400\/80{border-color:#8629ff}
+.border-indigo-400\/90{border-color:#8629ff}
+.border-indigo-400\/95{border-color:#8629ff}
+.border-indigo-500{border-color:#8629ff}
+.border-indigo-500\/10{border-color:#8629ff}
+.border-indigo-500\/15{border-color:#8629ff}
+.border-indigo-500\/20{border-color:#8629ff}
+.border-indigo-500\/30{border-color:#8629ff}
+.border-indigo-500\/40{border-color:#8629ff}
+.border-indigo-500\/50{border-color:#8629ff}
+.border-indigo-500\/60{border-color:#8629ff}
+.border-indigo-500\/70{border-color:#8629ff}
+.border-indigo-500\/80{border-color:#8629ff}
+.border-indigo-500\/90{border-color:#8629ff}
+.border-indigo-500\/95{border-color:#8629ff}
+.border-indigo-600{border-color:#8629ff}
+.border-indigo-600\/10{border-color:#8629ff}
+.border-indigo-600\/15{border-color:#8629ff}
+.border-indigo-600\/20{border-color:#8629ff}
+.border-indigo-600\/30{border-color:#8629ff}
+.border-indigo-600\/40{border-color:#8629ff}
+.border-indigo-600\/50{border-color:#8629ff}
+.border-indigo-600\/60{border-color:#8629ff}
+.border-indigo-600\/70{border-color:#8629ff}
+.border-indigo-600\/80{border-color:#8629ff}
+.border-indigo-600\/90{border-color:#8629ff}
+.border-indigo-600\/95{border-color:#8629ff}
+.border-emerald-300{border-color:#15803d}
+.border-emerald-300\/10{border-color:#15803d}
+.border-emerald-300\/15{border-color:#15803d}
+.border-emerald-300\/20{border-color:#15803d}
+.border-emerald-300\/30{border-color:#15803d}
+.border-emerald-300\/40{border-color:#15803d}
+.border-emerald-300\/50{border-color:#15803d}
+.border-emerald-300\/60{border-color:#15803d}
+.border-emerald-300\/70{border-color:#15803d}
+.border-emerald-300\/80{border-color:#15803d}
+.border-emerald-300\/90{border-color:#15803d}
+.border-emerald-300\/95{border-color:#15803d}
+.border-emerald-400{border-color:#15803d}
+.border-emerald-400\/10{border-color:#15803d}
+.border-emerald-400\/15{border-color:#15803d}
+.border-emerald-400\/20{border-color:#15803d}
+.border-emerald-400\/30{border-color:#15803d}
+.border-emerald-400\/40{border-color:#15803d}
+.border-emerald-400\/50{border-color:#15803d}
+.border-emerald-400\/60{border-color:#15803d}
+.border-emerald-400\/70{border-color:#15803d}
+.border-emerald-400\/80{border-color:#15803d}
+.border-emerald-400\/90{border-color:#15803d}
+.border-emerald-400\/95{border-color:#15803d}
+.border-emerald-500{border-color:#16a34a}
+.border-emerald-500\/10{border-color:#16a34a}
+.border-emerald-500\/15{border-color:#16a34a}
+.border-emerald-500\/20{border-color:#16a34a}
+.border-emerald-500\/30{border-color:#16a34a}
+.border-emerald-500\/40{border-color:#16a34a}
+.border-emerald-500\/50{border-color:#16a34a}
+.border-emerald-500\/60{border-color:#16a34a}
+.border-emerald-500\/70{border-color:#16a34a}
+.border-emerald-500\/80{border-color:#16a34a}
+.border-emerald-500\/90{border-color:#16a34a}
+.border-emerald-500\/95{border-color:#16a34a}
+.border-emerald-950{border-color:#f0fdf4}
+.border-emerald-950\/10{border-color:#f0fdf4}
+.border-emerald-950\/15{border-color:#f0fdf4}
+.border-emerald-950\/20{border-color:#f0fdf4}
+.border-emerald-950\/30{border-color:#f0fdf4}
+.border-emerald-950\/40{border-color:#f0fdf4}
+.border-emerald-950\/50{border-color:#f0fdf4}
+.border-emerald-950\/60{border-color:#f0fdf4}
+.border-emerald-950\/70{border-color:#f0fdf4}
+.border-emerald-950\/80{border-color:#f0fdf4}
+.border-emerald-950\/90{border-color:#f0fdf4}
+.border-emerald-950\/95{border-color:#f0fdf4}
+.border-rose-300{border-color:#b91c1c}
+.border-rose-300\/10{border-color:#b91c1c}
+.border-rose-300\/15{border-color:#b91c1c}
+.border-rose-300\/20{border-color:#b91c1c}
+.border-rose-300\/30{border-color:#b91c1c}
+.border-rose-300\/40{border-color:#b91c1c}
+.border-rose-300\/50{border-color:#b91c1c}
+.border-rose-300\/60{border-color:#b91c1c}
+.border-rose-300\/70{border-color:#b91c1c}
+.border-rose-300\/80{border-color:#b91c1c}
+.border-rose-300\/90{border-color:#b91c1c}
+.border-rose-300\/95{border-color:#b91c1c}
+.border-rose-500{border-color:#dc2626}
+.border-rose-500\/10{border-color:#dc2626}
+.border-rose-500\/15{border-color:#dc2626}
+.border-rose-500\/20{border-color:#dc2626}
+.border-rose-500\/30{border-color:#dc2626}
+.border-rose-500\/40{border-color:#dc2626}
+.border-rose-500\/50{border-color:#dc2626}
+.border-rose-500\/60{border-color:#dc2626}
+.border-rose-500\/70{border-color:#dc2626}
+.border-rose-500\/80{border-color:#dc2626}
+.border-rose-500\/90{border-color:#dc2626}
+.border-rose-500\/95{border-color:#dc2626}
+.border-amber-300{border-color:#92400e}
+.border-amber-300\/10{border-color:#92400e}
+.border-amber-300\/15{border-color:#92400e}
+.border-amber-300\/20{border-color:#92400e}
+.border-amber-300\/30{border-color:#92400e}
+.border-amber-300\/40{border-color:#92400e}
+.border-amber-300\/50{border-color:#92400e}
+.border-amber-300\/60{border-color:#92400e}
+.border-amber-300\/70{border-color:#92400e}
+.border-amber-300\/80{border-color:#92400e}
+.border-amber-300\/90{border-color:#92400e}
+.border-amber-300\/95{border-color:#92400e}
+.border-amber-400{border-color:#a16207}
+.border-amber-400\/10{border-color:#a16207}
+.border-amber-400\/15{border-color:#a16207}
+.border-amber-400\/20{border-color:#a16207}
+.border-amber-400\/30{border-color:#a16207}
+.border-amber-400\/40{border-color:#a16207}
+.border-amber-400\/50{border-color:#a16207}
+.border-amber-400\/60{border-color:#a16207}
+.border-amber-400\/70{border-color:#a16207}
+.border-amber-400\/80{border-color:#a16207}
+.border-amber-400\/90{border-color:#a16207}
+.border-amber-400\/95{border-color:#a16207}
+.border-amber-500{border-color:#a16207}
+.border-amber-500\/10{border-color:#a16207}
+.border-amber-500\/15{border-color:#a16207}
+.border-amber-500\/20{border-color:#a16207}
+.border-amber-500\/30{border-color:#a16207}
+.border-amber-500\/40{border-color:#a16207}
+.border-amber-500\/50{border-color:#a16207}
+.border-amber-500\/60{border-color:#a16207}
+.border-amber-500\/70{border-color:#a16207}
+.border-amber-500\/80{border-color:#a16207}
+.border-amber-500\/90{border-color:#a16207}
+.border-amber-500\/95{border-color:#a16207}
+
+.mv-original,.mv-original *{box-sizing:border-box}.mv-original{color:#09090b;background:white;border:1px solid #e4e4e7;box-shadow:none;font-family:Inter,sans-serif}.mv-original button{cursor:pointer;font-family:inherit;border:1px solid #ddd;min-height:32px}.mv-original button:focus-visible{outline:2px solid #8629ff;outline-offset:3px}.mv-header{flex-wrap:wrap;gap:14px}.mv-header>div:first-child{min-width:0}.mv-header>div:first-child>span:last-child{line-height:1.6}.mv-header>div:last-child{flex-wrap:wrap}.mv-header button:last-child{color:white}.mv-canvas{width:960px;flex:none;background-image:radial-gradient(#e4e4e7 .65px,transparent .65px);background-size:20px 20px}.mv-canvas svg{overflow:visible}.mv-canvas svg path{stroke-width:1.5;stroke-dasharray:none}.mv-warden{height:144px}.mv-encryption{height:64px}.mv-vault{top:453px;bottom:auto}.mv-vault>div{height:160px}.mv-elevation{right:24px;animation:quiet-in .25s ease-out}.mv-auto{right:24px;max-width:252px;line-height:1.5}.is-inactive{opacity:1}.is-inactive>div{background:#fafafa;color:#52525b}.is-active>div{border-color:#8629ff;background:#faf5ff;color:#731ee6}.mv-canvas span{white-space:nowrap}.mv-vault>div>div:last-child{gap:12px;align-items:flex-start}.mv-vault>div>div:last-child>span:last-child{white-space:normal;overflow-wrap:anywhere;max-width:184px}.mv-footer{align-items:flex-start}.mv-narration{flex:1;line-height:1.7}.mv-scrubber{flex-shrink:0}.mv-scrubber button{border:0;min-height:24px;position:relative}.mv-calm-enter{animation:quiet-in .25s ease-out}@keyframes quiet-in{from{opacity:0}to{opacity:1}}.diagram-pan{overflow-x:auto;overscroll-behavior-x:contain;border-radius:16px}.diagram-pan>.mv-original{width:960px}.phone-reading{display:none}@media(max-width:700px){.diagram-pan{border:1px solid #e4e4e7}.diagram-pan>.mv-original{border:0}.phone-reading{display:block;margin-top:10px}.phone-reading .mv-header{padding:12px}.phone-reading .mv-header>div:first-child{display:none}.phone-reading .mv-footer{padding:12px;display:block}.phone-reading .mv-scrubber{margin-top:12px}.diagram-pan .mv-header,.diagram-pan .mv-footer{display:none}.mv-original button{min-height:44px}.phone-reading .mv-scrubber button{min-height:32px;min-width:26px}.pan-hint{font:12px Inter,sans-serif;color:#52525b;margin:8px 0}}
+@media(prefers-reduced-motion:reduce){.mv-original *{animation:none!important;transition:none!important}.mv-original animateMotion{display:none}}
+
+.mv-pan{overflow-x:auto;overscroll-behavior-x:contain}.mv-canvas{width:100%;min-width:960px}.mv-original{max-width:960px}.mv-header{padding:16px 20px}.mv-footer{padding:16px 20px}.mv-header>div:first-child>span:last-child{white-space:normal}.mv-original .mv-scrubber button{min-width:8px}.mv-original .mv-scrubber button.w-6{min-width:24px}@media(max-width:700px){.mv-header{padding:12px;gap:10px}.mv-header>div:first-child>span:not(:last-child){display:none}.mv-header>div:first-child>span:last-child{margin:0;font-size:11px}.mv-header>div:last-child{gap:6px}.mv-header button{padding-inline:9px;font-size:11px}.mv-header button:last-child{margin:0}.mv-footer{display:block;padding:12px}.mv-scrubber{margin-top:10px}.mv-original .mv-scrubber button{min-width:28px}.mv-canvas{min-width:960px}}
+
+@media(min-width:701px){.mv-footer{flex-direction:row;align-items:center}.mv-scrubber{margin:0}.mv-header button{white-space:nowrap}}.mv-original .mv-canvas .mv-warden{box-shadow:none}.mv-original .mv-canvas .mv-encryption{box-shadow:none}.mv-original .mv-canvas .mv-vault>div{box-shadow:none}.mv-original .mv-canvas .mv-elevation{box-shadow:none}

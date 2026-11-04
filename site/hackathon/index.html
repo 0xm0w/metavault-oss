@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/assets/landing.css">
 <link rel="stylesheet" href="/assets/pages.css">
+<link rel="stylesheet" href="/assets/animation-embed.css">
 </head>
 <body>
 <div class="mb-landing hack-deck">
@@ -26,7 +27,7 @@
       <a class="caption-mono-sm" href="/architecture/">Architecture</a>
       <a class="caption-mono-sm" href="/research/">Research</a>
       <a class="caption-mono-sm" href="/docs/">Docs</a>
-      <a class="mb-btn-nav" href="/overview/#download">Download</a>
+      <a class="mb-btn-nav" href="/overview/#download">Installer on hold</a>
     </div>
     <button class="mb-nav-hamburger-btn" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -37,7 +38,7 @@
     <a class="mb-mobile-menu-item" href="/architecture/">Architecture</a>
     <a class="mb-mobile-menu-item" href="/research/">Research</a>
     <a class="mb-mobile-menu-item" href="/docs/">Docs</a>
-    <a class="mb-btn-nav" href="/overview/#download" style="margin-top:8px;align-self:flex-start">Download</a>
+    <a class="mb-btn-nav" href="/overview/#download" style="margin-top:8px;align-self:flex-start">Installer on hold</a>
   </div>
 </nav>
 
@@ -45,8 +46,8 @@
   <header class="hack-slide" id="pitch" data-label="The pitch">
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker neon-rainbow-text">Meta hackathon · Indie track</span>
-      <h1>Stop pasting live keys into coding agents.</h1>
-      <p class="pg-lead">One local vault. Agents in Cursor, Claude Code, Codex, and VS Code ask for a <span class="buzz">capability</span>. A Meta model (Muse Spark by default) scores the request. You approve. The secret never enters the chat.</p>
+      <h1>Stop pasting live keys into coding tools</h1>
+      <p class="pg-lead">One local vault. Agents in Cursor, Claude Code, Codex, and VS Code ask for a <span class="buzz">capability</span>. A Meta model (Muse Spark by default) scores the request. You approve when policy requires it. The secret never enters the chat.</p>
       <div class="pg-row">
         <a class="mb-btn-primary" href="#problem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>See the problem</span></a>
         <a class="mb-btn-tertiary" href="https://github.com/0xm0w/metavault-oss"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg><span>Apache-2.0</span></a>
@@ -75,6 +76,15 @@
         <article class="pg-card"><span class="n">Warden</span><h3>A Meta model on guard</h3><p class="pg-note">Default <span class="buzz">Muse Spark 1.3 via the Meta API</span>, or a model on your own local endpoint. It sees the request, never the key.</p></article>
         <article class="pg-card"><span class="n">Tripwire</span><h3>The grant expires</h3><p class="pg-note">After the call, after 60 seconds, or on one revoke. Standing approval is a low read only.</p></article>
       </div>
+      <p class="pg-note animation-pan-note">Explore the request flow below. On phones, swipe the diagram sideways.</p>
+      <iframe class="animation-frame" data-animation="architecture" title="MetaVault capability request flow" src="/assets/animations/architecture.html" loading="lazy" height="890"></iframe>
+    </div>
+  </section>
+
+  <section class="hack-slide hack-animation-slide" id="key-rotation" data-label="Key rotation">
+    <div class="hack-slide-inner">
+      <span class="caption-mono-sm pg-kicker">Key rotation</span>
+      <iframe class="animation-frame" data-animation="comparison" title="From chronic key rotation to paste-once capability delegation" src="/assets/animations/comparison.html" loading="lazy" height="820"></iframe>
     </div>
   </section>
 
@@ -132,6 +142,13 @@
       <div class="pg-row pg-cta">
         <a class="mb-btn-primary" href="/architecture/">See the architecture</a>
       </div>
+
+    </div>
+  </section>
+  <section class="hack-slide" id="closing" data-label="One local vault">
+    <div class="hack-slide-inner">
+      <h2>One local vault for your coding agents.<br><span class="closing-benefit">Less .env clutter.</span></h2>
+      <p class="closing-punchline">You know where the keys at. Always.</p>
       <footer class="mb-foot">
         <div><span class="caption-mono" style="color:var(--foreground);font-size:12px">METAVAULT OSS</span> · Agents never see your secrets.</div>
         <nav>
@@ -148,12 +165,14 @@
 </div>
 
 <nav class="hack-dots" id="hack-dots" aria-label="Slides">
-  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 6, The pitch"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 6, The problem"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 6, The solution"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 6, Try the gate"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 6, Why a Meta model"><span></span></button>
-  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 6, Proofs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="0" aria-current="true" aria-label="Slide 1 of 8, The pitch"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="1" aria-label="Slide 2 of 8, The problem"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="2" aria-label="Slide 3 of 8, The solution"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="3" aria-label="Slide 4 of 8, Key rotation"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="4" aria-label="Slide 5 of 8, Try the gate"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="5" aria-label="Slide 6 of 8, Why a Meta model"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="6" aria-label="Slide 7 of 8, Proofs"><span></span></button>
+  <button type="button" class="hack-dot" data-slide="7" aria-label="Slide 8 of 8, One local vault"><span></span></button>
 </nav>
 <div class="hack-chevrons">
   <button type="button" class="hack-chevron" id="hack-up" aria-label="Previous slide" disabled>
@@ -165,5 +184,6 @@
 </div>
 </div>
 <script src="/assets/pages.js"></script>
+<script src="/assets/animation-embed.js"></script>
 </body>
 </html>

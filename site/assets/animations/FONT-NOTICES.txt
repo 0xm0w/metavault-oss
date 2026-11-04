@@ -1,0 +1,13 @@
+Bundled font notices
+
+Inter (brand-3 through brand-6): Copyright (c) 2016 The Inter Project Authors.
+License: SIL Open Font License 1.1. Full text: fonts/Inter-OFL.txt
+Upstream source: https://github.com/rsms/inter
+License source: https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt
+
+Geist Mono (brand-0 through brand-2): Copyright (c) 2023 Vercel, in collaboration with basement.studio.
+License: SIL Open Font License 1.1. Full text: fonts/Geist-OFL.txt
+Upstream source: https://github.com/vercel/geist-font
+License source: https://raw.githubusercontent.com/vercel/geist-font/main/LICENSE.txt
+
+The fonts' original family names are unchanged. Files are locally bundled to render the accepted animations without third-party requests.
