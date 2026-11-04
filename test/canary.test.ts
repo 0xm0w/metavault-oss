@@ -132,7 +132,9 @@ describe("canary: the stored secret appears on no observable surface", () => {
       const url = new URL(raw);
       const body: unknown =
         typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
-      const out = await handleVaultRequest(svc, init?.method ?? "GET", url.pathname, body);
+      const out = await handleVaultRequest(svc, init?.method ?? "GET", url.pathname, body, {
+        ...(new Headers(init?.headers).get("x-metavault-grant-receipt") !== null ? { providedGrantReceipt: new Headers(init?.headers).get("x-metavault-grant-receipt") ?? "" } : {}),
+      });
       return new Response(JSON.stringify(out.body), {
         status: out.status,
         headers: { "content-type": "application/json" },
@@ -143,6 +145,8 @@ describe("canary: the stored secret appears on no observable surface", () => {
       agentId: "cursor",
       ide: "Cursor",
       fetchFn: daemonFetch,
+      approvalWaitMs: 0,
+      launchDeeplink: () => Promise.resolve(false),
     });
     client = new Client({ name: "canary-test-client", version: "0.0.1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

@@ -113,12 +113,12 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
     );
     const svc: VaultServiceService = built.service;
 
-    // The canary is also the warden key: status may show only {configured,last4}.
+    // The canary is also the warden key: status shows only {configured}.
     const putKey = await handleVaultRequest(svc, "PUT", "/settings/warden/key", { key: CANARY }, withToken);
     expect(putKey.status).toBe(200);
-    expect(putKey.body).toEqual({ configured: true, last4: CANARY.slice(-4) });
+    expect(putKey.body).toEqual({ configured: true });
     const keyStatus = await handleVaultRequest(svc, "GET", "/settings/warden/key", undefined, withToken);
-    expect(Object.keys(keyStatus.body as object).sort()).toEqual(["configured", "last4"]);
+    expect(Object.keys(keyStatus.body as object).sort()).toEqual(["configured"]);
     const settingsGet = await handleVaultRequest(svc, "GET", "/settings/warden", undefined, withToken);
     const settingsPatch = await handleVaultRequest(
       svc,
@@ -134,7 +134,9 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
       const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const url = new URL(raw);
       const body: unknown = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
-      const out = await handleVaultRequest(svc, init?.method ?? "GET", url.pathname, body);
+      const out = await handleVaultRequest(svc, init?.method ?? "GET", url.pathname, body, {
+        ...(new Headers(init?.headers).get("x-metavault-grant-receipt") !== null ? { providedGrantReceipt: new Headers(init?.headers).get("x-metavault-grant-receipt") ?? "" } : {}),
+      });
       return new Response(JSON.stringify(out.body), {
         status: out.status,
         headers: { "content-type": "application/json" },
@@ -145,6 +147,8 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
       agentId: "cursor",
       ide: "Cursor",
       fetchFn: daemonFetch,
+      approvalWaitMs: 0,
+      launchDeeplink: () => Promise.resolve(false),
     });
     client = new Client({ name: "canary-sweep-client", version: "0.0.1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

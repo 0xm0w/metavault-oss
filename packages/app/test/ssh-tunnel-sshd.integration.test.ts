@@ -64,6 +64,22 @@ function sshAttempt(extra: string[], holdMs = 2500, command: string[] = []): Pro
   });
 }
 
+/** Resolve once 127.0.0.1:port accepts a TCP connection; reject after timeoutMs. */
+function waitForPort(port: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const attempt = (): void => {
+      const s = createConnection({ host: "127.0.0.1", port }, () => { s.destroy(); resolve(); });
+      s.on("error", () => {
+        s.destroy();
+        if (Date.now() >= deadline) { reject(new Error(`port ${String(port)} never accepted connections`)); return; }
+        setTimeout(attempt, 200);
+      });
+    };
+    attempt();
+  });
+}
+
 describeIfSshd("ssh-tunnel against a real sshd (integration)", () => {
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "mv-sshd-it-"));
@@ -99,27 +115,34 @@ describeIfSshd("ssh-tunnel against a real sshd (integration)", () => {
   });
 
   it("holds both reverse forwards with the generated line and moves real bytes", async () => {
+    // The local service must be listening BEFORE anything connects through the
+    // forwarded port, or ssh sees a failed channel open.
+    const svc = createServer((c) => { c.on("data", (d: Buffer) => { c.end(`pong:${d.toString()}`); }); });
+    await new Promise<void>((resolve) => { svc.listen(LOCAL_SVC, "127.0.0.1", () => { resolve(); }); });
     const attempt = sshAttempt([
       "-N",
       "-R", `127.0.0.1:${String(REMOTE_PAIR)}:127.0.0.1:${String(LOCAL_SVC)}`,
       "-R", `127.0.0.1:${String(REMOTE_DEV)}:127.0.0.1:${String(LOCAL_SVC)}`,
-    ], 6000);
-    await new Promise((r) => setTimeout(r, 1500));
-    // Real bytes: local service behind the -R target answers through the
-    // server-side forwarded port.
-    const payload = await new Promise<string>((resolve, reject) => {
-      const svc = createServer((c) => { c.on("data", (d: Buffer) => { c.end(`pong:${d.toString()}`); }); });
-      svc.listen(LOCAL_SVC, "127.0.0.1", () => {
+    ], 7500); // sshAttempt kills at its own 8s timeout
+    try {
+      // Wait until the server-side forwarded port accepts connections instead
+      // of sleeping a fixed time: on a busy CI runner the handshake can be slow.
+      await waitForPort(REMOTE_PAIR, 5000);
+      // Real bytes: the local service behind the -R target answers through the
+      // server-side forwarded port.
+      const payload = await new Promise<string>((resolve, reject) => {
         const s = createConnection({ host: "127.0.0.1", port: REMOTE_PAIR }, () => { s.write("ping"); });
         s.setTimeout(5000);
-        s.on("data", (d) => { s.end(); svc.close(); resolve(d.toString()); });
+        s.on("data", (d) => { s.end(); resolve(d.toString()); });
         s.on("error", reject); s.on("timeout", () => { reject(new Error("data path timed out")); });
       });
-    });
-    expect(payload).toBe("pong:ping");
-    const res = await attempt;
-    expect(res.alive).toBe(true); // still holding when killed at 6s
-  }, 20000);
+      expect(payload).toBe("pong:ping");
+      const res = await attempt;
+      expect(res.alive).toBe(true); // still holding when killed at the hold time
+    } finally {
+      svc.close();
+    }
+  }, 30000);
 
   it("rejects a reverse forward to any port not in permitlisten", async () => {
     const res = await sshAttempt(["-N", "-R", "127.0.0.1:19999:127.0.0.1:7078"]);
@@ -139,8 +162,9 @@ describeIfSshd("ssh-tunnel against a real sshd (integration)", () => {
   }, 15000);
 
   it("binds a local forward but refuses its traffic (permitopen blackhole)", async () => {
-    const attempt = sshAttempt(["-N", "-L", "19998:127.0.0.1:22"], 6000);
-    await new Promise((r) => setTimeout(r, 1500));
+    const attempt = sshAttempt(["-N", "-L", "19998:127.0.0.1:22"], 7500);
+    // Wait for the local bind instead of a fixed sleep: handshakes are slow on a busy CI runner.
+    await waitForPort(19998, 5000);
     const refused = await new Promise<boolean>((resolve) => {
       const s = createConnection({ host: "127.0.0.1", port: 19998 }, () => {
         s.on("data", () => { s.end(); resolve(false); }); // any banner = traffic flowed
@@ -152,7 +176,7 @@ describeIfSshd("ssh-tunnel against a real sshd (integration)", () => {
     expect(refused).toBe(true);
     const res = await attempt;
     expect(res.alive).toBe(true); // bind held; only the traffic is refused
-  }, 20000);
+  }, 30000);
 });
 
 if (!haveTools) {

@@ -1,3 +1,4 @@
+import { AgentRegistrations } from "./registrations.js";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
@@ -276,6 +277,29 @@ const BAD_REQUEST: { status: number; body: unknown } = {
   body: { error: { _tag: "BadRequest", message: "invalid request body" } },
 };
 
+// Terminal, structured outcome an agent can act on. "executed" means the
+// human approved and vaultd ran the call; the result goes to the approver
+// path, never back through this route.
+export function grantOutcome(
+  status: string,
+  expiresAtMs: number,
+  nowMs: number,
+): { status: "pending" | "executed" | "denied" | "expired" | "revoked"; terminal: boolean; message: string } {
+  if (status === "pending" && nowMs >= expiresAtMs) return grantOutcome("expired", expiresAtMs, nowMs);
+  switch (status) {
+    case "executed":
+      return { status: "executed", terminal: true, message: "The user approved this request and vaultd ran it." };
+    case "denied":
+      return { status: "denied", terminal: true, message: "The user denied this request in MetaVault OSS. Do not retry it or look for another way around it; ask the user what they want." };
+    case "expired":
+      return { status: "expired", terminal: true, message: "This request expired before the user decided. Nothing ran. Ask the user before requesting again." };
+    case "revoked":
+      return { status: "revoked", terminal: true, message: "This request was revoked. Nothing ran. Ask the user before requesting again." };
+    default:
+      return { status: "pending", terminal: false, message: "Still waiting for the user to decide in MetaVault OSS. Do not send the request again." };
+  }
+}
+
 export const DAEMON_TOKEN_HEADER = "x-metavault-token";
 
 // The daemon token gates the human-decision routes. Without it any local
@@ -340,6 +364,8 @@ export interface VaultRequestOptions {
   readonly daemonToken?: string;
   readonly providedToken?: string;
   readonly providedAgentToken?: string;
+  // The private receipt /request returned with awaiting-approval.
+  readonly providedGrantReceipt?: string;
   readonly clientPid?: number | undefined;
   // Loopback gateway authentication and device identity stamps. The
   // configured secret is server state; the provided one comes from the
@@ -361,7 +387,22 @@ const UNAUTHORIZED: { status: number; body: unknown } = {
   body: { error: { _tag: "Unauthorized", message: "unauthorized" } },
 };
 
+const registrationStores = new WeakMap<object, AgentRegistrations>();
+function registrationsFor(service: VaultServiceService): AgentRegistrations {
+  let r = registrationStores.get(service);
+  if (r === undefined) {
+    r = new AgentRegistrations(async (agentId, issuedToken) => {
+      const holder = await Effect.runPromise(service.getAgentByToken(issuedToken));
+      if (holder !== undefined && holder.id === agentId && !holder.revoked) await Effect.runPromise(service.revokeAgentToken(agentId));
+    });
+    registrationStores.set(service, r);
+  }
+  return r;
+}
+
 function isTokenProtected(method: string, path: string): boolean {
+  if (path === "/agent-registrations" && method === "GET") return true;
+  if (method === "POST" && /^\/agent-registrations\/[^/]+\/(approve|deny)$/.test(path)) return true;
   if ((path === "/agents" || path.startsWith("/agents/")) && (method === "GET" || method === "POST")) {
     return true;
   }
@@ -563,6 +604,41 @@ export async function handleVaultRequest(
   }
   if (method === "GET" && path === "/audit") {
     return run(service.listAudit().pipe(Effect.map((events) => ({ events }))));
+  }
+  if (path === "/agent-registrations" || path.startsWith("/agent-registrations/")) {
+    const regs = registrationsFor(service);
+    const input = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    const fail = (status: number, error: string, extra: Record<string, unknown> = {}) => ({ status, body: { error: { _tag: "Registration", message: error }, ...extra } });
+    if (method === "POST" && path === "/agent-registrations") {
+      const agentId = input["agentId"]; const name = input["name"]; const ide = input["ide"]; const claimHash = input["claimHash"];
+      if (typeof agentId !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(agentId) || typeof name !== "string" || name.trim().length === 0 || name.length > 100 || /[\x00-\x1f\x7f]/.test(name) || typeof ide !== "string" || ide.length > 100 || /[\x00-\x1f\x7f]/.test(ide) || typeof claimHash !== "string") return BAD_REQUEST;
+      const made = await regs.create({ agentId, name: name.trim(), ide: ide.trim(), claimHash }, async (id) => {
+        const agents = await Effect.runPromise(service.listAgents());
+        return agents.some((a) => a.id === id && !a.revoked);
+      });
+      return made.ok ? { status: 200, body: { registrationId: made.id, code: made.code, expiresAt: made.expiresAt, status: "pending" } } : fail(made.status, made.error);
+    }
+    if (method === "GET" && path === "/agent-registrations") return { status: 200, body: { registrations: await regs.list() } };
+    const m = /^\/agent-registrations\/([^/]+)\/(approve|deny|claim)$/.exec(path);
+    if (method === "POST" && m !== null) {
+      const id = m[1] ?? "";
+      if (m[2] === "claim") {
+        const secret = input["claim"];
+        if (typeof secret !== "string" || secret.length < 16 || secret.length > 256) return BAD_REQUEST;
+        const out = await regs.claim(id, secret);
+        return out.ok ? { status: 200, body: { status: "claimed", agentId: out.agentId, token: out.token } } : fail(out.status, out.error, { status: out.status2 });
+      }
+      // Deciding a registration needs an unlocked vault, so a locked app
+      // (or a caller holding only the daemon token) cannot approve anything.
+      const ks = await Effect.runPromise(service.keyStatus());
+      if (ks.locked) return { status: 423, body: { error: { _tag: "VaultLocked", message: "unlock the vault before deciding an agent registration" } } };
+      if (m[2] === "deny") return (await regs.deny(id)) ? { status: 200, body: { status: "denied" } } : fail(404, "registration not found or no longer pending");
+      const code = input["code"];
+      if (typeof code !== "string" || !/^[0-9]{6}$/.test(code)) return BAD_REQUEST;
+      const out = await regs.approve(id, code, async (agentId, name) => (await Effect.runPromise(service.registerAgent(agentId, name))).token);
+      return out.ok ? { status: 200, body: { status: "approved" } } : fail(out.status, out.error);
+    }
+    return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
   }
   if (method === "POST" && (path === "/agents" || path === "/agents/rotate")) {
     const input = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
@@ -1016,6 +1092,46 @@ export async function handleVaultRequest(
     };
     return run(service.requestCapability(request, token?.trim(), deviceCtx));
   }
+  // Agent-visible outcome of one grant. /request answers awaiting-approval
+  // and returns at once, so without this an agent could never learn that
+  // the human denied (or let expire) its request. Metadata only: it never
+  // returns the request details, the executed result or any secret. A
+  // grant is readable only with the receipt from its own /request answer;
+  // every miss answers the same 404 so ids cannot be probed. The receipt,
+  // not an agent token, so a revoked agent still learns its request died.
+  if (method === "POST" && path.startsWith("/grants/") && path.endsWith("/result")) {
+    const middle = path.slice("/grants/".length, path.length - "/result".length);
+    const decodedId = safeDecodeSegment(middle);
+    const grantId = decodedId === null ? "" : decodedId.trim();
+    const notFound = { status: 404, body: { status: "unknown", error: { _tag: "NotFound", message: "grant not found" } } };
+    const receipt = options?.providedGrantReceipt?.trim();
+    if (grantId === "" || grantId.includes("/") || receipt === undefined || receipt === "") { return notFound; }
+    const receiptOk = await run(service.checkGrantReceipt(grantId, receipt));
+    if (receiptOk.status !== 200 || receiptOk.body !== true) { return notFound; }
+    const took = await run(service.takeGrantResult(grantId));
+    if (took.status !== 200 || took.body === null || took.body === undefined) { return notFound; }
+    const held = took.body as { taken: boolean; result?: unknown };
+    if (!held.taken) { return { status: 410, body: { grantId, status: "gone", message: "The result is no longer available: it was already delivered, expired or was revoked." } }; }
+    return { status: 200, body: { grantId, status: "delivered", result: held.result } };
+  }
+  if (method === "GET" && path.startsWith("/grants/")) {
+    const decodedId = safeDecodeSegment(path.slice("/grants/".length));
+    const grantId = decodedId === null ? "" : decodedId.trim();
+    const notFound = { status: 404, body: { status: "unknown", error: { _tag: "NotFound", message: "grant not found" } } };
+    if (grantId === "" || grantId.includes("/")) { return notFound; }
+    // The unguessable receipt from that grant's own /request answer is the
+    // authorization, for verified and unverified agents alike. A grant id,
+    // an agent name or an agent token without it reads nothing.
+    const receipt = options?.providedGrantReceipt?.trim();
+    if (receipt === undefined || receipt === "") { return notFound; }
+    const receiptOk = await run(service.checkGrantReceipt(grantId, receipt));
+    if (receiptOk.status !== 200 || receiptOk.body !== true) { return notFound; }
+    const found = await run(service.getGrant(grantId));
+    if (found.status !== 200 || found.body === null || found.body === undefined) { return notFound; }
+    const grant = found.body as { status: string; expiresAtMs: number };
+    const outcome = grantOutcome(grant.status, grant.expiresAtMs, Date.now());
+    return { status: 200, body: { grantId, ...outcome } };
+  }
   if (method === "POST" && path === "/approve") {
     const decoded = await decode(GrantIdSchema, body ?? {});
     if (decoded === null) {
@@ -1206,6 +1322,8 @@ export function createVaultHttpServer(
         const rawAgentToken = Array.isArray(agentTokenHeader) ? agentTokenHeader[0] : agentTokenHeader;
         const providedAgentToken =
           rawAgentToken ?? (bearerToken !== undefined && bearerToken !== guardToken ? bearerToken : undefined);
+        const receiptHeader = req.headers["x-metavault-grant-receipt"];
+        const providedGrantReceipt = Array.isArray(receiptHeader) ? receiptHeader[0] : receiptHeader;
         const clientPidHeader = req.headers["x-metavault-client-pid"];
         const rawClientPid = Array.isArray(clientPidHeader) ? clientPidHeader[0] : clientPidHeader;
         const parsedPid = rawClientPid !== undefined ? parseInt(rawClientPid, 10) : undefined;
@@ -1264,6 +1382,7 @@ export function createVaultHttpServer(
           daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
           ...(providedAgentToken !== undefined ? { providedAgentToken } : {}),
+          ...(providedGrantReceipt !== undefined ? { providedGrantReceipt } : {}),
           ...(options.gatewaySecret !== undefined ? { gatewaySecret: options.gatewaySecret } : {}),
           ...(anyStampHeader ? { gatewayStampValid } : {}),
           ...(isInternalPath && providedInternalSecret !== undefined ? { providedGatewaySecret: providedInternalSecret } : {}),

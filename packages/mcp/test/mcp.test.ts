@@ -41,7 +41,8 @@ const daemonFetch: DaemonFetch = async (input, init) => {
   const method = init?.method ?? "GET";
   const body: unknown =
     typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
-  const out = await handleVaultRequest(service, method, url.pathname, body);
+  const receipt = new Headers(init?.headers).get("x-metavault-grant-receipt") ?? undefined;
+  const out = await handleVaultRequest(service, method, url.pathname, body, receipt !== undefined ? { providedGrantReceipt: receipt } : {});
   return new Response(JSON.stringify(out.body), {
     status: out.status,
     headers: { "content-type": "application/json" },
@@ -81,6 +82,7 @@ beforeAll(async () => {
     agentId: "cursor",
     ide: "Cursor",
     fetchFn: daemonFetch,
+    approvalWaitMs: 0,
   });
   client = new Client({ name: "mcp-test-client", version: "0.0.1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -93,23 +95,26 @@ afterAll(async () => {
 });
 
 describe("MetaVault OSS MCP server (in-process client)", () => {
-  it("handshake reports MCP_VERSION and tools/list is exactly the five tools", async () => {
+  it("handshake reports MCP_VERSION and tools/list is exactly the eight tools", async () => {
     expect(MCP_VERSION).toBe("0.1.2-alpha");
     expect(client.getServerVersion()?.version).toBe(MCP_VERSION);
     const listed = await client.listTools();
     expect(listed.tools.map((t) => t.name).sort()).toEqual([
       "enrollment_status",
+      "grant_status",
       "list_aliases",
+      "register_agent",
+      "registration_status",
       "request_capability",
       "request_enrollment",
       "revoke",
     ]);
   });
 
-  it("lists the five tools with object input schemas", async () => {
+  it("lists the eight tools with object input schemas", async () => {
     const listed = await client.listTools();
     const names = listed.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["enrollment_status", "list_aliases", "request_capability", "request_enrollment", "revoke"]);
+    expect(names).toEqual(["enrollment_status", "grant_status", "list_aliases", "register_agent", "registration_status", "request_capability", "request_enrollment", "revoke"]);
     for (const tool of listed.tools) {
       expect(tool.inputSchema.type).toBe("object");
     }
@@ -143,6 +148,7 @@ describe("MetaVault OSS MCP server (in-process client)", () => {
     expect(text).not.toContain("sk-");
     expect(result.structuredContent?.["status"]).toBe("awaiting-approval");
     expect(typeof result.structuredContent?.["grantId"]).toBe("string");
+    expect(String(result.structuredContent?.["instruction"])).toContain("grant_status");
   });
 
   it("invalid inputs return MCP errors and never reach the daemon", async () => {
@@ -189,6 +195,7 @@ describe("MetaVault OSS MCP server (in-process client)", () => {
     })) as ToolResult;
     expect(after.isError).not.toBe(true);
     expect(after.structuredContent?.["status"]).toBe("denied");
+    expect(after.structuredContent?.["final"]).toBe(true);
     expect(JSON.stringify(after)).not.toContain(SECRET);
   });
 

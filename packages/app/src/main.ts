@@ -97,7 +97,12 @@ function showWindow(): void {
     mainWindow.restore();
   }
   mainWindow.show();
+  // Windows can refuse a plain focus() from a background launch; a brief
+  // always-on-top pass brings the window to the front without keeping it there.
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.moveTop();
   mainWindow.focus();
+  mainWindow.setAlwaysOnTop(false);
 }
 
 function bringWindowToFront(): void {

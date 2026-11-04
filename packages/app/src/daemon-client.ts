@@ -66,6 +66,7 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "POST", path: "/devices/rename" },
   { method: "POST", path: "/devices/revoke" },
   { method: "POST", path: "/devices/policy" },
+  { method: "GET", path: "/agent-registrations" },
 ];
 
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(
@@ -73,6 +74,7 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set(
 );
 
 const CREDENTIAL_ITEM_PATTERN = /^\/credentials\/[^/]+$/;
+const AGENT_REGISTRATION_DECISION_PATTERN = /^\/agent-registrations\/reg_[a-f0-9]{24}\/(approve|deny)$/;
 const DEVICE_POLICIES_PATTERN = /^\/devices\/policies\/[^/]+$/;
 
 export function isAllowedDaemonCall(method: unknown, path: unknown): boolean {
@@ -83,6 +85,9 @@ export function isAllowedDaemonCall(method: unknown, path: unknown): boolean {
     return true;
   }
   if ((method === "PATCH" || method === "DELETE") && CREDENTIAL_ITEM_PATTERN.test(path)) {
+    return true;
+  }
+  if (method === "POST" && AGENT_REGISTRATION_DECISION_PATTERN.test(path)) {
     return true;
   }
   return method === "GET" && DEVICE_POLICIES_PATTERN.test(path);

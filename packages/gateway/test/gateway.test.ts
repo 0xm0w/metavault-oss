@@ -272,6 +272,8 @@ describe("gateway", () => {
     // tokens and every subsequent request, but does NOT retrospectively
     // cancel an execution that passed authorization before the revoke.
     const device = await pairDevice(stack, "in-flight");
+    let reachedProxy: () => void = () => undefined;
+    const proxyHit = new Promise<void>((resolve) => { reachedProxy = resolve; });
     const proxy = createHttpServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on("data", (c: Buffer) => chunks.push(c));
@@ -291,6 +293,7 @@ describe("gateway", () => {
           upstream.end(Buffer.concat(chunks));
         };
         if (req.method === "POST" && req.url === "/request") {
+          reachedProxy(); // the request already passed device auth
           setTimeout(forward, 400);
         } else {
           forward();
@@ -324,9 +327,9 @@ describe("gateway", () => {
       key: device.keyPem,
       body: { agentId: "in-flight-agent", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "in-flight" },
     });
-    // Give the request time to pass device auth and enter the delayed
-    // upstream leg, then revoke mid-flight.
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // Wait until the request has passed device auth and entered the delayed
+    // upstream leg (a fixed sleep is racy on a loaded CI runner), then revoke.
+    await proxyHit;
     await Effect.runPromise(
       Effect.provide(
         Effect.flatMap(VaultService, (svc) => svc.revokeDevice(device.deviceId)),

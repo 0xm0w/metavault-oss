@@ -1356,21 +1356,19 @@ export function projectWardenSettings(raw: unknown): WardenSettingsLike | null {
 
 export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null {
   if (!isRecord(raw)) return null;
-  // Strict shape: exactly configured + last4. Any extra field (above all a
+  // Strict shape: exactly configured. Any extra field (a key hint or a
   // key-shaped one) fails closed \u2014 status must never carry key material.
   for (const key of Object.keys(raw)) {
-    if (key !== "configured" && key !== "last4") return null;
+    if (key !== "configured") return null;
   }
   const configured = raw["configured"];
-  const last4 = raw["last4"];
   if (typeof configured !== "boolean") return null;
-  if (last4 !== null && typeof last4 !== "string") return null;
-  return { configured, last4: typeof last4 === "string" && last4 !== "" ? last4 : null };
+  return { configured };
 }
 
 export function wardenKeyStatusText(status: WardenKeyStatusLike): string {
   if (!status.configured) return "Not configured";
-  return status.last4 !== null && status.last4 !== "" ? `Configured \u2022\u2022\u2022\u2022${status.last4}` : "Configured";
+  return "Configured";
 }
 
 export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPatch {

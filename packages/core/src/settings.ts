@@ -106,7 +106,6 @@ export const WARDEN_KEY_MIN_LENGTH = 8;
 
 export interface WardenKeyStatus {
   readonly configured: boolean;
-  readonly last4: string | null;
 }
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";

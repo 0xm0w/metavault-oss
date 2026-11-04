@@ -1,0 +1,18 @@
+# One-time registration only. Not used for the normal run or for restarts.
+services:
+  register:
+    image: metavault-ci-runner:2.338.2
+    command: ["register"]
+    environment:
+      RUNNER_REPO: 0xm0w/metavault-oss
+      RUNNER_NAME: metavault-ci-1
+    secrets:
+      - runner_token
+    volumes:
+      - mv_state:/state
+      - mv_work:/work
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+secrets:
+  runner_token:
+    file: ./runner-token.txt

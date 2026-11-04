@@ -6,8 +6,8 @@ import { createMetavaultMcpServer, type DaemonFetch } from "../src/server.js";
 interface ToolResult { readonly isError?: boolean; readonly content?: readonly { readonly type: string; readonly text?: string }[]; readonly structuredContent?: Record<string, unknown>; }
 const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? "").join("\n");
 
-async function makeClient(fetchFn: DaemonFetch): Promise<Client> {
-  const server = createMetavaultMcpServer({ daemonUrl: "http://127.0.0.1:7077", fetchFn });
+async function makeClient(fetchFn: DaemonFetch, launchDeeplink: (url: string) => Promise<boolean> = () => Promise.resolve(false), daemonUrl = "http://127.0.0.1:7077"): Promise<Client> {
+  const server = createMetavaultMcpServer({ daemonUrl, fetchFn, launchDeeplink });
   const client = new Client({ name: "enroll-test", version: "0.0.1" });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);
@@ -40,6 +40,29 @@ describe("MCP enrollment tools (fake daemon)", () => {
       const bad = (await client.callTool({ name: "request_enrollment", arguments: { alias: 42 } })) as ToolResult;
       expect(bad.isError).toBe(true);
       expect(calls).toHaveLength(2);
+    } finally { await client.close(); }
+  });
+
+  it("opens MetaVault on this PC with the add form instead of only returning a link", async () => {
+    const fetchFn: DaemonFetch = () => Promise.resolve(new Response(JSON.stringify({ enrollmentId: "enr-2", deeplink: "metavault://add?alias=cloudflare&scope=analytics.read&enrollment=enr-2" }), { status: 201, headers: { "content-type": "application/json" } }));
+    const opened: string[] = [];
+    const client = await makeClient(fetchFn, (url) => { opened.push(url); return Promise.resolve(true); });
+    try {
+      const res = (await client.callTool({ name: "request_enrollment", arguments: { alias: "cloudflare", scope: "analytics.read" } })) as ToolResult;
+      expect(opened).toEqual(["metavault://add?alias=cloudflare&scope=analytics.read&enrollment=enr-2"]);
+      expect(res.structuredContent?.["launched"]).toBe(true);
+      expect(textOf(res)).toContain("type the secret there, never in this chat");
+    } finally { await client.close(); }
+  });
+
+  it("does not launch anything for a remote daemon url", async () => {
+    const fetchFn: DaemonFetch = () => Promise.resolve(new Response(JSON.stringify({ enrollmentId: "enr-3", deeplink: "metavault://add?alias=a&scope=b.read&enrollment=enr-3" }), { status: 201, headers: { "content-type": "application/json" } }));
+    const opened: string[] = [];
+    const client = await makeClient(fetchFn, (url) => { opened.push(url); return Promise.resolve(true); }, "https://vault.example.invalid");
+    try {
+      const res = (await client.callTool({ name: "request_enrollment", arguments: { alias: "a", scope: "b.read" } })) as ToolResult;
+      expect(opened).toEqual([]);
+      expect(res.structuredContent?.["launched"]).toBe(false);
     } finally { await client.close(); }
   });
 });
