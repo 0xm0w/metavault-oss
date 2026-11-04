@@ -12,6 +12,9 @@
 // - The pairing code is bound so a code observed after the fact cannot be
 //   re-presented inside a different session, and both nonces bind the
 //   specific attempt (replay resistance).
+// - The gateway's announced strict-mTLS device port is bound, so a MITM
+//   that rewrites the announcement to redirect the pinned post-pairing
+//   transport breaks the human comparison.
 // The SAS is a truncated SHA-256: 16 hex chars (64 bits) is the comparison
 // surface a human verifies; it is a detection mechanism chained to the
 // authenticated channel, never a standalone guarantee.
@@ -27,6 +30,8 @@ export interface PairingSasInputs {
   readonly code: string;
   readonly serverNonce: string;
   readonly clientNonce: string;
+  // Strict-mTLS device port announced by the gateway at /pair/begin.
+  readonly devicePort: number;
 }
 
 export function computePairingSas(inputs: PairingSasInputs): string {
@@ -42,6 +47,8 @@ export function computePairingSas(inputs: PairingSasInputs): string {
   hash.update(inputs.serverNonce, "utf8");
   hash.update("\0");
   hash.update(inputs.clientNonce, "utf8");
+  hash.update("\0");
+  hash.update(String(inputs.devicePort), "utf8");
   const hex = hash.digest("hex").slice(0, 16).toUpperCase();
   return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}`;
 }

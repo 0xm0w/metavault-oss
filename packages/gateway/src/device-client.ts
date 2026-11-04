@@ -2,11 +2,13 @@
 // on-disk device credentials, and the loopback MCP-channel shim.
 //
 // Trust model:
-// - The pairing leg is intentionally unauthenticated at the TLS layer
-//   (rejectUnauthorized: false): no trust anchor exists yet. Authenticity
-//   comes ONLY from the human comparing the SAS shown here with the SAS on
-//   the vault screen, and the vault-side human confirming there. Nothing is
-//   issued before that comparison happens.
+// - The pairing leg runs on the gateway's dedicated pairing listener
+//   (server-only TLS 1.3, no client certificate requested). The client
+//   CANNOT validate the vault's identity on this leg: no trust anchor
+//   exists yet and the certificate presented is not yet authenticated.
+//   Authenticity comes ONLY from the human comparing the SAS shown here
+//   with the SAS on the vault screen, and the vault-side human confirming
+//   there. Nothing is issued before that comparison happens.
 // - After pairing, all traffic is pinned: the vault CA is the only trust
 //   anchor and the gateway server certificate's SPKI fingerprint must match
 //   the fingerprint captured during pairing. There is no silent trust reset
@@ -52,6 +54,10 @@ export interface PairingResult {
   readonly certPem: string;
   readonly caCertPem: string;
   readonly serverCertFingerprint: string;
+  // Strict-mTLS device listener port announced by the gateway in
+  // /pair/status. Required: after pairing, traffic never goes back to
+  // the pairing port.
+  readonly devicePort: number;
 }
 
 interface GatewayTlsResponse {
@@ -171,7 +177,11 @@ export async function runPairingHandshake(options: {
   if (begin.status !== 200 || begin.exporter === undefined) {
     throw new PairingError("rejected", `the vault rejected pairing (wrong/expired code or pairing not open) [${String(begin.status)}]`);
   }
-  const info = JSON.parse(begin.body) as { pairingId: string; serverNonce: string; serverCertFingerprint: string };
+  const info = JSON.parse(begin.body) as { pairingId: string; serverNonce: string; serverCertFingerprint: string; devicePort?: number };
+  if (typeof info.devicePort !== "number" || !Number.isInteger(info.devicePort) || info.devicePort < 1 || info.devicePort > 65535) {
+    throw new PairingError("transport", "vault did not announce its mTLS device port");
+  }
+  const announcedDevicePort = info.devicePort;
   const sas = computePairingSas({
     exporterSecret: begin.exporter,
     serverCertFingerprint: info.serverCertFingerprint,
@@ -179,6 +189,9 @@ export async function runPairingHandshake(options: {
     code: options.code,
     serverNonce: info.serverNonce,
     clientNonce,
+    // SAS-bound: a MITM rewriting the announced port breaks the human
+    // comparison instead of redirecting the pinned transport.
+    devicePort: announcedDevicePort,
   });
   options.onSas(sas);
 
@@ -203,7 +216,7 @@ export async function runPairingHandshake(options: {
     if (status.status !== 200) {
       throw new PairingError("expired", "the pairing session is gone (canceled or replaced on the vault)");
     }
-    const body = JSON.parse(status.body) as { status: string; certificatePem?: string; caCertPem?: string };
+    const body = JSON.parse(status.body) as { status: string; certificatePem?: string; caCertPem?: string; devicePort?: number };
     if (body.status === "unknown") {
       // Canceled, replaced by a newer session, or expired on the vault.
       throw new PairingError("expired", "the pairing session is gone (canceled or replaced on the vault)");
@@ -212,12 +225,18 @@ export async function runPairingHandshake(options: {
       if (typeof body.certificatePem !== "string" || typeof body.caCertPem !== "string") {
         throw new PairingError("transport", "vault issued a malformed certificate bundle");
       }
+      if (body.devicePort !== announcedDevicePort) {
+        // The issuance-time port must equal the SAS-bound announcement
+        // from /pair/begin; anything else is a tampered transcript.
+        throw new PairingError("transport", "gateway changed its announced mTLS device port mid-pairing");
+      }
       return {
         deviceId: `dev-${spkiFingerprintFromPublicKeyPem(keys.publicKeyPem).slice(0, 12)}`,
         keyPem: keys.privateKeyPem,
         certPem: body.certificatePem,
         caCertPem: body.caCertPem,
         serverCertFingerprint: info.serverCertFingerprint,
+        devicePort: announcedDevicePort,
       };
     }
   }
@@ -267,8 +286,15 @@ export const defaultListAclSids: AclSidList = (path) => {
   const tmp = join(tmpdir(), `mv-acl-${randomBytes(6).toString("hex")}.txt`);
   try {
     execFileSync("icacls", [path, "/save", tmp, "/C"], { encoding: "utf8" });
-    const content = readFileSync(tmp, "utf8");
-    const sddlLine = content.split(/\r?\n/).find((line) => line.includes("D:")) ?? "";
+    // icacls /save writes the descriptor file as UTF-16 on current
+    // Windows; accept either encoding, keyed on embedded NULs or a BOM.
+    const buf = readFileSync(tmp);
+    let content = buf.toString("utf8");
+    if (content.includes("\0")) content = buf.toString("utf16le");
+    content = content.replace(/^\uFEFF/, "");
+    // The SDDL line carries the DACL ("D:" + flags + "("); the file's
+    // first line is the path itself and must never match.
+    const sddlLine = content.split(/\r?\n/).find((line) => /D:[A-Z]{0,4}\(/.test(line)) ?? "";
     return parseSddlAces(sddlLine);
   } finally {
     rmSync(tmp, { force: true });
@@ -335,7 +361,7 @@ export function hardenOwnerOnly(
     assertWithinRoots(path, opts.allowedRoots);
   }
   if (platform === "win32") {
-    const sid = opts?.userSid;
+    const sid = opts?.userSid ?? currentWindowsUserSid();
     if (sid === undefined || sid === "") {
       throw new Error("cannot harden device credentials on Windows: current user SID is unavailable");
     }
@@ -348,7 +374,7 @@ export function hardenOwnerOnly(
     const listSids = opts?.listSids ?? defaultListAclSids;
     const sids = listSids(path);
     if (sids.length === 0 || !sids.every((entry) => entry === sid.toUpperCase())) {
-      throw new Error(`refusing to store device credentials: could not make ${path} owner-only`);
+      throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL SIDs: ${sids.join(", ") || "none"})`);
     }
     return;
   }
@@ -439,8 +465,9 @@ function verifyOwnerOnlyParent(dir: string, opts: HardenOptions): void {
   }
   const sid = opts.userSid ?? "";
   const listSids = opts.listSids ?? defaultListAclSids;
-  if (!isParentAclSafe(listSids(parent), sid)) {
-    throw new Error(`refusing to store device credentials: parent directory ${parent} grants broad access`);
+  const parentSids = listSids(parent);
+  if (!isParentAclSafe(parentSids, sid)) {
+    throw new Error(`refusing to store device credentials: parent directory ${parent} grants broad access (effective ACL SIDs: ${parentSids.join(", ") || "none"})`);
   }
 }
 

@@ -24,7 +24,7 @@ import { PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/
 import { createVaultHttpServer } from "../../daemon/src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../../daemon/src/service.js";
 import { makeDaemonBackend } from "../src/daemon-backend.js";
-import { createGatewayServer } from "../src/server.js";
+import { createGatewayServers } from "../src/server.js";
 
 export const MASTER_KEY = Buffer.alloc(32, 7);
 export const GATEWAY_SECRET = "test-gateway-secret";
@@ -138,10 +138,14 @@ export function stampHeaders(fields: {
 
 export interface Stack {
   daemon: Server;
+  // Pairing listener (server-authenticated TLS, pairing routes only).
   gateway: HttpsServer;
+  // Strict-mTLS device listener: client cert required at the handshake.
+  gatewayDevice: HttpsServer;
   service: VaultServiceService;
   daemonBase: string;
   gatewayPort: number;
+  gatewayDevicePort: number;
   ca: { keyPem: string; certPem: string };
   gwCert: { keyPem: string; certPem: string };
   dir: string;
@@ -169,7 +173,7 @@ export async function makeStack(): Promise<Stack> {
   const daemonAddress = daemon.address();
   if (daemonAddress === null || typeof daemonAddress === "string") throw new Error("no daemon port");
   const daemonBase = `http://127.0.0.1:${String(daemonAddress.port)}`;
-  const gateway = createGatewayServer({
+  const gateway = createGatewayServers({
     caCertPem: ca.certPem,
     serverCertPem: gwCert.certPem,
     serverKeyPem: gwCert.keyPem,
@@ -181,15 +185,20 @@ export async function makeStack(): Promise<Stack> {
     maxPairingAttemptsPerMinutePerAddress: 1000,
     maxPairingAttemptsPerMinuteGlobal: 1000,
   });
-  await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
-  const gwAddress = gateway.address();
+  await new Promise<void>((resolve) => gateway.pairing.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => gateway.device.listen(0, "127.0.0.1", resolve));
+  const gwAddress = gateway.pairing.address();
   if (gwAddress === null || typeof gwAddress === "string") throw new Error("no gateway port");
+  const gwDeviceAddress = gateway.device.address();
+  if (gwDeviceAddress === null || typeof gwDeviceAddress === "string") throw new Error("no gateway device port");
   return {
     daemon,
-    gateway,
+    gateway: gateway.pairing,
     service,
     daemonBase,
     gatewayPort: gwAddress.port,
+    gatewayDevice: gateway.device,
+    gatewayDevicePort: gwDeviceAddress.port,
     ca: { keyPem: ca.keyPem, certPem: ca.certPem },
     gwCert: { keyPem: gwCert.keyPem, certPem: gwCert.certPem },
     dir,
@@ -242,9 +251,12 @@ export async function pairDevice(stack: Stack, name: string): Promise<{ deviceId
     body: { pairingId: session.pairingId },
   });
   expect(status.status).toBe(200);
-  const statusBody = JSON.parse(status.body) as { status: string; certificatePem?: string };
+  const statusBody = JSON.parse(status.body) as { status: string; certificatePem?: string; devicePort?: number };
   expect(statusBody.status).toBe("confirmed");
   expect(statusBody.certificatePem).toBeDefined();
+  // The gateway announces the strict-mTLS device port at issuance; the
+  // device never talks mTLS to the pairing port again.
+  expect(statusBody.devicePort).toBe(stack.gatewayDevicePort);
   return {
     deviceId: confirmed.deviceId,
     keyPem: deviceKeys.privateKeyPem,

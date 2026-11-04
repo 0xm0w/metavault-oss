@@ -7,9 +7,11 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createGatewayServer } from "../src/server.js";
+import { createGatewayServers } from "../src/server.js";
 import { makeDaemonBackend } from "../src/daemon-backend.js";
 import {
+  currentWindowsUserSid,
+  defaultListAclSids,
   hardenOwnerOnly,
   isParentAclSafe,
   parseSddlAces,
@@ -31,6 +33,7 @@ describe("device-client", () => {
   }, 120_000);
   afterAll(async () => {
     await new Promise<void>((resolve) => stack.gateway.close(() => { resolve(); }));
+    await new Promise<void>((resolve) => stack.gatewayDevice.close(() => { resolve(); }));
     await new Promise<void>((resolve) => stack.daemon.close(() => { resolve(); }));
     rmSync(stack.dir, { recursive: true, force: true });
   });
@@ -75,11 +78,12 @@ describe("device-client", () => {
     const deviceId = await confirmOnVault(session.pairingId);
     const material = await handshake;
 
+    expect(material.devicePort).toBe(stack.gatewayDevicePort);
     const dir = mkdtempSync(join(tmpdir(), "mv-device-"));
     saveDeviceProfile(dir, {
       deviceId,
       host: "127.0.0.1",
-      port: stack.gatewayPort,
+      port: material.devicePort,
       pairedAt: new Date().toISOString(),
       serverCertFingerprint: material.serverCertFingerprint,
     }, material, "mvshim_test-token-1");
@@ -182,7 +186,7 @@ describe("device-client", () => {
     saveDeviceProfile(dir, {
       deviceId,
       host: "127.0.0.1",
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       pairedAt: new Date().toISOString(),
       // Simulate a different gateway key than the one seen at pairing.
       serverCertFingerprint: "0".repeat(64),
@@ -212,7 +216,7 @@ describe("device-client", () => {
     saveDeviceProfile(dir, {
       deviceId,
       host: "127.0.0.1",
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       pairedAt: new Date().toISOString(),
       serverCertFingerprint: material.serverCertFingerprint,
     }, material, "mvshim_secret-test-token");
@@ -265,7 +269,7 @@ describe("device-client", () => {
     // A second gateway with NO test overrides: production limiter defaults
     // (10 pairing attempts/min/address, 30/min global).
     const backend = makeDaemonBackend(stack.daemonBase, GATEWAY_SECRET);
-    const prodGw = createGatewayServer({
+    const prodGw = createGatewayServers({
       caCertPem: stack.ca.certPem,
       serverCertPem: stack.gwCert.certPem,
       serverKeyPem: stack.gwCert.keyPem,
@@ -274,8 +278,9 @@ describe("device-client", () => {
       gatewaySecret: GATEWAY_SECRET,
       transport: "loopback",
     });
-    await new Promise<void>((resolve) => { prodGw.listen(0, "127.0.0.1", resolve); });
-    const address = prodGw.address();
+    await new Promise<void>((resolve) => { prodGw.pairing.listen(0, "127.0.0.1", resolve); });
+    await new Promise<void>((resolve) => { prodGw.device.listen(0, "127.0.0.1", resolve); });
+    const address = prodGw.pairing.address();
     if (address === null || typeof address === "string") throw new Error("no port");
 
     // Human-paced: default bounded backoff (1s, 2s, 4s, cap 5s) and a
@@ -318,7 +323,8 @@ describe("device-client", () => {
       body: JSON.stringify({ pairingId: session2.pairingId }),
     });
     await expect(handshake2).rejects.toMatchObject({ reason: "expired" });
-    await new Promise<void>((resolve) => { prodGw.close(() => { resolve(); }); });
+    await new Promise<void>((resolve) => { prodGw.pairing.close(() => { resolve(); }); });
+    await new Promise<void>((resolve) => { prodGw.device.close(() => { resolve(); }); });
   }, 120_000);
 
   it("verifies Windows ACLs from SDDL trustee SIDs, never names or exit codes", () => {
@@ -383,7 +389,7 @@ describe("device-client", () => {
       saveDeviceProfile(
         dir,
         { deviceId: "dev-x", host: "127.0.0.1", port: 9443, pairedAt: "2026-11-04T00:00:00Z", serverCertFingerprint: "f" },
-        { deviceId: "dev-x", keyPem: "k", certPem: "c", caCertPem: "a", serverCertFingerprint: "f" },
+        { deviceId: "dev-x", keyPem: "k", certPem: "c", caCertPem: "a", serverCertFingerprint: "f", devicePort: 9443 },
         "mvshim_x",
       );
     }).toThrow(/unrelated/);
@@ -435,18 +441,23 @@ describe("device-client", () => {
 // the mocked ACE parser tests above are not a substitute for these.
 const onWindows = process.platform === "win32";
 describe.skipIf(!onWindows)("windows effective-ACL integration (requires win32 runner)", () => {
-  it("accepts a directory ACLed to the current user alone", () => {
+  it("hardens a real directory to the current user alone, verified by SDDL", () => {
     const dir = mkdtempSync(join(tmpdir(), "mv-acl-ok-"));
     hardenOwnerOnly(dir, true, "win32");
+    const sid = currentWindowsUserSid();
+    expect(sid).toBeDefined();
+    // The effective ACL, parsed from real icacls /save SDDL, is exactly
+    // the current user's SID - nothing inherited, nobody else.
+    expect(defaultListAclSids(dir)).toEqual([(sid ?? "").toUpperCase()]);
   });
 
-  it("rejects a preexisting directory with an explicit foreign grant", () => {
+  it("strips a preexisting foreign grant down to the owner alone", () => {
     const dir = mkdtempSync(join(tmpdir(), "mv-acl-bad-"));
     execFileSync("icacls", [dir, "/inheritance:r"]);
-    execFileSync("icacls", [dir, "/grant:r", `${process.env["USERNAME"] ?? ""}:(F)`]);
     execFileSync("icacls", [dir, "/grant:r", "Everyone:(R)"]);
-    expect(() => {
-      hardenOwnerOnly(dir, true, "win32");
-    }).toThrow(/owner-only|foreign/i);
+    hardenOwnerOnly(dir, true, "win32");
+    const sid = currentWindowsUserSid();
+    expect(sid).toBeDefined();
+    expect(defaultListAclSids(dir)).toEqual([(sid ?? "").toUpperCase()]);
   });
 });

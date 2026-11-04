@@ -15,9 +15,23 @@ the desktop as usual.
 
 ## Architecture
 
-- A **gateway** process binds `127.0.0.1:7078` (configurable port, loopback
-  only). It terminates mTLS from paired devices and forwards requests to
-  vaultd over the loopback daemon socket.
+- A **gateway** process binds two loopback-only listeners (configurable
+  ports):
+  - **Pairing** on `127.0.0.1:7078`: server-only TLS 1.3. Exactly two POST
+    routes (`/pair/begin`, `/pair/status`), strictly rate-limited. The
+    pairing client cannot validate the vault's identity on this leg - no
+    trust anchor exists yet - so the certificate presented here is NOT yet
+    authenticated; authenticity comes only from the human SAS comparison
+    below. Outside an explicit pairing window (a live, unconfirmed,
+    unexpired vault-side session) the listener is inert: `/pair/begin` is
+    refused before any body is read or code is compared.
+  - **Devices** on `127.0.0.1:7079` (pairing port + 1): strict mutual TLS
+    1.3. A client certificate chaining to the vault CA is required at the
+    TLS handshake itself, so certificate-less and foreign-CA connections
+    are refused before any HTTP exists. This listener forwards allowlisted
+    requests to vaultd over the loopback daemon socket.
+- Either listener failing to bind stops the whole gateway; it never runs
+  half-configured.
 - vaultd and the gateway share a **gateway secret** (loopback-only file, 0600).
   Every forwarded request carries an HMAC stamp (device id, transport, method,
   path, body hash, timestamp, nonce) over that secret. Stamps expire after a
@@ -39,8 +53,11 @@ the desktop as usual.
 2. Device: `metavault pair` with the code. The device joins over the gateway
    with its freshly generated client key.
 3. Both screens show a verification code (SAS) derived from the handshake
-   transcript (TLS 1.3 exported keying material). Confirm on the desktop only
-   if both match exactly. "Codes do not match" cancels and issues nothing.
+   transcript (TLS 1.3 exported keying material) plus both public identities,
+   the pairing code, both nonces and the announced device port - so a relay
+   rewriting the device-port announcement breaks the comparison instead of
+   redirecting the pinned transport. Confirm on the desktop only if both
+   match exactly. "Codes do not match" cancels and issues nothing.
 4. Only after confirmation does vaultd sign the device certificate (vault CA,
    1 year) and store the device record. The pairing confirmation is bound to
    the currently displayed session: a stale UI confirmation or a replaced

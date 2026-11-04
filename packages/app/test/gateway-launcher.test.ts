@@ -12,11 +12,16 @@ import {
 } from "../src/gateway-launcher.js";
 
 let server: Server | null = null;
+let server2: Server | null = null;
 let dir: string | null = null;
 afterEach(async () => {
   if (server !== null) {
     await new Promise<void>((resolve) => server?.close(() => { resolve(); }));
     server = null;
+  }
+  if (server2 !== null) {
+    await new Promise<void>((resolve) => server2?.close(() => { resolve(); }));
+    server2 = null;
   }
   if (dir !== null) {
     rmSync(dir, { recursive: true, force: true });
@@ -40,6 +45,7 @@ describe("bundled gateway launcher", () => {
     expect(env["METAVAULT_GATEWAY_HOST"]).toBe("127.0.0.1");
     expect(env["METAVAULT_TRANSPORT"]).toBe("loopback");
     expect(env["METAVAULT_GATEWAY_PORT"]).toBe("7078");
+    expect(env["METAVAULT_GATEWAY_DEVICE_PORT"]).toBe("7079");
     expect(env["METAVAULT_VAULT_DIR"]).toBe("/vault");
     expect(env["METAVAULT_DAEMON_URL"]).toBe("http://127.0.0.1:7077");
   });
@@ -65,19 +71,43 @@ describe("bundled gateway launcher", () => {
     expect(result.status).toBe("not-bundled");
   });
 
-  it("reports already-running when the port is served", async () => {
+  it("reports already-running only when BOTH listeners are served", async () => {
     dir = mkdtempSync(join(tmpdir(), "mv-gw-launch-"));
     server = createServer();
     server.listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server?.once("listening", () => { resolve(); }));
     const port = (server.address() as AddressInfo).port;
+    server2 = createServer();
+    server2.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server2?.once("listening", () => { resolve(); }));
+    const devicePort = (server2.address() as AddressInfo).port;
     const result = await ensureBundledGateway({
       execPath: "/bin/echo",
       paths: bundledGatewayPaths(join(dir, "resources"), join(dir, "data")),
       vaultDir: join(dir, "vault"),
       daemonBaseUrl: "http://127.0.0.1:7077",
       port,
+      devicePort,
     });
     expect(result.status).toBe("already-running");
+  });
+
+  it("does not treat a pairing-only listener as already-running", async () => {
+    dir = mkdtempSync(join(tmpdir(), "mv-gw-launch-"));
+    server = createServer();
+    server.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server?.once("listening", () => { resolve(); }));
+    const port = (server.address() as AddressInfo).port;
+    // Device port is unserved and the script is absent: not-bundled, not
+    // a false already-running.
+    const result = await ensureBundledGateway({
+      execPath: "/bin/echo",
+      paths: bundledGatewayPaths(join(dir, "resources"), join(dir, "data")),
+      vaultDir: join(dir, "vault"),
+      daemonBaseUrl: "http://127.0.0.1:7077",
+      port,
+      devicePort: 1,
+    });
+    expect(result.status).toBe("not-bundled");
   });
 });

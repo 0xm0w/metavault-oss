@@ -17,6 +17,10 @@ export function makeDaemonBackend(daemonBaseUrl: string, gatewaySecret: string):
     return (await res.json()) as unknown;
   };
   return {
+    pairingActive: async () => {
+      const out = (await call("/internal/pair-open", {})) as { open: boolean };
+      return out.open;
+    },
     deviceStatus: async (fingerprint) => {
       const out = (await call("/internal/device-status", { fingerprint })) as DeviceStatus;
       return out;

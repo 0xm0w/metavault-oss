@@ -6,7 +6,14 @@
 //   METAVAULT_DAEMON_URL       loopback daemon base URL
 //   METAVAULT_GATEWAY_HOST     bind address: loopback (default) or an
 //                              overlay (CGNAT/ULA) address only
-//   METAVAULT_GATEWAY_PORT     bind port (default 7078)
+//   METAVAULT_GATEWAY_PORT     pairing listener port (default 7078):
+//                              server-only TLS (the pairing client cannot
+//                              validate the vault's identity until the
+//                              human SAS comparison), pairing routes only
+//   METAVAULT_GATEWAY_DEVICE_PORT
+//                              device listener port (default pairing + 1):
+//                              strict mTLS, client cert required at the
+//                              TLS handshake
 //   METAVAULT_TRANSPORT        audit label: "loopback" (default) | "overlay"
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -17,7 +24,7 @@ import {
   VAULT_CA_CERT_FILE,
 } from "../../core/src/vault-ca.js";
 import { makeDaemonBackend } from "./daemon-backend.js";
-import { createGatewayServer } from "./server.js";
+import { createGatewayServers } from "./server.js";
 
 function fail(message: string): never {
   process.stderr.write(`metavault-gateway: ${message}\n`);
@@ -51,6 +58,10 @@ export function main(): void {
   }
   const port = Number(process.env["METAVAULT_GATEWAY_PORT"] ?? "7078");
   if (!Number.isInteger(port) || port < 1024 || port > 65535) fail("invalid gateway port");
+  const devicePort = Number(process.env["METAVAULT_GATEWAY_DEVICE_PORT"] ?? String(port + 1));
+  if (!Number.isInteger(devicePort) || devicePort < 1024 || devicePort > 65535 || devicePort === port) {
+    fail("invalid gateway device port");
+  }
   const transport = process.env["METAVAULT_TRANSPORT"] === "overlay" ? "overlay" : "loopback";
 
   const read = (name: string): string => {
@@ -65,7 +76,7 @@ export function main(): void {
   const serverKeyPem = read(GATEWAY_KEY_FILE);
   const gatewaySecret = read("metavault.gateway-token").trim();
 
-  const server = createGatewayServer({
+  const servers = createGatewayServers({
     caCertPem,
     serverCertPem,
     serverKeyPem,
@@ -74,8 +85,21 @@ export function main(): void {
     gatewaySecret,
     transport,
   });
-  server.listen(port, host, () => {
-    process.stderr.write(`metavault-gateway: listening on ${host}:${String(port)} (${transport})\n`);
+  // Either listener failing (port conflict, bind error) stops the whole
+  // gateway: never run half-configured.
+  const onListenError = (which: string) => (err: Error) => {
+    process.stderr.write(`metavault-gateway: ${which} listener failed: ${err.message}\n`);
+    servers.pairing.close();
+    servers.device.close();
+    process.exit(1);
+  };
+  servers.pairing.once("error", onListenError("pairing"));
+  servers.device.once("error", onListenError("device"));
+  servers.pairing.listen(port, host, () => {
+    process.stderr.write(`metavault-gateway: pairing on ${host}:${String(port)} (${transport})\n`);
+  });
+  servers.device.listen(devicePort, host, () => {
+    process.stderr.write(`metavault-gateway: devices (mTLS) on ${host}:${String(devicePort)} (${transport})\n`);
   });
 }
 

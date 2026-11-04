@@ -4,17 +4,19 @@
 // (single-use codes, SAS transcript binding, revocation).
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
+import { createHash, X509Certificate } from "node:crypto";
 import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import type { TLSSocket } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { VaultService } from "../../daemon/src/service.js";
 import { ensureGatewayCertificate, ensureVaultCa, generateRsaKeyPairPem, signLeafCertificate, spkiFingerprintFromPublicKeyPem } from "../../core/src/vault-ca.js";
 import { computePairingSas } from "../../core/src/pairing.js";
 import { makeDaemonBackend } from "../src/daemon-backend.js";
-import { createGatewayServer, GATEWAY_ALLOWLIST } from "../src/server.js";
+import { createGatewayServers, GATEWAY_ALLOWLIST } from "../src/server.js";
 import {
   DAEMON_TOKEN,
   GATEWAY_SECRET,
@@ -32,6 +34,7 @@ describe("gateway", () => {
   }, 120_000);
   afterAll(async () => {
     await new Promise<void>((resolve) => stack.gateway.close(() => { resolve(); }));
+    await new Promise<void>((resolve) => stack.gatewayDevice.close(() => { resolve(); }));
     await new Promise<void>((resolve) => stack.daemon.close(() => { resolve(); }));
     rmSync(stack.dir, { recursive: true, force: true });
   });
@@ -40,7 +43,7 @@ describe("gateway", () => {
     const device = await pairDevice(stack, "laptop-1");
     expect(device.deviceId).toMatch(/^dev-[0-9a-f]{12}$/);
     const res = await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "GET",
       path: "/health",
       cert: device.certPem,
@@ -48,7 +51,7 @@ describe("gateway", () => {
     });
     expect(res.status).toBe(200);
     const aliases = await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "GET",
       path: "/aliases",
       cert: device.certPem,
@@ -59,9 +62,23 @@ describe("gateway", () => {
   }, 120_000);
 
   it("fails closed without a client certificate", async () => {
-    const res = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/aliases" });
+    // The strict-mTLS device listener refuses certificate-less callers at
+    // the TLS handshake itself: no HTTP response ever exists.
+    await expect(
+      gwRequest({ port: stack.gatewayDevicePort, method: "GET", path: "/aliases" }),
+    ).rejects.toThrow();
+    // The pairing listener serves nothing but the two pairing routes,
+    // even to a caller presenting a valid paired device certificate.
+    const device = await pairDevice(stack, "listener-separation");
+    const res = await gwRequest({
+      port: stack.gatewayPort,
+      method: "GET",
+      path: "/aliases",
+      cert: device.certPem,
+      key: device.keyPem,
+    });
     expect(res.status).toBe(401);
-  });
+  }, 120_000);
 
   it("rejects a certificate from a foreign CA", async () => {
     const foreignDir = mkdtempSync(join(tmpdir(), "mv-gw-foreign-"));
@@ -76,14 +93,16 @@ describe("gateway", () => {
       validityDays: 30,
       usage: "client",
     });
-    const res = await gwRequest({
-      port: stack.gatewayPort,
-      method: "GET",
-      path: "/aliases",
-      cert: foreignCert,
-      key: keys.privateKeyPem,
-    });
-    expect(res.status).toBe(401);
+    // Foreign-CA client certificates die at the TLS handshake now.
+    await expect(
+      gwRequest({
+        port: stack.gatewayDevicePort,
+        method: "GET",
+        path: "/aliases",
+        cert: foreignCert,
+        key: keys.privateKeyPem,
+      }),
+    ).rejects.toThrow();
     rmSync(foreignDir, { recursive: true, force: true });
   }, 120_000);
 
@@ -114,7 +133,7 @@ describe("gateway", () => {
     ];
     for (const route of blocked) {
       const res = await gwRequest({
-        port: stack.gatewayPort,
+        port: stack.gatewayDevicePort,
         method: route.method,
         path: route.path,
         cert: device.certPem,
@@ -138,7 +157,7 @@ describe("gateway", () => {
     );
     // Bound token works through its own device session.
     const okRes = await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "POST",
       path: "/request",
       cert: device.certPem,
@@ -159,7 +178,7 @@ describe("gateway", () => {
     expect(localBody.reason).toBe("agent-token-device-bound");
     // A local-only token presented from the device session is refused.
     const remoteLocal = await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "POST",
       path: "/request",
       cert: device.certPem,
@@ -182,7 +201,7 @@ describe("gateway", () => {
     );
     const makeReq = () =>
       gwRequest({
-        port: stack.gatewayPort,
+        port: stack.gatewayDevicePort,
         method: "POST",
         path: "/request",
         cert: device.certPem,
@@ -216,7 +235,7 @@ describe("gateway", () => {
       ),
     );
     const before = await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "GET",
       path: "/health",
       cert: device.certPem,
@@ -230,7 +249,7 @@ describe("gateway", () => {
       ),
     );
     const after = await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "GET",
       path: "/health",
       cert: device.certPem,
@@ -281,7 +300,7 @@ describe("gateway", () => {
     await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
     const proxyAddr = proxy.address();
     if (proxyAddr === null || typeof proxyAddr === "string") throw new Error("no proxy port");
-    const slowGateway = createGatewayServer({
+    const slowGateway = createGatewayServers({
       caCertPem: stack.ca.certPem,
       serverCertPem: stack.gwCert.certPem,
       serverKeyPem: stack.gwCert.keyPem,
@@ -293,8 +312,8 @@ describe("gateway", () => {
       maxPairingAttemptsPerMinutePerAddress: 1000,
       maxPairingAttemptsPerMinuteGlobal: 1000,
     });
-    await new Promise<void>((resolve) => slowGateway.listen(0, "127.0.0.1", resolve));
-    const slowAddr = slowGateway.address();
+    await new Promise<void>((resolve) => slowGateway.device.listen(0, "127.0.0.1", resolve));
+    const slowAddr = slowGateway.device.address();
     if (slowAddr === null || typeof slowAddr === "string") throw new Error("no gateway port");
 
     const inFlight = gwRequest({
@@ -327,7 +346,7 @@ describe("gateway", () => {
       key: device.keyPem,
     });
     expect(after.status).toBe(403);
-    await new Promise<void>((resolve) => { slowGateway.close(() => { resolve(); }); });
+    await new Promise<void>((resolve) => { slowGateway.device.close(() => { resolve(); }); });
     await new Promise<void>((resolve) => { proxy.close(() => { resolve(); }); });
   }, 120_000);
 
@@ -474,7 +493,7 @@ describe("gateway", () => {
   it("records remote origin in the audit trail", async () => {
     const device = await pairDevice(stack, "audit-origin");
     await gwRequest({
-      port: stack.gatewayPort,
+      port: stack.gatewayDevicePort,
       method: "POST",
       path: "/request",
       cert: device.certPem,
@@ -553,9 +572,8 @@ describe("gateway", () => {
       ca: stack.ca.certPem,
       cert: device.certPem,
       key: device.keyPem,
-      rejectUnauthorized: false,
     });
-    const first = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", agent });
+    const first = await gwRequest({ port: stack.gatewayDevicePort, method: "GET", path: "/health", agent });
     expect(first.status).toBe(200);
     const revoke = await fetch(`${stack.daemonBase}/devices/revoke`, {
       method: "POST",
@@ -565,7 +583,7 @@ describe("gateway", () => {
     expect(revoke.status).toBe(200);
     // Same kept-alive socket: revocation is re-checked per request, not
     // only at the TLS handshake.
-    const second = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", agent });
+    const second = await gwRequest({ port: stack.gatewayDevicePort, method: "GET", path: "/health", agent });
     expect(second.localPort).toBe(first.localPort);
     expect(second.status).toBe(403);
     agent.destroy();
@@ -573,7 +591,7 @@ describe("gateway", () => {
 
   it("caps pairing attempts globally against distributed code brute-force", async () => {
     const backend = makeDaemonBackend(stack.daemonBase, GATEWAY_SECRET);
-    const gw2 = createGatewayServer({
+    const gw2 = createGatewayServers({
       caCertPem: stack.ca.certPem,
       serverCertPem: stack.gwCert.certPem,
       serverKeyPem: stack.gwCert.keyPem,
@@ -585,8 +603,8 @@ describe("gateway", () => {
       maxPairingAttemptsPerMinutePerAddress: 1000,
       maxPairingAttemptsPerMinuteGlobal: 3,
     });
-    await new Promise<void>((resolve) => { gw2.listen(0, "127.0.0.1", resolve); });
-    const address = gw2.address();
+    await new Promise<void>((resolve) => { gw2.pairing.listen(0, "127.0.0.1", resolve); });
+    const address = gw2.pairing.address();
     if (address === null || typeof address === "string") throw new Error("no port");
     const keys = generateRsaKeyPairPem();
     const statuses: number[] = [];
@@ -603,7 +621,46 @@ describe("gateway", () => {
     // rejects the rest before any daemon work.
     expect(statuses.slice(0, 3)).toEqual([403, 403, 403]);
     expect(statuses.slice(3)).toEqual([429, 429]);
-    await new Promise<void>((resolve) => { gw2.close(() => { resolve(); }); });
+    await new Promise<void>((resolve) => { gw2.pairing.close(() => { resolve(); }); });
+  }, 120_000);
+
+  it("pairing listener is inert outside an explicit pairing window", async () => {
+    // No vault-side session open: /pair/begin is refused BEFORE any body
+    // is read, any code is compared, or any daemon pairing work happens.
+    let pairBeginCalls = 0;
+    const inert = createGatewayServers({
+      caCertPem: stack.ca.certPem,
+      serverCertPem: stack.gwCert.certPem,
+      serverKeyPem: stack.gwCert.keyPem,
+      backend: {
+        deviceStatus: () => Promise.resolve({ known: false, revoked: true }),
+        pairingActive: () => Promise.resolve(false),
+        pairBegin: () => {
+          pairBeginCalls += 1;
+          return Promise.reject(new Error("must not be reached"));
+        },
+        pairSas: () => Promise.resolve(),
+        pairStatus: () => Promise.resolve({ status: "unknown" }),
+      },
+      daemonBaseUrl: stack.daemonBase,
+      gatewaySecret: GATEWAY_SECRET,
+      transport: "loopback",
+    });
+    await new Promise<void>((resolve) => { inert.pairing.listen(0, "127.0.0.1", resolve); });
+    await new Promise<void>((resolve) => { inert.device.listen(0, "127.0.0.1", resolve); });
+    const address = inert.pairing.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    const keys = generateRsaKeyPairPem();
+    const res = await gwRequest({
+      port: address.port,
+      method: "POST",
+      path: "/pair/begin",
+      body: { code: "ANYCODE1", deviceName: "probe", platform: "linux", clientPublicKeyPem: keys.publicKeyPem, clientNonce: "n" },
+    });
+    expect(res.status).toBe(403);
+    expect(pairBeginCalls).toBe(0);
+    await new Promise<void>((resolve) => { inert.pairing.close(() => { resolve(); }); });
+    await new Promise<void>((resolve) => { inert.device.close(() => { resolve(); }); });
   }, 120_000);
 
   it("keeps concurrent pairing attempts isolated to the single active session", async () => {
@@ -655,9 +712,9 @@ describe("gateway", () => {
     const certB = bodyB.certificatePem ?? "";
     expect(bodyB.status).toBe("confirmed");
     expect(certB).toContain("BEGIN CERTIFICATE");
-    const health = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", cert: certB, key: keysB.privateKeyPem });
+    const health = await gwRequest({ port: stack.gatewayDevicePort, method: "GET", path: "/health", cert: certB, key: keysB.privateKeyPem });
     expect(health.status).toBe(200);
-    const wrongKey = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", cert: certB, key: keysA.privateKeyPem }).catch(() => ({ status: 0, body: "" }));
+    const wrongKey = await gwRequest({ port: stack.gatewayDevicePort, method: "GET", path: "/health", cert: certB, key: keysA.privateKeyPem }).catch(() => ({ status: 0, body: "" }));
     expect(wrongKey.status).not.toBe(200);
   }, 120_000);
 
@@ -680,8 +737,9 @@ describe("gateway", () => {
       body: { code: directSession.code, deviceName: "direct", platform: "linux", clientPublicKeyPem: directKeys.publicKeyPem, clientNonce: "direct-nonce" },
     });
     expect(directBegin.status).toBe(200);
-    const directInfo = JSON.parse(directBegin.body) as { serverNonce: string; serverCertFingerprint: string };
+    const directInfo = JSON.parse(directBegin.body) as { serverNonce: string; serverCertFingerprint: string; devicePort?: number };
     expect(directBegin.exporter).toBeDefined();
+    expect(directInfo.devicePort).toBe(stack.gatewayDevicePort);
     const sasDirect = computePairingSas({
       exporterSecret: directBegin.exporter as Buffer,
       serverCertFingerprint: directInfo.serverCertFingerprint,
@@ -689,6 +747,7 @@ describe("gateway", () => {
       code: directSession.code,
       serverNonce: directInfo.serverNonce,
       clientNonce: "direct-nonce",
+      devicePort: directInfo.devicePort as number,
     });
     const viewDirect = await (await fetch(`${stack.daemonBase}/devices/pairing`, { headers: { "x-metavault-token": DAEMON_TOKEN } })).json() as { session: { pairingId: string; sas?: string } | null };
     expect(viewDirect.session?.pairingId).toBe(directSession.pairingId);
@@ -711,9 +770,29 @@ describe("gateway", () => {
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
         req.on("end", () => {
+          // The relay validates upstream the way the production pinned
+          // device client does: vault-CA chain plus the gateway SPKI
+          // fingerprint (the cert carries no hostname SANs).
+          const expectedFp = (() => {
+            const c = new X509Certificate(stack.gwCert.certPem);
+            return createHash("sha256").update(c.publicKey.export({ format: "der", type: "spki" })).digest("hex");
+          })();
           const upstream = httpsRequest(
-            { host: "127.0.0.1", port: stack.gatewayPort, method: "POST", path: "/pair/begin", rejectUnauthorized: false, headers: { "content-type": "application/json" } },
+            { host: "127.0.0.1", port: stack.gatewayPort, method: "POST", path: "/pair/begin", ca: stack.ca.certPem, checkServerIdentity: () => undefined, headers: { "content-type": "application/json" } },
             (up) => {
+              try {
+                const raw = (up.socket as TLSSocket).getPeerCertificate(true).raw as Buffer;
+                const fp = createHash("sha256").update(new X509Certificate(raw).publicKey.export({ format: "der", type: "spki" })).digest("hex");
+                if (fp !== expectedFp) {
+                  res.writeHead(502); res.end();
+                  up.destroy();
+                  return;
+                }
+              } catch {
+                res.writeHead(502); res.end();
+                up.destroy();
+                return;
+              }
               const upChunks: Buffer[] = [];
               up.on("data", (c: Buffer) => upChunks.push(c));
               up.on("end", () => {
@@ -739,7 +818,8 @@ describe("gateway", () => {
       body: { code: victimSession.code, deviceName: "victim", platform: "linux", clientPublicKeyPem: victimKeys.publicKeyPem, clientNonce: "victim-nonce" },
     });
     expect(mitmBegin.status).toBe(200);
-    const mitmInfo = JSON.parse(mitmBegin.body) as { serverNonce: string; serverCertFingerprint: string };
+    const mitmInfo = JSON.parse(mitmBegin.body) as { serverNonce: string; serverCertFingerprint: string; devicePort?: number };
+    expect(mitmInfo.devicePort).toBe(stack.gatewayDevicePort);
     const sasVictim = computePairingSas({
       exporterSecret: mitmBegin.exporter as Buffer,
       serverCertFingerprint: mitmInfo.serverCertFingerprint,
@@ -747,6 +827,7 @@ describe("gateway", () => {
       code: victimSession.code,
       serverNonce: mitmInfo.serverNonce,
       clientNonce: "victim-nonce",
+      devicePort: mitmInfo.devicePort as number,
     });
     const viewMitm = await (await fetch(`${stack.daemonBase}/devices/pairing`, { headers: { "x-metavault-token": DAEMON_TOKEN } })).json() as { session: { pairingId: string; sas?: string } | null };
     expect(viewMitm.session?.pairingId).toBe(victimSession.pairingId);

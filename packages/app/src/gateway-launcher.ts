@@ -11,6 +11,7 @@ import { join } from "node:path";
 // APIs so the pieces below are unit-testable headlessly.
 
 export const GATEWAY_PORT = 7078;
+export const GATEWAY_DEVICE_PORT = 7079;
 export const GATEWAY_HOST = "127.0.0.1";
 
 export interface BundledGatewayPaths {
@@ -32,15 +33,17 @@ export function bundledGatewayPaths(resourcesPath: string, dataDir: string): Bun
 // user decision and must never ride in on a base environment variable.
 export function bundledGatewayEnv(
   base: NodeJS.ProcessEnv,
-  options: { readonly vaultDir: string; readonly daemonBaseUrl: string; readonly port?: number },
+  options: { readonly vaultDir: string; readonly daemonBaseUrl: string; readonly port?: number; readonly devicePort?: number },
 ): NodeJS.ProcessEnv {
+  const pairingPort = options.port ?? GATEWAY_PORT;
   return {
     ...base,
     ELECTRON_RUN_AS_NODE: "1",
     METAVAULT_VAULT_DIR: options.vaultDir,
     METAVAULT_DAEMON_URL: options.daemonBaseUrl,
     METAVAULT_GATEWAY_HOST: GATEWAY_HOST,
-    METAVAULT_GATEWAY_PORT: String(options.port ?? GATEWAY_PORT),
+    METAVAULT_GATEWAY_PORT: String(pairingPort),
+    METAVAULT_GATEWAY_DEVICE_PORT: String(options.devicePort ?? pairingPort + 1),
     METAVAULT_TRANSPORT: "loopback",
   };
 }
@@ -78,11 +81,15 @@ export async function ensureBundledGateway(options: {
   readonly daemonBaseUrl: string;
   readonly host?: string;
   readonly port?: number;
+  readonly devicePort?: number;
   readonly env?: NodeJS.ProcessEnv;
 }): Promise<GatewayLaunchResult> {
   const host = options.host ?? GATEWAY_HOST;
   const port = options.port ?? GATEWAY_PORT;
-  if (await gatewayListening(host, port)) return { status: "already-running" };
+  const devicePort = options.devicePort ?? port + 1;
+  if ((await gatewayListening(host, port)) && (await gatewayListening(host, devicePort))) {
+    return { status: "already-running" };
+  }
   if (!existsSync(options.paths.script)) return { status: "not-bundled" };
   mkdirSync(options.paths.dataDir, { recursive: true });
   const log = openSync(options.paths.logPath, "a");
@@ -91,6 +98,7 @@ export async function ensureBundledGateway(options: {
       vaultDir: options.vaultDir,
       daemonBaseUrl: options.daemonBaseUrl,
       port,
+      devicePort,
     }),
     stdio: ["ignore", log, log],
     windowsHide: true,

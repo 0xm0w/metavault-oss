@@ -509,6 +509,12 @@ export async function handleVaultRequest(
       }
       return run(service.attachPairingSas(b["pairingId"], b["sas"]).pipe(Effect.map(() => ({ status: "ok" as const }))));
     }
+    if (method === "POST" && path === "/internal/pair-open") {
+      // Whether a live, unconfirmed, unexpired pairing session exists.
+      // The gateway checks this before doing ANY pairing work so its
+      // pairing listener stays inert outside an explicit pairing window.
+      return run(service.pairingOpen());
+    }
     if (method === "POST" && path === "/internal/pair-status") {
       const b = (body ?? {}) as Record<string, unknown>;
       if (typeof b["pairingId"] !== "string") {

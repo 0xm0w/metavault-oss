@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from "effect";
 import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
@@ -158,9 +158,9 @@ function hashPairingCode(code: string): string {
 }
 
 function generatePairingCode(): string {
-  const bytes = randomBytes(8);
+  // randomInt is uniform over the alphabet; a modulo of raw bytes is not.
   let out = "";
-  for (const b of bytes) out += PAIRING_CODE_ALPHABET[b % PAIRING_CODE_ALPHABET.length] ?? "";
+  for (let i = 0; i < 8; i += 1) out += PAIRING_CODE_ALPHABET[randomInt(PAIRING_CODE_ALPHABET.length)] ?? "";
   return out;
 }
 
@@ -365,6 +365,8 @@ export interface VaultServiceService {
   readonly attachPairingSas: (pairingId: string, sas: string) => Effect.Effect<void, StorageError>;
   readonly confirmPairing: (pairingId: string) => Effect.Effect<{ deviceId: string; certFingerprint: string }, PairingNotConfirmable | StorageError>;
   readonly pairingInternalStatus: (pairingId: string) => Effect.Effect<PairingInternalStatus, StorageError>;
+  // True only while a live, unconfirmed, unexpired pairing session exists.
+  readonly pairingOpen: () => Effect.Effect<{ readonly open: boolean }, StorageError>;
   readonly getAgentSecuritySettings: () => Effect.Effect<AgentSecuritySettings, StorageError>;
   readonly updateAgentSecuritySettings: (
     patch: { readonly strictMode?: boolean | undefined; readonly verifyCallerProcess?: boolean | undefined },
@@ -1795,6 +1797,13 @@ export function makeVaultServiceLive(
             }
             const ca = yield* loadVaultCa();
             return { status: "confirmed" as const, certificatePem: session.certificatePem, caCertPem: ca.certPem };
+          }),
+
+        pairingOpen: () =>
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const session = yield* Ref.get(pairing);
+            return { open: session !== undefined && session.expiresAtMs > now && session.status !== "confirmed" };
           }),
 
         getLocalAuthStatus: () =>

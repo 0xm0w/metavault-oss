@@ -80,7 +80,8 @@ export function pairProgram(io: RemoteIo, args: readonly string[]): Effect.Effec
       saveDeviceProfile(profileDir, {
         deviceId: result.deviceId,
         host,
-        port,
+        // Strict-mTLS device port announced by the gateway at issuance.
+        port: result.devicePort,
         pairedAt: new Date().toISOString(),
         serverCertFingerprint: result.serverCertFingerprint,
       }, result, generateShimToken());
