@@ -162,8 +162,12 @@ export function createGatewayServer(options: GatewayOptions): HttpsServer {
               });
               return;
             }
-            if (!globalPairingLimiter("global") || !pairingLimiter(remoteAddress)) {
-              json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts" } });
+            if (!globalPairingLimiter("global")) {
+              json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts (global)" } });
+              return;
+            }
+            if (!pairingLimiter(remoteAddress)) {
+              json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts (address)" } });
               return;
             }
             const bodyText = await readBody(req);

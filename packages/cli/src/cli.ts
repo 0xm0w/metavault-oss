@@ -28,6 +28,7 @@ import { MarshalUnavailable, StorageError } from "../../core/src/errors.js";
 import { VaultStore, VaultStoreScoped } from "../../core/src/storage.js";
 import type { AuditEvent } from "../../core/src/types.js";
 import { EnrollmentIdSchema, EnrollmentRequestSchema, GrantIdSchema, RevokeSchema } from "../../daemon/src/schemas.js";
+import { pairProgram, shimProgram } from "./remote.js";
 
 // The CLI is a system edge, like the daemon HTTP handler and the MCP
 // adapter: it composes core Effects and daemon HTTP calls, then converts
@@ -127,7 +128,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>>\n";
+  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|pair --code <code> [--host <h>] [--port <p>] [--name <n>] [--profile-dir <d>]|shim [--port <p>] [--profile-dir <d>]>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -984,6 +985,10 @@ function programFor(
       if (parsed === null) { return Effect.fail(new UsageError({ message: "enroll requires --alias <a> --scope <s> [--website <w>]" })); }
       return enrollProgram(io, parsed);
     }
+    case "pair":
+      return pairProgram(io, argv.slice(1));
+    case "shim":
+      return shimProgram(io, argv.slice(1));
     case "enroll-status": {
       const enrollmentId = argv[1];
       if (enrollmentId === undefined || enrollmentId === "") { return Effect.fail(new UsageError({ message: "enroll-status requires <enrollmentId>" })); }
