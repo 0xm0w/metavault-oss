@@ -28,6 +28,7 @@ import {
   GrantExpired,
   GrantRevoked,
   PolicyDenied,
+  PresenceRequired,
   StorageError,
 } from "../../core/src/errors.js";
 import { createGrant, makeGrantRegistry, type Grant } from "../../core/src/grants.js";
@@ -325,16 +326,18 @@ export interface VaultServiceService {
   ) => Effect.Effect<CapabilityResult, StorageError>;
   readonly approve: (
     grantId: string,
+    presenceProof?: string,
   ) => Effect.Effect<
     { readonly status: "executed"; readonly result: unknown },
-    GrantExpired | GrantRevoked | ConnectorFailed | StorageError
+    GrantExpired | GrantRevoked | ConnectorFailed | PresenceRequired | StorageError
   >;
   readonly deny: (grantId: string) => Effect.Effect<void, StorageError>;
   readonly approveAlways: (
     grantId: string,
+    presenceProof?: string,
   ) => Effect.Effect<
     { readonly status: "executed"; readonly result: unknown },
-    GrantExpired | GrantRevoked | PolicyDenied | ConnectorFailed | StorageError
+    GrantExpired | GrantRevoked | PolicyDenied | ConnectorFailed | PresenceRequired | StorageError
   >;
   readonly revoke: (agentIdOrAlias: string) => Effect.Effect<void, StorageError>;
   readonly hasCredential: (alias: string) => Effect.Effect<boolean, StorageError>;
@@ -386,8 +389,8 @@ export interface VaultServiceService {
     pin: string,
     currentPin?: string,
   ) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
-  readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean }, StorageError>;
-  readonly verifyBiometric: () => Effect.Effect<{ readonly ok: boolean }, StorageError>;
+  readonly verifyLocalPin: (pin: string) => Effect.Effect<{ readonly ok: boolean; readonly presenceProof?: string }, StorageError>;
+  readonly verifyBiometric: () => Effect.Effect<{ readonly ok: boolean; readonly presenceProof?: string }, StorageError>;
   readonly getSecurityPosture: () => Effect.Effect<SecurityPostureReport, StorageError>;
 }
 
@@ -487,6 +490,59 @@ export function makeVaultServiceLive(
       // At most one pairing session exists; starting a new one kills the
       // old. In-memory only: pairing state never persists across restarts.
       const pairing = yield* Ref.make<PairingSession | undefined>(undefined);
+      // Daemon-issued local-presence proofs: single-use, 60s TTL, minted
+      // only by a real PIN verification (or an attested Hello). Required
+      // to approve remote-origin grants when the setting is on.
+      const presenceProofs = yield* Ref.make(new Map<string, number>());
+      const PRESENCE_PROOF_TTL_MS = 60_000;
+      const mintPresenceProof = () : Effect.Effect<string> =>
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const token = randomBytes(24).toString("hex");
+          yield* Ref.update(presenceProofs, (proofs) => {
+            const next = new Map<string, number>();
+            for (const [t, exp] of proofs) {
+              if (exp > now) next.set(t, exp);
+            }
+            next.set(token, now + PRESENCE_PROOF_TTL_MS);
+            return next;
+          });
+          return token;
+        });
+      const consumePresenceProof = (token: string | undefined): Effect.Effect<boolean> =>
+        Effect.gen(function* () {
+          if (token === undefined || token === "") return false;
+          const now = yield* Clock.currentTimeMillis;
+          const proofs = yield* Ref.get(presenceProofs);
+          const exp = proofs.get(token);
+          if (exp === undefined) return false;
+          yield* Ref.update(presenceProofs, (current) => {
+            const next = new Map(current);
+            next.delete(token);
+            return next;
+          });
+          return exp > now;
+        });
+      // Remote-origin approvals require fresh local presence at the DAEMON
+      // boundary: any caller - app main or another daemon-token holder -
+      // must present a proof minted by a real verification moments ago.
+      // Origin is provenance-bound (gateway stamps), never client-supplied.
+      const requirePresenceForRemoteApproval = (
+        grantId: string,
+        presenceProof: string | undefined,
+      ): Effect.Effect<void, PresenceRequired | StorageError> =>
+        Effect.gen(function* () {
+          const grant = yield* registry.get(grantId);
+          if (grant === undefined || grant.request.origin !== "remote") return;
+          const remote = yield* store.getRemoteSettingsRow();
+          if (!remote.requireAuthForRemoteApproval) return;
+          const ok = yield* consumePresenceProof(presenceProof);
+          if (!ok) {
+            return yield* Effect.fail(
+              new PresenceRequired({ message: "remote approval requires fresh local presence (PIN or Windows Hello)", grantId }),
+            );
+          }
+        });
       let injectedCa: VaultCa | undefined = options.vaultCa;
       const vaultDir = options.vaultDir;
       const loadVaultCa = (): Effect.Effect<VaultCa, StorageError> =>
@@ -1164,10 +1220,15 @@ export function makeVaultServiceLive(
             return { status: "executed", result: exit.value, reason: result.reason } as const;
           }),
 
-        approve: (grantId) => consumeAndExecute(grantId, "approved by human"),
-
-        approveAlways: (grantId) =>
+        approve: (grantId, presenceProof) =>
           Effect.gen(function* () {
+            yield* requirePresenceForRemoteApproval(grantId, presenceProof);
+            return yield* consumeAndExecute(grantId, "approved by human");
+          }),
+
+        approveAlways: (grantId, presenceProof) =>
+          Effect.gen(function* () {
+            yield* requirePresenceForRemoteApproval(grantId, presenceProof);
             const grant = yield* registry.get(grantId);
             if (grant === undefined || grant.status !== "pending") {
               return yield* Effect.fail(
@@ -1792,10 +1853,14 @@ export function makeVaultServiceLive(
           Effect.gen(function* () {
             const current = yield* store.getLocalAuthRecord();
             if (current.pinHash === null || current.salt === null) {
+              // No PIN configured: verification is vacuous and must NOT
+              // mint presence proofs - fail closed for remote approvals.
               return { ok: true } as const;
             }
             const ok = verifyPin(pin, current.salt, current.pinHash);
-            return { ok } as const;
+            if (!ok) return { ok } as const;
+            const presenceProof = yield* mintPresenceProof();
+            return { ok, presenceProof } as const;
           }),
 
         verifyBiometric: () =>
@@ -1804,7 +1869,8 @@ export function makeVaultServiceLive(
             if (!current.enabled || !current.biometricEnabled) {
               return { ok: false } as const;
             }
-            return { ok: true } as const;
+            const presenceProof = yield* mintPresenceProof();
+            return { ok: true, presenceProof } as const;
           }),
 
         getSecurityPosture: () =>

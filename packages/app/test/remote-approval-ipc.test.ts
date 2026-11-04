@@ -12,7 +12,7 @@ function makeDeps(overrides: Partial<GuardDeps> = {}): GuardDeps & { forwarded: 
     nowMs: () => NOW,
     getPending: () => Promise.resolve({ approvals: [{ grantId: "g-remote", origin: "remote" }] }),
     getRemoteSettings: () => Promise.resolve({ requireAuthForRemoteApproval: true }),
-    verifyPin: (pin) => Promise.resolve(pin === "1234"),
+    verifyPin: (pin) => Promise.resolve(pin === "1234" ? "daemon-proof-abc" : false),
     verifyHello: () => Promise.resolve(true),
     forward: (call) => { forwarded.push(call); return Promise.resolve({ ok: true }); },
     forwarded,
@@ -27,7 +27,7 @@ describe("issuePresenceProof (trusted boundary)", () => {
     const { token } = await issuePresenceProof({ scope: "approve", grantId: "g-remote", pin: "1234" }, deps);
     expect(token.length).toBeGreaterThan(20);
     // proof is usable exactly once for that grant
-    expect(deps.issuer.consume(token, "approve:g-remote", NOW)).toBe(true);
+    expect(deps.issuer.consume(token, "approve:g-remote", NOW)).toEqual({ daemonProof: "daemon-proof-abc" });
   });
 
   it("mints via Windows Hello and fails closed when neither factor verifies", async () => {
@@ -36,7 +36,7 @@ describe("issuePresenceProof (trusted boundary)", () => {
     await expect(issuePresenceProof({ scope: "approve", grantId: "g-remote" }, deps)).rejects.toThrow(/not verified/);
     const ok = makeDeps();
     const { token } = await issuePresenceProof({ scope: "settings-remote", hello: true }, ok);
-    expect(ok.issuer.consume(token, SETTINGS_REMOTE_PROOF_SCOPE, NOW)).toBe(true);
+    expect(ok.issuer.consume(token, SETTINGS_REMOTE_PROOF_SCOPE, NOW)).toEqual({ daemonProof: undefined });
   });
 
   it("rejects malformed requests", async () => {
@@ -53,12 +53,21 @@ describe("guardedDaemonCall (forged IPC cannot bypass)", () => {
     expect(deps.forwarded).toEqual([]);
   });
 
-  it("forwards an approve carrying a fresh proof, stripped of the proof field", async () => {
+  it("forwards an approve carrying a fresh proof, main token stripped, daemon proof forwarded", async () => {
     const deps = makeDeps();
     const { token } = await issuePresenceProof({ scope: "approve", grantId: "g-remote", pin: "1234" }, deps);
     const result = await guardedDaemonCall({ method: "POST", path: "/approve", body: { grantId: "g-remote", __presenceProof: token } }, deps);
     expect(result).toEqual({ ok: true });
-    expect(deps.forwarded).toEqual([{ method: "POST", path: "/approve", body: { grantId: "g-remote" } }]);
+    expect(deps.forwarded).toEqual([{ method: "POST", path: "/approve", body: { grantId: "g-remote", presenceProof: "daemon-proof-abc" } }]);
+  });
+
+  it("fails closed when the grant cannot be found or state is unreadable", async () => {
+    const unknown = makeDeps({ getPending: () => Promise.resolve({ approvals: [] }) });
+    await expect(guardedDaemonCall({ method: "POST", path: "/approve", body: { grantId: "g-ghost" } }, unknown)).rejects.toThrow(/local presence/);
+    expect(unknown.forwarded).toEqual([]);
+    const broken = makeDeps({ getPending: () => Promise.reject(new Error("daemon down")) });
+    await expect(guardedDaemonCall({ method: "POST", path: "/approve", body: { grantId: "g-remote" } }, broken)).rejects.toThrow(/local presence/);
+    expect(broken.forwarded).toEqual([]);
   });
 
   it("rejects disabling the remote presence requirement without proof", async () => {

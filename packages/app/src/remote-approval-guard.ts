@@ -15,26 +15,29 @@ export const PRESENCE_PROOF_TTL_MS = 60_000;
 export const SETTINGS_REMOTE_PROOF_SCOPE = "settings:remote";
 
 export class PresenceProofIssuer {
-  private readonly proofs = new Map<string, { scope: string; expiresAtMs: number }>();
+  private readonly proofs = new Map<string, { scope: string; expiresAtMs: number; daemonProof?: string | undefined }>();
 
-  issue(scope: string, nowMs: number): string {
+  issue(scope: string, nowMs: number, daemonProof?: string): string {
     // Housekeeping on issue keeps the map bounded.
     for (const [token, proof] of this.proofs) {
       if (proof.expiresAtMs <= nowMs) this.proofs.delete(token);
     }
     const token = randomBytes(24).toString("hex");
-    this.proofs.set(token, { scope, expiresAtMs: nowMs + PRESENCE_PROOF_TTL_MS });
+    this.proofs.set(token, { scope, expiresAtMs: nowMs + PRESENCE_PROOF_TTL_MS, daemonProof });
     return token;
   }
 
   // Single-use: a consumed token is gone. Wrong scope, unknown token, or
-  // expired token all fail closed.
-  consume(token: unknown, scope: string, nowMs: number): boolean {
-    if (typeof token !== "string" || token === "") return false;
+  // expired token all fail closed. On success the stored record (with the
+  // daemon-issued proof, when the factor was a daemon-verified PIN) is
+  // returned so the guarded call can forward it to the daemon.
+  consume(token: unknown, scope: string, nowMs: number): { readonly daemonProof?: string | undefined } | null {
+    if (typeof token !== "string" || token === "") return null;
     const proof = this.proofs.get(token);
-    if (proof === undefined) return false;
+    if (proof === undefined) return null;
     this.proofs.delete(token);
-    return proof.scope === scope && proof.expiresAtMs > nowMs;
+    if (proof.scope !== scope || proof.expiresAtMs <= nowMs) return null;
+    return { daemonProof: proof.daemonProof };
   }
 }
 
@@ -65,7 +68,10 @@ function findGrant(pendingRaw: unknown, grantId: string): PendingLike | null {
 }
 
 export function remotePresenceRequired(grant: PendingLike | null, settingsRaw: unknown): boolean {
-  if (grant === null || grant.origin !== "remote") return false;
+  // Unknown/unreadable origin is treated as remote: a grant whose
+  // provenance cannot be established must NOT inherit the local fast path.
+  if (grant === null) return true;
+  if (grant.origin !== "remote") return false;
   const requireAuth =
     typeof settingsRaw === "object" && settingsRaw !== null
       ? (settingsRaw as RemoteSettingsLike)["requireAuthForRemoteApproval"]
@@ -103,13 +109,20 @@ export async function guardApprovalCall(options: {
       await options.getRemoteSettings(),
     ];
   } catch {
-    // Daemon state unreadable: the daemon itself will answer the call.
-    return { decision: { allow: true }, body: record };
+    // Daemon state unreadable: origin cannot be established, so fail closed.
+    return {
+      decision: { allow: false, reason: "remote approval requires fresh local presence (PIN or Windows Hello)" },
+      body: record,
+    };
   }
   if (!remotePresenceRequired(grant, settingsRaw)) {
     return { decision: { allow: true }, body: record };
   }
-  if (options.issuer.consume(proof, `approve:${grantId}`, options.nowMs)) {
+  const consumed = options.issuer.consume(proof, `approve:${grantId}`, options.nowMs);
+  if (consumed !== null) {
+    if (typeof consumed.daemonProof === "string" && consumed.daemonProof !== "") {
+      record["presenceProof"] = consumed.daemonProof;
+    }
     return { decision: { allow: true }, body: record };
   }
   return {
@@ -130,7 +143,7 @@ export function guardRemoteSettingsCall(options: {
   if (!(options.method === "PATCH" && options.path === "/settings/remote")) return { allow: true };
   const record = typeof options.body === "object" && options.body !== null ? (options.body as Record<string, unknown>) : {};
   if (record["requireAuthForRemoteApproval"] !== false) return { allow: true };
-  if (options.issuer.consume(record["__presenceProof"], SETTINGS_REMOTE_PROOF_SCOPE, options.nowMs)) {
+  if (options.issuer.consume(record["__presenceProof"], SETTINGS_REMOTE_PROOF_SCOPE, options.nowMs) !== null) {
     return { allow: true };
   }
   return { allow: false, reason: "disabling remote-approval presence requires fresh local presence (PIN or Windows Hello)" };

@@ -75,6 +75,7 @@ export function statusForErrorTag(tag: string): number {
       return 409;
     case "PolicyDenied":
     case "UnknownAlias":
+    case "PresenceRequired":
       return 403;
     case "ConnectorFailed":
       return 502;
@@ -1013,14 +1014,16 @@ export async function handleVaultRequest(
     if (decoded === null) {
       return BAD_REQUEST;
     }
-    return run(service.approve(decoded.grantId));
+    const proof = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["presenceProof"] : undefined;
+    return run(service.approve(decoded.grantId, typeof proof === "string" ? proof : undefined));
   }
   if (method === "POST" && path === "/approve-always") {
     const decoded = await decode(GrantIdSchema, body ?? {});
     if (decoded === null) {
       return BAD_REQUEST;
     }
-    return run(service.approveAlways(decoded.grantId));
+    const proof = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["presenceProof"] : undefined;
+    return run(service.approveAlways(decoded.grantId, typeof proof === "string" ? proof : undefined));
   }
   if (method === "POST" && path === "/deny") {
     const decoded = await decode(GrantIdSchema, body ?? {});

@@ -26,17 +26,17 @@ describe("presence proofs", () => {
   it("are single-use, scope-bound, and expire", () => {
     const issuer = new PresenceProofIssuer();
     const token = issuer.issue("approve:g1", NOW);
-    expect(issuer.consume(token, "approve:g1", NOW + 1000)).toBe(true);
+    expect(issuer.consume(token, "approve:g1", NOW + 1000)).toEqual({ daemonProof: undefined });
     // replay fails
-    expect(issuer.consume(token, "approve:g1", NOW + 1000)).toBe(false);
+    expect(issuer.consume(token, "approve:g1", NOW + 1000)).toBeNull();
     const other = issuer.issue("approve:g1", NOW);
     // wrong scope fails and consumes
-    expect(issuer.consume(other, "approve:g2", NOW + 1000)).toBe(false);
-    expect(issuer.consume(other, "approve:g1", NOW + 1000)).toBe(false);
+    expect(issuer.consume(other, "approve:g2", NOW + 1000)).toBeNull();
+    expect(issuer.consume(other, "approve:g1", NOW + 1000)).toBeNull();
     const stale = issuer.issue("approve:g1", NOW);
-    expect(issuer.consume(stale, "approve:g1", NOW + 61_000)).toBe(false);
-    expect(issuer.consume("", "approve:g1", NOW)).toBe(false);
-    expect(issuer.consume(undefined, "approve:g1", NOW)).toBe(false);
+    expect(issuer.consume(stale, "approve:g1", NOW + 61_000)).toBeNull();
+    expect(issuer.consume("", "approve:g1", NOW)).toBeNull();
+    expect(issuer.consume(undefined, "approve:g1", NOW)).toBeNull();
   });
 });
 
@@ -136,11 +136,13 @@ describe("remote approval guard (trusted boundary)", () => {
     expect(result.decision.allow).toBe(true);
   });
 
-  it("remotePresenceRequired only fires for remote origin", () => {
+  it("remotePresenceRequired fires for remote origin and fails closed for unknown origin", () => {
     expect(remotePresenceRequired({ grantId: "g", origin: "remote" }, null)).toBe(true);
     expect(remotePresenceRequired({ grantId: "g", origin: "local" }, null)).toBe(false);
+    // A grant that vanished between listing and approval (replacement race)
+    // must not inherit the local fast path.
+    expect(remotePresenceRequired(null, null)).toBe(true);
     expect(remotePresenceRequired({ grantId: "g" }, null)).toBe(false);
-    expect(remotePresenceRequired(null, null)).toBe(false);
   });
 });
 
