@@ -139,9 +139,14 @@ describe("main-process daemon whitelist", () => {
     const mainSource = readFileSync(join(appRoot, "src", "main.ts"), "utf8");
     expect(mainSource).toContain("ipcMain.handle");
     expect(mainSource).toContain("DAEMON_CALL_CHANNEL");
-    expect(mainSource).toContain("callDaemon");
+    // The daemon channel is served exclusively through the guarded path:
+    // remote approvals and remote-setting weakening must pass the
+    // presence guard in main before any daemon call is made.
+    expect(mainSource).toContain("guardedDaemonCall");
     const handleCount = (mainSource.match(/ipcMain\.handle\(DAEMON_CALL_CHANNEL/g) ?? []).length;
     expect(handleCount).toBe(1);
+    const ipcSource = readFileSync(join(appRoot, "src", "remote-approval-ipc.ts"), "utf8");
+    expect(ipcSource).toContain("callDaemon");
     expect(mainSource).not.toContain("METAVAULT_DAEMON_TOKEN");
   });
 

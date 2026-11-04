@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   CapabilityRequestLike,
+  PresenceProofRequestLike,
   RemoteSettingsPatchLike,
   CardInputLike,
   DeeplinkAddParams,
@@ -29,9 +30,11 @@ function invoke(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: strin
 const api: VaultApi = {
   runtimePaths: () => ipcRenderer.invoke("metavault:runtime-paths"),
   request: (body: CapabilityRequestLike) => invoke("POST", "/request", body),
-  approve: (grantId: string) => invoke("POST", "/approve", { grantId }),
+  approve: (grantId: string, presenceProof?: string) =>
+    invoke("POST", "/approve", { grantId, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
   deny: (grantId: string) => invoke("POST", "/deny", { grantId }),
-  approveAlways: (grantId: string) => invoke("POST", "/approve-always", { grantId }),
+  approveAlways: (grantId: string, presenceProof?: string) =>
+    invoke("POST", "/approve-always", { grantId, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
   revoke: (target: string) => invoke("POST", "/revoke", { target }),
   aliases: () => invoke("GET", "/aliases"),
   audit: () => invoke("GET", "/audit"),
@@ -100,7 +103,10 @@ const api: VaultApi = {
   // stays in main; the renderer only ever sees session/device state, never
   // the pairing code once consumed, and never any secret material.
   getRemoteSettings: () => invoke("GET", "/settings/remote"),
-  updateRemoteSettings: (patch: RemoteSettingsPatchLike) => invoke("PATCH", "/settings/remote", patch),
+  updateRemoteSettings: (patch: RemoteSettingsPatchLike, presenceProof?: string) =>
+    invoke("PATCH", "/settings/remote", { ...patch, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
+  requestPresenceProof: (req: PresenceProofRequestLike) =>
+    ipcRenderer.invoke("metavault:presence-proof", req) as Promise<{ token: string }>,
   listDevices: () => invoke("GET", "/devices"),
   startPairing: () => invoke("POST", "/devices/pair", {}),
   getPairingSession: () => invoke("GET", "/devices/pairing"),

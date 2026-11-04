@@ -248,6 +248,13 @@ export interface RemoteSettingsLike {
   readonly requireAuthForRemoteApproval?: boolean;
 }
 
+export interface PresenceProofRequestLike {
+  readonly scope: "approve" | "settings-remote";
+  readonly grantId?: string;
+  readonly pin?: string;
+  readonly hello?: boolean;
+}
+
 export interface RemoteSettingsPatchLike {
   readonly enabled?: boolean;
   readonly host?: string;
@@ -313,9 +320,9 @@ export interface VaultApi {
   readonly revokeAgent: (id: string) => Promise<unknown>;
   readonly runtimePaths: () => Promise<{ command: string; args: string[]; env: Record<string, string>; dbPath: string }>;
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
-  readonly approve: (grantId: string) => Promise<unknown>;
+  readonly approve: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly deny: (grantId: string) => Promise<unknown>;
-  readonly approveAlways: (grantId: string) => Promise<unknown>;
+  readonly approveAlways: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly revoke: (target: string) => Promise<unknown>;
   readonly aliases: () => Promise<unknown>;
   readonly audit: () => Promise<unknown>;
@@ -341,7 +348,8 @@ export interface VaultApi {
   readonly getLocalAuthStatus: () => Promise<unknown>;
   readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
   readonly getRemoteSettings: () => Promise<unknown>;
-  readonly updateRemoteSettings: (patch: RemoteSettingsPatchLike) => Promise<unknown>;
+  readonly updateRemoteSettings: (patch: RemoteSettingsPatchLike, presenceProof?: string) => Promise<unknown>;
+  readonly requestPresenceProof: (req: PresenceProofRequestLike) => Promise<{ token: string }>;
   readonly listDevices: () => Promise<unknown>;
   readonly startPairing: () => Promise<unknown>;
   readonly getPairingSession: () => Promise<unknown>;

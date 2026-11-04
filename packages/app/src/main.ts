@@ -2,7 +2,9 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
-import { DAEMON_CALL_CHANNEL, DAEMON_BASE_URL, callDaemon } from "./daemon-client.js";
+import { DAEMON_CALL_CHANNEL, DAEMON_BASE_URL } from "./daemon-client.js";
+import { PRESENCE_PROOF_CHANNEL, defaultGuardDeps, guardedDaemonCall, issuePresenceProof } from "./remote-approval-ipc.js";
+import { PresenceProofIssuer } from "./remote-approval-guard.js";
 import { bundledDaemonPaths, ensureBundledDaemon } from "./daemon-launcher.js";
 import type { ChildProcess } from "node:child_process";
 import { DEEPLINK_CHANNEL, findVaultDeeplink, parseVaultDeeplink, type DeeplinkAddParams } from "./deeplink.js";
@@ -204,7 +206,10 @@ if (!hasLock) {
           console.warn("Could not start the bundled vault daemon:", err);
         });
     }
-    ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => callDaemon(request));
+    const presenceIssuer = new PresenceProofIssuer();
+    const guardDeps = defaultGuardDeps(presenceIssuer);
+    ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => guardedDaemonCall(request, guardDeps));
+    ipcMain.handle(PRESENCE_PROOF_CHANNEL, async (_event, input: unknown) => issuePresenceProof(input, guardDeps));
     ipcMain.handle("metavault:runtime-paths", () => runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") }));
     registerWindowsHelloIpc();
     ipcMain.on("metavault:bring-to-front", () => {

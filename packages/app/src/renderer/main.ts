@@ -73,6 +73,7 @@ import {
 import type {
   AgentSecuritySettingsLike,
   DeviceLike,
+  PresenceProofRequestLike,
   PairingSessionLike,
   RemoteSettingsLike,
   RegisteredAgent,
@@ -410,14 +411,13 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   approveBtn.type = "button";
   approveBtn.disabled = busy;
   approveBtn.addEventListener("click", () => {
-    const executeApproval = () => {
-      void runAction(() => window.metavault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
+    const executeApproval = (presenceProof?: string) => {
+      void runAction(() => window.metavault.approve(hero.grantId, presenceProof), "Approved — the grant executed inside vaultd and expired.");
     };
-    if (
-      shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk) ||
-      shouldRequireAuthForRemoteApproval(remoteSettings, hero)
-    ) {
-      void confirmLocalPresence("Authenticate to approve capability", executeApproval);
+    if (shouldRequireAuthForRemoteApproval(remoteSettings, hero)) {
+      obtainPresenceProof({ scope: "approve", grantId: hero.grantId }, (token) => { executeApproval(token); });
+    } else if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
+      void confirmLocalPresence("Authenticate to approve capability", () => { executeApproval(); });
     } else {
       executeApproval();
     }
@@ -446,10 +446,17 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     alwaysBtn.type = "button";
     alwaysBtn.disabled = busy;
     alwaysBtn.addEventListener("click", () => {
-      void runAction(
-        () => window.metavault.approveAlways(hero.grantId),
-        `Standing approval saved for ${hero.agentId} · ${hero.allowedScope}. Read-only low-risk only; writes still ask every time.`,
-      );
+      const executeAlways = (presenceProof?: string) => {
+        void runAction(
+          () => window.metavault.approveAlways(hero.grantId, presenceProof),
+          `Standing approval saved for ${hero.agentId} · ${hero.allowedScope}. Read-only low-risk only; writes still ask every time.`,
+        );
+      };
+      if (shouldRequireAuthForRemoteApproval(remoteSettings, hero)) {
+        obtainPresenceProof({ scope: "approve", grantId: hero.grantId }, (token) => { executeAlways(token); });
+      } else {
+        executeAlways();
+      }
     });
     buttons.append(alwaysBtn);
   }
@@ -1046,6 +1053,91 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
   overlay.append(dialog);
   document.body.append(overlay);
   credentialModal = overlay;
+  input.focus();
+}
+
+// Remote approvals and weakening the remote-presence setting require a
+// single-use proof issued by the main process after a REAL PIN or Hello
+// check. No configured local auth means no proof: fail closed, visibly.
+function obtainPresenceProof(req: PresenceProofRequestLike, onToken: (token: string) => void): void {
+  if (isBiometricsActive(localAuthStatus)) {
+    void (async () => {
+      try {
+        const { token } = await window.metavault.requestPresenceProof({ ...req, hello: true });
+        onToken(token);
+      } catch {
+        notice = "Windows Hello was not confirmed.";
+        render();
+      }
+    })();
+    return;
+  }
+  if (!localAuthStatus.configured) {
+    notice = "Set an app PIN or Windows Hello in Settings before approving remote requests.";
+    render();
+    return;
+  }
+  if (credentialModal !== null) return;
+  const overlay = el("div", "vault-modal-overlay");
+  const dialog = el("div", "vault-modal");
+  dialog.style.maxWidth = "400px";
+  const header = el("div", "vault-modal-header");
+  header.append(el("h2", "vault-modal-title", "Approve a remote request"));
+  const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
+  header.append(closeBtn);
+  dialog.append(header);
+  dialog.append(el("p", "vault-modal-sub", "This request came from a paired device. Enter your vault PIN to approve it."));
+  const errorBox = el("p", "vault-modal-error");
+  errorBox.hidden = true;
+  dialog.append(errorBox);
+  const wrap = el("label", "vault-field");
+  wrap.append(el("span", "vault-field-label", "PIN"));
+  const input = document.createElement("input");
+  input.className = "vault-input";
+  input.type = "password";
+  input.placeholder = "Enter PIN";
+  input.autocomplete = "current-password";
+  wrap.append(input);
+  dialog.append(wrap);
+  const actions = el("div", "vault-modal-actions");
+  const cancelBtn = el("button", "vault-btn vault-btn-ghost", "Cancel") as HTMLButtonElement;
+  const confirmBtn = el("button", "vault-btn vault-btn-primary", "Confirm") as HTMLButtonElement;
+  const close = () => {
+    credentialModal = null;
+    overlay.remove();
+  };
+  cancelBtn.addEventListener("click", close);
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+  const submit = () => {
+    const pin = input.value.trim();
+    if (pin === "") return;
+    confirmBtn.disabled = true;
+    void (async () => {
+      try {
+        const { token } = await window.metavault.requestPresenceProof({ ...req, pin });
+        close();
+        onToken(token);
+      } catch {
+        errorBox.textContent = "PIN not verified.";
+        errorBox.hidden = false;
+        confirmBtn.disabled = false;
+        input.value = "";
+        input.focus();
+      }
+    })();
+  };
+  confirmBtn.addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") submit();
+  });
+  actions.append(cancelBtn, confirmBtn);
+  dialog.append(actions);
+  overlay.append(dialog);
+  credentialModal = overlay;
+  document.body.append(overlay);
   input.focus();
 }
 
@@ -2596,8 +2688,20 @@ function renderSettings(view: HTMLElement): void {
   reauthBtn.disabled = settingsBusy;
   reauthBtn.title = "When on, approving a request that arrived from a paired device asks for your app PIN or Windows Hello first.";
   reauthBtn.addEventListener("click", () => {
+    if (reauthOn) {
+      // Weakening protection: requires fresh local presence, enforced in
+      // the main process. The UI states the weakened protection plainly.
+      pairingNotice = { text: "Turning this off lets paired devices get approvals without your PIN or Hello.", ok: false };
+      obtainPresenceProof({ scope: "settings-remote" }, (token) => {
+        void runSettingsAction(async () => {
+          await window.metavault.updateRemoteSettings({ requireAuthForRemoteApproval: false }, token);
+          await refresh();
+        });
+      });
+      return;
+    }
     void runSettingsAction(async () => {
-      await window.metavault.updateRemoteSettings({ requireAuthForRemoteApproval: !reauthOn });
+      await window.metavault.updateRemoteSettings({ requireAuthForRemoteApproval: true });
       await refresh();
     });
   });
