@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   CapabilityRequestLike,
+  SshTunnelBeginSetupInput,
+  SshTunnelStatusLike,
   PresenceProofRequestLike,
   RemoteSettingsPatchLike,
   CardInputLike,
@@ -124,6 +126,31 @@ const api: VaultApi = {
   verifyBiometric: () => invoke("POST", "/settings/local-auth/verify-biometric"),
   windowsHelloAvailability: () => ipcRenderer.invoke("metavault:windows-hello-availability"),
   verifyWindowsHello: (purpose: "setup" | "unlock") => ipcRenderer.invoke("metavault:windows-hello-verify", purpose),
+  sshTunnelStatus: () => ipcRenderer.invoke("metavault:ssh-tunnel", { action: "status" }),
+  sshTunnelBeginSetup: (input: SshTunnelBeginSetupInput) =>
+    ipcRenderer.invoke("metavault:ssh-tunnel", {
+      action: "begin-setup",
+      address: input.address,
+      ...(input.remotePairingPort !== undefined ? { remotePairingPort: input.remotePairingPort } : {}),
+      ...(input.remoteDevicePort !== undefined ? { remoteDevicePort: input.remoteDevicePort } : {}),
+    }),
+  sshTunnelCompleteSetup: (fingerprint: string) =>
+    ipcRenderer.invoke("metavault:ssh-tunnel", { action: "complete-setup", fingerprint }),
+  sshTunnelCancelSetup: () => ipcRenderer.invoke("metavault:ssh-tunnel", { action: "cancel-setup" }),
+  sshTunnelConnect: () => ipcRenderer.invoke("metavault:ssh-tunnel", { action: "connect" }),
+  sshTunnelDisconnect: () => ipcRenderer.invoke("metavault:ssh-tunnel", { action: "disconnect" }),
+  sshTunnelRemove: () => ipcRenderer.invoke("metavault:ssh-tunnel", { action: "remove" }),
+  sshTunnelSetAutoReconnect: (enabled: boolean) =>
+    ipcRenderer.invoke("metavault:ssh-tunnel", { action: "set-auto-reconnect", enabled }),
+  onSshTunnelStatus: (handler: (status: SshTunnelStatusLike) => void) => {
+    // Fixed channel; the payload is projected through model.ts validation
+    // by the renderer before use. Extra keys are dropped there.
+    const listener = (_event: unknown, value: unknown) => {
+      handler(value as SshTunnelStatusLike);
+    };
+    ipcRenderer.on("metavault:ssh-tunnel-status", listener);
+    return () => { ipcRenderer.removeListener("metavault:ssh-tunnel-status", listener); };
+  },
   bringToFront: () => {
     ipcRenderer.send("metavault:bring-to-front");
   },

@@ -248,6 +248,60 @@ export interface RemoteSettingsLike {
   readonly requireAuthForRemoteApproval?: boolean;
 }
 
+// App-managed SSH tunnel state, mirrored from the main process. The
+// renderer sees host, fingerprint and connection state only - never key
+// material, never the known_hosts or identity paths' contents.
+export type SshTunnelStateLike =
+  | "not-configured"
+  | "off"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error";
+
+export interface SshTunnelStatusLike {
+  readonly state: SshTunnelStateLike;
+  readonly configured: boolean;
+  readonly host?: string;
+  readonly user?: string;
+  readonly port?: number;
+  readonly remotePairingPort?: number;
+  readonly remoteDevicePort?: number;
+  readonly fingerprint?: string;
+  readonly autoReconnect?: boolean;
+  readonly detail?: string;
+  readonly attempts?: number;
+  readonly connectedSince?: string;
+}
+
+export interface SshTunnelSetupProposalLike {
+  readonly host: string;
+  readonly user: string;
+  readonly port: number;
+  readonly remotePairingPort: number;
+  readonly remoteDevicePort: number;
+  readonly keyType: string;
+  readonly fingerprint: string;
+  readonly publicKey: string;
+  readonly installLine: string;
+}
+
+// Tagged results from the main process tunnel IPC.
+export interface SshTunnelResultLike {
+  readonly kind: "status" | "proposal" | "error" | "verification" | "ok";
+  readonly status?: SshTunnelStatusLike;
+  readonly proposal?: SshTunnelSetupProposalLike;
+  readonly error?: string;
+  readonly verified?: boolean;
+  readonly reason?: string;
+}
+
+export interface SshTunnelBeginSetupInput {
+  readonly address: string;
+  readonly remotePairingPort?: number;
+  readonly remoteDevicePort?: number;
+}
+
 export interface PresenceProofRequestLike {
   readonly scope: "approve" | "settings-remote";
   readonly grantId?: string;
@@ -366,6 +420,15 @@ export interface VaultApi {
   readonly verifyBiometric: () => Promise<unknown>;
   readonly windowsHelloAvailability: () => Promise<WindowsHelloAvailabilityResult>;
   readonly verifyWindowsHello: (purpose: "setup" | "unlock") => Promise<WindowsHelloVerifyResult>;
+  readonly sshTunnelStatus: () => Promise<unknown>;
+  readonly sshTunnelBeginSetup: (input: SshTunnelBeginSetupInput) => Promise<unknown>;
+  readonly sshTunnelCompleteSetup: (fingerprint: string) => Promise<unknown>;
+  readonly sshTunnelCancelSetup: () => Promise<unknown>;
+  readonly sshTunnelConnect: () => Promise<unknown>;
+  readonly sshTunnelDisconnect: () => Promise<unknown>;
+  readonly sshTunnelRemove: () => Promise<unknown>;
+  readonly sshTunnelSetAutoReconnect: (enabled: boolean) => Promise<unknown>;
+  readonly onSshTunnelStatus: (handler: (status: SshTunnelStatusLike) => void) => () => void;
   readonly bringToFront: () => void;
   readonly checkForUpdates: () => Promise<unknown>;
   readonly quitAndInstallUpdate: () => Promise<unknown>;

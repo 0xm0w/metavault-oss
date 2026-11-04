@@ -1,9 +1,9 @@
 # Remote Connections (candidate)
 
-Status: **unreleased candidate**, loopback-isolated. Remote access is off by
-default and this build accepts loopback connections only; no network transport
-(Tailscale, LAN or otherwise) is enabled yet. Enabling it on another network
-interface is a separate, explicit future decision.
+Status: **unreleased candidate**. Remote access is off by default. The
+gateway itself accepts loopback connections only; reachability from other
+networks comes from the optional app-managed SSH transport below, which keeps
+every listener on loopback at both ends.
 
 ## What it is
 
@@ -120,9 +120,50 @@ If you deliberately turn off "Require app PIN for remote approvals", paired
 devices can get approvals without any local check. The app states this plainly
 when you turn it off, and the change itself requires your PIN.
 
+## SSH transport (app-managed reverse tunnel)
+
+Optional, off until set up. Settings > Connections > Remote connection lets
+the desktop dial OUT to an SSH server you control and reverse-forward the two
+gateway listeners onto that server's loopback:
+
+- `ssh -N -T` with `127.0.0.1:<relay pairing port>` -> `127.0.0.1:7078` and
+  `127.0.0.1:<relay device port>` -> `127.0.0.1:7080`. The relay never needs
+  `GatewayPorts`: nothing is exposed beyond the server's own loopback.
+- No SSH server runs on this PC; only the OpenSSH client is used (the Windows
+  inbox OpenSSH is preferred over PATH).
+- Key-only auth: the app generates an ed25519 keypair under the app data
+  folder (`ssh-tunnel/`, 0700; key and config 0600). The setup wizard shows
+  an `authorized_keys` line pre-restricted with `restrict` and two
+  `permitlisten` entries, so the key can do nothing on the server but hold
+  exactly those two forwards.
+- Host key pinning without blind TOFU: setup scans the server's host key,
+  and the SHA256 fingerprint you paste (verified against your server
+  provider) must match exactly before anything is saved. The pinned key goes
+  into the app's own `known_hosts` and every connection uses
+  `StrictHostKeyChecking=yes`. A host key that later fails to match is a
+  terminal error and flips the tunnel off - it never silently reconnects.
+- `BatchMode`, `IdentitiesOnly`, `ClearAllForwardings`, agent/X11/local
+  command off, no control sockets, and every option pinned on the command
+  line with an empty `-F` config file, so user or system ssh config cannot
+  add behaviour. No secret ever appears on the command line or in the log.
+- "Connected" is only reported after the server has confirmed BOTH reverse
+  forwards (with `ExitOnForwardFailure=yes` a refused forward fails the
+  attempt) and the local gateway listeners answer. It says nothing about
+  vault unlock, pairing, policy or approval.
+- Automatic reconnect is bounded (five attempts, 2-32s backoff) and resets
+  after a stable minute. Disconnect and app quit stop exactly the ssh child
+  the app spawned; nothing is killed by PID lookup.
+- Remove connection deletes the pinned host key, config and keypair locally;
+  the UI tells you to delete the key line on the server.
+
+The tunnel is transport only. Pairing (SAS), mTLS device certificates,
+policy ceilings and PIN-gated remote approvals are unchanged.
+
 ## Current limits
 
-- Loopback only. No tailnet, LAN or public listener is enabled in this build.
+- The gateway binds loopback only. Cross-network reachability is possible
+  through the optional SSH transport above; no tailnet, LAN or public
+  listener is enabled, and the relay sees loopback-bound forwards only.
 - Packaged Windows launch of the gateway from the installed app is verified in
   CI; packaged target-device PRF custody remains unproved.
 - Legacy 0.1.0 compatibility, automatic legacy adoption and encrypted export

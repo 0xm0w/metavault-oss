@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  projectSshTunnelResult,
+  projectSshTunnelStatus,
   MIN_PASSPHRASE_LENGTH,
   TOKENS,
   keyGateErrorMessage,
@@ -1434,5 +1436,50 @@ describe("settings tabs", () => {
     expect(isSettingsTab("admin")).toBe(false);
     expect(isSettingsTab(undefined)).toBe(false);
     expect(SETTINGS_TABS).toHaveLength(5);
+  });
+});
+
+describe("SSH tunnel projections", () => {
+  const validStatus = {
+    state: "connected",
+    configured: true,
+    host: "relay.example.com",
+    user: "mow",
+    port: 22,
+    remotePairingPort: 7078,
+    remoteDevicePort: 7080,
+    fingerprint: "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
+    autoReconnect: true,
+    connectedSince: "2026-11-04T12:00:00.000Z",
+  };
+
+  it("projects a valid status and drops junk fields", () => {
+    const projected = projectSshTunnelStatus({ ...validStatus, evil: "<script>" });
+    expect(projected).toEqual(validStatus);
+  });
+
+  it("rejects unknown states and non-boolean configured", () => {
+    expect(projectSshTunnelStatus({ ...validStatus, state: "pwned" })).toBeNull();
+    expect(projectSshTunnelStatus({ ...validStatus, configured: "yes" })).toBeNull();
+    expect(projectSshTunnelStatus(null)).toBeNull();
+    expect(projectSshTunnelStatus("connected")).toBeNull();
+  });
+
+  it("drops malformed optional fields instead of failing", () => {
+    const projected = projectSshTunnelStatus({ ...validStatus, port: 70000, fingerprint: "not-a-fp", detail: "x".repeat(400) });
+    expect(projected).not.toBeNull();
+    expect(projected?.port).toBeUndefined();
+    expect(projected?.fingerprint).toBeUndefined();
+    expect(projected?.detail).toBeUndefined();
+  });
+
+  it("projects tagged results and rejects junk", () => {
+    expect(projectSshTunnelResult({ kind: "ok" })).toEqual({ kind: "ok" });
+    expect(projectSshTunnelResult({ kind: "error", error: "nope" })).toEqual({ kind: "error", error: "nope" });
+    expect(projectSshTunnelResult({ kind: "status", status: validStatus })).toEqual({ kind: "status", status: validStatus });
+    expect(projectSshTunnelResult({ kind: "status", status: { state: "pwned" } })).toBeNull();
+    expect(projectSshTunnelResult({ kind: "verification", verified: true })).toEqual({ kind: "verification", verified: true });
+    expect(projectSshTunnelResult({ kind: "verification", verified: "yes" })).toBeNull();
+    expect(projectSshTunnelResult({ kind: "exec" })).toBeNull();
   });
 });
