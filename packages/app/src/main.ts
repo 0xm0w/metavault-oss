@@ -5,7 +5,8 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
 import { DAEMON_CALL_CHANNEL, DAEMON_BASE_URL, callDaemon } from "./daemon-client.js";
 import { PRESENCE_PROOF_CHANNEL, defaultGuardDeps, guardedDaemonCall, issuePresenceProof } from "./remote-approval-ipc.js";
 import { PresenceProofIssuer } from "./remote-approval-guard.js";
-import { bundledDaemonPaths, ensureBundledDaemon } from "./daemon-launcher.js";
+import { bundledDaemonPaths, daemonHealthy, ensureBundledDaemon } from "./daemon-launcher.js";
+import { checkMcpRuntime, MCP_SELFCHECK_PENDING, type McpSelfCheckResult } from "./mcp-selfcheck.js";
 import { autostartGatewayWhenRemoteEnabled } from "./gateway-autostart.js";
 import { bundledGatewayPaths, ensureBundledGateway, gatewayListening, GATEWAY_HOST, GATEWAY_PORT, GATEWAY_DEVICE_PORT, type GatewayLaunchResult } from "./gateway-launcher.js";
 import { SshTunnelManager, resolveSshBinaries, sshTunnelPaths } from "./ssh-tunnel.js";
@@ -49,6 +50,29 @@ if (process.defaultApp) {
 const dataDir = join(app.getPath("appData"), "MetaVault OSS");
 app.setPath("userData", dataDir);
 const daemonPaths = bundledDaemonPaths(process.resourcesPath, dataDir);
+
+// Result of the launch-time MCP self-check (mcp-selfcheck.ts). Starts as
+// pending; the renderer polls it until the check settles. The IDE still
+// launches the MCP server itself - this only proves the bundled runtime is
+// ready for that connection.
+let mcpSelfCheck: McpSelfCheckResult = MCP_SELFCHECK_PENDING;
+
+async function runMcpSelfCheck(): Promise<void> {
+  // Wait for the daemon to answer first: the MCP server is a thin adapter
+  // over it, so checking before it is up would prove nothing.
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (await daemonHealthy(DAEMON_BASE_URL)) break;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const runtime = runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") });
+  mcpSelfCheck = await checkMcpRuntime({
+    command: runtime.command,
+    args: runtime.args,
+    env: runtime.env,
+    daemonUrl: DAEMON_BASE_URL,
+  }).catch((err: unknown): McpSelfCheckResult => ({ state: "failed", tools: [], detail: err instanceof Error ? err.message : "self-check error", checkedAt: new Date().toISOString() }));
+}
 if (app.isPackaged) {
   // daemon-client reads this lazily to find the daemon token file.
   process.env["METAVAULT_DB_PATH"] ??= daemonPaths.dbPath;
@@ -221,6 +245,7 @@ if (!hasLock) {
               if (bundledDaemon === result.child) bundledDaemon = null;
             });
           }
+          void runMcpSelfCheck();
         })
         .catch((err: unknown) => {
           console.warn("Could not start the bundled vault daemon:", err);
@@ -260,6 +285,7 @@ if (!hasLock) {
     ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => guardedDaemonCall(request, guardDeps));
     ipcMain.handle(PRESENCE_PROOF_CHANNEL, async (_event, input: unknown) => issuePresenceProof(input, guardDeps));
     ipcMain.handle("metavault:runtime-paths", () => runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") }));
+    ipcMain.handle("metavault:mcp-status", () => mcpSelfCheck);
     registerWindowsHelloIpc();
     // App-managed SSH tunnel for Remote Connections. Off unless the user
     // completed setup and left it connected; a restart then reconnects.

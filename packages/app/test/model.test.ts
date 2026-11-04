@@ -56,6 +56,8 @@ import {
   DEFAULT_META_API_MODEL_ID,
   isKnownMetaApiModel,
   projectWardenKeyStatus,
+  projectMcpStatus,
+  mcpStatusText,
   projectWardenSettings,
   wardenKeyStatusText,
   projectWardenTestResult,
@@ -901,6 +903,26 @@ describe("warden settings form state (Task 6)", () => {
     expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "turbo", metaApiBaseUrl: "u" })).toBeNull();
     expect(projectWardenSettings(null)).toBeNull();
     expect(projectWardenSettings({ provider: "ollama", model: "x", effort: "fast", metaApiBaseUrl: "u", apiKey: "canary" })).toBeNull();
+  });
+
+  it("projects the launch MCP self-check status", () => {
+    expect(projectMcpStatus(null)).toBeNull();
+    expect(projectMcpStatus({ state: "weird" })).toBeNull();
+    const ready = projectMcpStatus({ state: "ready", tools: ["a", "b"], serverName: "metavault", serverVersion: "0.1.2-alpha", checkedAt: "t" });
+    expect(ready?.state).toBe("ready");
+    expect(ready?.toolCount).toBe(2);
+    expect(projectMcpStatus({ state: "failed", detail: "boom" })?.detail).toBe("boom");
+  });
+
+  it("describes the MCP launch status without implying the IDE is connected", () => {
+    expect(mcpStatusText(null)).toContain("Checking");
+    const ready = projectMcpStatus({ state: "ready", tools: [1, 2, 3, 4, 5, 6, 7, 8], serverVersion: "0.1.2-alpha" });
+    const readyText = mcpStatusText(ready);
+    expect(readyText).toContain("Ready at launch");
+    expect(readyText).toContain("8 tools");
+    expect(readyText).toContain("still connects");
+    expect(mcpStatusText(projectMcpStatus({ state: "failed", detail: "did not answer" }))).toContain("did not answer");
+    expect(mcpStatusText(projectMcpStatus({ state: "unavailable", detail: "MCP server file not found" }))).toContain("Not checked");
   });
 
   it("projects key status without ever exposing a key and formats status text", () => {

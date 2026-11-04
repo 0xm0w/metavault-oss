@@ -31,6 +31,7 @@ function invoke(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: strin
 
 const api: VaultApi = {
   runtimePaths: () => ipcRenderer.invoke("metavault:runtime-paths"),
+  mcpStatus: () => ipcRenderer.invoke("metavault:mcp-status"),
   request: (body: CapabilityRequestLike) => invoke("POST", "/request", body),
   approve: (grantId: string, presenceProof?: string) =>
     invoke("POST", "/approve", { grantId, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),

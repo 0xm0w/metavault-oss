@@ -368,6 +368,16 @@ export interface UpdaterStatusLike {
 }
 
 
+// Launch-time MCP self-check result, from main over metavault:mcp-status.
+export interface McpStatusLike {
+  readonly state?: string;
+  readonly tools?: unknown;
+  readonly serverName?: string;
+  readonly serverVersion?: string;
+  readonly detail?: string;
+  readonly checkedAt?: string;
+}
+
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly registerAgent: (id: string, name: string, rotate: boolean) => Promise<unknown>;
@@ -375,6 +385,7 @@ export interface VaultApi {
   readonly decideAgentRegistration: (id: string, action: "approve" | "deny", code?: string) => Promise<unknown>;
   readonly revokeAgent: (id: string) => Promise<unknown>;
   readonly runtimePaths: () => Promise<{ command: string; args: string[]; env: Record<string, string>; dbPath: string }>;
+  readonly mcpStatus: () => Promise<unknown>;
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
   readonly approve: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly deny: (grantId: string) => Promise<unknown>;

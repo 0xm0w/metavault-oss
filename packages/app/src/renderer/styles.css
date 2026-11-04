@@ -1646,6 +1646,12 @@ body.is-locked .view { padding: 0; max-width: none; }
 .wizard-steps li strong { font-size: 14px; color: var(--ink); }
 .wizard-steps li.is-done strong { color: var(--ok); }
 .wizard-steps li .action { justify-self: start; margin-top: 4px; }
+.wizard-key-form { display: grid; gap: 8px; margin-top: 6px; max-width: 460px; }
+.wizard-key-form .vault-input { width: 100%; box-sizing: border-box; }
+.wizard-key-form .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.wizard-steps li .agent-code-block { min-width: 0; max-width: 100%; margin-top: 6px; }
+.wizard-steps li .agent-tab-btns { margin-top: 6px; }
+.wizard-steps li .agent-skill-box { margin-top: 8px; }
 
 /* Narrow windows: the sidebar becomes a top strip and content uses the full width. */
 @media (max-width: 720px) {
