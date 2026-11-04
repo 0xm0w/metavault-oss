@@ -2225,14 +2225,23 @@ function renderSshSetupWizard(section: HTMLElement): void {
 
   if (sshSetupStep === "install" && sshSetupProposal !== null) {
     const proposal = sshSetupProposal;
-    section.append(el("p", "settings-copy", `Add this line to ~/.ssh/authorized_keys for ${proposal.user} on ${proposal.host}. It restricts the key to exactly the two loopback forwards this tunnel needs - no shell, no other forwarding.`));
+    section.append(el("p", "settings-copy", `Two pieces go on ${proposal.host}. Both are verified before setup finishes; setup refuses to finish if either is missing or the account is not locked down.`));
+    section.append(el("p", "settings-copy", `1. Add this line to ~/.ssh/authorized_keys for ${proposal.user}. It restricts the key to exactly the two loopback forwards this tunnel needs - no shell, no file access, no pty.`));
     const lineBox = el("p", "mono");
     lineBox.style.overflowWrap = "anywhere";
     lineBox.style.userSelect = "text";
     lineBox.style.fontSize = "11px";
     lineBox.textContent = proposal.installLine;
     section.append(lineBox);
-    section.append(el("p", "settings-copy", "Cancel discards the local key and saves nothing. To undo later: delete the line on the server and use Remove connection here."));
+    section.append(el("p", "settings-copy", "2. Add this block to the server's /etc/ssh/sshd_config (or a file in sshd_config.d), then reload sshd. Per-key options cannot genuinely block local port forwarding; this server policy can. Finish verifies it live."));
+    const policyBox = el("p", "mono");
+    policyBox.style.overflowWrap = "anywhere";
+    policyBox.style.userSelect = "text";
+    policyBox.style.fontSize = "11px";
+    policyBox.style.whiteSpace = "pre-wrap";
+    policyBox.textContent = proposal.policyBlock;
+    section.append(policyBox);
+    section.append(el("p", "settings-copy", "Cancel discards the local key and saves nothing. To undo later: remove both on the server and use Remove connection here."));
     if (sshSetupError !== null) section.append(el("p", "alert is-warn", sshSetupError));
     const btns = el("div", "settings-btns");
     const backBtn = el("button", "action", "Back") as HTMLButtonElement;

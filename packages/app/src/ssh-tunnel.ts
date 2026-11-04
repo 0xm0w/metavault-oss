@@ -1,11 +1,8 @@
-import { spawn as nodeSpawn, execFile as nodeExecFile, spawnSync } from "node:child_process";
-import { userInfo } from "node:os";
+import { spawn as nodeSpawn, execFile as nodeExecFile, execFileSync } from "node:child_process";
+import { connect } from "node:net";
 import { createHash } from "node:crypto";
-import {
-  createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
-  type WriteStream,
-} from "node:fs";
-import { join } from "node:path";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, type WriteStream, chmodSync, statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 
 // App-managed outbound reverse-SSH transport for Remote Connections.
 //
@@ -91,6 +88,7 @@ export interface SshTunnelSetupProposal {
   readonly fingerprint: string;
   readonly publicKey: string;
   readonly installLine: string;
+  readonly policyBlock: string;
 }
 
 // --- Address parsing ------------------------------------------------------
@@ -255,7 +253,9 @@ export function tunnelArgs(config: SshTunnelConfig, paths: SshTunnelPaths): stri
     "-o", "ExitOnForwardFailure=yes",
     "-o", "ServerAliveInterval=15",
     "-o", "ServerAliveCountMax=3",
-    "-o", "ClearAllForwardings=yes",
+    // NO ClearAllForwardings: it clears command-line -R too (verified against
+    // real ssh - the tunnel idled with zero forwards). Config-file forwards
+    // are already impossible via the pinned empty -F config above.
     "-o", "ForwardAgent=no",
     "-o", "ForwardX11=no",
     "-o", "PermitLocalCommand=no",
@@ -304,41 +304,152 @@ export function resolveSshBinaries(
 // grant full control to the current user alone. Applied to the tunnel
 // directory and every file in it. Throws when icacls fails - for the
 // keypair and pinned files a weak ACL is a security failure, not a warning.
-const icaclsRun = (command: string, args: string[]): { status: number | null; stderr: string } => {
-  const res = spawnSync(command, args, { encoding: "utf8", windowsHide: true });
-  return { status: res.status, stderr: res.stderr };
+// Windows ACL hardening. Mirrors packages/gateway/src/device-client.ts
+// hardenOwnerOnly; the app package builds with rootDir=src and cannot import
+// across packages, so the proven implementation is mirrored here and kept
+// behavior-identical: /reset, strip inheritance, grant the current user's
+// SID alone (icacls *SID syntax is locale-proof), then VERIFY the effective
+// ACL's trustee SIDs through .NET ACL APIs (Get-Acl's module autoload is
+// unreliable on hosted runners). /grant:r replaces explicit grants but a
+// preexisting foreign explicit grant is only proven gone by reading the
+// effective ACL - an icacls exit code is never accepted as proof, and every
+// failure fails closed (throws).
+type IcaclsRun = (args: readonly string[]) => string;
+
+const defaultIcaclsRun: IcaclsRun = (args) =>
+  execFileSync("icacls", [...args], { encoding: "utf8" });
+
+// Trustee SIDs of every DACL access ACE on a path, uppercase, via
+// Directory/File.GetAccessControl + IdentityReference.Translate (mscorlib,
+// always loaded). An unresolvable trustee yields its raw value, which never
+// equals the current user's SID, so the check fails closed.
+export type AclSidList = (path: string) => string[];
+
+const defaultListAclSids: AclSidList = (path) => {
+  const escaped = path.replace(/'/g, "''");
+  const script =
+    "$ErrorActionPreference = 'Stop'; " +
+    "try { " +
+    `$p = '${escaped}'; ` +
+    "$sd = $null; " +
+    "if ([System.IO.Directory]::Exists($p)) { $sd = [System.IO.Directory]::GetAccessControl($p) } " +
+    "elseif ([System.IO.File]::Exists($p)) { $sd = [System.IO.File]::GetAccessControl($p) } " +
+    "else { throw ('path not found: ' + $p) } " +
+    "$sd.Access | ForEach-Object { " +
+    "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
+    "catch { $_.IdentityReference.Value } } " +
+    "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
+  let out: string;
+  try {
+    out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+    });
+  } catch (err) {
+    const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message;
+    throw new Error(`could not read ACL trustee SIDs for ${path}: ${detail}`);
+  }
+  return out
+    .split(/\r?\n/)
+    .map((line) => line.trim().toUpperCase())
+    .filter((line) => line.length > 0);
 };
 
-export function hardenPathPermissions(
-  target: string,
-  platform: NodeJS.Platform = process.platform,
-  run: (command: string, args: string[]) => { status: number | null; stderr: string } = icaclsRun,
-): void {
-  if (platform !== "win32") return;
-  const user = userInfo().username;
-  const res = run("icacls", [target, "/inheritance:r", "/grant:r", `${user}:(F)`]);
-  if (res.status !== 0) {
-    throw new Error(`icacls failed for ${target}: ${res.stderr}`);
+// Best-effort current-user SID. Undefined when unavailable; Windows
+// hardening fails closed in that case.
+export function currentWindowsUserSid(): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  try {
+    const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" });
+    const match = out.match(/"(S-1-5-21-[0-9-]+)"/);
+    return match?.[1];
+  } catch {
+    return undefined;
   }
 }
 
-// The authorized_keys line the user installs on the relay. Verified against
-// OpenSSH 8.9 sshd (see test/ssh-tunnel-sshd.integration.test.ts):
+export interface HardenPathOptions {
+  readonly platform?: NodeJS.Platform;
+  // Canonical absolute roots the path must live under; ACL resets are never
+  // applied outside them.
+  readonly allowedRoots?: readonly string[];
+  // Explicit null simulates an unresolvable SID (tests); undefined resolves
+  // via whoami.
+  readonly userSid?: string | null;
+  readonly run?: IcaclsRun;
+  readonly listSids?: AclSidList;
+}
+
+export function hardenPathPermissions(target: string, isDir: boolean, opts: HardenPathOptions = {}): void {
+  const platform = opts.platform ?? process.platform;
+  if (platform !== "win32") {
+    chmodSync(target, isDir ? 0o700 : 0o600);
+    const mode = statSync(target).mode & 0o777;
+    const expected = isDir ? 0o700 : 0o600;
+    if (mode !== expected) {
+      throw new Error(`refusing owner-only permission guarantee on ${target}`);
+    }
+    return;
+  }
+  if (opts.allowedRoots !== undefined) {
+    const resolved = resolve(target).toLowerCase();
+    const inside = opts.allowedRoots.some((root) => {
+      const r = resolve(root).toLowerCase();
+      return resolved === r || resolved.startsWith(r + sep);
+    });
+    if (!inside) {
+      throw new Error(`refusing to modify ACLs outside the tunnel data root: ${target}`);
+    }
+  }
+  const sid = opts.userSid === undefined ? currentWindowsUserSid() : (opts.userSid ?? undefined);
+  if (sid === undefined || sid === "") {
+    throw new Error("cannot harden SSH tunnel files on Windows: current user SID is unavailable");
+  }
+  const run = opts.run ?? defaultIcaclsRun;
+  run([target, "/reset"]);
+  run([target, "/inheritance:r"]);
+  run([target, "/grant:r", `*${sid}:(F)`]);
+  const sids = (opts.listSids ?? defaultListAclSids)(target);
+  if (sids.length === 0 || !sids.every((entry) => entry === sid.toUpperCase())) {
+    throw new Error(`could not make ${target} owner-only (effective ACL trustee SIDs: ${sids.join(", ") || "none"})`);
+  }
+}
+
+// The authorized_keys line the user installs on the relay. Every claim below
+// is verified against a real OpenSSH 8.9 sshd (ssh-tunnel-sshd.integration.
+// test.ts, positive and negative):
 // - "restrict" disables forwarding/pty/agent/X11/rc, and "port-forwarding" is
 //   REQUIRED to opt tcp forwarding back in (permitlisten alone only narrows,
 //   it does not re-enable - restrict,permitlisten=... rejects every -R).
-// - "restrict" does NOT block shell/exec; command="false" is the forced
-//   command that makes shell and exec attempts exit 1 with no output.
-// - port-forwarding also enables -L; permitopen="127.0.0.1:1" blackholes
-//   every useful local-forward target (connections are refused per-open).
+// - "restrict" does NOT block shell/exec or the sftp subsystem (verified by
+//   SSH_FXP_INIT probe); command="false" is the forced command that
+//   intercepts shell, exec AND subsystem requests, exiting 1 with no output.
 // - permitlisten pins the only two reverse-forward listens; the client binds
 //   127.0.0.1 explicitly so the match is literal and GatewayPorts-safe.
-// Residual, by design and documented: sshd subsystem (sftp) ignores forced
-// commands, so server-side account policy (dedicated locked-down user) is
-// the control there - the key cannot fix it.
+// - port-forwarding also enables -L (local forwarding). authorized_keys has
+//   NO genuine deny-all for it: permitopen="none" makes sshd reject the whole
+//   key (verified). permitopen="127.0.0.1:1" is a best-effort blackhole only
+//   - sshd still attempts the connection. The genuine deny is server-side
+//   "AllowTcpForwarding remote" for the account (see serverPolicyBlock);
+//   completeSetup VERIFIES that deny via a live -L probe and refuses to
+//   finish setup when it is absent.
 export function installLine(publicKeyLine: string, remotePairingPort: number, remoteDevicePort: number): string {
   const key = publicKeyLine.trim();
   return `restrict,port-forwarding,command="false",permitlisten="127.0.0.1:${String(remotePairingPort)}",permitlisten="127.0.0.1:${String(remoteDevicePort)}",permitopen="127.0.0.1:1" ${key}`;
+}
+
+// The REQUIRED server-side policy: per-key options cannot genuinely deny
+// local forwarding (verified: permitopen has no deny-all), so the account
+// must have "AllowTcpForwarding remote". AllowTcpForwarding is Match-block
+// eligible, so this confines the change to the tunnel account. completeSetup
+// proves the deny with a live -L probe and refuses setup without it.
+export function serverPolicyBlock(user: string): string {
+  return [
+    `Match User ${user}`,
+    "    AllowTcpForwarding remote",
+    "    AllowAgentForwarding no",
+    "    X11Forwarding no",
+    "    PermitTTY no",
+  ].join("\n");
 }
 
 // --- Config persistence -----------------------------------------------------
@@ -401,13 +512,35 @@ export type SpawnFn = (command: string, args: string[], options: {
 
 export type ExecFn = (command: string, args: string[], timeoutMs: number) => Promise<{ stdout: string; stderr: string }>;
 
+// A probe spawn with stdin (for the sftp SSH_FXP_INIT handshake) and binary
+// stdout. Injectable; mocked in unit tests, real in the sshd integration test.
+export type RawProbeFn = (
+  command: string,
+  args: string[],
+  stdin: Buffer | null,
+  timeoutMs: number,
+) => Promise<{ code: number | null; stdout: Buffer; stderr: string }>;
+
+// The -L policy discriminator: opens a local forward to 127.0.0.1:1 through
+// the pinned key, pushes one byte, and classifies the verbose stderr.
+// "enforced"  = "administratively prohibited" (AllowTcpForwarding remote is
+//               genuinely denying local forwards)
+// "open"      = sshd attempted the connect ("connect failed"/"refused" or a
+//               live channel) - no genuine deny in place
+// "inconclusive" = probe could not run or timed out (never a refusal ground)
+export type PolicyProbeResult = "enforced" | "open" | "inconclusive";
+export type PolicyProbeFn = (command: string, args: string[], localPort: number, timeoutMs: number) => Promise<PolicyProbeResult>;
+
 export interface SshTunnelManagerDeps {
   readonly paths: SshTunnelPaths;
   readonly binaries: SshBinaries;
   readonly spawnFn?: SpawnFn;
   readonly execFn?: ExecFn;
-  // Windows ACL / POSIX no-op hardening; injectable for tests.
-  readonly hardenFn?: (path: string) => void;
+  // Owner-only file protection (POSIX mode bits verified, Windows effective
+  // ACL SIDs verified); injectable for tests.
+  readonly hardenFn?: (path: string, isDir: boolean) => void;
+  readonly rawProbeFn?: RawProbeFn;
+  readonly policyProbeFn?: PolicyProbeFn;
   readonly wait?: (ms: number) => Promise<void>;
   readonly retryDelaysMs?: readonly number[];
   readonly maxAttempts?: number;
@@ -438,6 +571,92 @@ const defaultExec: ExecFn = (command, args, timeoutMs) =>
     );
   });
 
+const defaultRawProbe: RawProbeFn = (command, args, stdin, timeoutMs) =>
+  new Promise((resolve, reject) => {
+    const child = nodeSpawn(command, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const chunks: Buffer[] = [];
+    let stderr = "";
+    let settled = false;
+    const finish = (code: number | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill("SIGKILL");
+      resolve({ code, stdout: Buffer.concat(chunks), stderr });
+    };
+    const timer = setTimeout(() => { finish(null); }, timeoutMs);
+    child.stdout.on("data", (d: Buffer) => chunks.push(d));
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString("utf8"); });
+    child.on("error", (err: Error) => { if (!settled) { settled = true; clearTimeout(timer); reject(err); } });
+    child.on("close", (code: number | null) => { finish(code); });
+    if (stdin !== null) {
+      child.stdin.write(stdin); // stdin stays open: some servers answer only while it is
+    } else {
+      child.stdin.end();
+    }
+  });
+
+const defaultPolicyProbe: PolicyProbeFn = (command, args, localPort, timeoutMs) =>
+  new Promise((resolve) => {
+    const child = nodeSpawn(command, args, { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+    let stderr = "";
+    let settled = false;
+    const finish = (result: PolicyProbeResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill("SIGKILL");
+      resolve(result);
+    };
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString("utf8"); });
+    child.on("error", () => { finish("inconclusive"); });
+    const timer = setTimeout(() => { finish("inconclusive"); }, timeoutMs);
+    // The verbose stderr line can arrive after the channel's TCP FIN (pipe
+    // vs socket race), so poll briefly for either marker before classifying:
+    // "administratively prohibited" = genuine policy deny; a connect failure
+    // or established channel = sshd attempted the open = no deny in place.
+    const classify = (): void => {
+      let polls = 0;
+      const tick = (): void => {
+        if (settled) return;
+        if (/administratively prohibited/.test(stderr)) {
+          finish("enforced");
+          return;
+        }
+        if (/connect failed|Connection refused|connect_to/.test(stderr)) {
+          finish("open");
+          return;
+        }
+        polls += 1;
+        if (polls >= 20) {
+          finish("inconclusive");
+          return;
+        }
+        setTimeout(tick, 100);
+      };
+      tick();
+    };
+    // The local forward binds after auth; poll for it instead of racing it.
+    let attempts = 0;
+    const tryConnect = (): void => {
+      if (settled) return;
+      attempts += 1;
+      const sock = connect({ host: "127.0.0.1", port: localPort }, () => {
+        sock.write("x");
+        setTimeout(() => sock.destroy(), 2000);
+      });
+      sock.on("error", () => {
+        if (attempts < 25) {
+          setTimeout(tryConnect, 300);
+        } else {
+          finish("inconclusive");
+        }
+      });
+      sock.on("close", () => { classify(); });
+    };
+    tryConnect();
+  });
+
 interface PendingSetup {
   readonly address: ParsedAddress;
   readonly remotePairingPort: number;
@@ -450,6 +669,13 @@ export type SetupFailureReason =
   | "forward-refused"
   | "host-key-changed"
   | "gateway-down"
+  // The key escaped its sandbox during the safety probes: shell/exec, the
+  // sftp subsystem or a pty actually worked. Setup refuses to finish.
+  | "server-unrestricted"
+  // Local forwarding is not genuinely denied for the account (no
+  // "AllowTcpForwarding remote"): the -L probe reached a connect attempt.
+  // Setup refuses to finish until the shown Match block is in sshd_config.
+  | "server-policy-missing"
   | "timeout";
 
 export interface SetupVerification {
@@ -468,7 +694,9 @@ export class SshTunnelManager {
   private readonly deps: SshTunnelManagerDeps & {
     spawnFn: SpawnFn;
     execFn: ExecFn;
-    hardenFn: (path: string) => void;
+    hardenFn: (path: string, isDir: boolean) => void;
+    rawProbeFn: RawProbeFn;
+    policyProbeFn: PolicyProbeFn;
     wait: (ms: number) => Promise<void>;
     retryDelaysMs: readonly number[];
     maxAttempts: number;
@@ -492,7 +720,9 @@ export class SshTunnelManager {
       ...deps,
       spawnFn: deps.spawnFn ?? defaultSpawn,
       execFn: deps.execFn ?? defaultExec,
-      hardenFn: deps.hardenFn ?? hardenPathPermissions,
+      hardenFn: deps.hardenFn ?? ((path: string, isDir: boolean) => { hardenPathPermissions(path, isDir, { allowedRoots: [deps.paths.dir] }); }),
+      rawProbeFn: deps.rawProbeFn ?? defaultRawProbe,
+      policyProbeFn: deps.policyProbeFn ?? defaultPolicyProbe,
       wait: deps.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
       retryDelaysMs: deps.retryDelaysMs ?? RETRY_DELAYS_MS,
       maxAttempts: deps.maxAttempts ?? MAX_CONNECT_ATTEMPTS,
@@ -518,8 +748,8 @@ export class SshTunnelManager {
       encoding: "utf8",
       mode: 0o600,
     });
-    this.deps.hardenFn(this.deps.paths.dir);
-    this.deps.hardenFn(this.deps.paths.configPath);
+    this.deps.hardenFn(this.deps.paths.dir, true);
+    this.deps.hardenFn(this.deps.paths.configPath, false);
   }
 
   getStatus(): SshTunnelStatus {
@@ -606,6 +836,7 @@ export class SshTunnelManager {
       fingerprint: scanned.fingerprint,
       publicKey,
       installLine: installLine(publicKey, remotePairingPort, remoteDevicePort),
+      policyBlock: serverPolicyBlock(address.user),
     };
   }
 
@@ -638,7 +869,7 @@ export class SshTunnelManager {
       desiredState: "off",
     };
     mkdirSync(this.deps.paths.dir, { recursive: true, mode: 0o700 });
-    this.deps.hardenFn(this.deps.paths.dir);
+    this.deps.hardenFn(this.deps.paths.dir, true);
     writeFileSync(this.deps.paths.emptyConfigPath, "# MetaVault OSS pins every ssh option on the command line.\n", {
       encoding: "utf8",
       mode: 0o600,
@@ -648,13 +879,25 @@ export class SshTunnelManager {
       knownHostsLine(config.host, config.port, config.hostKeyType, config.hostKeyBase64),
       { encoding: "utf8", mode: 0o600 },
     );
-    this.deps.hardenFn(this.deps.paths.knownHostsPath);
-    this.deps.hardenFn(this.deps.paths.emptyConfigPath);
+    this.deps.hardenFn(this.deps.paths.knownHostsPath, false);
+    this.deps.hardenFn(this.deps.paths.emptyConfigPath, false);
     this.config = config;
     this.persistConfig();
     this.pendingSetup = null;
     this.setState("off");
     const probe = await this.probeOnce();
+    if (probe.unsafe === true) {
+      // The server grants this key more than the two forwards, or cannot
+      // genuinely deny local forwarding. Setup refuses to finish: tear down
+      // the pinned trust and config, keep nothing but the keypair (it holds
+      // no trust decision; it is reused on the next attempt).
+      this.config = null;
+      rmSync(this.deps.paths.configPath, { force: true });
+      rmSync(this.deps.paths.knownHostsPath, { force: true });
+      rmSync(this.deps.paths.emptyConfigPath, { force: true });
+      this.setState("not-configured");
+      return { configured: false, verified: false, ...(probe.reason !== undefined ? { reason: probe.reason } : {}) };
+    }
     return { configured: true, ...probe };
   }
 
@@ -687,14 +930,14 @@ export class SshTunnelManager {
       return;
     }
     mkdirSync(this.deps.paths.dir, { recursive: true, mode: 0o700 });
-    this.deps.hardenFn(this.deps.paths.dir);
+    this.deps.hardenFn(this.deps.paths.dir, true);
     await this.deps.execFn(
       this.deps.binaries.keygen,
       ["-t", "ed25519", "-N", "", "-C", "metavault-oss-remote", "-f", this.deps.paths.identityPath],
       KEYSCAN_TIMEOUT_MS,
     );
-    this.deps.hardenFn(this.deps.paths.identityPath);
-    this.deps.hardenFn(`${this.deps.paths.identityPath}.pub`);
+    this.deps.hardenFn(this.deps.paths.identityPath, false);
+    this.deps.hardenFn(`${this.deps.paths.identityPath}.pub`, false);
   }
 
   private openLog(): void {
@@ -931,7 +1174,7 @@ export class SshTunnelManager {
 
   // Proves the key is installed and the forwards are accepted, using one
   // short-lived tunnel that is always torn down before returning.
-  private async probeOnce(): Promise<SetupVerification> {
+  private async probeOnce(): Promise<SetupVerification & { unsafe?: true }> {
     const gatewayOk = this.deps.gatewayReady !== undefined ? await this.deps.gatewayReady() : true;
     if (!gatewayOk) {
       return { verified: false, reason: "gateway-down" };
@@ -943,7 +1186,96 @@ export class SshTunnelManager {
     } catch {
       // Already gone.
     }
-    if (result.ok) return { verified: true };
-    return { verified: false, reason: result.reason ?? "timeout" };
+    if (!result.ok) {
+      return { verified: false, reason: result.reason ?? "timeout" };
+    }
+    // Positive path proven. Now prove the NEGATIVE properties against the
+    // live server before calling the key forwarding-only: no shell/exec, no
+    // sftp, no pty, and a genuine (not blackholed) local-forward deny.
+    const unsafe = await this.negativeProbes();
+    // "timeout" is an inconclusive probe (network flake): a retryable
+    // verification failure, never a ground to refuse setup.
+    if (unsafe === "timeout") {
+      return { verified: false, reason: "timeout" };
+    }
+    if (unsafe !== null) {
+      return { verified: false, reason: unsafe, unsafe: true };
+    }
+    return { verified: true };
+  }
+
+  // Pinned client args shared by every probe: same key, same known_hosts,
+  // same empty -F config as the tunnel itself.
+  private probeBaseArgs(): string[] {
+    const config = this.config;
+    if (config === null) throw new Error("no config for probe");
+    return [
+      "-F", this.deps.paths.emptyConfigPath,
+      "-p", String(config.port),
+      "-i", this.deps.paths.identityPath,
+      "-o", "BatchMode=yes",
+      "-o", "IdentitiesOnly=yes",
+      "-o", "StrictHostKeyChecking=yes",
+      "-o", `UserKnownHostsFile=${this.deps.paths.knownHostsPath}`,
+      "-o", "ConnectTimeout=10",
+    ];
+  }
+
+  private static readonly EXEC_CANARY = "MV-PROBE-CANARY-7f3a9c21";
+
+  // Live negative probes against the server, run with the same key the
+  // tunnel uses, right after the user installs the authorized_keys line.
+  // Returns the refusal reason when a property does NOT hold, null when all
+  // hold. Verified behaviors (OpenSSH 8.9):
+  // - command="false" intercepts shell/exec AND subsystem (sftp) requests.
+  // - "restrict" denies pty allocation.
+  // - only server-side "AllowTcpForwarding remote" genuinely denies -L;
+  //   permitopen blackholes still attempt the connect, which the -L probe
+  //   distinguishes via "administratively prohibited" in verbose stderr.
+  private async negativeProbes(): Promise<SetupFailureReason | null> {
+    const config = this.config;
+    if (config === null) return "timeout";
+    const dest = `${config.user}@${config.host}`;
+    const ssh = this.deps.binaries.ssh;
+    try {
+      // 1. Shell/exec must not work.
+      const execProbe = await this.deps.rawProbeFn(
+        ssh, [...this.probeBaseArgs(), dest, "echo", SshTunnelManager.EXEC_CANARY], null, 15000,
+      );
+      if (execProbe.stdout.toString("utf8").includes(SshTunnelManager.EXEC_CANARY)) {
+        return "server-unrestricted";
+      }
+      // 2. The sftp subsystem must not answer SSH_FXP_INIT with a VERSION
+      //    packet (5-byte header, type byte 2).
+      const init = Buffer.alloc(9);
+      init.writeUInt32BE(5, 0);
+      init.writeUInt8(1, 4); // SSH_FXP_INIT
+      init.writeUInt32BE(3, 5); // protocol version 3
+      const sftpProbe = await this.deps.rawProbeFn(ssh, [...this.probeBaseArgs(), "-s", dest, "sftp"], init, 15000);
+      if (sftpProbe.stdout.length >= 5 && sftpProbe.stdout[4] === 2) {
+        return "server-unrestricted";
+      }
+      // 3. A pty must be refused (restrict).
+      const ptyProbe = await this.deps.rawProbeFn(
+        ssh, ["-tt", ...this.probeBaseArgs(), dest, "true"], null, 15000,
+      );
+      if (ptyProbe.code === 0 && !/PTY allocation request failed/.test(ptyProbe.stderr)) {
+        return "server-unrestricted";
+      }
+      // 4. Local forwarding must be GENUINELY denied, not just blackholed.
+      const localPort = 20000 + Math.floor(Math.random() * 20000);
+      const policy = await this.deps.policyProbeFn(
+        ssh, ["-v", ...this.probeBaseArgs(), "-N", "-L", `127.0.0.1:${String(localPort)}:127.0.0.1:1`, dest], localPort, 15000,
+      );
+      if (policy === "open") {
+        return "server-policy-missing";
+      }
+      if (policy === "inconclusive") {
+        return "timeout"; // no ground to refuse; surfaces as a retryable verification failure
+      }
+      return null;
+    } catch {
+      return "timeout";
+    }
   }
 }

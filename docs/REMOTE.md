@@ -132,20 +132,34 @@ gateway listeners onto that server's loopback:
 - No SSH server runs on this PC; only the OpenSSH client is used (the Windows
   inbox OpenSSH is preferred over PATH).
 - Key-only auth: the app generates an ed25519 keypair under the app data
-  folder (`ssh-tunnel/`, 0700; key and config 0600). The setup wizard shows
-  an `authorized_keys` line pre-restricted with `restrict` and two
-  `permitlisten` entries, so the key can do nothing on the server but hold
-  exactly those two forwards.
+  folder (`ssh-tunnel/`, 0700; key and config 0600 - on Windows, owner-only
+  ACLs via icacls with the effective ACL's trustee SIDs verified, failing
+  closed). The setup wizard shows an `authorized_keys` line with `restrict`,
+  `port-forwarding`, a `command="false"` forced command, two `permitlisten`
+  entries and a `permitopen` blackhole. Verified against a real sshd:
+  `restrict` alone neither re-enables `-R` (so `port-forwarding` is required)
+  nor blocks shell/exec or the sftp subsystem (so the forced command is what
+  blocks those); pty/agent/X11 stay denied by `restrict`.
+- Required server policy: per-key options cannot genuinely deny LOCAL
+  forwarding (`permitopen` has no deny-all; a blackhole target still gets a
+  connect attempt). The wizard therefore also shows a `Match User` block
+  (`AllowTcpForwarding remote`, agent/X11/TTY off) for the server's
+  sshd_config. Before finishing, setup runs live negative probes through the
+  installed key - shell/exec canary, sftp `SSH_FXP_INIT`, pty allocation,
+  and a `-L` open that must come back "administratively prohibited". If any
+  probe shows more than the two forwards, setup refuses to finish and saves
+  nothing (the failure names what to fix).
 - Host key pinning without blind TOFU: setup scans the server's host key,
   and the SHA256 fingerprint you paste (verified against your server
   provider) must match exactly before anything is saved. The pinned key goes
   into the app's own `known_hosts` and every connection uses
   `StrictHostKeyChecking=yes`. A host key that later fails to match is a
   terminal error and flips the tunnel off - it never silently reconnects.
-- `BatchMode`, `IdentitiesOnly`, `ClearAllForwardings`, agent/X11/local
-  command off, no control sockets, and every option pinned on the command
-  line with an empty `-F` config file, so user or system ssh config cannot
-  add behaviour. No secret ever appears on the command line or in the log.
+- `BatchMode`, `IdentitiesOnly`, agent/X11/local command off, no control
+  sockets, and every option pinned on the command line with an empty `-F`
+  config file, so user or system ssh config cannot add behaviour. (No
+  `ClearAllForwardings`: it clears command-line `-R` too.) No secret ever
+  appears on the command line or in the log.
 - "Connected" is only reported after the server has confirmed BOTH reverse
   forwards (with `ExitOnForwardFailure=yes` a refused forward fails the
   attempt) and the local gateway listeners answer. It says nothing about
@@ -154,7 +168,7 @@ gateway listeners onto that server's loopback:
   after a stable minute. Disconnect and app quit stop exactly the ssh child
   the app spawned; nothing is killed by PID lookup.
 - Remove connection deletes the pinned host key, config and keypair locally;
-  the UI tells you to delete the key line on the server.
+  the UI tells you to remove the key line and the Match block on the server.
 
 The tunnel is transport only. Pairing (SAS), mTLS device certificates,
 policy ceilings and PIN-gated remote approvals are unchanged.

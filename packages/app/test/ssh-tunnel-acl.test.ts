@@ -1,14 +1,16 @@
-// Proof that tunnel key/config files are owner-only on BOTH platforms:
-// POSIX asserts the real mode bits; Windows runs the real icacls hardening
-// and asserts the resulting ACL grants exactly the current user - actual
-// Windows ACL evidence in CI, not an assumed chmod.
+// Owner-only file protection, proven per platform:
+// - POSIX: mode bits are applied AND verified (0o700 dir / 0o600 file).
+// - Windows: icacls /reset + /inheritance:r + /grant:r *SID, then the
+//   EFFECTIVE ACL's trustee SIDs are read back through .NET ACL APIs and
+//   must be exactly the current user's SID - including a preexisting foreign
+//   explicit grant (BUILTIN\Users) that must be gone after hardening. Runs
+//   for real on the Windows CI runner.
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { userInfo } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { hardenPathPermissions } from "../src/ssh-tunnel.js";
+import { currentWindowsUserSid, hardenPathPermissions } from "../src/ssh-tunnel.js";
 
 let dir = "";
 
@@ -21,41 +23,59 @@ afterAll(() => {
 });
 
 describe("hardenPathPermissions", () => {
-  it("POSIX: key material is written owner-only (0o600) and dir 0o700", () => {
+  it("POSIX: applies and verifies owner-only mode bits", () => {
     if (process.platform === "win32") return;
     const f = join(dir, "id_ed25519");
-    writeFileSync(f, "key", { mode: 0o600 });
-    chmodSync(dir, 0o700);
+    writeFileSync(f, "key", { mode: 0o644 }); // deliberately wrong, harden fixes it
+    hardenPathPermissions(f, false);
     expect(statSync(f).mode & 0o777).toBe(0o600);
-    expect(statSync(dir).mode & 0o777).toBe(0o700);
   });
 
-  it("Windows: icacls ACL grants the current user alone, no inherited ACEs", () => {
+  it("Windows: effective ACL ends owner-only even with a preexisting foreign grant", () => {
     if (process.platform !== "win32") return;
-    const f = join(dir, "id_ed25519");
+    const f = join(dir, "id_ed25519-win");
     writeFileSync(f, "key");
-    hardenPathPermissions(f);
-    const out = execFileSync("icacls", [f], { encoding: "utf8" });
-    const user = userInfo().username;
-    // Owner present with full control...
-    expect(out).toMatch(new RegExp(`${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\(F\\)`));
-    // ...and nobody else: no Users group, no Administrators, no SYSTEM.
-    expect(out).not.toMatch(/BUILTIN\\Users|Administrators|SYSTEM/);
+    // Preexisting foreign explicit grant that hardening must REMOVE.
+    execFileSync("icacls", [f, "/grant", "BUILTIN\\Users:(R)"], { encoding: "utf8" });
+    hardenPathPermissions(f, false, { allowedRoots: [dir] });
+    const sid = currentWindowsUserSid();
+    expect(sid).toBeDefined();
+    if (sid === undefined) return;
+    const escaped = f.replace(/'/g, "''");
+    const out = execFileSync("powershell.exe", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `$sd = [System.IO.File]::GetAccessControl('${escaped}'); ` +
+      "$sd.Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }",
+    ], { encoding: "utf8" });
+    const sids = out.split(/\r?\n/).map((l) => l.trim().toUpperCase()).filter(Boolean);
+    expect(sids).toEqual([sid.toUpperCase()]);
   });
 
-  it("Windows: a failing icacls surfaces as an error, not silent weak ACLs", () => {
+  it("Windows: refuses paths outside the allowed roots", () => {
     if (process.platform !== "win32") return;
-    expect(() => { hardenPathPermissions(join(dir, "does-not-exist")); }).toThrow(/icacls failed/);
+    expect(() => { hardenPathPermissions("C:\\Windows\\Temp\\x", false, { allowedRoots: [dir] }); })
+      .toThrow(/outside the tunnel data root/);
   });
 
-  it("non-Windows platforms are a no-op without invoking icacls", () => {
-    let called = false;
-    hardenPathPermissions("/nonexistent", "linux", () => { called = true; return { status: 0, stderr: "" }; });
-    expect(called).toBe(false);
+  it("Windows: fails closed when the user SID is unavailable", () => {
+    expect(() => { hardenPathPermissions(join(dir, "f"), false, { platform: "win32", userSid: null }); },
+    ).toThrow(/SID is unavailable/);
   });
 
-  it("win32 icacls failure throws with stderr detail (unit, mocked)", () => {
-    expect(() => { hardenPathPermissions("C:\\x", "win32", () => ({ status: 5, stderr: "Access is denied." })); },
-    ).toThrow(/icacls failed.*Access is denied/);
+  it("Windows: throws when the effective ACL still has a foreign trustee (mocked listing)", () => {
+    expect(() => { hardenPathPermissions(join(dir, "f"), false, {
+        platform: "win32",
+        userSid: "S-1-5-21-1-2-3-1000",
+        run: () => "",
+        listSids: () => ["S-1-5-21-1-2-3-1000", "S-1-5-32-545"],
+      }); },
+    ).toThrow(/could not make .* owner-only/);
+  });
+
+  it("non-Windows ignores icacls entirely", () => {
+    const f = join(dir, "posix-file");
+    writeFileSync(f, "key");
+    hardenPathPermissions(f, false, { platform: "linux", run: () => { throw new Error("icacls must not run"); } });
+    expect(statSync(f).mode & 0o777).toBe(0o600);
   });
 });

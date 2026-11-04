@@ -14,12 +14,12 @@
 // behavior, and the original line shipped here silently rejected every -R.
 import { execFile } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { createServer, createConnection } from "node:net";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { installLine } from "../src/ssh-tunnel.js";
+import { installLine, SshTunnelManager, sshTunnelPaths } from "../src/ssh-tunnel.js";
 
 const run = promisify(execFile);
 const SSHD = ["/usr/sbin/sshd", "/usr/local/sbin/sshd"].find((p) => existsSync(p));
@@ -160,3 +160,106 @@ if (!haveTools) {
     console.warn("SKIP: sshd/ssh/ssh-keygen not found; install openssh-server to run ssh-tunnel-sshd.integration.test.ts");
   });
 }
+
+describeIfSshd("SshTunnelManager.completeSetup against real sshd policy (integration)", () => {
+  const PAIR = 18078;
+  const DEV = 18080;
+  let mDir = "";
+  let hostKeyFp = "";
+  const servers: Array<ReturnType<typeof execFile>> = [];
+
+  const startServer = async (port: number, withMatch: boolean): Promise<string> => {
+    const dir2 = mkdtempSync(join(tmpdir(), "mv-sshd-it2-"));
+    const user = userInfo().username;
+    await run(KEYGEN, ["-q", "-t", "ed25519", "-f", join(dir2, "host_ed25519"), "-N", ""]);
+    const fpOut = await run(KEYGEN, ["-lf", join(dir2, "host_ed25519.pub")]);
+    hostKeyFp = fpOut.stdout.trim().split(/\s+/)[1] ?? "";
+    const cfgLines = [
+      `Port ${String(port)}`,
+      "ListenAddress 127.0.0.1",
+      `HostKey ${join(dir2, "host_ed25519")}`,
+      `PidFile ${join(dir2, "sshd.pid")}`,
+      "PasswordAuthentication no",
+      "PubkeyAuthentication yes",
+      `AuthorizedKeysFile ${join(dir2, "authorized_keys")}`,
+      "UsePAM no",
+      "StrictModes no",
+      "Subsystem sftp internal-sftp",
+    ];
+    if (withMatch) {
+      cfgLines.push(
+        `Match User ${user}`,
+        "    AllowTcpForwarding remote",
+        "    AllowAgentForwarding no",
+        "    X11Forwarding no",
+        "    PermitTTY no",
+      );
+    }
+    const cfgPath = join(dir2, "sshd_config");
+    writeFileSync(cfgPath, cfgLines.join("\n"));
+    if (SSHD === undefined) throw new Error("unreachable");
+    const proc = execFile(SSHD, ["-f", cfgPath, "-D", "-E", join(dir2, "sshd.log")], () => {});
+    servers.push(proc);
+    await new Promise((r) => setTimeout(r, 800));
+    return join(dir2, "authorized_keys");
+  };
+
+  const loginUser = userInfo().username;
+
+  const makeManager = (): SshTunnelManager => {
+    mDir = mkdtempSync(join(tmpdir(), "mv-ssh-it-mgr-"));
+    return new SshTunnelManager({
+      paths: sshTunnelPaths(mDir),
+      binaries: { ssh: SSH, keygen: KEYGEN, keyscan: "/usr/bin/ssh-keyscan" },
+      gatewayReady: () => Promise.resolve(true),
+      forwardReadyTimeoutMs: 10000,
+    });
+  };
+
+  afterAll(() => {
+    for (const srv of servers) srv.kill("SIGTERM");
+  });
+
+  it("finishes verified when the server has the Match policy, and -R data flows", async () => {
+    const port = 12230;
+    const akPath = await startServer(port, true);
+    const manager = makeManager();
+    const proposal = await manager.beginSetup({
+      address: `${loginUser}@127.0.0.1:${String(port)}`,
+      remotePairingPort: PAIR,
+      remoteDevicePort: DEV,
+      currentUser: "ignored",
+    });
+    expect("error" in proposal).toBe(false);
+    if ("error" in proposal) return;
+    // The user installs EXACTLY the generated line on the server.
+    writeFileSync(akPath, `${proposal.installLine}\n`, { mode: 0o600 });
+    const done = await manager.completeSetup(hostKeyFp);
+    expect(done.reason).toBeUndefined();
+    expect(done.configured).toBe(true);
+    expect(done.verified).toBe(true);
+    await manager.shutdown();
+  }, 60000);
+
+  it("refuses to finish (server-policy-missing) when -L is not genuinely denied", async () => {
+    const port = 12231;
+    const akPath = await startServer(port, false);
+    const manager = makeManager();
+    const proposal = await manager.beginSetup({
+      address: `${loginUser}@127.0.0.1:${String(port)}`,
+      remotePairingPort: PAIR,
+      remoteDevicePort: DEV,
+      currentUser: "ignored",
+    });
+    expect("error" in proposal).toBe(false);
+    if ("error" in proposal) return;
+    writeFileSync(akPath, `${proposal.installLine}\n`, { mode: 0o600 });
+    const done = await manager.completeSetup(hostKeyFp);
+    expect(done.configured).toBe(false);
+    expect(done.verified).toBe(false);
+    expect(done.reason).toBe("server-policy-missing");
+    // Refusal tore down the pinned trust: nothing configured remains.
+    expect(manager.getStatus().configured).toBe(false);
+    await manager.shutdown();
+  }, 60000);
+});

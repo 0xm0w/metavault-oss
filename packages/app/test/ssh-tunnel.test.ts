@@ -140,7 +140,9 @@ describe("tunnelArgs", () => {
     expect(args).toContain("StrictHostKeyChecking=yes");
     expect(args).toContain(`UserKnownHostsFile=${paths.knownHostsPath}`);
     expect(args).toContain("ExitOnForwardFailure=yes");
-    expect(args).toContain("ClearAllForwardings=yes");
+    // ClearAllForwardings must NOT be set: it clears the command-line -R options
+    // too (verified against real OpenSSH 8.9: the tunnel idled with zero forwards).
+    expect(args).not.toContain("ClearAllForwardings=yes");
     expect(args).toContain("ForwardAgent=no");
     expect(args).toContain("ForwardX11=no");
     expect(args).toContain("PermitLocalCommand=no");
@@ -235,6 +237,10 @@ function makeManager(overrides: {
   spawnBehavior?: (child: FakeChild) => void;
   gatewayReady?: () => Promise<boolean>;
   keyscanOutput?: string;
+  rawProbeStdout?: Buffer;
+  rawProbeStderr?: string;
+  rawProbeCode?: number;
+  policyProbe?: "enforced" | "open" | "inconclusive";
 } = {}) {
   const paths = tmpPaths();
   const spawned: FakeSpawnLog[] = [];
@@ -264,6 +270,13 @@ function makeManager(overrides: {
       (overrides.spawnBehavior ?? successSoon)(child);
       return child;
     },
+    // Default: every negative probe shows a locked-down server.
+    rawProbeFn: () => Promise.resolve({
+      code: overrides.rawProbeCode ?? 1,
+      stdout: overrides.rawProbeStdout ?? Buffer.alloc(0),
+      stderr: overrides.rawProbeStderr ?? "PTY allocation request failed",
+    }),
+    policyProbeFn: () => Promise.resolve(overrides.policyProbe ?? "enforced"),
   });
   liveManagers.push(manager);
   return { manager, spawned, paths };
@@ -434,5 +447,64 @@ describe("SshTunnelManager connect", () => {
     expect(live?.killed).toBe(true);
     const onDisk = sanitizeConfig(JSON.parse(readFileSync(paths.configPath, "utf8")));
     expect(onDisk?.desiredState).toBe("off");
+  });
+});
+
+describe("SshTunnelManager negative server probes", () => {
+  it("refuses setup and saves nothing when shell exec escapes (canary returned)", async () => {
+    const { manager, paths } = makeManager({ rawProbeStdout: Buffer.from("MV-PROBE-CANARY-7f3a9c21\n") });
+    const proposal = await manager.beginSetup({ address: "mow@relay.example.com", currentUser: "localuser" });
+    expect("error" in proposal).toBe(false);
+    const done = await manager.completeSetup(GH_FP);
+    expect(done.configured).toBe(false);
+    expect(done.reason).toBe("server-unrestricted");
+    expect(existsSync(paths.configPath)).toBe(false);
+    expect(existsSync(paths.knownHostsPath)).toBe(false);
+    expect(manager.getStatus().state).toBe("not-configured");
+  });
+
+  it("refuses setup when the sftp subsystem answers SSH_FXP_INIT", async () => {
+    const version = Buffer.alloc(9);
+    version.writeUInt32BE(9, 0);
+    version.writeUInt8(2, 4); // SSH_FXP_VERSION
+    version.writeUInt32BE(3, 5);
+    const { manager, paths } = makeManager({ rawProbeStdout: version });
+    const proposal = await manager.beginSetup({ address: "mow@relay.example.com", currentUser: "localuser" });
+    expect("error" in proposal).toBe(false);
+    const done = await manager.completeSetup(GH_FP);
+    expect(done.configured).toBe(false);
+    expect(done.reason).toBe("server-unrestricted");
+    expect(existsSync(paths.configPath)).toBe(false);
+  });
+
+  it("refuses setup when local forwarding is only blackholed, not denied", async () => {
+    const { manager, paths } = makeManager({ policyProbe: "open" });
+    const proposal = await manager.beginSetup({ address: "mow@relay.example.com", currentUser: "localuser" });
+    expect("error" in proposal).toBe(false);
+    const done = await manager.completeSetup(GH_FP);
+    expect(done.configured).toBe(false);
+    expect(done.reason).toBe("server-policy-missing");
+    expect(existsSync(paths.configPath)).toBe(false);
+    expect(manager.getStatus().state).toBe("not-configured");
+  });
+
+  it("an inconclusive policy probe is retryable, not a refusal", async () => {
+    const { manager, paths } = makeManager({ policyProbe: "inconclusive" });
+    const proposal = await manager.beginSetup({ address: "mow@relay.example.com", currentUser: "localuser" });
+    expect("error" in proposal).toBe(false);
+    const done = await manager.completeSetup(GH_FP);
+    expect(done.configured).toBe(true);
+    expect(done.verified).toBe(false);
+    expect(done.reason).toBe("timeout");
+    expect(existsSync(paths.configPath)).toBe(true);
+  });
+
+  it("a pty that allocates counts as unrestricted", async () => {
+    const { manager } = makeManager({ rawProbeCode: 0, rawProbeStderr: "" });
+    const proposal = await manager.beginSetup({ address: "mow@relay.example.com", currentUser: "localuser" });
+    expect("error" in proposal).toBe(false);
+    const done = await manager.completeSetup(GH_FP);
+    expect(done.configured).toBe(false);
+    expect(done.reason).toBe("server-unrestricted");
   });
 });

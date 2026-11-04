@@ -124,12 +124,14 @@ export async function handleSshTunnelRequest(
     case "complete-setup": {
       const result = await manager.completeSetup(request.fingerprint as string);
       if (!result.configured) {
-        return {
-          kind: "error",
-          error: result.reason === "host-key-changed"
-            ? "That fingerprint does not match the key the server presented. Nothing was saved. Check the fingerprint with your server provider and start again."
-            : "Setup is no longer open. Start again.",
-        };
+        const error = result.reason === "host-key-changed"
+          ? "That fingerprint does not match the key the server presented. Nothing was saved. Check the fingerprint with your server provider and start again."
+          : result.reason === "server-unrestricted"
+            ? "Safety check failed: this account let the key run a shell or file access, so the key line is not installed as shown. Nothing was saved. Use a dedicated account for this tunnel, install the key line exactly, then try again."
+            : result.reason === "server-policy-missing"
+              ? "Safety check failed: the server does not block local port forwarding for this account. Nothing was saved. Add the shown Match block to the server's sshd_config, reload sshd, then try again."
+              : "Setup is no longer open. Start again.";
+        return { kind: "error", error };
       }
       return { kind: "verification", verified: result.verified, ...(result.reason !== undefined ? { reason: result.reason } : {}) };
     }

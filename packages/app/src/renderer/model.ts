@@ -358,6 +358,7 @@ export function projectSshTunnelSetupProposal(raw: unknown): SshTunnelSetupPropo
   const fingerprint = raw["fingerprint"];
   const publicKey = raw["publicKey"];
   const installLine = raw["installLine"];
+  const policyBlock = raw["policyBlock"];
   if (typeof host !== "string" || host === "" || host.length > 255) return null;
   if (typeof user !== "string" || user === "" || user.length > 64) return null;
   for (const p of [port, remotePairingPort, remoteDevicePort]) {
@@ -367,12 +368,13 @@ export function projectSshTunnelSetupProposal(raw: unknown): SshTunnelSetupPropo
   if (typeof fingerprint !== "string" || !SSH_FINGERPRINT_PATTERN.test(fingerprint)) return null;
   if (typeof publicKey !== "string" || publicKey === "" || publicKey.length > 2200) return null;
   if (typeof installLine !== "string" || installLine === "" || installLine.length > 2400) return null;
+  if (typeof policyBlock !== "string" || policyBlock === "" || policyBlock.length > 1200) return null;
   return {
     host, user,
     port: port as number,
     remotePairingPort: remotePairingPort as number,
     remoteDevicePort: remoteDevicePort as number,
-    keyType, fingerprint, publicKey, installLine,
+    keyType, fingerprint, publicKey, installLine, policyBlock,
   };
 }
 

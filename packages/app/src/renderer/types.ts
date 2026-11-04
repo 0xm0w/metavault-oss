@@ -284,6 +284,7 @@ export interface SshTunnelSetupProposalLike {
   readonly fingerprint: string;
   readonly publicKey: string;
   readonly installLine: string;
+  readonly policyBlock: string;
 }
 
 // Tagged results from the main process tunnel IPC.
