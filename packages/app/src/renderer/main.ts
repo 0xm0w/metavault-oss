@@ -4484,6 +4484,11 @@ function start(): void {
       if (settingsOpen) closeSettings();
     }
   });
+  // The nav strip scrolls sideways on narrow windows. Keyboard focus must
+  // bring the whole focused button into view, not leave it half clipped.
+  document.querySelector(".sidebar")?.addEventListener("focusin", (event) => {
+    if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
   document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((button) => {
     button.addEventListener("click", () => {
       const next = button.dataset["view"];
