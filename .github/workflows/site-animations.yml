@@ -1,0 +1,43 @@
+name: Site animations
+
+on:
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'tools/site-animations/**'
+      - 'eslint.config.js'
+      - '.github/workflows/site-animations.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-animations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site-validation:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, metavault-ci]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: npm ci
+      - name: Rebuild accepted animations
+        working-directory: tools/site-animations
+        run: npm ci && npm run build
+      - name: Verify static bundles are reproducible
+        run: git diff --exit-code -- site/assets/animations
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
