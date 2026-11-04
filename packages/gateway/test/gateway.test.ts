@@ -406,6 +406,59 @@ describe("gateway", () => {
     expect(remote[0]?.transport).toBe("loopback");
   }, 120_000);
 
+  it("never leaks pairing codes, SAS values, or session identifiers to errors or the audit trail", async () => {
+    // Drive a full pairing flow, capturing the secret material.
+    const sessionRes = await fetch(`${stack.daemonBase}/devices/pair`, {
+      method: "POST",
+      headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+      body: "{}",
+    });
+    const session = (await sessionRes.json()) as { pairingId: string; code: string };
+    const deviceKeys = generateRsaKeyPairPem();
+    const begin = await gwRequest({
+      port: stack.gatewayPort,
+      method: "POST",
+      path: "/pair/begin",
+      body: {
+        code: session.code,
+        deviceName: "redaction",
+        platform: "linux",
+        clientPublicKeyPem: deviceKeys.publicKeyPem,
+        clientNonce: "nonce-redaction",
+      },
+    });
+    const viewRes = await fetch(`${stack.daemonBase}/devices/pairing`, {
+      headers: { "x-metavault-token": DAEMON_TOKEN },
+    });
+    const view = (await viewRes.json()) as { session: { sas?: string } | null };
+    const sas = view.session?.sas ?? "";
+    expect(sas).not.toBe("");
+
+    // Fire a battery of failing requests at both pairing endpoints. The
+    // legitimate begin response carries the pairingId to the pairing
+    // client by design; errors, probes and the audit trail must not.
+    expect(begin.status).toBe(200);
+    const bodies: string[] = [];
+    bodies.push((await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/begin", body: { code: "wrong-code", deviceName: "x", platform: "linux", clientPublicKeyPem: deviceKeys.publicKeyPem, clientNonce: "n2" } })).body);
+    bodies.push((await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: { pairingId: "unknown-id" } })).body);
+    bodies.push((await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: {} })).body);
+    bodies.push((await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/begin", body: { garbage: true } })).body);
+
+    // The daemon audit trail after all of the above.
+    const events = await Effect.runPromise(
+      Effect.provide(
+        Effect.flatMap(VaultService, (svc) => svc.listAudit()),
+        Layer.succeed(VaultService, stack.service),
+      ),
+    );
+    const auditBlob = JSON.stringify(events);
+
+    const haystack = bodies.join("\n") + "\n" + auditBlob;
+    expect(haystack).not.toContain(session.code);
+    expect(haystack).not.toContain(sas);
+    expect(haystack).not.toContain(session.pairingId);
+  }, 120_000);
+
   it("rejects requests on an already-open mTLS connection after revocation", async () => {
     const device = await pairDevice(stack, "keepalive");
     const agent = new HttpsAgent({
