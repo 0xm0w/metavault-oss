@@ -1638,3 +1638,11 @@ body.is-locked .view { padding: 0; max-width: none; }
 .registration-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .registration-code { flex: 1 1 180px; min-width: 0; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; letter-spacing: 0.12em; }
 .registration-note { color: var(--muted); font-size: 12px !important; margin-bottom: 0 !important; }
+
+.wizard-card { padding: 18px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.wizard-card h3 { margin: 0 0 12px; font-size: 16px; }
+.wizard-steps { margin: 0 0 12px; padding-left: 22px; display: grid; gap: 12px; }
+.wizard-steps li { display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
+.wizard-steps li strong { font-size: 14px; color: var(--ink); }
+.wizard-steps li.is-done strong { color: var(--ok); }
+.wizard-steps li .action { justify-self: start; margin-top: 4px; }

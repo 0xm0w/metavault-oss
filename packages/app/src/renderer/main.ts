@@ -3692,6 +3692,47 @@ function renderSettings(view: HTMLElement): void {
   view.append(updateSection);
 }
 
+// First-run guide. Shown on the Vault page until dismissed. It only reflects
+// real state (a verified agent, a saved credential) and never claims a step
+// is done that MetaVault cannot see.
+function renderOnboardingWizard(view: HTMLElement): void {
+  if (localStorage.getItem("metavault_wizard_done") === "1") return;
+  const card = el("section", "wizard-card");
+  card.append(el("h3", "", "Get started: connect your IDE"));
+  const hasAgent = agentsData.some((agent) => !agent.revoked);
+  const hasCredential = aliases.length > 0;
+  const copied = localStorage.getItem("metavault_wizard_copied") === "1";
+  const steps: { title: string; body: string; done: boolean; action?: HTMLElement }[] = [
+    { title: "Your vault is ready", body: "It is encrypted with your password on this computer.", done: true },
+    { title: "Copy the agent instructions", body: "Paste them into your IDE agent. They contain no secrets.", done: copied },
+    { title: "Let your IDE register", body: "The agent shows a 6-digit code. Approve the matching request here. That makes it a Verified agent. It gives it no access to anything.", done: hasAgent },
+    { title: "Add a token to test", body: "Tell your IDE: \"I will add a token to test.\" MetaVault opens in front with the secure input. Type the token here, never in the chat.", done: hasCredential },
+    { title: "Check it works", body: "Ask your IDE to use that token for one read-only check, for example reading traffic for one of your sites. You approve that access separately.", done: false },
+  ];
+  const list = el("ol", "wizard-steps");
+  steps.forEach((step, index) => {
+    const item = el("li", step.done ? "is-done" : "");
+    item.append(el("strong", "", `${step.done ? "Done: " : ""}${step.title}`), el("span", "", step.body));
+    if (index === 1) {
+      const copy = el("button", "action btn-approve", copied ? "Copy again" : "Copy agent instructions") as HTMLButtonElement;
+      copy.type = "button";
+      copy.addEventListener("click", () => {
+        void navigator.clipboard.writeText(AGENT_INSTRUCTIONS).then(
+          () => { localStorage.setItem("metavault_wizard_copied", "1"); copy.textContent = "Copied"; },
+          () => { copy.textContent = "Could not copy"; },
+        );
+      });
+      item.append(copy);
+    }
+    list.append(item);
+  });
+  const dismiss = el("button", "action", "Hide this guide") as HTMLButtonElement;
+  dismiss.type = "button";
+  dismiss.addEventListener("click", () => { localStorage.setItem("metavault_wizard_done", "1"); render(); });
+  card.append(list, dismiss);
+  view.prepend(card);
+}
+
 function renderRegistrationCards(view: HTMLElement): void {
   if (pendingRegistrations.length === 0 && registrationError === "") return;
   const wrap = el("div", "registration-cards");
@@ -4056,6 +4097,7 @@ function render(): void {
   } else {
     renderPolicies(view);
   }
+  if (page === "vault") renderOnboardingWizard(view);
   renderRegistrationCards(view);
   view.querySelectorAll("h1").forEach((node) => {
     node.setAttribute("aria-hidden", "true");
