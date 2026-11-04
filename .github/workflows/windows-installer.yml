@@ -89,7 +89,7 @@ jobs:
     name: Clean-install smoke test
     needs: build
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -102,9 +102,31 @@ jobs:
           name: metavault-oss-windows-installer
           path: installer
 
-      - name: Install, launch, /health, uninstall
+      - name: Set up Node.js 22 for upgrade verification
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install verification dependencies
+        run: npm ci
+
+      # Only this read-only release download receives the short-lived job token.
+      # No personal token is stored in this workflow or in the test fixtures.
+      - name: Fetch published previous installer
         shell: pwsh
-        run: ./scripts/windows-installer-smoke.ps1 -InstallerDir installer -LogPath "$env:RUNNER_TEMP/windows-installer-smoke.txt"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force previous-installer | Out-Null
+          gh release download v0.1.2-alpha --repo "$env:GITHUB_REPOSITORY" --pattern 'MetaVault-OSS-0.1.2-alpha-win-x64.exe' --pattern 'SHA256SUMS' --dir previous-installer
+          if ($LASTEXITCODE -ne 0) { throw 'Published previous installer download failed' }
+
+      - name: Install, published upgrade, /health, uninstall
+        shell: pwsh
+        run: ./scripts/windows-installer-smoke.ps1 -InstallerDir installer -PreviousInstallerDir previous-installer -LogPath "$env:RUNNER_TEMP/windows-installer-smoke.txt"
 
       - name: Upload smoke log
         if: always()

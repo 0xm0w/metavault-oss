@@ -15,6 +15,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$InstallerDir,
   [Parameter(Mandatory = $true)][string]$LogPath,
+  [string]$PreviousInstallerDir = "",
   [int]$Port = 7077,
   [int]$HealthTimeoutSec = 90
 )
@@ -22,7 +23,7 @@ param(
 # WinRT PasswordVault requires Windows PowerShell/.NET Framework, not pwsh7.
 # Match the runtime used by installed cleanup and the app's legacy keychain.
 if ($PSVersionTable.PSEdition -eq 'Core') {
-  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -InstallerDir $InstallerDir -LogPath $LogPath -Port $Port -HealthTimeoutSec $HealthTimeoutSec
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -InstallerDir $InstallerDir -LogPath $LogPath -Port $Port -HealthTimeoutSec $HealthTimeoutSec -PreviousInstallerDir $PreviousInstallerDir
   exit $LASTEXITCODE
 }
 
@@ -196,6 +197,54 @@ function Check-Cleanup {
   Check ($null -eq (UninstallEntry)) "Uninstall registry entry removed"
   Check (-not ((UserPath) -split ";" -contains $binDir)) "user PATH entry removed"
   Check ($null -eq (Get-ItemProperty $runKey -Name "MetaVault OSS" -ErrorAction SilentlyContinue)) "Run entry removed"
+}
+
+# Optional genuine previous-published-installer upgrade. Caller must fetch and
+# hash-verify the private release asset; absence is skipped, never a fake pass.
+if ($PreviousInstallerDir -ne "") {
+  $candidateInstaller = $installer
+  $previous = Get-ChildItem $PreviousInstallerDir -Filter '*.exe' -File | Select-Object -First 1
+  if ($null -eq $previous) { throw 'Previous release installer missing' }
+  $sums = Get-Content (Join-Path $PreviousInstallerDir 'SHA256SUMS') -Raw
+  $hash = (Get-FileHash $previous.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($sums -notmatch ('(?m)^' + [Regex]::Escape($hash) + '\s+\*?' + [Regex]::Escape($previous.Name) + '\s*$')) { throw 'Previous published installer SHA256/name mismatch' }
+  Log ("Previous published artifact: " + $previous.Name + " SHA256=" + $hash)
+  $installer = $previous
+  Install-App 'published previous release'
+  Launch-App-Wait-Health 'published previous release'
+  $status = Invoke-Daemon 'GET' '/key/status'
+  Check ($status.mode -eq 'uninitialized') 'previous release starts synthetic empty vault'
+  $result = Invoke-Daemon 'POST' '/setup' @{passphrase=$smokePassphrase}
+  Check ($result.status -eq 'initialized') 'previous published release creates password vault'
+  $result = Invoke-Daemon 'POST' '/credentials' @{alias='previous-release-dummy';scope='smoke';secret=$smokeSecret}
+  Check ($null -ne $result -and $null -eq $result.__httpStatus) 'previous release stores synthetic encrypted credential'
+  $keyBeforeUpgrade = (Get-FileHash $keyFile -Algorithm SHA256).Hash
+  Stop-App
+  $installer = $candidateInstaller
+  Install-App 'candidate in-place upgrade over published release'
+  Launch-App-Wait-Health 'candidate over published release'
+  $status = Invoke-Daemon 'GET' '/key/status'
+  Check ($status.mode -eq 'passphrase' -and $status.locked) 'published-to-candidate upgrade preserves locked password vault'
+  Check ((Get-FileHash $keyFile -Algorithm SHA256).Hash -eq $keyBeforeUpgrade) 'published upgrade retains exact wrapped key file'
+  $result = Invoke-Daemon 'POST' '/unlock' @{passphrase=$smokePassphrase}
+  Check ($result.status -eq 'unlocked') 'published vault password unlocks candidate'
+  $aliases = Invoke-Daemon 'GET' '/aliases'
+  Check (@($aliases.aliases).Contains('previous-release-dummy')) 'published credential alias remains in candidate'
+  Stop-App
+  $env:MV_UPGRADE_DB = $dbFile; $env:MV_UPGRADE_KEY = $keyFile
+  $env:MV_UPGRADE_PASSWORD = $smokePassphrase; $env:MV_UPGRADE_EXPECTED = $smokeSecret
+  $verifyScript = Join-Path (Split-Path $PSScriptRoot -Parent) 'verify-upgrade-fixture.cjs'
+  & (Join-Path (Split-Path $PSScriptRoot -Parent) 'node_modules\.bin\esbuild.cmd') (Join-Path $PSScriptRoot 'verify-upgrade-credential.ts') --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=$verifyScript
+  if ($LASTEXITCODE -ne 0) { throw 'Synthetic upgrade verifier build failed' }
+  & node $verifyScript
+  if ($LASTEXITCODE -ne 0) { throw 'Synthetic published credential decrypt verification failed' }
+  Remove-Item $verifyScript -Force
+  Remove-Item Env:MV_UPGRADE_DB,Env:MV_UPGRADE_KEY,Env:MV_UPGRADE_PASSWORD,Env:MV_UPGRADE_EXPECTED
+  Uninstall-App 'remove synthetic upgraded fixture using candidate policy'
+  Check-Cleanup
+  Check (-not (Test-Path $dataDir)) 'synthetic published-upgrade fixture removed before clean tests'
+} else {
+  Log 'NOT RUN: genuine previous-published-release upgrade (no verified previous artifact supplied)'
 }
 
 # === 1. clean install + first-run state ================================
