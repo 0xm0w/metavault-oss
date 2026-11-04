@@ -1,30 +1,28 @@
 # MetaVault CI runner. Separate project, volumes, name and label from any other
-# runner. No Docker socket, no privileged mode, no published ports.
+# runner. No Docker socket, no privileged mode, no published ports, no secrets.
+# The limits are ceilings, not reservations. Lower them with MV_RUNNER_MEM and
+# MV_RUNNER_CPUS if the host is shared with other work.
 name: metavault-ci
 services:
   runner:
     build: .
     image: metavault-ci-runner:2.338.2
     container_name: metavault-ci-1
+    command: ["run"]
     restart: unless-stopped
     environment:
       RUNNER_REPO: 0xm0w/metavault-oss
       RUNNER_NAME: metavault-ci-1
-    secrets:
-      - runner_token
     volumes:
-      - mv_state:/state
+      - mv_state:/state:ro
       - mv_work:/work
     tmpfs:
       - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 512
-    mem_limit: 6g
-    cpus: 4
+    mem_limit: ${MV_RUNNER_MEM:-4g}
+    cpus: ${MV_RUNNER_CPUS:-2}
 volumes:
   mv_state:
   mv_work:
-secrets:
-  runner_token:
-    file: ./runner-token.txt

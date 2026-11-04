@@ -16,15 +16,35 @@ The runner label is `metavault-ci`. The CI workflow requires
 ## One-time setup (on the PC with Docker)
 
 1. In GitHub: repo Settings > Actions > Runners > New self-hosted runner. Copy
-   the registration token (valid about one hour).
-2. In `ops/ci-runner`, save the token to `runner-token.txt` (git-ignored):
+   the registration token (single use, valid about one hour).
+2. In `ops/ci-runner`, save it to `runner-token.txt` (git-ignored):
    `Set-Content -NoNewline runner-token.txt '<token>'`
-3. `docker compose up -d --build`
-4. Check the runner shows Idle in the repo's Runners page.
-5. Delete `runner-token.txt`. The token is single-use. The runner keeps its own
-   credential in the `mv_state` volume.
+3. `docker compose build`
+4. `docker compose -f compose.yml -f compose.register.yml run --rm register`
+   This is a one-shot container. The token is mounted only into it. It stores
+   the runner credential in the `mv_state` volume and exits.
+5. Delete `runner-token.txt`. Restarts and recreates never need it.
+6. `docker compose up -d`
+7. Check the runner shows Idle in the repo's Runners page.
 
 To remove it: `docker compose down -v`, then remove the runner in GitHub.
+
+## Resource use
+
+The memory and CPU limits are ceilings (default 4g and 2 CPUs), not
+reservations. Change them with `MV_RUNNER_MEM` and `MV_RUNNER_CPUS` if the host
+is shared. Other runners on the host are not touched.
+
+## What this does and does not protect
+
+- The one-time token never exists in the long-running container, and the
+  workflows get no repository secrets.
+- The runner credential is stored in the `mv_state` volume and copied into the
+  runner directory at start. Job steps run as the same user as the runner, so
+  job code can read that credential. It lets a holder take jobs for this repo
+  only. This is why only your own pushes and same-repo PRs run here. Do not
+  run untrusted code on it. To rotate it: remove the runner in GitHub, then
+  repeat the setup.
 
 ## Notes
 
@@ -34,4 +54,5 @@ To remove it: `docker compose down -v`, then remove the runner in GitHub.
 - If the box is off, the Ubuntu job queues until it returns. Windows jobs stay on
   `windows-latest`.
 - The Ubuntu job needs `sshd` for one integration test. It is installed in the
-  image. It runs as a non-root user, so that test may skip. Check the test log.
+  image, and the workflow fails if that test is skipped, so required coverage
+  is not lost silently.

@@ -65,6 +65,14 @@ jobs:
       - name: Test
         run: npm run test
 
+      # The real-sshd integration test skips itself when sshd is missing. Fail
+      # instead of silently losing that coverage.
+      - name: Require the sshd integration test to run (Ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          npx vitest run packages/app/test/ssh-tunnel-sshd.integration.test.ts --reporter=json --outputFile=sshd-it.json
+          node -e "const r=require('./sshd-it.json'); if (r.numPassedTests < 1 || r.numPendingTests > 0 || r.numFailedTests > 0) { console.error('sshd integration test skipped or failed', r.numPassedTests, r.numPendingTests, r.numFailedTests); process.exit(1); }"
+
       - name: Coverage (Ubuntu only)
         if: matrix.os == 'ubuntu-latest'
         run: npm run test:coverage
