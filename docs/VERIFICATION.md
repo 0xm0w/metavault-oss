@@ -305,7 +305,7 @@ This is unreleased candidate evidence, not a production certification. Historica
 | Unit/coverage/build |547 passed /3 skipped on exact88c91c1, Windows and Ubuntu CI41716116234 | Live model tests skipped, no paid model calls |
 | Published working0.1.2 upgrade | PASS on final tested60f1db7; Windows41749962736 and41749961003: old artifact SHA, original password, exact wrapped key, alias and actual ciphertext decryption | Distinct from same-artifact reinstall; no0.1.0 compatibility claim |
 | Key identity and restore | Matching DB/key restore, unrelated/mixed key rejection, unchanged bytes, rejected buffer zeroing; final555 passed /3 skipped on Windows+Ubuntu41749962842 | Windows upgrade fingerprint/lock/reunlock passed; empty DB cannot authenticate pairing |
-| Main-base CodeQL | PASS CodeQL41749962861, actual analysis successful and private SARIF zero findings; PR102 closed NOT merged | PR105 removed continue-on-error; unavailable Code Scanning upload disabled, results privately retained and failclosed checked |
+| Main-base CodeQL | Initial PR analysis41749962861 had zero differential findings; final full-baseline analysis41755194499 passed after108 fixes; PR102/109 closed NOT merged | PR105 removed continue-on-error;108 disables diff-informed optimization; private SARIF zero findings required |
 
 Links: https://github.com/0xm0w/metavault-oss/actions/runs/41711642268 ,
 https://github.com/0xm0w/metavault-oss/actions/runs/41716116132 ,
@@ -339,3 +339,31 @@ changed untrusted angle-boundary escaping to global replacements and added
 regressions. The final actual analysis reports zero findings. This is defined
 query coverage, not proof of absence of all vulnerabilities. Remote work and
 packaged target PRF feasibility remain separate from this local validation.
+
+
+### Full-baseline correction after local merge
+
+A zero-result PR analysis is not proof that the full baseline is clear. Postmerge
+main645bda6 run41753200728 found two existing baseline findings hidden by
+PR changed-lines optimization: DOM-derived favicon URL and polynomial-time
+trailing-slash regex. PR108 adds strict bounded hostname validation, a linear
+suffix scan, adversarial URL/100k-slash regressions and
+`CODEQL_ACTION_DIFF_INFORMED_QUERIES=false` for future PR scans.
+
+Exact93da80d full-baseline CodeQL41755194499 explicitly skipped diff-informed
+analysis, completed queries and passed private SARIF with zero findings. CI
+41755194437 and both Windows41755194672/41755170778 passed all prior upgrade,
+verified IDE and uninstall gates. Individual107/108 merged into
+main13185d625a3359fc98205d0451d7bdc0b67fab04, tree
+7996d6c8f4341b933fade4f5304eb2213343051f identical to tested93da80d.
+Validation-only109 closed NOT merged. No release was made.
+
+- https://github.com/0xm0w/metavault-oss/actions/runs/41753200728 (baseline findings)
+- https://github.com/0xm0w/metavault-oss/actions/runs/41755194499 (full analysis, zero findings)
+- https://github.com/0xm0w/metavault-oss/actions/runs/41755194437 (CI)
+- https://github.com/0xm0w/metavault-oss/actions/runs/41755194672 (Windows)
+- https://github.com/0xm0w/metavault-oss/actions/runs/41755170778 (parallel Windows)
+
+This correction supersedes any earlier implication that differential PR zero
+findings established a clean full baseline. Query coverage remains bounded;
+zero results are not a formal absence-of-vulnerabilities guarantee.
