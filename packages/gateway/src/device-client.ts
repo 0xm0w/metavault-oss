@@ -265,66 +265,39 @@ const defaultIcaclsRun: IcaclsRun = (args) =>
 // ACL verification is SDDL-based and locale-proof: icacls /save writes the
 // security descriptor with trustee SIDs, never account names, so localized
 // or domain-qualified look-alike names cannot defeat the check.
-export function parseSddlAces(sddl: string): string[] {
-  const sids: string[] = [];
-  const daclStart = sddl.indexOf("D:");
-  if (daclStart === -1) return sids;
-  // DACL region only: a trailing SACL ("S:") contributes audit ACEs, not
-  // access trustees.
-  const saclStart = sddl.indexOf("S:", daclStart + 2);
-  const dacl = sddl.slice(daclStart, saclStart === -1 ? undefined : saclStart);
-  const aceRe = /\((?:[^;]*;){5}([^)]+)\)/g;
-  let match: RegExpExecArray | null;
-  while ((match = aceRe.exec(dacl)) !== null) {
-    sids.push((match[1] ?? "").toUpperCase());
-  }
-  return sids;
-}
+// Returns the trustee SID of every DACL access ACE on a path, uppercase.
+export type AclSidList = (path: string) => string[];
 
-// icacls /save writes well-known trustees as SDDL aliases (SY, BA, ...)
-// instead of S-1-5 SIDs. Normalize before comparing; an alias we do not
-// know is never treated as the owner.
-const SDDL_ALIAS_SIDS: Readonly<Record<string, string>> = {
-  SY: "S-1-5-18",
-  LS: "S-1-5-19",
-  NS: "S-1-5-20",
-  BA: "S-1-5-32-544",
-  BU: "S-1-5-32-545",
-  WD: "S-1-1-0",
-  AU: "S-1-5-11",
-  AN: "S-1-5-7",
-};
-
-export function normalizeSddlTrustee(trustee: string): string {
-  const upper = trustee.toUpperCase();
-  return SDDL_ALIAS_SIDS[upper] ?? upper;
-}
-
-export interface AclSidList {
-  (path: string): string[];
-}
-
+// Windows ACL verification: trustee SIDs come from PowerShell Get-Acl with
+// .NET SID translation, never from names, icacls text, or /save SDDL. SDDL
+// stringification maps some trustees to aliases that cannot be resolved back
+// to a fixed SID - e.g. "LA" (SDDL_LOCAL_ADMIN) is S-1-5-21-<machine>-500,
+// machine-relative, so no static alias table can identify it. Translation
+// returns the true trustee SID for any account; an unresolvable trustee
+// yields its raw value, which never equals the current user's SID, so the
+// check fails closed. If PowerShell itself is unavailable the listing
+// throws and the caller refuses to store credentials.
 export const defaultListAclSids: AclSidList = (path) => {
-  const tmp = join(tmpdir(), `mv-acl-${randomBytes(6).toString("hex")}.txt`);
-  try {
-    execFileSync("icacls", [path, "/save", tmp, "/C"], { encoding: "utf8" });
-    // icacls /save writes the descriptor file as UTF-16 on current
-    // Windows; accept either encoding, keyed on embedded NULs or a BOM.
-    const buf = readFileSync(tmp);
-    let content = buf.toString("utf8");
-    if (content.includes("\0")) content = buf.toString("utf16le");
-    content = content.replace(/^\uFEFF/, "");
-    // The SDDL line carries the DACL ("D:" + flags + "("); the file's
-    // first line is the path itself and must never match.
-    const sddlLine = content.split(/\r?\n/).find((line) => /D:[A-Z]{0,4}\(/.test(line)) ?? "";
-    return parseSddlAces(sddlLine);
-  } finally {
-    rmSync(tmp, { force: true });
-  }
+  const out = execFileSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$a = Get-Acl -LiteralPath $args[0]; " +
+        "$a.Access | ForEach-Object { " +
+        "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
+        "catch { $_.IdentityReference.Value } }",
+      path,
+    ],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  return out
+    .split(/\r?\n/)
+    .map((line) => line.trim().toUpperCase())
+    .filter((line) => line.length > 0);
 };
 
-// Raw SDDL for diagnostics on verification failure. Never contains
-// credential material: trustee SIDs and rights only.
 export function defaultReadAclSddl(path: string): string {
   const tmp = join(tmpdir(), `mv-acl-${randomBytes(6).toString("hex")}.txt`);
   try {
@@ -414,10 +387,10 @@ export function hardenOwnerOnly(
     run([path, "/inheritance:r"]);
     run([path, "/grant:r", `*${sid}:(F)`]);
     const listSids = opts?.listSids ?? defaultListAclSids;
-    const sids = listSids(path).map(normalizeSddlTrustee);
+    const sids = listSids(path);
     if (sids.length === 0 || !sids.every((entry) => entry === sid.toUpperCase())) {
       const rawSddl = (opts?.rawSddl ?? defaultReadAclSddl)(path);
-      throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL trustees: ${sids.join(", ") || "none"}; SDDL: ${rawSddl})`);
+      throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL trustee SIDs: ${sids.join(", ") || "none"}; SDDL: ${rawSddl})`);
     }
     return;
   }
@@ -490,7 +463,7 @@ export function isParentAclSafe(sids: readonly string[], userSid: string): boole
   if (sids.length === 0) return false;
   const owner = userSid.toUpperCase();
   return sids.every((sid) => {
-    const normalized = normalizeSddlTrustee(sid);
+    const normalized = sid.toUpperCase();
     return normalized === owner || ALLOWED_PARENT_SIDS.has(normalized);
   });
 }

@@ -14,8 +14,6 @@ import {
   defaultListAclSids,
   hardenOwnerOnly,
   isParentAclSafe,
-  normalizeSddlTrustee,
-  parseSddlAces,
   loadDeviceProfile,
   nextPollDelay,
   PairingError,
@@ -328,18 +326,12 @@ describe("device-client", () => {
     await new Promise<void>((resolve) => { prodGw.device.close(() => { resolve(); }); });
   }, 120_000);
 
-  it("verifies Windows ACLs from SDDL trustee SIDs, never names or exit codes", () => {
+  it("verifies Windows ACLs from trustee SIDs, never names or exit codes", () => {
     const sid = "S-1-5-21-1000-2000-3000-1001";
-    // SDDL parser: trustee SIDs only, locale-proof.
-    expect(parseSddlAces("D:AI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-21-1000-2000-3000-1001)")).toEqual([
-      "S-1-5-18",
-      sid,
-    ]);
-    // Well-known trustees may appear as SDDL aliases, and a trailing SACL
-    // contributes no access trustees.
-    expect(
-      parseSddlAces("D:AI(A;OICI;FA;;;SY)(A;OICI;FA;;;S-1-5-21-1000-2000-3000-1001)S:AI(AU;OICISA;LA;;;WD)"),
-    ).toEqual(["SY", sid]);
+    // Trustee SIDs are read via PowerShell SID translation in production
+    // (covered by the win32 integration tests below against a real runner);
+    // SDDL aliases like "LA" (machine-relative RID 500) can never be
+    // resolved by string parsing, so parsing SDDL is not the mechanism.
     // hardenOwnerOnly grants by SID (*SID syntax) and verifies the
     // effective ACL contains ONLY that SID; the runner's exit output is
     // never consulted.
@@ -399,14 +391,6 @@ describe("device-client", () => {
         "mvshim_x",
       );
     }).toThrow(/unrelated/);
-  });
-
-  it("normalizes well-known SDDL aliases to SIDs for comparison", () => {
-    expect(normalizeSddlTrustee("SY")).toBe("S-1-5-18");
-    expect(normalizeSddlTrustee("ba")).toBe("S-1-5-32-544");
-    expect(normalizeSddlTrustee("S-1-5-21-1000-2000-3000-1001")).toBe("S-1-5-21-1000-2000-3000-1001");
-    // Unknown aliases are never treated as the owner.
-    expect(normalizeSddlTrustee("LA")).toBe("LA");
   });
 
   it("accepts only owner + SYSTEM/Administrators on the credential parent", () => {
