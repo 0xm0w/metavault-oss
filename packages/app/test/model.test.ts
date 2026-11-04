@@ -909,7 +909,7 @@ describe("warden settings form state (Task 6)", () => {
     expect(projectWardenKeyStatus({ configured: true, last4: "1234", key: "canary" })).toBeNull();
     expect(projectWardenKeyStatus("nope")).toBeNull();
     expect(wardenKeyStatusText({ configured: false, last4: null })).toBe("Not configured");
-    expect(wardenKeyStatusText({ configured: true, last4: "1234" })).toBe("Configured \u2022\u2022\u2022\u20221234");
+    expect(wardenKeyStatusText({ configured: true, last4: "1234" })).toBe("Configured");
     expect(wardenKeyStatusText({ configured: true, last4: null })).toBe("Configured");
   });
 

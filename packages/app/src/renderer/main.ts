@@ -3832,11 +3832,15 @@ function renderPolicies(view: HTMLElement): void {
     for (const row of rows) {
       const observed = row.scopes.length === 0 ? "none" : row.scopes.join(", ");
       const ceilings = row.ceilings.length === 0 ? "—" : row.ceilings.map((entry) => `${entry.alias}: ${entry.ceiling}`).join(", ");
-      const standing = row.standingApprovals.length === 0 ? "—" : row.standingApprovals.map((approval) => `${approval.alias}: ${approval.scope}`).join(", ");
       const tr = el("tr", "");
       const statusCell = el("td", "");
       const registeredAgent = agentsData.find((agent) => agent.id === row.agentId);
       const isRevoked = registeredAgent?.revoked === true;
+      // Revoking cancels standing approvals, so a revoked agent never shows an
+      // active-looking grant; any leftover record is labelled as inactive.
+      const standing = isRevoked
+        ? (row.standingApprovals.length === 0 ? "None (cancelled on revoke)" : "None active (cancelled on revoke)")
+        : row.standingApprovals.length === 0 ? "—" : row.standingApprovals.map((approval) => `${approval.alias}: ${approval.scope}`).join(", ");
       const isBlocked = !isRevoked && sessionBlockedAgents.has(row.agentId);
       statusCell.append(
         isRevoked

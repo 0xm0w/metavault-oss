@@ -1370,7 +1370,7 @@ export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null
 
 export function wardenKeyStatusText(status: WardenKeyStatusLike): string {
   if (!status.configured) return "Not configured";
-  return status.last4 !== null && status.last4 !== "" ? `Configured \u2022\u2022\u2022\u2022${status.last4}` : "Configured";
+  return "Configured";
 }
 
 export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPatch {
