@@ -3,9 +3,12 @@
 // resistance, device-bound tokens, device ceilings, pairing handshake
 // (single-use codes, SAS transcript binding, revocation).
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { request as httpsRequest } from "node:https";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import type { TLSSocket } from "node:tls";
 import type { Server } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import { Effect, Layer } from "effect";
@@ -18,7 +21,9 @@ import {
   ensureVaultCa,
   generateRsaKeyPairPem,
   signLeafCertificate,
+  spkiFingerprintFromPublicKeyPem,
 } from "../../core/src/vault-ca.js";
+import { computePairingSas, PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/pairing.js";
 import { createVaultHttpServer } from "../../daemon/src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../../daemon/src/service.js";
 import { makeDaemonBackend } from "../src/daemon-backend.js";
@@ -44,6 +49,8 @@ const FakeConnector = Layer.succeed(Connector, {
 interface GwResponse {
   status: number;
   body: string;
+  exporter?: Buffer;
+  localPort?: number;
 }
 
 function gwRequest(options: {
@@ -56,6 +63,7 @@ function gwRequest(options: {
   ca?: string;
   agentToken?: string;
   tlsRejectUnauthorized?: boolean;
+  agent?: HttpsAgent;
 }): Promise<GwResponse> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
@@ -68,6 +76,7 @@ function gwRequest(options: {
         cert: options.cert,
         key: options.key,
         rejectUnauthorized: options.tlsRejectUnauthorized ?? false,
+        ...(options.agent !== undefined ? { agent: options.agent } : {}),
         headers: {
           "content-type": "application/json",
           ...(options.agentToken !== undefined ? { "x-metavault-agent-token": options.agentToken } : {}),
@@ -76,13 +85,48 @@ function gwRequest(options: {
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () => { resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }); });
+        res.on("end", () => {
+          const socket = res.socket as TLSSocket;
+          let exporter: Buffer | undefined;
+          try {
+            exporter = socket.exportKeyingMaterial(PAIRING_EXPORTER_LENGTH, PAIRING_EXPORTER_LABEL, Buffer.alloc(0));
+          } catch {
+            exporter = undefined;
+          }
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), ...(exporter !== undefined ? { exporter } : {}), ...(socket.localPort !== undefined ? { localPort: socket.localPort } : {}) });
+        });
       },
     );
     req.on("error", reject);
     if (options.body !== undefined) req.write(JSON.stringify(options.body));
     req.end();
   });
+}
+
+function stampHeaders(fields: {
+  deviceId: string;
+  method: string;
+  path: string;
+  bodyText?: string;
+  secret?: string;
+  transport?: string;
+  ts?: string;
+  nonce?: string;
+}): Record<string, string> {
+  const ts = fields.ts ?? Math.floor(Date.now() / 1000).toString();
+  const nonce = fields.nonce ?? randomBytes(16).toString("hex");
+  const transport = fields.transport ?? "loopback";
+  const bodyHash = createHash("sha256").update(fields.bodyText ?? "", "utf8").digest("hex");
+  const mac = createHmac("sha256", fields.secret ?? GATEWAY_SECRET)
+    .update([fields.deviceId, transport, fields.method, fields.path, bodyHash, ts, nonce].join("\n"), "utf8")
+    .digest("hex");
+  return {
+    "x-metavault-device-id": fields.deviceId,
+    "x-metavault-transport": transport,
+    "x-metavault-gateway-ts": ts,
+    "x-metavault-gateway-nonce": nonce,
+    "x-metavault-gateway-mac": mac,
+  };
 }
 
 interface Stack {
@@ -92,6 +136,7 @@ interface Stack {
   daemonBase: string;
   gatewayPort: number;
   ca: { keyPem: string; certPem: string };
+  gwCert: { keyPem: string; certPem: string };
   dir: string;
   cursorToken: string;
 }
@@ -138,6 +183,7 @@ async function makeStack(): Promise<Stack> {
     daemonBase,
     gatewayPort: gwAddress.port,
     ca: { keyPem: ca.keyPem, certPem: ca.certPem },
+    gwCert: { keyPem: gwCert.keyPem, certPem: gwCert.certPem },
     dir,
     cursorToken: cursor.token,
   };
@@ -502,28 +548,36 @@ describe("gateway", () => {
     expect(new Set(sasValues).size).toBe(2);
   }, 120_000);
 
-  it("refuses device stamps without a valid gateway secret at the daemon", async () => {
-    // A local process stamping forged device headers is rejected.
-    const forged = await fetch(`${stack.daemonBase}/request`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-metavault-device-id": "dev-forged",
-        "x-metavault-transport": "loopback",
-      },
-      body: JSON.stringify({ agentId: "cursor", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "x" }),
-    });
-    expect(forged.status).toBe(403);
-    const wrongSecret = await fetch(`${stack.daemonBase}/request`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-metavault-gateway-secret": "wrong",
-        "x-metavault-device-id": "dev-forged",
-      },
-      body: JSON.stringify({ agentId: "cursor", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "x" }),
-    });
-    expect(wrongSecret.status).toBe(403);
+  it("rejects forged, tampered, stale and replayed gateway stamps at the daemon", async () => {
+    const requestBody = JSON.stringify({ agentId: "cursor", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "x" });
+    const post = async (headers: Record<string, string>, body: string): Promise<number> =>
+      (await fetch(`${stack.daemonBase}/request`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body })).status;
+
+    // Device headers with no MAC at all: fail closed.
+    expect(await post({ "x-metavault-device-id": "dev-forged", "x-metavault-transport": "loopback" }, requestBody)).toBe(403);
+    // Legacy raw-secret header is not a stamp.
+    expect(await post({ "x-metavault-gateway-secret": GATEWAY_SECRET, "x-metavault-device-id": "dev-forged" }, requestBody)).toBe(403);
+    // MAC computed with the wrong secret.
+    expect(await post(stampHeaders({ deviceId: "dev-forged", method: "POST", path: "/request", bodyText: requestBody, secret: "wrong" }), requestBody)).toBe(403);
+    // Body tampered after stamping.
+    const valid = stampHeaders({ deviceId: "dev-forged", method: "POST", path: "/request", bodyText: requestBody });
+    expect(await post(valid, JSON.stringify({ agentId: "cursor", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.write", reason: "tampered" }))).toBe(403);
+    // Path tampered after stamping: MAC over /health replayed against
+    // /aliases is rejected.
+    const healthStamp = stampHeaders({ deviceId: "dev-forged", method: "GET", path: "/health" });
+    const tamperedPath = await fetch(`${stack.daemonBase}/aliases`, { headers: healthStamp });
+    expect(tamperedPath.status).toBe(403);
+    // Stale timestamp.
+    const stale = stampHeaders({ deviceId: "dev-forged", method: "POST", path: "/request", bodyText: requestBody, ts: String(Math.floor(Date.now() / 1000) - 600) });
+    expect(await post(stale, requestBody)).toBe(403);
+    // Replay: the same authentic stamp twice is rejected the second time.
+    // (GET /health is used as the positive control so only the stamp layer
+    // decides: the first pass proves the stamp itself is accepted.)
+    const replayStamp = stampHeaders({ deviceId: "dev-forged", method: "GET", path: "/health" });
+    const first = await fetch(`${stack.daemonBase}/health`, { headers: replayStamp });
+    const second = await fetch(`${stack.daemonBase}/health`, { headers: replayStamp });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(403);
     // Internal routes are not reachable with the daemon token or nothing.
     const internalNoAuth = await fetch(`${stack.daemonBase}/internal/device-status`, {
       method: "POST",
@@ -546,8 +600,7 @@ describe("gateway", () => {
     const res = await fetch(`${stack.daemonBase}/pending`, {
       headers: {
         "x-metavault-token": DAEMON_TOKEN,
-        "x-metavault-gateway-secret": GATEWAY_SECRET,
-        "x-metavault-device-id": "dev-anything",
+        ...stampHeaders({ deviceId: "dev-anything", method: "GET", path: "/pending" }),
       },
     });
     expect(res.status).toBe(401);
@@ -572,5 +625,227 @@ describe("gateway", () => {
     const remote = events.filter((e) => e.origin === "remote" && e.deviceId === device.deviceId);
     expect(remote.length).toBeGreaterThan(0);
     expect(remote[0]?.transport).toBe("loopback");
+  }, 120_000);
+
+  it("rejects requests on an already-open mTLS connection after revocation", async () => {
+    const device = await pairDevice(stack, "keepalive");
+    const agent = new HttpsAgent({
+      keepAlive: true,
+      maxSockets: 1,
+      ca: stack.ca.certPem,
+      cert: device.certPem,
+      key: device.keyPem,
+      rejectUnauthorized: true,
+    });
+    const first = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", agent });
+    expect(first.status).toBe(200);
+    const revoke = await fetch(`${stack.daemonBase}/devices/revoke`, {
+      method: "POST",
+      headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+      body: JSON.stringify({ target: device.deviceId }),
+    });
+    expect(revoke.status).toBe(200);
+    // Same kept-alive socket: revocation is re-checked per request, not
+    // only at the TLS handshake.
+    const second = await gwRequest({ port: stack.gatewayPort, method: "GET", path: "/health", agent });
+    expect(second.localPort).toBe(first.localPort);
+    expect(second.status).toBe(403);
+    agent.destroy();
+  }, 120_000);
+
+  it("caps pairing attempts globally against distributed code brute-force", async () => {
+    const backend = makeDaemonBackend(stack.daemonBase, GATEWAY_SECRET);
+    const gw2 = createGatewayServer({
+      caCertPem: stack.ca.certPem,
+      serverCertPem: stack.gwCert.certPem,
+      serverKeyPem: stack.gwCert.keyPem,
+      backend,
+      daemonBaseUrl: stack.daemonBase,
+      gatewaySecret: GATEWAY_SECRET,
+      transport: "loopback",
+      maxRequestsPerMinutePerDevice: 1000,
+      maxPairingAttemptsPerMinutePerAddress: 1000,
+      maxPairingAttemptsPerMinuteGlobal: 3,
+    });
+    await new Promise<void>((resolve) => { gw2.listen(0, "127.0.0.1", resolve); });
+    const address = gw2.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    const keys = generateRsaKeyPairPem();
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const res = await gwRequest({
+        port: address.port,
+        method: "POST",
+        path: "/pair/begin",
+        body: { code: "WRONGCODE", deviceName: "brute", platform: "linux", clientPublicKeyPem: keys.publicKeyPem, clientNonce: `n${String(i)}` },
+      });
+      statuses.push(res.status);
+    }
+    // First three reach the daemon and fail on the code; the global cap
+    // rejects the rest before any daemon work.
+    expect(statuses.slice(0, 3)).toEqual([403, 403, 403]);
+    expect(statuses.slice(3)).toEqual([429, 429]);
+    await new Promise<void>((resolve) => { gw2.close(() => { resolve(); }); });
+  }, 120_000);
+
+  it("keeps concurrent pairing sessions isolated per pairingId", async () => {
+    const mkSession = async (): Promise<{ pairingId: string; code: string }> => {
+      const res = await fetch(`${stack.daemonBase}/devices/pair`, {
+        method: "POST",
+        headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+        body: "{}",
+      });
+      return (await res.json()) as { pairingId: string; code: string };
+    };
+    const sessionA = await mkSession();
+    const keysA = generateRsaKeyPairPem();
+    const beginA = await gwRequest({
+      port: stack.gatewayPort, method: "POST", path: "/pair/begin",
+      body: { code: sessionA.code, deviceName: "conc-a", platform: "linux", clientPublicKeyPem: keysA.publicKeyPem, clientNonce: "conc-a-nonce" },
+    });
+    expect(beginA.status).toBe(200);
+    const sessionB = await mkSession();
+    const keysB = generateRsaKeyPairPem();
+    const beginB = await gwRequest({
+      port: stack.gatewayPort, method: "POST", path: "/pair/begin",
+      body: { code: sessionB.code, deviceName: "conc-b", platform: "linux", clientPublicKeyPem: keysB.publicKeyPem, clientNonce: "conc-b-nonce" },
+    });
+    expect(beginB.status).toBe(200);
+    // Confirming A while B is also pending must bind A's certificate to
+    // A's key, never to B's session material.
+    const confirmA = await fetch(`${stack.daemonBase}/devices/pairing/confirm`, {
+      method: "POST",
+      headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+      body: JSON.stringify({ pairingId: sessionA.pairingId }),
+    });
+    expect(confirmA.status).toBe(200);
+    const statusA = await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: { pairingId: sessionA.pairingId } });
+    const bodyA = JSON.parse(statusA.body) as { status: string; certificatePem?: string };
+    const certA = bodyA.certificatePem ?? "";
+    expect(bodyA.status).toBe("confirmed");
+    expect(certA).toContain("BEGIN CERTIFICATE");
+    // B is untouched by A's confirmation.
+    const statusB = await gwRequest({ port: stack.gatewayPort, method: "POST", path: "/pair/status", body: { pairingId: sessionB.pairingId } });
+    const bodyB = JSON.parse(statusB.body) as { status: string };
+    expect(bodyB.status).toBe("pending");
+    await fetch(`${stack.daemonBase}/devices/pairing/cancel`, {
+      method: "POST",
+      headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+      body: JSON.stringify({ pairingId: sessionB.pairingId }),
+    });
+    // A's cert works; it was issued for A's key only.
+    const health = await gwRequest({
+      port: stack.gatewayPort, method: "GET", path: "/health",
+      cert: certA, key: keysA.privateKeyPem,
+    });
+    expect(health.status).toBe(200);
+    const wrongKey = await gwRequest({
+      port: stack.gatewayPort, method: "GET", path: "/health",
+      cert: certA, key: keysB.privateKeyPem,
+    }).catch(() => ({ status: 0, body: "" }));
+    expect(wrongKey.status).not.toBe(200);
+  }, 120_000);
+
+  it("exposes a split-session MITM through mismatched SAS values", async () => {
+    // Direct session first: the SAS the client computes from its own TLS
+    // exporter must equal the SAS the vault shows on its screen. That
+    // equality is the comparison the pairing UX relies on.
+    const mkSession = async (): Promise<{ pairingId: string; code: string }> => {
+      const res = await fetch(`${stack.daemonBase}/devices/pair`, {
+        method: "POST",
+        headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+        body: "{}",
+      });
+      return (await res.json()) as { pairingId: string; code: string };
+    };
+    const directKeys = generateRsaKeyPairPem();
+    const directSession = await mkSession();
+    const directBegin = await gwRequest({
+      port: stack.gatewayPort, method: "POST", path: "/pair/begin",
+      body: { code: directSession.code, deviceName: "direct", platform: "linux", clientPublicKeyPem: directKeys.publicKeyPem, clientNonce: "direct-nonce" },
+    });
+    expect(directBegin.status).toBe(200);
+    const directInfo = JSON.parse(directBegin.body) as { serverNonce: string; serverCertFingerprint: string };
+    expect(directBegin.exporter).toBeDefined();
+    const sasDirect = computePairingSas({
+      exporterSecret: directBegin.exporter as Buffer,
+      serverCertFingerprint: directInfo.serverCertFingerprint,
+      clientPublicKeyFingerprint: spkiFingerprintFromPublicKeyPem(directKeys.publicKeyPem),
+      code: directSession.code,
+      serverNonce: directInfo.serverNonce,
+      clientNonce: "direct-nonce",
+    });
+    const viewDirect = await (await fetch(`${stack.daemonBase}/devices/pairing`, { headers: { "x-metavault-token": DAEMON_TOKEN } })).json() as { session: { pairingId: string; sas?: string } | null };
+    expect(viewDirect.session?.pairingId).toBe(directSession.pairingId);
+    expect(viewDirect.session?.sas).toBe(sasDirect);
+    await fetch(`${stack.daemonBase}/devices/pairing/cancel`, {
+      method: "POST",
+      headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+      body: JSON.stringify({ pairingId: directSession.pairingId }),
+    });
+
+    // Now an attacker relay that terminates the device TLS session with
+    // its own certificate and re-originates a second session to the real
+    // gateway, relaying /pair/begin verbatim.
+    const attackerDir = mkdtempSync(join(tmpdir(), "mv-attacker-"));
+    const attackerCa = ensureVaultCa(attackerDir);
+    const attackerCert = ensureGatewayCertificate(attackerDir, attackerCa);
+    const relay = createHttpsServer(
+      { cert: attackerCert.certPem, key: attackerCert.keyPem, minVersion: "TLSv1.3" },
+      (req, res) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          const upstream = httpsRequest(
+            { host: "127.0.0.1", port: stack.gatewayPort, method: "POST", path: "/pair/begin", rejectUnauthorized: false, headers: { "content-type": "application/json" } },
+            (up) => {
+              const upChunks: Buffer[] = [];
+              up.on("data", (c: Buffer) => upChunks.push(c));
+              up.on("end", () => {
+                res.writeHead(up.statusCode ?? 502, { "content-type": "application/json" });
+                res.end(Buffer.concat(upChunks));
+              });
+            },
+          );
+          upstream.on("error", () => { res.writeHead(502); res.end(); });
+          upstream.write(Buffer.concat(chunks));
+          upstream.end();
+        });
+      },
+    );
+    await new Promise<void>((resolve) => { relay.listen(0, "127.0.0.1", resolve); });
+    const relayAddress = relay.address();
+    if (relayAddress === null || typeof relayAddress === "string") throw new Error("no relay port");
+
+    const victimKeys = generateRsaKeyPairPem();
+    const victimSession = await mkSession();
+    const mitmBegin = await gwRequest({
+      port: relayAddress.port, method: "POST", path: "/pair/begin",
+      body: { code: victimSession.code, deviceName: "victim", platform: "linux", clientPublicKeyPem: victimKeys.publicKeyPem, clientNonce: "victim-nonce" },
+    });
+    expect(mitmBegin.status).toBe(200);
+    const mitmInfo = JSON.parse(mitmBegin.body) as { serverNonce: string; serverCertFingerprint: string };
+    const sasVictim = computePairingSas({
+      exporterSecret: mitmBegin.exporter as Buffer,
+      serverCertFingerprint: mitmInfo.serverCertFingerprint,
+      clientPublicKeyFingerprint: spkiFingerprintFromPublicKeyPem(victimKeys.publicKeyPem),
+      code: victimSession.code,
+      serverNonce: mitmInfo.serverNonce,
+      clientNonce: "victim-nonce",
+    });
+    const viewMitm = await (await fetch(`${stack.daemonBase}/devices/pairing`, { headers: { "x-metavault-token": DAEMON_TOKEN } })).json() as { session: { pairingId: string; sas?: string } | null };
+    expect(viewMitm.session?.pairingId).toBe(victimSession.pairingId);
+    // The vault screen and the victim screen show different codes: the
+    // exporter binds each SAS to its own TLS session, so the human
+    // comparison catches the relay before any certificate is issued.
+    expect(viewMitm.session?.sas).toBeDefined();
+    expect(viewMitm.session?.sas).not.toBe(sasVictim);
+    await fetch(`${stack.daemonBase}/devices/pairing/cancel`, {
+      method: "POST",
+      headers: { "x-metavault-token": DAEMON_TOKEN, "content-type": "application/json" },
+      body: JSON.stringify({ pairingId: victimSession.pairingId }),
+    });
+    await new Promise<void>((resolve) => { relay.close(() => { resolve(); }); });
+    rmSync(attackerDir, { recursive: true, force: true });
   }, 120_000);
 });

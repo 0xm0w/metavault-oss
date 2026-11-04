@@ -10,7 +10,7 @@
 // policies/audit/pending and everything not on the allowlist) are rejected
 // here with 403 before any daemon contact. A compromised remote machine
 // can therefore never approve its own requests or read vault metadata.
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { X509Certificate } from "node:crypto";
 import { type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
@@ -71,6 +71,9 @@ export interface GatewayOptions {
   readonly transport: string;
   readonly maxRequestsPerMinutePerDevice?: number;
   readonly maxPairingAttemptsPerMinutePerAddress?: number;
+  // Global cap on pairing attempts across all source addresses, so a
+  // distributed code brute-force cannot scale with address count.
+  readonly maxPairingAttemptsPerMinuteGlobal?: number;
 }
 
 interface RateBucket {
@@ -126,6 +129,7 @@ export function createGatewayServer(options: GatewayOptions): HttpsServer {
   const serverCertFingerprint = spkiFingerprintFromCert(serverCert);
   const deviceLimiter = makeRateLimiter(options.maxRequestsPerMinutePerDevice ?? 60);
   const pairingLimiter = makeRateLimiter(options.maxPairingAttemptsPerMinutePerAddress ?? 10);
+  const globalPairingLimiter = makeRateLimiter(options.maxPairingAttemptsPerMinuteGlobal ?? 30);
   const daemonBase = options.daemonBaseUrl.replace(/\/+$/, "");
 
   const server = createHttpsServer(
@@ -158,7 +162,7 @@ export function createGatewayServer(options: GatewayOptions): HttpsServer {
               });
               return;
             }
-            if (!pairingLimiter(remoteAddress)) {
+            if (!globalPairingLimiter("global") || !pairingLimiter(remoteAddress)) {
               json(res, 429, { error: { _tag: "RateLimited", message: "too many pairing attempts" } });
               return;
             }
@@ -267,11 +271,33 @@ export function createGatewayServer(options: GatewayOptions): HttpsServer {
           }
 
           const bodyText = method === "POST" ? await readBody(req) : undefined;
+          // Stamp the forwarded request: HMAC over device identity, method,
+          // path, exact body bytes, timestamp and a single-use nonce. The
+          // secret itself never crosses the wire, and the daemon rejects
+          // stale, replayed or tampered stamps.
+          const stampTs = Math.floor(Date.now() / 1000).toString();
+          const stampNonce = randomBytes(16).toString("hex");
+          const stampMac = createHmac("sha256", options.gatewaySecret)
+            .update(
+              [
+                device.deviceId,
+                options.transport,
+                method,
+                path,
+                createHash("sha256").update(bodyText ?? "", "utf8").digest("hex"),
+                stampTs,
+                stampNonce,
+              ].join("\n"),
+              "utf8",
+            )
+            .digest("hex");
           const headers: Record<string, string> = {
             "content-type": "application/json",
-            "x-metavault-gateway-secret": options.gatewaySecret,
             "x-metavault-device-id": device.deviceId,
             "x-metavault-transport": options.transport,
+            "x-metavault-gateway-ts": stampTs,
+            "x-metavault-gateway-nonce": stampNonce,
+            "x-metavault-gateway-mac": stampMac,
           };
           // Only the agent token header is forwarded from the client. The
           // daemon token, client PID and any device headers the client sent

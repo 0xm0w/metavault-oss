@@ -31,13 +31,11 @@ function isLoopback(host: string): boolean {
 // The gateway never binds a wildcard or plain LAN address. An overlay
 // address is a CGNAT (100.64.0.0/10) or the overlay ULA /48 address the
 // user configures explicitly after joining their own overlay network.
+// Loopback-only until an explicit transport/interface decision approves
+// anything broader: overlay ranges alone do not establish tailnet
+// membership, so accepting them would be unreviewed exposure.
 export function isAcceptableGatewayHost(host: string): boolean {
-  if (isLoopback(host)) return true;
-  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4 !== null) {
-    return Number(v4[1]) === 100 && Number(v4[2]) >= 64 && Number(v4[2]) <= 127;
-  }
-  return host.toLowerCase().startsWith("fd7a:115c:a1e0:");
+  return isLoopback(host);
 }
 
 export function main(): void {
@@ -49,7 +47,7 @@ export function main(): void {
   }
   const host = process.env["METAVAULT_GATEWAY_HOST"] ?? "127.0.0.1";
   if (!isAcceptableGatewayHost(host)) {
-    fail("gateway host must be loopback or an overlay (CGNAT/ULA) address");
+    fail("gateway host must be a loopback address");
   }
   const port = Number(process.env["METAVAULT_GATEWAY_PORT"] ?? "7078");
   if (!Number.isInteger(port) || port < 1024 || port > 65535) fail("invalid gateway port");

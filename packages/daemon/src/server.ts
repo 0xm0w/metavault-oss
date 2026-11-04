@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -123,6 +123,11 @@ export class HttpBodyError extends Error {
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
+  const { parsed } = await readBodyWithText(req);
+  return parsed;
+}
+
+async function readBodyWithText(req: IncomingMessage): Promise<{ parsed: unknown; text: string }> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -135,13 +140,99 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
   const text = Buffer.concat(chunks).toString("utf8");
   if (text === "") {
-    return {};
+    return { parsed: {}, text };
   }
   try {
-    return JSON.parse(text) as unknown;
+    return { parsed: JSON.parse(text) as unknown, text };
   } catch {
     throw new HttpBodyError(400, "malformed JSON body");
   }
+}
+
+// Gateway request stamps. The gateway proves it (and only it) forwarded a
+// request by MACing the device identity, method, path, exact body bytes, a
+// timestamp and a single-use nonce with the loopback-shared secret. The
+// daemon recomputes and compares in constant time, enforces a freshness
+// window and rejects replayed nonces. The stamp authenticates the gateway
+// as the transport; it is not independent proof of device intent beyond
+// what the gateway verified (mTLS certificate + revocation status).
+export const GATEWAY_STAMP_WINDOW_SECONDS = 120;
+const GATEWAY_STAMP_NONCE_CACHE_LIMIT = 50_000;
+const seenStampNonces = new Map<string, number>();
+
+export function computeGatewayStampMac(
+  secret: string,
+  fields: {
+    readonly deviceId: string;
+    readonly transport: string;
+    readonly method: string;
+    readonly path: string;
+    readonly bodyText: string;
+    readonly timestamp: string;
+    readonly nonce: string;
+  },
+): string {
+  const bodyHash = createHash("sha256").update(fields.bodyText, "utf8").digest("hex");
+  return createHmac("sha256", secret)
+    .update(
+      [
+        fields.deviceId,
+        fields.transport,
+        fields.method,
+        fields.path,
+        bodyHash,
+        fields.timestamp,
+        fields.nonce,
+      ].join("\n"),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+export function validateGatewayStamp(
+  secret: string,
+  fields: {
+    readonly mac: string;
+    readonly deviceId: string;
+    readonly transport: string;
+    readonly method: string;
+    readonly path: string;
+    readonly bodyText: string;
+    readonly timestamp: string;
+    readonly nonce: string;
+  },
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): boolean {
+  const ts = Number(fields.timestamp);
+  if (!Number.isInteger(ts) || Math.abs(nowSeconds - ts) > GATEWAY_STAMP_WINDOW_SECONDS) {
+    return false;
+  }
+  if (!/^[0-9a-f]{64}$/.test(fields.mac) || !/^[0-9a-f]{32}$/.test(fields.nonce)) {
+    return false;
+  }
+  const expected = computeGatewayStampMac(secret, fields);
+  const macOk = tokenMatches(expected, fields.mac);
+  if (!macOk) {
+    return false;
+  }
+  // Replay defense: a nonce may be used once within the freshness window.
+  for (const [nonce, expiry] of seenStampNonces) {
+    if (expiry <= nowSeconds) {
+      seenStampNonces.delete(nonce);
+    }
+  }
+  if (seenStampNonces.has(fields.nonce)) {
+    return false;
+  }
+  if (seenStampNonces.size >= GATEWAY_STAMP_NONCE_CACHE_LIMIT) {
+    return false;
+  }
+  seenStampNonces.set(fields.nonce, ts + GATEWAY_STAMP_WINDOW_SECONDS);
+  return true;
+}
+
+export function clearGatewayStampNoncesForTests(): void {
+  seenStampNonces.clear();
 }
 
 export function isSafeAlias(alias: string): boolean {
@@ -257,7 +348,9 @@ export interface VaultRequestOptions {
   // configured secret is server state; the provided one comes from the
   // caller. Device headers are honored only with a valid gateway secret.
   readonly gatewaySecret?: string;
-  readonly providedGatewaySecret?: string;
+  // Set only after the HTTP layer validated the gateway stamp MAC,
+  // freshness window and nonce. Never set from raw header presence.
+  readonly gatewayStampValid?: boolean;
   readonly deviceId?: string;
   readonly transport?: string;
   // Vault directory for remote-enable asset creation (CA, gateway cert).
@@ -342,16 +435,15 @@ export async function handleVaultRequest(
   // validate is rejected outright, so a local process can never spoof a
   // remote device and a remote caller can never pose as local.
   const gatewayConfigured = options?.gatewaySecret !== undefined && options.gatewaySecret !== "";
-  const gatewayValid =
-    gatewayConfigured && tokenMatches(options.gatewaySecret, options.providedGatewaySecret);
+  const gatewayValid = gatewayConfigured && options?.gatewayStampValid === true;
   const stampPresent =
-    options?.providedGatewaySecret !== undefined ||
+    options?.gatewayStampValid !== undefined ||
     options?.deviceId !== undefined ||
     options?.transport !== undefined;
   if (stampPresent && !gatewayValid) {
     return {
       status: 403,
-      body: { error: { _tag: "Forbidden", message: "device identity stamps require a valid gateway secret" } },
+      body: { error: { _tag: "Forbidden", message: "device identity stamps require a valid gateway stamp" } },
     };
   }
   const deviceCtx =
@@ -1025,12 +1117,14 @@ export async function handleVaultRequest(
       // The gateway never binds a wildcard or plain LAN address. Loopback
       // is always allowed; an overlay address (CGNAT 100.64.0.0/10 or the
       // overlay ULA range) requires the explicit overlay flag.
+      // Loopback-only until an explicit transport/interface decision
+      // approves anything broader. Overlay ranges alone do not establish
+      // tailnet membership, so they are not accepted here.
       const isLoopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
-      const isOverlay = isOverlayAddress(host);
-      if (!isLoopback && !isOverlay) {
+      if (!isLoopback) {
         return {
           status: 400,
-          body: { error: { _tag: "BadRequest", message: "gateway host must be loopback or an overlay (CGNAT/ULA) address" } },
+          body: { error: { _tag: "BadRequest", message: "gateway host must be a loopback address" } },
         };
       }
       patch.host = host;
@@ -1066,19 +1160,6 @@ export async function handleVaultRequest(
   return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
 }
 
-// Overlay addressing without any vendor coupling: Tailscale/WireGuard
-// overlays use the CGNAT range 100.64.0.0/10 or a ULA /48. Anything else
-// is loopback-only.
-export function isOverlayAddress(host: string): boolean {
-  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4 !== null) {
-    const first = Number(v4[1]);
-    const second = Number(v4[2]);
-    return first === 100 && second >= 64 && second <= 127;
-  }
-  return host.toLowerCase().startsWith("fd7a:115c:a1e0:");
-}
-
 export interface VaultHttpServerOptions {
   readonly daemonToken?: string;
   readonly gatewaySecret?: string;
@@ -1100,10 +1181,10 @@ export function createVaultHttpServer(
       try {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         const reqMethod = req.method ?? "GET";
-        const body: unknown =
-          reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT"
-            ? await readBody(req)
-            : undefined;
+        const hasBody = reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT";
+        const bodyResult = hasBody ? await readBodyWithText(req) : undefined;
+        const body: unknown = bodyResult?.parsed;
+        const bodyText = bodyResult?.text ?? "";
         const header = req.headers[DAEMON_TOKEN_HEADER];
         const authHeader = req.headers["authorization"];
         const bearerToken =
@@ -1119,21 +1200,58 @@ export function createVaultHttpServer(
         const rawClientPid = Array.isArray(clientPidHeader) ? clientPidHeader[0] : clientPidHeader;
         const parsedPid = rawClientPid !== undefined ? parseInt(rawClientPid, 10) : undefined;
         const clientPid = parsedPid !== undefined && !Number.isNaN(parsedPid) ? parsedPid : undefined;
-        const gwHeader = req.headers["x-metavault-gateway-secret"];
+        const stampMacHeader = req.headers["x-metavault-gateway-mac"];
+        const stampTsHeader = req.headers["x-metavault-gateway-ts"];
+        const stampNonceHeader = req.headers["x-metavault-gateway-nonce"];
         const devHeader = req.headers["x-metavault-device-id"];
         const transHeader = req.headers["x-metavault-transport"];
-        const providedGatewaySecret = Array.isArray(gwHeader) ? gwHeader[0] : gwHeader;
+        const legacyStampHeader = req.headers["x-metavault-gateway-secret"];
+        const stampMac = Array.isArray(stampMacHeader) ? stampMacHeader[0] : stampMacHeader;
+        const stampTs = Array.isArray(stampTsHeader) ? stampTsHeader[0] : stampTsHeader;
+        const stampNonce = Array.isArray(stampNonceHeader) ? stampNonceHeader[0] : stampNonceHeader;
         const deviceId = Array.isArray(devHeader) ? devHeader[0] : devHeader;
         const transport = Array.isArray(transHeader) ? transHeader[0] : transHeader;
+        const anyStampHeader =
+          stampMac !== undefined ||
+          stampTs !== undefined ||
+          stampNonce !== undefined ||
+          deviceId !== undefined ||
+          transport !== undefined ||
+          legacyStampHeader !== undefined;
+        const stampFields =
+          stampMac !== undefined &&
+          stampTs !== undefined &&
+          stampNonce !== undefined &&
+          deviceId !== undefined &&
+          transport !== undefined
+            ? {
+                mac: stampMac,
+                deviceId,
+                transport,
+                method: reqMethod,
+                path: url.pathname,
+                bodyText,
+                timestamp: stampTs,
+                nonce: stampNonce,
+              }
+            : undefined;
+        // Valid only when every stamp field is present, the MAC matches,
+        // the timestamp is fresh and the nonce is new. Anything else that
+        // carries stamp headers fails closed below.
+        const gatewayStampValid =
+          options.gatewaySecret !== undefined &&
+          options.gatewaySecret !== "" &&
+          stampFields !== undefined &&
+          validateGatewayStamp(options.gatewaySecret, stampFields);
         const out = await handleVaultRequest(service, req.method ?? "GET", url.pathname, body, {
           ...(clientPid !== undefined ? { clientPid } : {}),
           daemonToken: guardToken,
           ...(providedToken !== undefined ? { providedToken } : {}),
           ...(providedAgentToken !== undefined ? { providedAgentToken } : {}),
           ...(options.gatewaySecret !== undefined ? { gatewaySecret: options.gatewaySecret } : {}),
-          ...(providedGatewaySecret !== undefined ? { providedGatewaySecret } : {}),
-          ...(deviceId !== undefined ? { deviceId } : {}),
-          ...(transport !== undefined ? { transport } : {}),
+          ...(anyStampHeader ? { gatewayStampValid } : {}),
+          ...(gatewayStampValid && deviceId !== undefined ? { deviceId } : {}),
+          ...(gatewayStampValid && transport !== undefined ? { transport } : {}),
           ...(options.vaultDir !== undefined ? { vaultDir: options.vaultDir } : {}),
         });
         sendJson(res, out.status, out.body);
