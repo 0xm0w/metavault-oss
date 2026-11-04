@@ -609,6 +609,7 @@ export function projectAgentsResponse(raw: unknown): RegisteredAgent[] {
           id: item["id"],
           name: item["name"],
           token: item["token"],
+          ...(typeof item["tokenPrefix"] === "string" && item["tokenPrefix"] !== "" ? { tokenPrefix: item["tokenPrefix"] } : {}),
           createdAt: typeof item["createdAt"] === "string" ? item["createdAt"] : "",
           revoked: Boolean(item["revoked"]),
         });
@@ -1359,11 +1360,13 @@ export function projectWardenKeyStatus(raw: unknown): WardenKeyStatusLike | null
   // Strict shape: exactly configured. Any extra field (a key hint or a
   // key-shaped one) fails closed \u2014 status must never carry key material.
   for (const key of Object.keys(raw)) {
-    if (key !== "configured") return null;
+    if (key !== "configured" && key !== "verified") return null;
   }
   const configured = raw["configured"];
   if (typeof configured !== "boolean") return null;
-  return { configured };
+  const verified = raw["verified"];
+  if (verified !== undefined && typeof verified !== "boolean") return null;
+  return { configured, verified: verified === true };
 }
 
 export interface McpStatus {
@@ -1408,7 +1411,7 @@ export function mcpStatusText(status: McpStatus | null): string {
 
 export function wardenKeyStatusText(status: WardenKeyStatusLike): string {
   if (!status.configured) return "Not configured";
-  return "Configured";
+  return status.verified === true ? "Configured (connection test passed)" : "Configured (connection test not passed yet)";
 }
 
 export function buildWardenPatch(settings: WardenSettingsLike): WardenSettingsPatch {

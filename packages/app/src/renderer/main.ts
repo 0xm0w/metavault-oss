@@ -2860,6 +2860,10 @@ function renderSettings(view: HTMLElement): void {
           ? " The key typed in the field is not saved yet; this tested the saved key. Click Save key to replace it."
           : "";
       settingsMessage = { text: `${result.message}${draftNote}`, ok: result.ok };
+      // Refresh the saved-key status so it reflects this test's outcome.
+      const keyRaw = await window.metavault.wardenKeyStatus();
+      const projectedKey = projectWardenKeyStatus(keyRaw);
+      if (projectedKey !== null) wardenKeyStatusState = projectedKey;
      } finally {
       settingsPending = null;
      }
@@ -3542,7 +3546,7 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
   for (const agent of agentsData) {
     const row = el("div", "btns");
     row.append(el("span", "settings-copy", `${agent.name} (${agent.id})${agent.revoked ? " - inactive" : ""}`));
-    const generate = el("button", "action", agent.revoked ? "Generate token" : "Rotate token") as HTMLButtonElement;
+    const generate = el("button", "action", agent.revoked || agent.tokenPrefix === undefined || agent.tokenPrefix === "" ? "Generate token" : "Rotate token") as HTMLButtonElement;
     generate.type = "button"; generate.disabled = settingsBusy;
     generate.addEventListener("click", () => { if (agent.revoked || window.confirm(`Rotate ${agent.name}? Its old config will stop working, and pending requests and standing approvals will be cancelled.`)) createControl(agent.id, agent.name, !agent.revoked); });
     const revoke = el("button", "action btn-deny", "Revoke token") as HTMLButtonElement;
@@ -3723,7 +3727,7 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
 
 function renderWizardWardenStep(item: HTMLElement): void {
   const form = el("div", "wizard-key-form");
-  const status = el("p", "settings-copy", wardenKeyStatusState.configured ? "A Meta API key is saved. Test it before connecting your IDE." : "No key saved yet.");
+  const status = el("p", "settings-copy", !wardenKeyStatusState.configured ? "No key saved yet." : wardenKeyStatusState.verified === true ? "Meta API key saved and the connection test passed." : "A Meta API key is saved but its connection test has not passed yet. Test it before connecting your IDE.");
   form.append(status);
   const input = document.createElement("input");
   input.className = "vault-input";
@@ -3782,6 +3786,11 @@ function renderWizardWardenStep(item: HTMLElement): void {
           const result = wardenTestMessage(projected);
           wizardKeyMessage = { text: result.message, ok: result.ok };
         }
+        // The daemon records whether the saved key's last test passed;
+        // refresh so the step's Done state follows the test outcome.
+        const keyRaw = await window.metavault.wardenKeyStatus();
+        const projectedKey = projectWardenKeyStatus(keyRaw);
+        if (projectedKey !== null) wardenKeyStatusState = projectedKey;
       } catch (err) {
         wizardKeyMessage = { text: err instanceof Error ? err.message : "Warden test failed", ok: false };
       } finally {
@@ -3812,21 +3821,20 @@ function renderOnboardingWizard(view: HTMLElement): void {
   const hasAgent = agentsData.some((agent) => !agent.revoked);
   const hasCredential = aliases.length > 0;
   const copied = localStorage.getItem("metavault_wizard_copied") === "1";
-  const configCopied = localStorage.getItem("metavault_wizard_config_copied") === "1";
   const mcpReady = mcpStatus?.state === "ready";
   const steps: { title: string; body: string; done: boolean; action?: HTMLElement }[] = [
     {
-      title: "MetaVault is running",
+      title: mcpStatus?.state === "failed" ? "MCP launch check failed" : "MetaVault is running",
       body: mcpReady
         ? "The vault service is running locally, and the launch check confirmed the bundled MCP server answers with all 8 tools. Nothing leaves this computer."
         : mcpStatusText(mcpStatus),
       done: mcpReady,
     },
-    { title: "Add your Meta API key", body: "The warden vets each agent request from metadata only. Save the key here and test it before connecting an IDE.", done: wardenKeyStatusState.configured },
+    { title: "Add your Meta API key", body: "The warden vets each agent request from metadata only. Save the key here and test it before connecting an IDE.", done: wardenKeyStatusState.configured && wardenKeyStatusState.verified === true },
     {
       title: "Connect your IDE",
       body: "Pick your IDE below, generate its token, copy the config into your IDE's MCP config file, then fully restart the IDE. This is what makes the metavault tools appear; pasting the instructions into a chat alone does not connect anything.",
-      done: configCopied || hasAgent,
+      done: agentsData.some((agent) => auditEvents.some((event) => event.agentId === agent.id)),
     },
     { title: "Copy the agent instructions", body: "Paste them into your IDE agent. They already carry this installation's local connection details and no secrets.", done: copied },
     { title: "Let your IDE register", body: "The agent shows a 6-digit code. Approve the matching request here. That makes it a Verified agent. It gives it no access to anything.", done: hasAgent },

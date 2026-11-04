@@ -55,6 +55,7 @@ import {
   META_API_MODEL_OPTIONS,
   DEFAULT_META_API_MODEL_ID,
   isKnownMetaApiModel,
+  projectAgentsResponse,
   projectWardenKeyStatus,
   projectMcpStatus,
   mcpStatusText,
@@ -926,13 +927,30 @@ describe("warden settings form state (Task 6)", () => {
   });
 
   it("projects key status without ever exposing a key and formats status text", () => {
-    expect(projectWardenKeyStatus({ configured: true })).toEqual({ configured: true });
-    expect(projectWardenKeyStatus({ configured: false })).toEqual({ configured: false });
+    expect(projectWardenKeyStatus({ configured: true })).toEqual({ configured: true, verified: false });
+    expect(projectWardenKeyStatus({ configured: false })).toEqual({ configured: false, verified: false });
+    expect(projectWardenKeyStatus({ configured: true, verified: true })).toEqual({ configured: true, verified: true });
+    expect(projectWardenKeyStatus({ configured: true, verified: "yes" })).toBeNull();
     expect(projectWardenKeyStatus({ configured: true, last4: "1234" })).toBeNull();
     expect(projectWardenKeyStatus({ configured: true, key: "canary" })).toBeNull();
     expect(projectWardenKeyStatus("nope")).toBeNull();
     expect(wardenKeyStatusText({ configured: false })).toBe("Not configured");
-    expect(wardenKeyStatusText({ configured: true })).toBe("Configured");
+    expect(wardenKeyStatusText({ configured: true })).toBe("Configured (connection test not passed yet)");
+    expect(wardenKeyStatusText({ configured: true, verified: true })).toBe("Configured (connection test passed)");
+  });
+
+  it("projectAgentsResponse carries tokenPrefix only when present and non-empty", () => {
+    const agents = projectAgentsResponse({
+      agents: [
+        { id: "opencode", name: "OpenCode", token: "", tokenPrefix: "mvt_ab12", createdAt: "2026-11-05T00:00:00Z", revoked: false },
+        { id: "cursor", name: "Cursor", token: "", tokenPrefix: "", createdAt: "2026-11-05T00:00:00Z", revoked: true },
+        { id: "codex", name: "Codex", token: "", createdAt: "2026-11-05T00:00:00Z", revoked: true },
+      ],
+    });
+    expect(agents).toHaveLength(3);
+    expect(agents[0]?.tokenPrefix).toBe("mvt_ab12");
+    expect(agents[1]?.tokenPrefix).toBeUndefined();
+    expect(agents[2]?.tokenPrefix).toBeUndefined();
   });
 
   it("builds a trimmed patch and checks form completeness", () => {

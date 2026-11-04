@@ -57,7 +57,7 @@ import {
   type WardenKeyStatus,
   type WardenSettings,
 } from "../../core/src/settings.js";
-import { VaultStore, type AgentRecord, type DeviceAliasPolicy, type DeviceRecord } from "../../core/src/storage.js";
+import { VaultStore, type AgentRecord, type DeviceAliasPolicy, type DeviceRecord, type VaultStoreService } from "../../core/src/storage.js";
 import { ensureVaultCa, signLeafCertificate, spkiFingerprintFromPublicKeyPem, type VaultCa } from "../../core/src/vault-ca.js";
 import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 
@@ -242,6 +242,31 @@ export interface WardenTestResult {
 // Maps the fixed MarshalUnavailable/MarshalInvalidOutput messages raised by
 // the brain providers to a reason. Reads only the status code and fixed
 // phrases, so a message that happens to carry a secret cannot leak through.
+export const WARDEN_KEY_VERIFIED_MARK = "verified";
+
+// Persists whether the saved warden key's last completed Meta API test
+// passed, in non-secret credential metadata. Never stores key material.
+const markWardenKeyVerified = (
+  store: VaultStoreService,
+  verified: boolean,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const stored = yield* Effect.either(store.getCredential(WARDEN_KEY_ALIAS));
+    if (stored._tag === "Left" || stored.right === undefined) return;
+    const current = stored.right.publicMeta === WARDEN_KEY_VERIFIED_MARK;
+    if (current === verified) return;
+    yield* Effect.either(
+      store.addCredential(
+        WARDEN_KEY_ALIAS,
+        WARDEN_KEY_SCOPE,
+        stored.right.ciphertext,
+        "",
+        undefined,
+        verified ? WARDEN_KEY_VERIFIED_MARK : "",
+      ),
+    );
+  });
+
 export function classifyWardenFailure(message: string): WardenTestReason {
   if (message.includes("key not configured")) return "no_key";
   const http = /returned HTTP (\d{3})/.exec(message);
@@ -1512,22 +1537,22 @@ export function makeVaultServiceLive(
             }
             const blob = yield* withKey((key) => encryptSecret(key, trimmed));
             yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, blob, "");
-            return { configured: true } as const;
+            return { configured: true, verified: false } as const;
           }),
 
         deleteWardenKey: () =>
           Effect.gen(function* () {
             yield* store.deleteCredential(WARDEN_KEY_ALIAS);
-            return { configured: false } as const;
+            return { configured: false, verified: false } as const;
           }),
 
         wardenKeyStatus: () =>
           Effect.gen(function* () {
             const credential = yield* store.getCredential(WARDEN_KEY_ALIAS);
             if (credential === undefined) {
-              return { configured: false } as const;
+              return { configured: false, verified: false } as const;
             }
-            return { configured: true } as const;
+            return { configured: true, verified: credential.publicMeta === WARDEN_KEY_VERIFIED_MARK } as const;
           }),
 
         // One synthetic metadata-only marshal assessment through the
@@ -1548,6 +1573,9 @@ export function makeVaultServiceLive(
             const ended = yield* Clock.currentTimeMillis;
             const latencyMs = Math.max(0, ended - started);
             if (Exit.isSuccess(exit)) {
+              if (settings.provider === "meta-api" || settings.provider === "bft") {
+                yield* markWardenKeyVerified(store, true);
+              }
               return { ok: true, provider: settings.provider, model, latencyMs, detail: "ok" } as const;
             }
             const failure = Cause.failureOption(exit.cause);
@@ -1569,6 +1597,9 @@ export function makeVaultServiceLive(
                   reason = "key_unreadable";
                 }
               }
+            }
+            if (reason === "unauthorized") {
+              yield* markWardenKeyVerified(store, false);
             }
             return { ok: false, provider: settings.provider, model, latencyMs, detail: "warden unavailable", reason } as const;
           }),

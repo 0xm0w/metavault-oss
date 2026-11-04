@@ -93,6 +93,9 @@ export interface RegisteredAgent {
   readonly id: string;
   readonly name: string;
   readonly token: string;
+  // Non-secret prefix present only once a token has been generated;
+  // empty on a fresh, never-generated (seeded) agent.
+  readonly tokenPrefix?: string;
   readonly createdAt: string;
   readonly revoked: boolean;
 }
@@ -174,6 +177,8 @@ export interface WardenSettingsPatch {
 
 export interface WardenKeyStatusLike {
   readonly configured: boolean;
+  // True only when the saved key's last completed connection test passed.
+  readonly verified?: boolean;
 }
 
 export interface WardenTestResultLike {
