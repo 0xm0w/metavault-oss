@@ -3,6 +3,7 @@
 // resistance, device-bound tokens, device ceilings, pairing handshake
 // (single-use codes, SAS transcript binding, revocation).
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -243,6 +244,91 @@ describe("gateway", () => {
       ),
     );
     expect(agent?.revoked).toBe(true);
+  }, 120_000);
+
+  it("revocation is not retrospective: an in-flight request completes, the next one dies", async () => {
+    // Slow proxy in front of the real daemon delays POST /request so the
+    // device can be revoked while its already-authorized request is still
+    // executing. Documented semantics: revocation kills the session, bound
+    // tokens and every subsequent request, but does NOT retrospectively
+    // cancel an execution that passed authorization before the revoke.
+    const device = await pairDevice(stack, "in-flight");
+    const proxy = createHttpServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const forward = () => {
+          const upstream = httpRequest({
+            hostname: "127.0.0.1",
+            port: new URL(stack.daemonBase).port,
+            path: req.url,
+            method: req.method,
+            headers: { ...req.headers, host: `127.0.0.1:${new URL(stack.daemonBase).port}` },
+          }, (up) => {
+            res.writeHead(up.statusCode ?? 502, up.headers);
+            up.pipe(res);
+          });
+          upstream.on("error", () => { res.writeHead(502); res.end(); });
+          upstream.end(Buffer.concat(chunks));
+        };
+        if (req.method === "POST" && req.url === "/request") {
+          setTimeout(forward, 400);
+        } else {
+          forward();
+        }
+      });
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const proxyAddr = proxy.address();
+    if (proxyAddr === null || typeof proxyAddr === "string") throw new Error("no proxy port");
+    const slowGateway = createGatewayServer({
+      caCertPem: stack.ca.certPem,
+      serverCertPem: stack.gwCert.certPem,
+      serverKeyPem: stack.gwCert.keyPem,
+      backend: makeDaemonBackend(`http://127.0.0.1:${String(proxyAddr.port)}`, GATEWAY_SECRET),
+      daemonBaseUrl: `http://127.0.0.1:${String(proxyAddr.port)}`,
+      gatewaySecret: GATEWAY_SECRET,
+      transport: "loopback",
+      maxRequestsPerMinutePerDevice: 1000,
+      maxPairingAttemptsPerMinutePerAddress: 1000,
+      maxPairingAttemptsPerMinuteGlobal: 1000,
+    });
+    await new Promise<void>((resolve) => slowGateway.listen(0, "127.0.0.1", resolve));
+    const slowAddr = slowGateway.address();
+    if (slowAddr === null || typeof slowAddr === "string") throw new Error("no gateway port");
+
+    const inFlight = gwRequest({
+      port: slowAddr.port,
+      method: "POST",
+      path: "/request",
+      cert: device.certPem,
+      key: device.keyPem,
+      body: { agentId: "in-flight-agent", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "in-flight" },
+    });
+    // Give the request time to pass device auth and enter the delayed
+    // upstream leg, then revoke mid-flight.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await Effect.runPromise(
+      Effect.provide(
+        Effect.flatMap(VaultService, (svc) => svc.revokeDevice(device.deviceId)),
+        Layer.succeed(VaultService, stack.service),
+      ),
+    );
+    const completed = await inFlight;
+    // The in-flight request was authorized before revocation: it is NOT
+    // retrospectively cancelled (200 with the normal approval-flow body).
+    expect(completed.status).toBe(200);
+    // Every subsequent request from the revoked device is rejected.
+    const after = await gwRequest({
+      port: slowAddr.port,
+      method: "GET",
+      path: "/health",
+      cert: device.certPem,
+      key: device.keyPem,
+    });
+    expect(after.status).toBe(403);
+    await new Promise<void>((resolve) => { slowGateway.close(() => { resolve(); }); });
+    await new Promise<void>((resolve) => { proxy.close(() => { resolve(); }); });
   }, 120_000);
 
   it("rejects pairing with a wrong code and kills the session after repeated failures", async () => {
