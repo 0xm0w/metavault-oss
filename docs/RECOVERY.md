@@ -32,9 +32,17 @@ recovers a lost encryption key.
 A password that fails to unlock may be wrong, or the wrapped key may be damaged.
 Authenticated encryption cannot reliably distinguish these causes. A readable
 but unrelated key file can also unlock itself without being the key for the DB.
-This guard detects missing keys, not every wrong-key pairing. Do not claim that
-successful key-file unlock proves credential recovery. Verify a harmless known
-record after restoring a matching backup, before deleting the backup.
+On unlock, every stored credential ciphertext must authenticate with the readable
+key before the session accepts it. An unrelated readable key, damaged record,
+unknown schema or unreadable database fails closed with recovery guidance. This
+does not tell corruption from an unrelated key, and an empty DB has no encrypted
+record to prove a pairing. No records or key files are rewritten by the check.
+
+Settings shows a 24-hex SHA-256 key fingerprint while unlocked. Compare it with a
+privately recorded fingerprint after a restore; locking clears the display. It
+identifies the key, not its location, contents or backup age. It is not a password
+or recovery key. Verify a harmless known record after restoring a matching backup,
+before deleting the backup.
 
 ## Agent hash migration and rollback
 

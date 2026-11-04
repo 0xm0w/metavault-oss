@@ -120,6 +120,7 @@ let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "ski
 let localAuthStatus: LocalAuthStatusLike = { ...DEFAULT_LOCAL_AUTH_STATUS };
 let vaultLocked = false;
 let keyGate: KeyGate = null;
+let vaultKeyFingerprint: string | null = null;
 let initialAuthChecked = false;
 let lastUserActivityTs = Date.now();
 
@@ -2541,6 +2542,7 @@ function renderSettings(view: HTMLElement): void {
   const rows: readonly (readonly [string, string])[] = [
     ["Daemon URL", DAEMON_URL_DISPLAY],
     ["Vault path", mcpRuntime?.dbPath ?? VAULT_PATH_DISPLAY],
+    ["Key fingerprint", vaultKeyFingerprint ?? "Unlock to verify"],
     ["Version", `MetaVault OSS ${APP_VERSION_DISPLAY}`],
   ];
   for (const [label, value] of rows) {
@@ -3233,7 +3235,9 @@ function render(): void {
 async function refresh(): Promise<void> {
   try {
     mcpRuntime ??= await window.metavault.runtimePaths().catch(() => null);
-    keyGate = projectKeyGate(await window.metavault.keyStatus().catch(() => null));
+    const keyStatusRaw = await window.metavault.keyStatus().catch(() => null);
+    vaultKeyFingerprint = keyStatusRaw !== null && typeof keyStatusRaw === "object" && "fingerprint" in keyStatusRaw && typeof keyStatusRaw.fingerprint === "string" && /^[a-f0-9]{24}$/.test(keyStatusRaw.fingerprint) ? keyStatusRaw.fingerprint : null;
+    keyGate = projectKeyGate(keyStatusRaw);
     if (keyGate !== null) {
       newAgentTokens.clear();
       setDaemonStatus(true);
