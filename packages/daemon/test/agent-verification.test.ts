@@ -20,7 +20,7 @@ const FakeConnector = Layer.succeed(Connector, {
   execute: (_alias, scope) => Effect.succeed({ scope }),
 });
 
-async function makeTestDaemon() {
+async function makeTestDaemon(brain = BrainLowRisk) {
   const service = await Effect.runPromise(
     Effect.gen(function* () {
       const svc = yield* VaultService;
@@ -28,9 +28,10 @@ async function makeTestDaemon() {
       return svc;
     }).pipe(
       Effect.provide(makeVaultServiceLive({ masterKey: MASTER_KEY })),
-      Effect.provide(Layer.mergeAll(VaultStoreTest(MASTER_KEY), BrainLowRisk, FakeConnector)),
+      Effect.provide(Layer.mergeAll(VaultStoreTest(MASTER_KEY), brain, FakeConnector)),
     ),
   );
+  const cursor = await Effect.runPromise(service.registerAgent("cursor", "Cursor"));
   const server = createVaultHttpServer(service, { daemonToken: "test-daemon-token" });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -39,12 +40,13 @@ async function makeTestDaemon() {
   return {
     base,
     service,
+    cursorToken: cursor.token,
     close: () => new Promise<void>((resolve) => server.close(() => { resolve(); })),
   };
 }
 
 describe("Agent Token Verification & Anti-Spoofing", () => {
-  it("auto-provisions default agents with high-entropy tokens", async () => {
+  it("lists default agents without exposing stored bearer tokens", async () => {
     const daemon = await makeTestDaemon();
     try {
       // Agent tokens are served only via the token-guarded GET /agents route.
@@ -56,7 +58,8 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       const cursor = body.find((a) => a.id === "cursor");
       expect(cursor).toBeDefined();
       expect(cursor?.name).toBe("Cursor");
-      expect(cursor?.token).toMatch(/^ov_agent_cursor_[0-9a-f]{32}$/);
+      expect(cursor?.token).toBe("");
+      expect(daemon.cursorToken).toMatch(/^ov_agent_cursor_[0-9a-f]{32}$/);
       expect(cursor?.revoked).toBe(false);
     } finally {
       await daemon.close();
@@ -70,7 +73,8 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       const agents = await (await fetch(`${daemon.base}/agents`, {
         headers: { "x-metavault-token": "test-daemon-token" },
       })).json() as { id: string; token: string }[];
-      const cursorToken = agents.find((a) => a.id === "cursor")?.token ?? "";
+      const cursorToken = daemon.cursorToken;
+      expect(agents.every(a => a.token === "")).toBe(true);
 
       // Caller attempts to claim agentId: "attacker" or "spoofed" in the body, but presents Cursor's token
       const res = await fetch(`${daemon.base}/request`, {
@@ -136,7 +140,8 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       const agents = await (await fetch(`${daemon.base}/agents`, {
         headers: { "x-metavault-token": "test-daemon-token" },
       })).json() as { id: string; token: string }[];
-      const cursorToken = agents.find((a) => a.id === "cursor")?.token ?? "";
+      const cursorToken = daemon.cursorToken;
+      expect(agents.every(a => a.token === "")).toBe(true);
 
       await fetch(`${daemon.base}/request`, {
         method: "POST",
@@ -205,7 +210,8 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       const agents = await (await fetch(`${daemon.base}/agents`, {
         headers: { "x-metavault-token": "test-daemon-token" },
       })).json() as { id: string; token: string }[];
-      const cursorToken = agents.find((a) => a.id === "cursor")?.token ?? "";
+      const cursorToken = daemon.cursorToken;
+      expect(agents.every(a => a.token === "")).toBe(true);
 
       // Revoke cursor
       const revokeRes = await fetch(`${daemon.base}/agents/revoke`, {
@@ -239,4 +245,67 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
       await daemon.close();
     }
   });
+});
+
+describe("managed agent lifecycle", () => {
+  it("guards creation/rotation, validates identity, returns token once, rejects old token and cancels grants on rotation", async () => {
+    const daemon = await makeTestDaemon();
+    const call = (path: string, body: unknown, auth = true) => fetch(`${daemon.base}${path}`, {method:"POST",headers:{"content-type":"application/json",...(auth?{"x-metavault-token":"test-daemon-token"}:{})},body:JSON.stringify(body)});
+    try {
+      expect((await call("/agents",{id:"test",name:"Test"},false)).status).toBe(401);
+      expect((await call("/agents/rotate",{id:"cursor",name:"Cursor"},false)).status).toBe(401);
+      expect((await call("/agents",{id:"../bad",name:"Bad"})).status).toBe(400);
+      const created = await call("/agents",{id:"custom",name:"Custom"});
+      const first = await created.json() as {token:string}; expect(created.status).toBe(200); expect(first.token).toMatch(/^ov_agent_custom_[a-f0-9]{32}$/);
+      expect((await call("/agents",{id:"custom",name:"Custom"})).status).not.toBe(200);
+      const request = (token:string) => fetch(`${daemon.base}/request`,{method:"POST",headers:{"content-type":"application/json","x-metavault-agent-token":token},body:JSON.stringify({agentId:"spoof",ide:"Test",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"test"})});
+      const pending = await (await request(first.token)).json() as {grantId:string};
+      const rotated = await (await call("/agents/rotate",{id:"custom",name:"Custom"})).json() as {token:string};
+      expect(rotated.token).not.toBe(first.token);
+      expect((await request(first.token)).status).toBe(401);
+      expect((await call("/approve",{grantId:pending.grantId})).status).not.toBe(200);
+      expect((await request(rotated.token)).status).toBe(200);
+      await call("/agents/revoke",{target:"custom"});
+      expect((await request(rotated.token)).status).toBe(403);
+      const recovered = await (await call("/agents/rotate",{id:"custom",name:"Custom"})).json() as {token:string};
+      const recoveredRequest = await request(recovered.token); expect(recoveredRequest.status).toBe(200);
+      expect((await recoveredRequest.json() as {status:string}).status).toBe("awaiting-approval");
+      const listed = await (await fetch(`${daemon.base}/agents`,{headers:{"x-metavault-token":"test-daemon-token"}})).text();
+      expect(listed).not.toContain(first.token); expect(listed).not.toContain(rotated.token); expect(listed).not.toContain(recovered.token);
+    } finally {await daemon.close();}
+  });
+});
+
+it("rotation removes a previously approved standing grant", async () => {
+  const daemon = await makeTestDaemon();
+  const auth = {"content-type":"application/json","x-metavault-token":"test-daemon-token"};
+  const request = (token:string) => fetch(`${daemon.base}/request`, {method:"POST", headers:{"content-type":"application/json","x-metavault-agent-token":token}, body:JSON.stringify({agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"read"})});
+  try {
+    const first = await (await request(daemon.cursorToken)).json() as {grantId:string};
+    expect((await fetch(`${daemon.base}/approve-always`, {method:"POST",headers:auth,body:JSON.stringify({grantId:first.grantId})})).status).toBe(200);
+    const before = await (await fetch(`${daemon.base}/policies`)).json() as {standingApprovals:unknown[]};
+    expect(before.standingApprovals).toHaveLength(1);
+    const rotated = await (await fetch(`${daemon.base}/agents/rotate`,{method:"POST",headers:auth,body:JSON.stringify({id:"cursor",name:"Cursor"})})).json() as {token:string};
+    const after = await (await fetch(`${daemon.base}/policies`)).json() as {standingApprovals:unknown[]};
+    expect(after.standingApprovals).toHaveLength(0);
+    expect((await (await request(rotated.token)).json() as {status:string}).status).toBe("awaiting-approval");
+  } finally {await daemon.close();}
+});
+
+it("denies a request suspended in warden assessment when its token rotates", async () => {
+  let begin: (()=>void) | undefined; let release: (()=>void) | undefined;
+  const started = new Promise<void>(resolve=>{begin=resolve;});
+  const gate = new Promise<void>(resolve=>{release=resolve;});
+  const slow = Layer.succeed(Brain,{assess:()=>Effect.promise(async()=>{begin?.();await gate;return {risk:"low" as const,recommendedScope:"charges.read",requireApproval:true,explanation:"test"};})});
+  const daemon = await makeTestDaemon(slow);
+  try {
+    const req = fetch(`${daemon.base}/request`,{method:"POST",headers:{"content-type":"application/json","x-metavault-agent-token":daemon.cursorToken},body:JSON.stringify({agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"test"})});
+    await started;
+    await fetch(`${daemon.base}/agents/rotate`,{method:"POST",headers:{"content-type":"application/json","x-metavault-token":"test-daemon-token"},body:JSON.stringify({id:"cursor",name:"Cursor"})});
+    release?.();
+    expect((await (await req).json() as {status:string}).status).toBe("denied");
+    expect(await Effect.runPromise(daemon.service.listPendingApprovals())).toHaveLength(0);
+    const stale = await Effect.runPromise(daemon.service.requestCapability({agentId:"cursor",ide:"Cursor",tool:"http",alias:"stripe",requestedScope:"charges.read",reason:"test",verified:true},daemon.cursorToken));
+    expect(stale.status).toBe("denied");
+  } finally {release?.();await daemon.close();}
 });

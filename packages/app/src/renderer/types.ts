@@ -94,7 +94,7 @@ export interface RegisteredAgent {
 
 // Agent rows carried by the open GET /policies route: the daemon strips
 // bearer tokens there, so this shape has no token field. Full records
-// (with token) come only from the token-guarded GET /agents route.
+// (with token) come only from token-guarded creation/rotation responses.
 export interface PolicyAgent {
   readonly id: string;
   readonly name: string;
@@ -270,6 +270,8 @@ export interface UpdaterStatusLike {
 
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
+  readonly registerAgent: (id: string, name: string, rotate: boolean) => Promise<unknown>;
+  readonly revokeAgent: (id: string) => Promise<unknown>;
   readonly runtimePaths: () => Promise<{ command: string; args: string[]; env: Record<string, string>; dbPath: string }>;
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
   readonly approve: (grantId: string) => Promise<unknown>;

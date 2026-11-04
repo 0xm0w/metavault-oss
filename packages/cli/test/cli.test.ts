@@ -552,3 +552,24 @@ OPENAI_API_KEY=sk-proj-import-openai-888
     expect(capturedEnv["OPENAI_API_KEY"]).toBe("sk-proj-import-openai-888");
   });
 });
+
+describe("agent token CLI lifecycle", () => {
+  it("requires a new private file and never prints the minted token", async () => {
+    const path = join(workDir, "agent-token.txt");
+    const c = capture({daemonToken: DAEMON_TOKEN});
+    const missing = await runCli(["agents","add","cli-test"], c.deps);
+    expect(missing).not.toBe(0);
+    const created = await runCli(["agents","add","cli-test","--out",path], c.deps);
+    expect(created).toBe(0);
+    const token = readFileSync(path,"utf8").trim();
+    expect(token).toMatch(/^ov_agent_cli-test_[a-f0-9]{32}$/);
+    expect(c.out()+c.err()).not.toContain(token);
+    const before = daemonCalls;
+    expect(await runCli(["agents","rotate","cli-test","--out",path],c.deps)).not.toBe(0);
+    expect(daemonCalls).toBe(before); // don't rotate if the destination is unusable
+    const listed = capture({daemonToken:DAEMON_TOKEN});
+    expect(await runCli(["agents","list"],listed.deps)).toBe(0);
+    expect(listed.out()).not.toContain(token);
+    expect(await runCli(["agents","revoke","cli-test"],c.deps)).toBe(0);
+  });
+});

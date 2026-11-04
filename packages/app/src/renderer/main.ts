@@ -98,6 +98,7 @@ let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let agentsData: RegisteredAgent[] = [];
+const newAgentTokens = new Map<string, string>();
 let mcpRuntime: { command: string; args: string[]; env: Record<string, string>; dbPath: string } | null = null;
 let agentSecuritySettings: AgentSecuritySettingsLike = { strictMode: false, verifyCallerProcess: false };
 let securityPosture: SecurityPostureReportLike | null = null;
@@ -2581,13 +2582,56 @@ function renderSettings(view: HTMLElement): void {
   }
   agentSection.append(tabsRow);
 
+  const management = el("div", "agent-skill-box");
+  management.append(el("p", "settings-copy", "Tokens are shown only when generated. Rotate to replace an existing IDE token, then update that IDE config. Rotation cancels pending requests and standing approvals. Existing configs keep working after migration until you rotate them."));
+  const createControl = (id: string, name: string, rotate: boolean): void => {
+    const action = () => { void runSettingsAction(async () => {
+      const raw = await window.metavault.registerAgent(id, name, rotate);
+      const minted = projectAgentsResponse([raw])[0];
+      if (minted === undefined || minted.token === "") throw new Error("No token returned");
+      newAgentTokens.set(id, minted.token);
+      const listed = await window.metavault.agents();
+      agentsData = projectAgentsResponse(listed);
+
+      settingsMessage = { text: "Token generated. Copy the config now; it cannot be shown again after this app closes.", ok: true };
+    }); };
+    if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to manage agent", action); else action();
+  };
+  for (const agent of agentsData) {
+    const row = el("div", "btns");
+    row.append(el("span", "settings-copy", `${agent.name} (${agent.id})${agent.revoked ? " - inactive" : ""}`));
+    const generate = el("button", "action", agent.revoked ? "Generate token" : "Rotate token") as HTMLButtonElement;
+    generate.type = "button"; generate.disabled = settingsBusy;
+    generate.addEventListener("click", () => { if (agent.revoked || window.confirm(`Rotate ${agent.name}? Its old config will stop working, and pending requests and standing approvals will be cancelled.`)) createControl(agent.id, agent.name, !agent.revoked); });
+    const revoke = el("button", "action btn-deny", "Revoke token") as HTMLButtonElement;
+    revoke.type = "button"; revoke.disabled = settingsBusy || agent.revoked;
+    revoke.addEventListener("click", () => {
+      if (!window.confirm(`Revoke ${agent.name}? Its token, pending requests and standing approvals will stop working.`)) return;
+      const action = () => { void runSettingsAction(async () => { await window.metavault.revokeAgent(agent.id); newAgentTokens.delete(agent.id); agentsData = projectAgentsResponse(await window.metavault.agents()); }); };
+      if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to revoke agent", action); else action();
+    });
+    row.append(generate, revoke); management.append(row);
+  }
+  const customId = document.createElement("input"); customId.placeholder = "Custom agent id (lowercase letters, digits, - or _)"; customId.className = "vault-input"; customId.maxLength = 64;
+  const customName = document.createElement("input"); customName.placeholder = "Custom agent name"; customName.className = "vault-input"; customName.maxLength = 100;
+  const addAgent = el("button", "action", "Add custom agent") as HTMLButtonElement; addAgent.type = "button"; addAgent.disabled = settingsBusy;
+  addAgent.addEventListener("click", () => { createControl(customId.value.trim(), customName.value.trim(), false); });
+  management.append(customId, customName, addAgent);
+  for (const [id, token] of newAgentTokens) {
+    if (["cursor", "claude-code", "vscode", "codex", "opencode"].includes(id)) continue;
+    const once = el("pre", "", `${id}: ${token}`);
+    const copy = el("button", "action", `Copy ${id} token`) as HTMLButtonElement; copy.type = "button";
+    copy.addEventListener("click", () => { void navigator.clipboard.writeText(token); });
+    management.append(once, copy);
+  }
+  agentSection.append(management);
   const codeBox = el("div", "agent-code-block");
   let codeSnippet = "";
   let configPath = "";
 
   const findAgentToken = (id: string): string => {
     const found = agentsData.find((a) => a.id === id);
-    return found?.token ?? "<token-generated-on-start>";
+    return (newAgentTokens.get(id) ?? found?.token) || "<generate-or-rotate-token-in-app>";
   };
 
   if (activeAgentTab === "claude") {
@@ -2682,6 +2726,7 @@ function renderSettings(view: HTMLElement): void {
               ...mcpRuntime?.env,
               METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
               METAVAULT_AGENT_ID: "opencode",
+              METAVAULT_AGENT_TOKEN: findAgentToken("opencode"),
               METAVAULT_IDE: "OpenCode",
             },
           },
@@ -3190,6 +3235,7 @@ async function refresh(): Promise<void> {
     mcpRuntime ??= await window.metavault.runtimePaths().catch(() => null);
     keyGate = projectKeyGate(await window.metavault.keyStatus().catch(() => null));
     if (keyGate !== null) {
+      newAgentTokens.clear();
       setDaemonStatus(true);
       render();
       return;

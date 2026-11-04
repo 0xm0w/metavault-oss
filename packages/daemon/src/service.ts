@@ -218,6 +218,7 @@ export interface VaultServiceService {
   readonly setupVault: (passphrase: string) => Effect.Effect<SetupResult | "not-supported", StorageError>;
   readonly requestCapability: (
     req: CapabilityRequest,
+    agentToken?: string,
   ) => Effect.Effect<CapabilityResult, StorageError>;
   readonly approve: (
     grantId: string,
@@ -240,7 +241,7 @@ export interface VaultServiceService {
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
-  readonly registerAgent: (id: string, name: string) => Effect.Effect<AgentRecord, StorageError>;
+  readonly registerAgent: (id: string, name: string, rotate?: boolean) => Effect.Effect<AgentRecord, StorageError>;
   readonly revokeAgentToken: (id: string) => Effect.Effect<void, StorageError>;
   readonly getAgentSecuritySettings: () => Effect.Effect<AgentSecuritySettings, StorageError>;
   readonly updateAgentSecuritySettings: (
@@ -343,6 +344,8 @@ export function makeVaultServiceLive(
               : new StorageError({ message: "key operation failed", operation: "crypto" }),
         });
       const registry = yield* makeGrantRegistry();
+      const agentEpoch = new Map<string, number>();
+      const agentManagement = yield* Effect.makeSemaphore(1);
       const sleepers = yield* Ref.make(new Map<string, Fiber.Fiber<void, StorageError>>());
       const aliases = yield* Ref.make(new Set<string>());
       // Standing approvals start from config and grow at runtime when the
@@ -537,6 +540,7 @@ export function makeVaultServiceLive(
           yield* forgetGrantAudit(grantId);
           yield* interruptSleeper(grantId);
           const grantReq = consumed.request;
+          const epoch = agentEpoch.get(grantReq.agentId) ?? 0;
           yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "approved", auditDetail, false, undefined, grantAuditExtras(auditCtx, "human"));
           const credential = yield* store.getCredential(grantReq.alias);
           if (credential === undefined) {
@@ -544,6 +548,7 @@ export function makeVaultServiceLive(
               new StorageError({ message: "credential no longer exists", operation: "getCredential" }),
             );
           }
+          if ((agentEpoch.get(grantReq.agentId) ?? 0) !== epoch) return yield* Effect.fail(new GrantRevoked({grantId}));
           const execExit = yield* Effect.exit(executeGrant(grantReq, consumed.allowedScope, credential.ciphertext));
           if (Exit.isFailure(execExit)) {
             yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "denied", "connector-failed", false, undefined, grantAuditExtras(auditCtx, "human"));
@@ -783,8 +788,13 @@ export function makeVaultServiceLive(
             catch: () => new StorageError({ message: "vault setup failed", operation: "setup" }),
           }),
 
-        requestCapability: (req) =>
+        requestCapability: (req, agentToken) =>
           Effect.gen(function* () {
+            const epoch = agentEpoch.get(req.agentId) ?? 0;
+            if (agentToken !== undefined) {
+              const current = yield* store.getAgentByToken(agentToken);
+              if (current === undefined || current.revoked || current.id !== req.agentId) return { status: "denied", reason: "agent-credentials-changed" } as const;
+            }
             const now = yield* Clock.currentTimeMillis;
             const storedCredential = yield* store.getCredential(req.alias);
             const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;
@@ -938,6 +948,7 @@ export function makeVaultServiceLive(
               return { status: "denied", reason: result.reason } as const;
             }
             const allowedScope = result.allowedScope;
+            if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) return { status: "denied", reason: "agent-credentials-changed" } as const;
 
             // Record successful capability validation in tracker
             yield* Ref.update(agentVelocities, (map) => {
@@ -950,6 +961,7 @@ export function makeVaultServiceLive(
               const grantId = yield* Effect.sync(() => randomUUID());
               const grant = createGrant(grantId, req, allowedScope, now, grantTtlMs);
               yield* registry.register(grant);
+              if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) { yield* registry.markDenied(grantId); return {status:"denied",reason:"agent-credentials-changed"} as const; }
               yield* Ref.update(decisions, (map) => {
                 const next = new Map(map);
                 next.set(grantId, decision);
@@ -965,6 +977,7 @@ export function makeVaultServiceLive(
             }
 
             yield* audit(req.agentId, req.alias, allowedScope, "approved", "auto-approved by policy", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
+            if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) return { status: "denied", reason: "agent-credentials-changed" } as const;
             const exit = yield* Effect.exit(executeGrant(req, allowedScope, credential.ciphertext));
             if (Exit.isFailure(exit)) {
               yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource });
@@ -1009,7 +1022,9 @@ export function makeVaultServiceLive(
             // connector call fails) in between leaves no standing approval
             // behind for an execution that never happened.
             const auditCtx = (yield* Ref.get(grantAudit)).get(grantId);
+            const epoch = agentEpoch.get(grant.request.agentId) ?? 0;
             const executed = yield* consumeAndExecute(grantId, "approved by human (always allow)");
+            if ((agentEpoch.get(grant.request.agentId) ?? 0) !== epoch) return executed;
             yield* Ref.update(standing, (list) => {
               const exists = list.some(
                 (entry) =>
@@ -1300,20 +1315,31 @@ export function makeVaultServiceLive(
 
         listAgents: () => store.listAgents(),
         getAgentByToken: (token) => store.getAgentByToken(token),
-        registerAgent: (id, name) =>
+        registerAgent: (id, name, rotate = false) =>
           Effect.gen(function* () {
+            const existing = yield* store.getAgent(id);
+            if (existing !== undefined && !existing.revoked && !rotate) return yield* Effect.fail(new StorageError({ message: "agent already exists; rotate explicitly", operation: "registerAgent" }));
+            if (rotate && existing === undefined) return yield* Effect.fail(new StorageError({ message: "agent not found", operation: "registerAgent" }));
+            agentEpoch.set(id, (agentEpoch.get(id) ?? 0) + 1);
+            const affected = yield* registry.invalidatePendingForAgent(id);
+            for (const grant of affected) { yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
+            yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== id));
             const token = `ov_agent_${id.replace(/[^a-zA-Z0-9_-]/g, "")}_${randomBytes(16).toString("hex")}`;
             yield* store.addAgent(id, name, token);
             const created = yield* store.getAgent(id);
             if (created === undefined) {
               return yield* Effect.fail(new StorageError({ message: "failed to create agent", operation: "registerAgent" }));
             }
-            return created;
-          }),
+            return { ...created, token };
+          }).pipe(agentManagement.withPermits(1)),
         revokeAgentToken: (id) =>
           Effect.gen(function* () {
             yield* store.revokeAgent(id);
-          }),
+            agentEpoch.set(id, (agentEpoch.get(id) ?? 0) + 1);
+            const affected = yield* registry.invalidatePendingForAgent(id);
+            for (const grant of affected) { yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
+            yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== id));
+          }).pipe(agentManagement.withPermits(1)),
 
         getLocalAuthStatus: () =>
           Effect.gen(function* () {

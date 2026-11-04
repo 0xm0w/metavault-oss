@@ -37,6 +37,8 @@ const api: VaultApi = {
   pending: () => invoke("GET", "/pending"),
   policies: () => invoke("GET", "/policies"),
   agents: () => invoke("GET", "/agents"),
+  registerAgent: (id: string, name: string, rotate: boolean) => invoke("POST", rotate ? "/agents/rotate" : "/agents", { id, name }),
+  revokeAgent: (id: string) => invoke("POST", "/agents/revoke", { target: id }),
   getSecurityPosture: () => invoke("GET", "/security/posture"),
   addCredential: (alias: string, scope: string, secret: string, website?: string, enrollmentId?: string) =>
     invoke("POST", "/credentials", {
