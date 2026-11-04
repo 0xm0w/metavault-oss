@@ -174,7 +174,6 @@ export interface WardenSettingsPatch {
 
 export interface WardenKeyStatusLike {
   readonly configured: boolean;
-  readonly last4: string | null;
 }
 
 export interface WardenTestResultLike {

@@ -1512,28 +1512,22 @@ export function makeVaultServiceLive(
             }
             const blob = yield* withKey((key) => encryptSecret(key, trimmed));
             yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, blob, "");
-            return { configured: true, last4: trimmed.slice(-4) } as const;
+            return { configured: true } as const;
           }),
 
         deleteWardenKey: () =>
           Effect.gen(function* () {
             yield* store.deleteCredential(WARDEN_KEY_ALIAS);
-            return { configured: false, last4: null } as const;
+            return { configured: false } as const;
           }),
 
         wardenKeyStatus: () =>
           Effect.gen(function* () {
             const credential = yield* store.getCredential(WARDEN_KEY_ALIAS);
             if (credential === undefined) {
-              return { configured: false, last4: null } as const;
+              return { configured: false } as const;
             }
-            const plain = yield* decrypt(credential.ciphertext).pipe(
-              Effect.catchAll(() => Effect.succeed("")),
-            );
-            return {
-              configured: true,
-              last4: plain.length > 4 ? plain.slice(-4) : null,
-            } as const;
+            return { configured: true } as const;
           }),
 
         // One synthetic metadata-only marshal assessment through the

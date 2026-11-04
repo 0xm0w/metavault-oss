@@ -161,7 +161,7 @@ window.addEventListener("keydown", recordActivity);
 let busy = false;
 let notice: string | null = null;
 let wardenDraft: WardenSettingsLike = { ...DEFAULT_WARDEN_SETTINGS };
-let wardenKeyStatusState: WardenKeyStatusLike = { configured: false, last4: null };
+let wardenKeyStatusState: WardenKeyStatusLike = { configured: false };
 let wardenLoaded = false;
 let wardenDirty = false;
 let settingsKeyDraft = "";
@@ -2859,7 +2859,7 @@ function renderSettings(view: HTMLElement): void {
       void runSettingsAction(async () => {
         const raw = await window.metavault.deleteWardenKey();
         const projected = projectWardenKeyStatus(raw);
-        wardenKeyStatusState = projected ?? { configured: false, last4: null };
+        wardenKeyStatusState = projected ?? { configured: false };
         settingsKeyDraft = "";
         settingsMessage = { text: "Meta API key deleted.", ok: true };
       });

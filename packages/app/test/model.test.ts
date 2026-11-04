@@ -904,13 +904,13 @@ describe("warden settings form state (Task 6)", () => {
   });
 
   it("projects key status without ever exposing a key and formats status text", () => {
-    expect(projectWardenKeyStatus({ configured: true, last4: "1234" })).toEqual({ configured: true, last4: "1234" });
-    expect(projectWardenKeyStatus({ configured: false, last4: null })).toEqual({ configured: false, last4: null });
-    expect(projectWardenKeyStatus({ configured: true, last4: "1234", key: "canary" })).toBeNull();
+    expect(projectWardenKeyStatus({ configured: true })).toEqual({ configured: true });
+    expect(projectWardenKeyStatus({ configured: false })).toEqual({ configured: false });
+    expect(projectWardenKeyStatus({ configured: true, last4: "1234" })).toBeNull();
+    expect(projectWardenKeyStatus({ configured: true, key: "canary" })).toBeNull();
     expect(projectWardenKeyStatus("nope")).toBeNull();
-    expect(wardenKeyStatusText({ configured: false, last4: null })).toBe("Not configured");
-    expect(wardenKeyStatusText({ configured: true, last4: "1234" })).toBe("Configured");
-    expect(wardenKeyStatusText({ configured: true, last4: null })).toBe("Configured");
+    expect(wardenKeyStatusText({ configured: false })).toBe("Not configured");
+    expect(wardenKeyStatusText({ configured: true })).toBe("Configured");
   });
 
   it("builds a trimmed patch and checks form completeness", () => {
