@@ -274,9 +274,9 @@ export type AclSidList = (path: string) => string[];
 // to a fixed SID - e.g. "LA" (SDDL_LOCAL_ADMIN) is S-1-5-21-<machine>-500,
 // machine-relative, so no static alias table can identify it. Get-Acl is
 // deliberately NOT used: it lives in the Microsoft.PowerShell.Security
-// module, whose autoload can fail on hosted runners. Directory.
+// module, whose autoload can fail on hosted runners. Directory/File.
 // GetAccessControl + IdentityReference.Translate are mscorlib APIs - always
-// loaded. An unresolvable trustee yields its raw value, which never equals
+// loaded - and cover both the credential directory and each credential file. An unresolvable trustee yields its raw value, which never equals
 // the current user's SID, so the check fails closed. If PowerShell itself is
 // unavailable the listing throws and the caller refuses to store credentials.
 export const defaultListAclSids: AclSidList = (path) => {
@@ -287,7 +287,12 @@ export const defaultListAclSids: AclSidList = (path) => {
   const script =
     "$ErrorActionPreference = 'Stop'; " +
     "try { " +
-    `[System.IO.Directory]::GetAccessControl('${escaped}').Access | ForEach-Object { ` +
+    `$p = '${escaped}'; ` +
+    "$sd = $null; " +
+    "if ([System.IO.Directory]::Exists($p)) { $sd = [System.IO.Directory]::GetAccessControl($p) } " +
+    "elseif ([System.IO.File]::Exists($p)) { $sd = [System.IO.File]::GetAccessControl($p) } " +
+    "else { throw ('path not found: ' + $p) } " +
+    "$sd.Access | ForEach-Object { " +
     "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
     "catch { $_.IdentityReference.Value } } " +
     "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
@@ -333,7 +338,7 @@ export interface HardenOptions {
   // are never applied outside these roots, so an arbitrary user-selected
   // existing directory cannot be re-ACLed through this code path.
   allowedRoots: string[];
-  // Injectable for tests; production uses icacls /save SDDL parsing.
+  // Injectable for tests; production uses .NET ACL APIs via PowerShell.
   listSids?: AclSidList | undefined;
   // Injectable raw-SDDL reader for failure diagnostics.
   rawSddl?: ((path: string) => string) | undefined;

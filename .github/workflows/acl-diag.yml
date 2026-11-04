@@ -1,0 +1,14 @@
+name: ACL API diagnostic (temporary - removed before merge)
+on:
+  push:
+    branches:
+      - hardening/remote-gateway
+permissions: {}
+jobs:
+  acl-diag:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe mscorlib ACL APIs through the exact node spawn path
+        run: node scripts/acl-diag.cjs

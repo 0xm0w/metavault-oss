@@ -460,4 +460,26 @@ describe.skipIf(!onWindows)("windows effective-ACL integration (requires win32 r
     expect(sid).toBeDefined();
     expect(defaultListAclSids(dir)).toEqual([(sid ?? "").toUpperCase()]);
   });
+
+  it("hardens a real credential file to the current user alone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mv-acl-file-"));
+    const file = join(dir, "key.pem");
+    writeFileSync(file, "k");
+    hardenOwnerOnly(file, false, "win32");
+    const sid = currentWindowsUserSid();
+    expect(sid).toBeDefined();
+    expect(defaultListAclSids(file)).toEqual([(sid ?? "").toUpperCase()]);
+  });
+
+  it("strips a preexisting foreign grant on a file down to the owner alone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mv-acl-filebad-"));
+    const file = join(dir, "key.pem");
+    writeFileSync(file, "k");
+    execFileSync("icacls", [file, "/inheritance:r"]);
+    execFileSync("icacls", [file, "/grant:r", "Everyone:(R)"]);
+    hardenOwnerOnly(file, false, "win32");
+    const sid = currentWindowsUserSid();
+    expect(sid).toBeDefined();
+    expect(defaultListAclSids(file)).toEqual([(sid ?? "").toUpperCase()]);
+  });
 });
