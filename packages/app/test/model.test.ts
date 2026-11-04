@@ -24,6 +24,10 @@ import {
   marshalStatusLine,
   normalizeWebsite,
   projectApproval,
+  projectDevicesResponse,
+  projectPairingSession,
+  projectRemoteSettings,
+  shouldRequireAuthForRemoteApproval,
   projectAuditEvent,
   projectCredentialsResponse,
   projectCardMeta,
@@ -1338,5 +1342,83 @@ describe("vault key gate", () => {
     expect(keyGateErrorMessage("MetaVault OSS daemon unreachable — is vaultd running?")).toContain("background service");
     expect(keyGateErrorMessage("daemon error (409): VaultRecoveryRequired")).toContain("matching database and key backup");
     expect(keyGateErrorMessage("something else")).toBe("That did not work. Try again.");
+  });
+});
+
+describe("remote connections model", () => {
+  it("requires local auth for remote approvals by default, and only for remote origin", () => {
+    expect(shouldRequireAuthForRemoteApproval(null, { origin: "remote" })).toBe(true);
+    expect(shouldRequireAuthForRemoteApproval({ enabled: true }, { origin: "remote" })).toBe(true);
+    expect(shouldRequireAuthForRemoteApproval({ enabled: true, requireAuthForRemoteApproval: true }, { origin: "remote" })).toBe(true);
+    expect(shouldRequireAuthForRemoteApproval({ enabled: true, requireAuthForRemoteApproval: false }, { origin: "remote" })).toBe(false);
+    expect(shouldRequireAuthForRemoteApproval({ enabled: true, requireAuthForRemoteApproval: true }, { origin: "local" })).toBe(false);
+    expect(shouldRequireAuthForRemoteApproval({ enabled: true, requireAuthForRemoteApproval: true }, {})).toBe(false);
+  });
+
+  it("projects remote settings conservatively", () => {
+    expect(projectRemoteSettings(null)).toBeNull();
+    expect(projectRemoteSettings({})).toBeNull();
+    expect(projectRemoteSettings({ enabled: false })).toEqual({ enabled: false });
+    expect(projectRemoteSettings({ enabled: true, host: "127.0.0.1", port: 7078, requireAuthForRemoteApproval: false })).toEqual({
+      enabled: true,
+      host: "127.0.0.1",
+      port: 7078,
+      requireAuthForRemoteApproval: false,
+    });
+    expect(projectRemoteSettings({ enabled: true, port: 0 })).toEqual({ enabled: true });
+  });
+
+  it("carries remote origin fields through approval projection", () => {
+    const approval = projectApproval({
+      grantId: "g1",
+      agentId: "remote-ide",
+      ide: "vscode",
+      tool: "http",
+      alias: "stripe",
+      requestedScope: "charges.read",
+      allowedScope: "charges.read",
+      reason: "test",
+      marshalExplanation: "policy",
+      createdAtMs: 1,
+      expiresAtMs: 2,
+      risk: "low",
+      origin: "remote",
+      deviceId: "dev-abc123",
+      transport: "loopback",
+    });
+    expect(approval?.origin).toBe("remote");
+    expect(approval?.deviceId).toBe("dev-abc123");
+    expect(approval?.transport).toBe("loopback");
+    const local = projectApproval({
+      grantId: "g2",
+      agentId: "a",
+      ide: "i",
+      tool: "t",
+      alias: "stripe",
+      requestedScope: "charges.read",
+      allowedScope: "charges.read",
+      reason: "r",
+      marshalExplanation: "m",
+      createdAtMs: 1,
+      expiresAtMs: 2,
+      risk: "low",
+      origin: "bogus",
+    });
+    expect(local?.origin).toBeUndefined();
+  });
+
+  it("projects devices and pairing sessions defensively", () => {
+    expect(projectDevicesResponse(null)).toEqual([]);
+    expect(projectDevicesResponse({ devices: [{ id: "dev-1", name: "laptop", platform: "win32", pairedAt: "2026-11-04T00:00:00Z" }, { name: "no-id" }] })).toEqual([
+      { id: "dev-1", name: "laptop", platform: "win32", pairedAt: "2026-11-04T00:00:00Z" },
+    ]);
+    expect(projectPairingSession({ session: null })).toBeNull();
+    expect(projectPairingSession({ session: { status: "joined", sas: "AB12-CD34-EF56-7890", deviceName: "laptop", pairingId: "p1" } })).toEqual({
+      status: "joined",
+      sas: "AB12-CD34-EF56-7890",
+      deviceName: "laptop",
+      pairingId: "p1",
+    });
+    expect(projectPairingSession({})).toBeNull();
   });
 });

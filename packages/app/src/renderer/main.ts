@@ -54,7 +54,11 @@ import {
   shouldLockOnLaunch,
   isBiometricsActive,
   localAuthFactorLabel,
+  projectDevicesResponse,
+  projectPairingSession,
+  projectRemoteSettings,
   shouldRequireAuthForApproval,
+  shouldRequireAuthForRemoteApproval,
   shouldRequireAuthForSettings,
   isAutoLockDue,
   canLockSessionNow,
@@ -68,6 +72,9 @@ import {
 } from "./model.js";
 import type {
   AgentSecuritySettingsLike,
+  DeviceLike,
+  PairingSessionLike,
+  RemoteSettingsLike,
   RegisteredAgent,
   AuditEventLike,
   CredentialMeta,
@@ -100,6 +107,11 @@ let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let agentsData: RegisteredAgent[] = [];
 const newAgentTokens = new Map<string, string>();
 let mcpRuntime: { command: string; args: string[]; env: Record<string, string>; dbPath: string } | null = null;
+let remoteSettings: RemoteSettingsLike | null = null;
+let devicesData: DeviceLike[] = [];
+let pairingSession: PairingSessionLike | null = null;
+let pairingCode: string | null = null;
+let pairingNotice: { text: string; ok: boolean } | null = null;
 let agentSecuritySettings: AgentSecuritySettingsLike = { strictMode: false, verifyCallerProcess: false };
 let securityPosture: SecurityPostureReportLike | null = null;
 let selectedGrantId: string | null = null;
@@ -140,7 +152,7 @@ let settingsBusy = false;
 let settingsMessage: { readonly text: string; readonly ok: boolean } | null = null;
 let localAuthNotice: { readonly text: string; readonly ok: boolean } | null = null;
 let updaterStatus: UpdaterStatusLike = { status: "idle" };
-type SettingsTab = "general" | "warden" | "daemon" | "security";
+type SettingsTab = "general" | "warden" | "daemon" | "security" | "connections";
 let settingsOpen = false;
 let settingsTab: SettingsTab = "general";
 let settingsFocusOnOpen = false;
@@ -150,6 +162,7 @@ const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
   warden: "Warden",
   daemon: "Daemon",
   security: "Security",
+  connections: "Connections",
 };
 
 const VIEW_TITLE: Record<Exclude<ViewName, "settings">, string> = {
@@ -340,6 +353,14 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     warnBox.textContent = "⚠️ Unverified Agent: This request has no registered agent token. The identity name below was self-reported by the calling process and may be spoofed.";
     card.append(warnBox);
   }
+  if (hero.origin === "remote") {
+    const remoteBox = el("div", "alert is-warn");
+    remoteBox.style.marginBottom = "0.75rem";
+    const deviceLabel = hero.deviceId !== undefined ? `device ${hero.deviceId}` : "an unknown device";
+    const transportLabel = hero.transport !== undefined && hero.transport !== "" ? hero.transport : "remote";
+    remoteBox.textContent = `\u{1F310} Remote request: this came from ${deviceLabel} over the ${transportLabel} transport, not from a local agent. The same vault policy applies, and approval executes inside vaultd as usual.`;
+    card.append(remoteBox);
+  }
   const want = el("p", "want");
   want.append(document.createTextNode(`${hero.agentId} `));
   const badge = el(
@@ -392,7 +413,10 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     const executeApproval = () => {
       void runAction(() => window.metavault.approve(hero.grantId), "Approved — the grant executed inside vaultd and expired.");
     };
-    if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
+    if (
+      shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk) ||
+      shouldRequireAuthForRemoteApproval(remoteSettings, hero)
+    ) {
       void confirmLocalPresence("Authenticate to approve capability", executeApproval);
     } else {
       executeApproval();
@@ -2537,7 +2561,177 @@ function renderSettings(view: HTMLElement): void {
   authSection.append(authActionRow);
   view.append(authSection);
 
-  // 5. Daemon (read-only)
+  // 5. Connections (remote access)
+  const remoteSection = settingsSection(
+    "Remote access",
+    "Pair another device so its agents can request capabilities from this vault over mutual TLS. Remote access is off unless you turn it on here. This build accepts loopback connections only; a network transport is not enabled yet.",
+    "connections",
+  );
+  const remoteOn = remoteSettings?.enabled ?? false;
+  const toggleRow = el("div", "settings-row");
+  toggleRow.append(el("span", "settings-row-label", "Enable remote access"));
+  const toggleBtn = el("button", "action", remoteOn ? "Turn off" : "Turn on") as HTMLButtonElement;
+  toggleBtn.type = "button";
+  toggleBtn.disabled = settingsBusy;
+  toggleBtn.addEventListener("click", () => {
+    void runSettingsAction(async () => {
+      await window.metavault.updateRemoteSettings({ enabled: !remoteOn });
+      pairingNotice = { text: remoteOn ? "Remote access is off. Paired devices can no longer connect." : "Remote access is on (loopback only).", ok: true };
+      await refresh();
+    });
+  });
+  toggleRow.append(toggleBtn);
+  remoteSection.append(toggleRow);
+  if (remoteSettings !== null) {
+    const bindRow = el("div", "settings-row");
+    bindRow.append(el("span", "settings-row-label", "Gateway bind"));
+    bindRow.append(el("span", "mono", `${remoteSettings.host ?? "127.0.0.1"}:${String(remoteSettings.port ?? 7078)}`));
+    remoteSection.append(bindRow);
+  }
+  const reauthRow = el("div", "settings-row");
+  reauthRow.append(el("span", "settings-row-label", "Require PIN or Hello for remote approvals"));
+  const reauthOn = remoteSettings?.requireAuthForRemoteApproval ?? true;
+  const reauthBtn = el("button", "action", reauthOn ? "On" : "Off") as HTMLButtonElement;
+  reauthBtn.type = "button";
+  reauthBtn.disabled = settingsBusy;
+  reauthBtn.title = "When on, approving a request that arrived from a paired device asks for your app PIN or Windows Hello first.";
+  reauthBtn.addEventListener("click", () => {
+    void runSettingsAction(async () => {
+      await window.metavault.updateRemoteSettings({ requireAuthForRemoteApproval: !reauthOn });
+      await refresh();
+    });
+  });
+  reauthRow.append(reauthBtn);
+  view.append(remoteSection);
+
+  // Pairing flow. The code is shown once here and typed into the device
+  // CLI; the SAS must then match the device screen before anything is
+  // issued. There is no auto-confirm path.
+  const pairSection = settingsSection(
+    "Pair a new device",
+    "Start pairing, enter the one-time code on the device (metavault pair), then compare the verification code shown on BOTH screens. Confirm only if they match exactly.",
+    "connections",
+  );
+  if (!remoteOn) {
+    pairSection.append(el("p", "settings-copy", "Turn on remote access above to pair a device."));
+  } else if (pairingSession === null) {
+    const startBtn = el("button", "action btn-approve", "Start pairing") as HTMLButtonElement;
+    startBtn.type = "button";
+    startBtn.disabled = settingsBusy;
+    startBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        const raw = (await window.metavault.startPairing()) as { pairingId?: string; code?: string } | null;
+        pairingCode = raw !== null && typeof raw.code === "string" ? raw.code : null;
+        pairingNotice = pairingCode !== null
+          ? { text: "Pairing started. Enter the code on the device within 5 minutes.", ok: true }
+          : { text: "Pairing failed to start.", ok: false };
+        await refresh();
+      });
+    });
+    pairSection.append(startBtn);
+  } else if (pairingSession.status === "awaiting" || pairingSession.status === "created") {
+    pairSection.append(el("p", "settings-copy", "Waiting for the device to join. On the other machine run: metavault pair --host <this machine>"));
+    if (pairingCode !== null) {
+      const codeBox = el("p", "mono");
+      codeBox.style.fontSize = "1.4rem";
+      codeBox.style.letterSpacing = "0.15em";
+      codeBox.textContent = pairingCode;
+      pairSection.append(codeBox);
+    }
+    const cancelBtn = el("button", "action btn-deny", "Cancel pairing") as HTMLButtonElement;
+    cancelBtn.type = "button";
+    cancelBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        const id = pairingSession?.pairingId;
+        if (id !== undefined) await window.metavault.cancelPairing(id);
+        pairingCode = null;
+        await refresh();
+      });
+    });
+    pairSection.append(cancelBtn);
+  } else if (pairingSession.status === "joined") {
+    const joinedName = pairingSession.deviceName ?? "unknown device";
+    const joinedPlatform = pairingSession.platform !== undefined ? ` (${pairingSession.platform})` : "";
+    pairSection.append(el("p", "settings-copy", `${joinedName}${joinedPlatform} has joined. Compare the verification code below with the one on the device screen.`));
+    const sasBox = el("p", "mono");
+    sasBox.style.fontSize = "1.6rem";
+    sasBox.style.letterSpacing = "0.12em";
+    sasBox.style.textAlign = "center";
+    sasBox.textContent = pairingSession.sas ?? "";
+    pairSection.append(sasBox);
+    const matchRow = el("div", "btns");
+    const matchBtn = el("button", "action btn-approve", "Codes match - confirm pairing") as HTMLButtonElement;
+    matchBtn.type = "button";
+    matchBtn.disabled = settingsBusy || pairingSession.sas === undefined;
+    matchBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        const id = pairingSession?.pairingId;
+        if (id === undefined) return;
+        await window.metavault.confirmPairing(id);
+        pairingCode = null;
+        pairingNotice = { text: "Device paired. It can now connect over mutual TLS.", ok: true };
+        await refresh();
+      });
+    });
+    const noMatchBtn = el("button", "action btn-deny", "Codes do not match - cancel") as HTMLButtonElement;
+    noMatchBtn.type = "button";
+    noMatchBtn.disabled = settingsBusy;
+    noMatchBtn.addEventListener("click", () => {
+      void runSettingsAction(async () => {
+        const id = pairingSession?.pairingId;
+        if (id !== undefined) await window.metavault.cancelPairing(id);
+        pairingCode = null;
+        pairingNotice = { text: "Pairing canceled. Nothing was issued to the device.", ok: true };
+        await refresh();
+      });
+    });
+    matchRow.append(matchBtn, noMatchBtn);
+    pairSection.append(matchRow);
+  } else {
+    pairSection.append(el("p", "settings-copy", `Pairing session status: ${pairingSession.status}`));
+  }
+  if (pairingNotice !== null) {
+    pairSection.append(el("p", pairingNotice.ok ? "settings-copy" : "alert is-warn", pairingNotice.text));
+  }
+  view.append(pairSection);
+
+  // Paired devices
+  const devicesSection = settingsSection(
+    "Paired devices",
+    "A revoked device loses its certificate access, its bound agent tokens, and every open connection immediately. Requests already executing are not cancelled retroactively.",
+    "connections",
+  );
+  if (!remoteOn) {
+    devicesSection.append(el("p", "settings-copy", "Remote access is off."));
+  } else if (devicesData.length === 0) {
+    devicesSection.append(el("p", "settings-copy", "No devices paired yet."));
+  } else {
+    for (const device of devicesData) {
+      const deviceRow = el("div", "settings-row");
+      const deviceLabel = device.revoked === true ? `${device.name} (revoked)` : device.name;
+      deviceRow.append(el("span", "settings-row-label", deviceLabel));
+      if (device.pairedAt !== undefined) {
+        deviceRow.append(el("span", "settings-copy", device.pairedAt.slice(0, 10)));
+      }
+      if (device.revoked !== true) {
+        const revokeBtn = el("button", "action btn-deny", "Revoke") as HTMLButtonElement;
+        revokeBtn.type = "button";
+        revokeBtn.disabled = settingsBusy;
+        revokeBtn.addEventListener("click", () => {
+          void runSettingsAction(async () => {
+            await window.metavault.revokeDevice(device.id);
+            pairingNotice = { text: `${device.name} revoked.`, ok: true };
+            await refresh();
+          });
+        });
+        deviceRow.append(revokeBtn);
+      }
+      devicesSection.append(deviceRow);
+    }
+  }
+  view.append(devicesSection);
+
+  // 6. Daemon (read-only)
   const daemonSection = settingsSection("Daemon", "", "daemon");
   const rows: readonly (readonly [string, string])[] = [
     ["Daemon URL", DAEMON_URL_DISPLAY],
@@ -3251,7 +3445,7 @@ async function refresh(): Promise<void> {
       render();
       return;
     }
-    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, agentsRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw, secRaw] = await Promise.all([
+    const [pendingRaw, aliasesRaw, auditRaw, policiesRaw, agentsRaw, wardenRaw, wardenKeyRaw, postureRaw, localAuthRaw, secRaw, remoteRaw] = await Promise.all([
       window.metavault.pending(),
       window.metavault.aliases(),
       window.metavault.audit(),
@@ -3262,8 +3456,27 @@ async function refresh(): Promise<void> {
       window.metavault.getSecurityPosture().catch(() => null),
       window.metavault.getLocalAuthStatus().catch(() => null),
       window.metavault.getAgentSecuritySettings().catch(() => null),
+      window.metavault.getRemoteSettings().catch(() => null),
     ]);
     
+    remoteSettings = projectRemoteSettings(remoteRaw);
+    if (remoteSettings !== null && remoteSettings.enabled) {
+      const [devicesRaw, pairingRaw] = await Promise.all([
+        window.metavault.listDevices().catch(() => null),
+        window.metavault.getPairingSession().catch(() => null),
+      ]);
+      devicesData = projectDevicesResponse(devicesRaw);
+      const projectedSession = projectPairingSession(pairingRaw);
+      pairingSession = projectedSession;
+      // A consumed or expired session clears the one-time code from memory.
+      if (projectedSession === null || projectedSession.status === "confirmed" || projectedSession.status === "canceled") {
+        pairingCode = null;
+      }
+    } else {
+      devicesData = [];
+      pairingSession = null;
+      pairingCode = null;
+    }
     if (secRaw !== null && typeof secRaw === "object") {
       const s = secRaw as Record<string, unknown>;
       agentSecuritySettings = {

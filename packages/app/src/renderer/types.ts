@@ -38,6 +38,11 @@ export interface PendingApproval {
   readonly verified?: boolean;
   readonly clientPid?: number;
   readonly clientProcess?: string;
+  // Remote origin, present only for requests that arrived through the
+  // gateway. Drives the remote banner and the remote-approval auth gate.
+  readonly deviceId?: string;
+  readonly origin?: "local" | "remote";
+  readonly transport?: string;
 }
 
 

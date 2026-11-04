@@ -1,4 +1,6 @@
 import type {
+  DeviceLike,
+  PairingSessionLike,
   AuditEventLike,
   AuditStage,
   CardMetaLike,
@@ -23,8 +25,7 @@ import type {
   WardenProvider,
   WardenSettingsLike,
   WardenSettingsPatch,
-  WardenTestResultLike,
-} from "./types.js";
+  WardenTestResultLike, RemoteSettingsLike } from "./types.js";
 
 // Unified warm theme (promoted from the Vault page). These exact hex
 // values are the theme contract; styles.css mirrors them as CSS variables.
@@ -274,7 +275,40 @@ export function projectApproval(raw: unknown): PendingApproval | null {
     expiresAtMs,
   };
   const modelId = raw["modelId"];
-  return typeof modelId === "string" && modelId.length > 0 ? { ...base, modelId } : base;
+  const deviceId = raw["deviceId"];
+  const transport = raw["transport"];
+  const originRaw = raw["origin"];
+  const origin = originRaw === "local" || originRaw === "remote" ? originRaw : undefined;
+  let out: PendingApproval = base;
+  if (typeof modelId === "string" && modelId.length > 0) out = { ...out, modelId };
+  if (typeof deviceId === "string" && deviceId.length > 0) out = { ...out, deviceId };
+  if (typeof transport === "string" && transport.length > 0) out = { ...out, transport };
+  if (origin !== undefined) out = { ...out, origin };
+  return out;
+}
+
+// The remote-approval gate: a request that arrived through the gateway
+// requires local PIN/Hello before approval whenever the setting is on.
+// Default TRUE when settings are unavailable: fail closed for remote.
+export function shouldRequireAuthForRemoteApproval(
+  settings: RemoteSettingsLike | null,
+  approval: { readonly origin?: "local" | "remote" | undefined },
+): boolean {
+  return approval.origin === "remote" && (settings?.requireAuthForRemoteApproval ?? true);
+}
+
+export function projectRemoteSettings(raw: unknown): RemoteSettingsLike | null {
+  if (!isRecord(raw)) return null;
+  const enabled = raw["enabled"];
+  if (typeof enabled !== "boolean") return null;
+  const out: { enabled: boolean; host?: string; port?: number; requireAuthForRemoteApproval?: boolean } = { enabled };
+  const host = raw["host"];
+  const port = raw["port"];
+  const requireAuth = raw["requireAuthForRemoteApproval"];
+  if (typeof host === "string" && host !== "") out.host = host;
+  if (typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65535) out.port = port;
+  if (typeof requireAuth === "boolean") out.requireAuthForRemoteApproval = requireAuth;
+  return out;
 }
 
 export function projectPendingResponse(raw: unknown): PendingApproval[] {
@@ -1477,4 +1511,51 @@ export function keyGateErrorMessage(message: string): string {
   if (message.includes("AlreadyInitialized")) return "This vault already has a password. Unlock it instead.";
   if (message.includes("unreachable")) return "MetaVault could not reach its background service. Try again in a moment.";
   return "That did not work. Try again.";
+}
+
+export function projectDevicesResponse(raw: unknown): DeviceLike[] {
+  if (!isRecord(raw)) return [];
+  const devices = raw["devices"];
+  if (!Array.isArray(devices)) return [];
+  const out: DeviceLike[] = [];
+  for (const item of devices) {
+    if (!isRecord(item)) continue;
+    const id = stringField(item, "id");
+    const name = stringField(item, "name");
+    if (id === null || name === null) continue;
+    const device: { id: string; name: string; platform?: string; pairedAt?: string; revoked?: boolean; lastSeenAt?: string } = { id, name };
+    const platform = item["platform"];
+    const pairedAt = item["pairedAt"];
+    const lastSeenAt = item["lastSeenAt"];
+    const revoked = item["revoked"];
+    if (typeof platform === "string" && platform !== "") device.platform = platform;
+    if (typeof pairedAt === "string" && pairedAt !== "") device.pairedAt = pairedAt;
+    if (typeof lastSeenAt === "string" && lastSeenAt !== "") device.lastSeenAt = lastSeenAt;
+    if (typeof revoked === "boolean") device.revoked = revoked;
+    out.push(device);
+  }
+  return out;
+}
+
+// Pairing session state for the Connections tab. The SAS is shown ONLY for
+// the human comparison; nothing here is persisted by the renderer.
+export function projectPairingSession(raw: unknown): PairingSessionLike | null {
+  if (!isRecord(raw)) return null;
+  const session = raw["session"];
+  if (session === null) return null;
+  if (!isRecord(session)) return null;
+  const status = stringField(session, "status");
+  if (status === null) return null;
+  const out: { status: string; pairingId?: string; sas?: string; deviceName?: string; platform?: string; expiresAt?: string } = { status };
+  const pairingId = session["pairingId"];
+  const sas = session["sas"];
+  const deviceName = session["deviceName"];
+  const platform = session["platform"];
+  const expiresAt = session["expiresAt"];
+  if (typeof pairingId === "string" && pairingId !== "") out.pairingId = pairingId;
+  if (typeof sas === "string" && sas !== "") out.sas = sas;
+  if (typeof deviceName === "string" && deviceName !== "") out.deviceName = deviceName;
+  if (typeof platform === "string" && platform !== "") out.platform = platform;
+  if (typeof expiresAt === "string" && expiresAt !== "") out.expiresAt = expiresAt;
+  return out;
 }
