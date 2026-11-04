@@ -26,6 +26,7 @@ function invoke(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: strin
 }
 
 const api: VaultApi = {
+  runtimePaths: () => ipcRenderer.invoke("metavault:runtime-paths"),
   request: (body: CapabilityRequestLike) => invoke("POST", "/request", body),
   approve: (grantId: string) => invoke("POST", "/approve", { grantId }),
   deny: (grantId: string) => invoke("POST", "/deny", { grantId }),

@@ -1,3 +1,4 @@
+import { AGENT_INSTRUCTIONS } from "./onboarding.js";
 import {
   filterAuditGroups,
   paginate,
@@ -97,6 +98,7 @@ let credentialMeta: CredentialMeta[] = [];
 let auditEvents: AuditEventLike[] = [];
 let policiesData: PoliciesData = { ceilings: {}, standingApprovals: [] };
 let agentsData: RegisteredAgent[] = [];
+let mcpRuntime: { command: string; args: string[]; env: Record<string, string>; dbPath: string } | null = null;
 let agentSecuritySettings: AgentSecuritySettingsLike = { strictMode: false, verifyCallerProcess: false };
 let securityPosture: SecurityPostureReportLike | null = null;
 let selectedGrantId: string | null = null;
@@ -2537,13 +2539,15 @@ function renderSettings(view: HTMLElement): void {
   const daemonSection = settingsSection("Daemon", "", "daemon");
   const rows: readonly (readonly [string, string])[] = [
     ["Daemon URL", DAEMON_URL_DISPLAY],
-    ["Vault path", VAULT_PATH_DISPLAY],
+    ["Vault path", mcpRuntime?.dbPath ?? VAULT_PATH_DISPLAY],
     ["Version", `MetaVault OSS ${APP_VERSION_DISPLAY}`],
   ];
   for (const [label, value] of rows) {
     const row = el("div", "settings-row");
     row.append(el("span", "settings-row-label", label));
-    row.append(el("span", "mono settings-row-value", value));
+    const text = el("span", "mono settings-row-value", value);
+    text.title = value;
+    row.append(text);
     daemonSection.append(row);
   }
   daemonSection.append(el("p", "settings-copy", "Read-only. Warden settings apply on the next request, so no restart is needed after saving. If vaultd is unreachable, restart it from the terminal where it was launched, then reopen this page."));
@@ -2592,9 +2596,10 @@ function renderSettings(view: HTMLElement): void {
       {
         mcpServers: {
           metavault: {
-            command: "node",
-            args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
+            command: mcpRuntime?.command ?? "<runtime-unavailable-reopen-app>",
+            args: mcpRuntime?.args ?? [],
             env: {
+              ...mcpRuntime?.env,
               METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
               METAVAULT_AGENT_ID: "claude-code",
               METAVAULT_AGENT_TOKEN: findAgentToken("claude-code"),
@@ -2612,9 +2617,10 @@ function renderSettings(view: HTMLElement): void {
       {
         mcpServers: {
           metavault: {
-            command: "node",
-            args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
+            command: mcpRuntime?.command ?? "<runtime-unavailable-reopen-app>",
+            args: mcpRuntime?.args ?? [],
             env: {
+              ...mcpRuntime?.env,
               METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
               METAVAULT_AGENT_ID: "cursor",
               METAVAULT_AGENT_TOKEN: findAgentToken("cursor"),
@@ -2633,9 +2639,10 @@ function renderSettings(view: HTMLElement): void {
         servers: {
           metavault: {
             type: "stdio",
-            command: "node",
-            args: ["<path-to-repo>/dist/packages/mcp/src/server.js"],
+            command: mcpRuntime?.command ?? "<runtime-unavailable-reopen-app>",
+            args: mcpRuntime?.args ?? [],
             env: {
+              ...mcpRuntime?.env,
               METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
               METAVAULT_AGENT_ID: "vscode",
               METAVAULT_AGENT_TOKEN: findAgentToken("vscode"),
@@ -2651,10 +2658,11 @@ function renderSettings(view: HTMLElement): void {
     configPath = "~/.codex/config.toml";
     codeSnippet = [
       "[mcp_servers.metavault]",
-      "command = \"node\"",
-      "args = [\"<path-to-repo>/dist/packages/mcp/src/server.js\"]",
+      `command = ${JSON.stringify(mcpRuntime?.command ?? "<runtime-unavailable-reopen-app>")}`,
+      `args = ${JSON.stringify(mcpRuntime?.args ?? [])}`,
       "",
       "[mcp_servers.metavault.env]",
+      ...Object.entries(mcpRuntime?.env ?? {}).map(([key, value]) => `${key} = ${JSON.stringify(value)}`),
       "METAVAULT_DAEMON_URL = \"http://127.0.0.1:7077\"",
       "METAVAULT_AGENT_ID = \"codex\"",
       `METAVAULT_AGENT_TOKEN = \"${findAgentToken("codex")}\"`,
@@ -2668,9 +2676,10 @@ function renderSettings(view: HTMLElement): void {
         mcp: {
           metavault: {
             type: "local",
-            command: ["node", "<path-to-repo>/dist/packages/mcp/src/server.js"],
+            command: [mcpRuntime?.command ?? "<runtime-unavailable-reopen-app>", ...(mcpRuntime?.args ?? [])],
             enabled: true,
             environment: {
+              ...mcpRuntime?.env,
               METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
               METAVAULT_AGENT_ID: "opencode",
               METAVAULT_IDE: "OpenCode",
@@ -2696,6 +2705,7 @@ function renderSettings(view: HTMLElement): void {
 
   const copyBtn = el("button", "agent-code-copy-btn", "Copy Config") as HTMLButtonElement;
   copyBtn.type = "button";
+  copyBtn.disabled = activeAgentTab !== "skill" && mcpRuntime === null;
   copyBtn.addEventListener("click", () => {
     void navigator.clipboard.writeText(codeSnippet);
     copyBtn.textContent = "Copied!";
@@ -2706,9 +2716,15 @@ function renderSettings(view: HTMLElement): void {
 
   const pre = el("pre", "");
   pre.textContent = codeSnippet;
+  pre.tabIndex = 0;
+  pre.setAttribute("aria-label", "MCP configuration, scroll horizontally to view long lines");
   codeBox.append(copyBtn, pre);
   agentSection.append(el("p", "settings-copy", `Configuration location: ${configPath}`));
   agentSection.append(codeBox);
+  const instructionsBtn = el("button", "action", "Copy agent instructions") as HTMLButtonElement;
+  instructionsBtn.type = "button";
+  instructionsBtn.addEventListener("click", () => { void navigator.clipboard.writeText(AGENT_INSTRUCTIONS); });
+  agentSection.append(instructionsBtn);
 
   const skillInfo = el("div", "agent-skill-box");
   skillInfo.append(el("div", "agent-skill-title", "Zero Secret Leakage Invariant"));
@@ -3171,6 +3187,7 @@ function render(): void {
 
 async function refresh(): Promise<void> {
   try {
+    mcpRuntime ??= await window.metavault.runtimePaths().catch(() => null);
     keyGate = projectKeyGate(await window.metavault.keyStatus().catch(() => null));
     if (keyGate !== null) {
       setDaemonStatus(true);
@@ -3267,26 +3284,26 @@ function renderKeyGate(mode: "setup" | "unlock"): HTMLElement {
   box.style.textAlign = "center";
   const icon = el("div", "lock-icon");
   icon.append(lockSvg());
-  const heading = el("h2", "", mode === "setup" ? "Create your vault passphrase" : "Unlock your vault");
+  const heading = el("h2", "", mode === "setup" ? "Create your vault password" : "Unlock your vault");
   const sub = el(
     "p",
     "",
     mode === "setup"
-      ? `This passphrase encrypts your vault key on this computer. Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters. There is no reset: if you forget it, the vault cannot be opened.`
-      : "Enter your vault passphrase.",
+      ? `This password encrypts your vault key on this computer. Use at least ${String(MIN_PASSPHRASE_LENGTH)} characters. There is no reset: if you forget it, the vault cannot be opened.`
+      : "Enter your vault password.",
   );
   const pass = document.createElement("input");
   pass.type = "password";
   pass.id = "vault-passphrase-input";
   pass.autocomplete = mode === "setup" ? "new-password" : "current-password";
-  pass.placeholder = "Passphrase";
-  pass.setAttribute("aria-label", "Vault passphrase");
+  pass.placeholder = "Password";
+  pass.setAttribute("aria-label", "Vault password");
   const confirm = document.createElement("input");
   confirm.type = "password";
   confirm.id = "vault-passphrase-confirm";
   confirm.autocomplete = "new-password";
   confirm.placeholder = "Type it again";
-  confirm.setAttribute("aria-label", "Confirm vault passphrase");
+  confirm.setAttribute("aria-label", "Confirm vault password");
   const error = el("p", "field-error");
   error.id = "vault-key-gate-error";
   error.setAttribute("role", "alert");
@@ -3297,7 +3314,7 @@ function renderKeyGate(mode: "setup" | "unlock"): HTMLElement {
   box.append(error, submit);
   box.addEventListener("submit", (event) => {
     event.preventDefault();
-    const problem = mode === "setup" ? passphraseSetupError(pass.value, confirm.value) : pass.value === "" ? "Enter your passphrase." : null;
+    const problem = mode === "setup" ? passphraseSetupError(pass.value, confirm.value) : pass.value === "" ? "Enter your password." : null;
     if (problem !== null) {
       error.textContent = problem;
       return;

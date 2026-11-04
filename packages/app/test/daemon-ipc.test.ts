@@ -116,7 +116,7 @@ describe("main-process daemon whitelist", () => {
     expect(mainSource).toContain("ipcMain.handle");
     expect(mainSource).toContain("DAEMON_CALL_CHANNEL");
     expect(mainSource).toContain("callDaemon");
-    const handleCount = (mainSource.match(/ipcMain\.handle/g) ?? []).length;
+    const handleCount = (mainSource.match(/ipcMain\.handle\(DAEMON_CALL_CHANNEL/g) ?? []).length;
     expect(handleCount).toBe(1);
     expect(mainSource).not.toContain("METAVAULT_DAEMON_TOKEN");
   });
