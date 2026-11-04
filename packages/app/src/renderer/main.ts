@@ -2550,6 +2550,13 @@ function renderSettings(view: HTMLElement): void {
     row.append(el("span", "settings-row-label", label));
     const text = el("span", "mono settings-row-value", value);
     text.title = value;
+    if (label === "Vault path") {
+      text.style.whiteSpace = "normal";
+      text.style.overflowWrap = "anywhere";
+      text.style.userSelect = "text";
+      text.tabIndex = 0;
+      text.setAttribute("aria-label", `Vault path: ${value}`);
+    }
     row.append(text);
     daemonSection.append(row);
   }
