@@ -15,8 +15,10 @@ The runner label is `metavault-ci`. The CI workflow requires
 
 ## One-time setup (on the PC with Docker)
 
+0. Get the files from the PR branch (this is not merged to main):
+   `git clone https://github.com/0xm0w/metavault-oss.git; cd metavault-oss; git checkout feat/local-ui-cleanup-lock-grant-status; cd ops/ci-runner`
 1. In GitHub: repo Settings > Actions > Runners > New self-hosted runner. Copy
-   the registration token (single use, valid about one hour).
+   the registration token. GitHub documents that it expires after one hour.
 2. In `ops/ci-runner`, save it to `runner-token.txt` (git-ignored):
    `Set-Content -NoNewline runner-token.txt '<token>'`
 3. `docker compose build`
