@@ -11,9 +11,20 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "skipLibCheck": true
   },
-  "include": ["packages/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "packages/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "scripts/verify-upgrade-credential.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
