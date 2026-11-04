@@ -268,25 +268,29 @@ const defaultIcaclsRun: IcaclsRun = (args) =>
 // Returns the trustee SID of every DACL access ACE on a path, uppercase.
 export type AclSidList = (path: string) => string[];
 
-// Windows ACL verification: trustee SIDs come from PowerShell Get-Acl with
-// .NET SID translation, never from names, icacls text, or /save SDDL. SDDL
+// Windows ACL verification: trustee SIDs come from .NET ACL APIs via
+// Windows PowerShell, never from names, icacls text, or /save SDDL. SDDL
 // stringification maps some trustees to aliases that cannot be resolved back
 // to a fixed SID - e.g. "LA" (SDDL_LOCAL_ADMIN) is S-1-5-21-<machine>-500,
-// machine-relative, so no static alias table can identify it. Translation
-// returns the true trustee SID for any account; an unresolvable trustee
-// yields its raw value, which never equals the current user's SID, so the
-// check fails closed. If PowerShell itself is unavailable the listing
-// throws and the caller refuses to store credentials.
+// machine-relative, so no static alias table can identify it. Get-Acl is
+// deliberately NOT used: it lives in the Microsoft.PowerShell.Security
+// module, whose autoload can fail on hosted runners. Directory.
+// GetAccessControl + IdentityReference.Translate are mscorlib APIs - always
+// loaded. An unresolvable trustee yields its raw value, which never equals
+// the current user's SID, so the check fails closed. If PowerShell itself is
+// unavailable the listing throws and the caller refuses to store credentials.
 export const defaultListAclSids: AclSidList = (path) => {
   // The path is embedded in the script: with -Command, trailing argv is
   // appended to the command text, not bound to $args. Single quotes are
   // doubled (PowerShell escaping); inside single quotes nothing interpolates.
   const escaped = path.replace(/'/g, "''");
   const script =
-    `$a = Get-Acl -LiteralPath '${escaped}'; ` +
-    "$a.Access | ForEach-Object { " +
+    "$ErrorActionPreference = 'Stop'; " +
+    "try { " +
+    `[System.IO.Directory]::GetAccessControl('${escaped}').Access | ForEach-Object { ` +
     "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
-    "catch { $_.IdentityReference.Value } }";
+    "catch { $_.IdentityReference.Value } } " +
+    "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
   let out: string;
   try {
     out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
@@ -395,7 +399,11 @@ export function hardenOwnerOnly(
     const listSids = opts?.listSids ?? defaultListAclSids;
     const sids = listSids(path);
     if (sids.length === 0 || !sids.every((entry) => entry === sid.toUpperCase())) {
-      const rawSddl = (opts?.rawSddl ?? defaultReadAclSddl)(path);
+      const rawSddl = opts?.rawSddl
+        ? opts.rawSddl(path)
+        : opts?.listSids
+          ? "(injected trustee list)"
+          : defaultReadAclSddl(path);
       throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL trustee SIDs: ${sids.join(", ") || "none"}; SDDL: ${rawSddl})`);
     }
     return;
