@@ -367,3 +367,27 @@ Validation-only109 closed NOT merged. No release was made.
 This correction supersedes any earlier implication that differential PR zero
 findings established a clean full baseline. Query coverage remains bounded;
 zero results are not a formal absence-of-vulnerabilities guarantee.
+
+## Remote Connections candidate - November 4, 2026
+
+Unreleased candidate evidence, not a production certification. Covers the
+loopback-isolated gateway, mTLS 1.3 pairing/session/revocation, and remote
+approval presence enforcement documented in [REMOTE.md](REMOTE.md). All
+numbers below are on the exact candidate branch head recorded at merge time.
+
+| Gate | Current evidence | Limit |
+| --- | --- | --- |
+| Unit/integration suite (Ubuntu) | 628 passed / 5 skipped at head 88e22fe (`npm test`); tsc and eslint clean | 3 skips are pre-existing live-model tests; 2 skips are Windows-only ACL tests that run on the Windows CI leg |
+| Dependency audit | `npm audit`: 0 vulnerabilities at head 88e22fe | Point-in-time; advisory feed changes |
+| Remote approval presence | Daemon route tests: direct `/approve` and `/approve-always` without proof rejected 403, with PIN proof executed, replay rejected, expired proof rejected, opt-out honored only while explicitly off; main-process guard fails closed on unknown/unreadable grant origin | Presence protects the remote client and app/renderer paths; NOT local-admin resistance (daemon token is full local admin by design). Windows Hello never mints proofs (caller-attested) |
+| Direct mutation resistance | Token-authenticated `PATCH /settings/remote` disabling presence rejected 403 without proof and setting verified unchanged; PIN replacement without current PIN rejected; biometric route mints nothing; disabling local-auth keeps the PIN hash | First-PIN setup by a local caller is unrestricted when no PIN exists (vault already fully local-admin at that point) |
+| Black-box probes | `scripts/pentest.mjs` probes 8-11 run live against an ephemeral daemon via `test/security/pentest-remote-live.test.ts`: 23 PASS / 0 FAIL / 0 SKIP - device-stamp spoofing without valid gateway MAC (plain and fully forged) 403, `/internal/*` raw-secret guard 401, pairing routes token-guarded, settings weakening 403 + unchanged | One defect found and fixed by these probes: unknown pairingId on confirm returned 500, now 409 `PairingNotConfirmable` |
+| UI pixel verification | Real built renderer bundle (CSP `script-src 'self'`) driven in headless Chrome against a stubbed bridge: remote-origin approval banner, Connections tab (loopback copy, gateway bind, PIN-requirement row, SAS comparison, paired devices, revoke) | Mock-bridge pixels prove layout only. Two real defects found and fixed this way: the Connections tab was unreachable by click (dispatcher whitelist), and the PIN-requirement row never rendered (element built but not appended). Packaged-launch/gateway integration is a separate Windows CI gate |
+| Pairing/e2e | 13 gateway e2e tests (mTLS handshake, pairing code/SAS lifecycle, revocation, in-flight revoke next-request rejection) plus daemon route tests | Loopback-only; no tailnet/LAN/public listener shipped |
+| Merge gates | Full-baseline CodeQL on exact head MUST report zero findings; windows-latest CI leg MUST pass (carries the 2 Windows ACL tests and the packaged-launch gate) | Run IDs recorded here at merge time |
+
+This candidate does not change the preserved limits from the local-hardening
+candidate above: packaged target PRF custody unproved, legacy 0.1.0
+compatibility unproved, no automatic legacy adoption or encrypted export,
+other IDE/model chat/platform onboarding unproved, saved-key-only Warden
+Test/Delete unchanged. No new public release is authorized by these tests.

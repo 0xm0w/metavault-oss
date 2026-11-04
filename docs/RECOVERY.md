@@ -44,6 +44,15 @@ identifies the key, not its location, contents or backup age. It is not a passwo
 or recovery key. Verify a harmless known record after restoring a matching backup,
 before deleting the backup.
 
+## Remote pairing material
+
+Enabling remote Connections creates a vault CA, a gateway certificate and a
+gateway secret beside the database, plus per-device records inside it. They
+follow the same backup and wipe semantics as the rest of the vault directory.
+Losing them does not lose credentials: re-enable remote access and pair the
+devices again. Revoking a device needs no file access; it is a settings
+action in the app.
+
 ## Agent hash migration and rollback
 
 The `before-agent-hash` snapshot keeps the old DB schema, including plaintext
