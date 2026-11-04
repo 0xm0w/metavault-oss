@@ -360,7 +360,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     remoteBox.style.marginBottom = "0.75rem";
     const deviceLabel = hero.deviceId !== undefined ? `device ${hero.deviceId}` : "an unknown device";
     const transportLabel = hero.transport !== undefined && hero.transport !== "" ? hero.transport : "remote";
-    remoteBox.textContent = `\u{1F310} Remote request: this came from ${deviceLabel} over the ${transportLabel} transport, not from a local agent. The same vault policy applies, and approval executes inside vaultd as usual.`;
+    remoteBox.textContent = `Remote request: this came from ${deviceLabel} over the ${transportLabel} transport, not from a local agent. The same vault policy applies, and approval executes inside vaultd as usual.`;
     card.append(remoteBox);
   }
   const want = el("p", "want");
@@ -2755,7 +2755,7 @@ function renderSettings(view: HTMLElement): void {
     sasBox.style.textAlign = "center";
     sasBox.textContent = pairingSession.sas ?? "";
     pairSection.append(sasBox);
-    const matchRow = el("div", "btns");
+    const matchRow = el("div", "btns btns-wrap");
     const matchBtn = el("button", "action btn-approve", "Codes match - confirm pairing") as HTMLButtonElement;
     matchBtn.type = "button";
     matchBtn.disabled = settingsBusy || pairingSession.sas === undefined;
@@ -2794,7 +2794,7 @@ function renderSettings(view: HTMLElement): void {
   // Paired devices
   const devicesSection = settingsSection(
     "Paired devices",
-    "A revoked device loses its certificate access, its bound agent tokens, and every open connection immediately. Requests already executing are not cancelled retroactively.",
+    "A revoked device loses its certificate access and its bound agent tokens. Its subsequent requests are rejected, even on connections it already holds open; requests already executing are not cancelled retroactively.",
     "connections",
   );
   if (!remoteOn) {
