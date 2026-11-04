@@ -379,7 +379,7 @@ describe("device-client", () => {
   it("refuses ACL changes outside the device credential root", () => {
     const sid = "S-1-5-21-1000-2000-3000-1001";
     expect(() => {
-      hardenOwnerOnly("C:\\Users\\morriz\\Documents", true, "win32", () => "", {
+      hardenOwnerOnly("C:\\Users\\alice\\Documents", true, "win32", () => "", {
         allowedRoots: ["C:\\metavault-device"],
         userSid: sid,
         listSids: () => [sid],

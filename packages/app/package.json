@@ -1,9 +1,18 @@
 {
   "name": "metavault-app",
   "version": "0.1.2-alpha",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xm0w/metavault-oss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0xm0w/metavault-oss/issues"
+  },
+  "homepage": "https://github.com/0xm0w/metavault-oss#readme",
   "private": true,
   "type": "module",
-  "description": "MetaVault OSS desktop app \u2014 Electron shell over vaultd. Holds no secrets.",
+  "description": "MetaVault OSS desktop app — Electron shell over vaultd. Holds no secrets.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",

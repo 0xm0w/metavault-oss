@@ -181,17 +181,9 @@ and requested a capability; neither transcript contained the secret.
 This is the protocol-level equivalent of pasting the snippet into two
 IDEs; both IDEs are present on this machine and use this exact transport.
 
-## Electron GUI (live screenshots)
+## Electron GUI
 
-- `electron-approval.png` — a real pending request in the Approval hero:
-  marshal assessment, expiry countdown, Approve/Deny/Always allow.
-  (The previous local marshal labelled this one LOW RISK while still requiring
-  approval — the human gate held. We show it because it is honest.)
-- `electron-audit.png` — the Audit timeline after clicking **Deny** in
-  the real window: Requested → Marshal → Policy → Denied by human, each
-  marshal row naming the previous local model (screenshot predates #70).
-- `electron-vault.png` — the Vault home: `stripe · charges.read`,
-  values never displayed.
+The GUI was exercised live (approval, deny, audit, vault). The old screenshots from that run showed superseded UI and were removed. Current screenshots are listed in the docs table below.
 
 Two real bugs were found by this gate and fixed: the preload was
 emitted as ESM (blank app) and sandboxed preloads cannot fetch (daemon
@@ -208,12 +200,6 @@ certificate). The same run's clean-install smoke test passed:
 [`verification/windows-installer-smoke.txt`](verification/windows-installer-smoke.txt). The macOS DMG config is
 declared but building it requires a Mac; it is the one remaining
 packaging item, along with code signing.
-
-## Demo video
-
-`demo-walkthrough.mp4` (21 s) is assembled from the live screenshots
-above. It is a walkthrough, not a screen recording of a live session;
-record the full 3-minute script (README) on demo day as the fallback.
 
 ## Task 10 — docs screenshots + agent flows (2026-10-31)
 
@@ -250,9 +236,8 @@ Gates for this task (run in-session, 2026-10-31; historical): `npm run test` —
 (33 files); `npm run typecheck` — exit 0; `npm run lint` — exit 0.
 
 Site redeploy: `npx -y wrangler deploy --config wrangler.worker.jsonc` (the `metahackathon-vault` Worker serves `metahackathon.whativedone.xyz`; the `metavault` Pages project is a preview mirror only). Deployment and route
-checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) are
-recorded in the Task 10 report
-(`.superpowers/sdd/2026-10-31-metavault-hardening-release/task-10-report.md`).
+checks (`/`, `/docs/`, `/architecture/`, `/hackathon/` → 200) were
+recorded at the time of that deploy.
 
 ## Task 11 — v0.1.0-alpha.1 local release build (2026-10-31)
 
