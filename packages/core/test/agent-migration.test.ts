@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { statSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { statSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -11,6 +11,8 @@ describe("agent token hash migration", () => {
   it("preserves existing token verification and revoked state without retaining raw tokens, idempotently", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mv-agents-")); const dbPath = join(dir, "vault.db");
     const token = "ov_agent_legacy_aabbccddeeff00112233445566778899";
+    writeFileSync(join(dir,"metavault.key.json"), "synthetic wrapped-key snapshot");
+    writeFileSync(join(dir,"metavault.token"), "synthetic-daemon-token");
     const db = new Database(dbPath);
     db.exec("CREATE TABLE agents (id TEXT PRIMARY KEY,name TEXT NOT NULL,token TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0)");
     db.prepare("INSERT INTO agents VALUES (?,?,?,?,?)").run("legacy", "Legacy", token, "2026-01-01", 1); db.close();
@@ -26,6 +28,10 @@ describe("agent token hash migration", () => {
       expect(backups).toHaveLength(1);
       const backupDirectory = join(dir, backups[0] ?? "");
       const backupPath = join(backupDirectory,"vault.db.bak");
+      for (const name of ["metavault.key.json", "metavault.token"]) {
+        expect(readFileSync(join(backupDirectory, name)).equals(readFileSync(join(dir,name)))).toBe(true);
+        if (process.platform !== "win32") expect(statSync(join(backupDirectory, name)).mode & 0o777).toBe(0o600);
+      }
       if (process.platform === "win32") {
         const acl = execFileSync("icacls.exe", [backupPath], {encoding:"utf8"});
         expect(acl).not.toMatch(/BUILTIN\\Users|Everyone|Authenticated Users/i);

@@ -47,7 +47,10 @@ before deleting the backup.
 ## Agent hash migration and rollback
 
 The `before-agent-hash` snapshot keeps the old DB schema, including plaintext
-agent bearer tokens. Keep it private. It is not a backup of the wrapped key.
+agent bearer tokens. Keep it private. When present, the matching wrapped key
+and local daemon token are copied into that same private snapshot directory
+before migration. Legacy external OS keychain keys are not exported. Keep a
+separate stopped full-directory backup before upgrading; do not distribute snapshots.
 The new app can read migrated token hashes; an old app cannot read that schema.
 A rollback requires the old DB snapshot and its matching original encryption
 key, with all processes stopped. Retain the current state separately before a
