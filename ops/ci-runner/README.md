@@ -40,6 +40,14 @@ docker compose build
    by themselves. Jobs queued for more than 24 hours fail, so a new push or a
    re-run of the Ubuntu job may be needed.
 
+If you change the Dockerfile later, rebuild and recreate only the runner (no new
+registration needed, the credential stays in `mv_state`):
+
+```powershell
+docker compose build
+docker compose up -d
+```
+
 To remove it: `docker compose down -v`, then remove the runner in GitHub.
 
 This only touches the `metavault-ci` project, its container

@@ -8,7 +8,7 @@ ARG RUNNER_VERSION=2.338.2
 ARG RUNNER_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-server \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-server python3 make g++ \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && useradd --create-home --uid 1001 --shell /bin/bash runner \
