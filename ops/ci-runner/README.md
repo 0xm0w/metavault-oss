@@ -28,28 +28,14 @@ docker compose build
 
 1. In GitHub: repo Settings > Actions > Runners > New self-hosted runner. Copy
    the registration token. GitHub documents that it expires after one hour.
-2. Back in PowerShell, enter the token locally (it is typed here, never sent in
-   chat):
+2. Run the registration script. It builds, asks for the token with hidden
+   input, writes it to `runner-token.txt` only for the register step, deletes
+   the file even if a step fails, and starts the runner only if register
+   succeeded:
    ```powershell
-   $t = Read-Host "Paste registration token"
-   Set-Content -NoNewline -Encoding ascii runner-token.txt $t
-   Remove-Variable t
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\register.ps1
    ```
-3. Register once (a one-shot container that gets the token file, stores the
-   runner credential in the `mv_state` volume and exits):
-   ```powershell
-   docker compose -f compose.yml -f compose.register.yml run --rm register
-   ```
-4. Delete the token file. Restarts and recreates never need it:
-   ```powershell
-   Remove-Item runner-token.txt
-   ```
-5. Start the runner:
-   ```powershell
-   docker compose up -d
-   docker compose logs --tail 20 runner
-   ```
-6. Check the runner shows **Idle** with the label `metavault-ci` under the
+3. Check the runner shows **Idle** with the label `metavault-ci` under the
    repo's Settings > Actions > Runners. Queued Ubuntu jobs for the PR then start
    by themselves. Jobs queued for more than 24 hours fail, so a new push or a
    re-run of the Ubuntu job may be needed.
