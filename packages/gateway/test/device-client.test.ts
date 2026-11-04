@@ -86,8 +86,13 @@ describe("device-client", () => {
       pairedAt: new Date().toISOString(),
       serverCertFingerprint: material.serverCertFingerprint,
     }, material, "mvshim_test-token-1");
-    expect(statSync(join(dir, "key.pem")).mode & 0o777).toBe(0o600);
-    expect(statSync(join(dir, "device.json")).mode & 0o777).toBe(0o600);
+    // POSIX mode bits are the enforcement on POSIX. On Windows they are a
+    // no-op (observed 0o666) and owner-only is enforced + verified via ACLs
+    // inside saveDeviceProfile, so the mode assertion is POSIX-only.
+    if (process.platform !== "win32") {
+      expect(statSync(join(dir, "key.pem")).mode & 0o777).toBe(0o600);
+      expect(statSync(join(dir, "device.json")).mode & 0o777).toBe(0o600);
+    }
     const loaded = loadDeviceProfile(dir);
     expect(loaded.profile.deviceId).toBe(deviceId);
 
