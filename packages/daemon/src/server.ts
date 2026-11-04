@@ -343,7 +343,7 @@ export async function handleVaultRequest(
   // remote device and a remote caller can never pose as local.
   const gatewayConfigured = options?.gatewaySecret !== undefined && options.gatewaySecret !== "";
   const gatewayValid =
-    gatewayConfigured && tokenMatches(options.gatewaySecret as string, options?.providedGatewaySecret);
+    gatewayConfigured && tokenMatches(options.gatewaySecret, options.providedGatewaySecret);
   const stampPresent =
     options?.providedGatewaySecret !== undefined ||
     options?.deviceId !== undefined ||
@@ -355,7 +355,7 @@ export async function handleVaultRequest(
     };
   }
   const deviceCtx =
-    gatewayValid && options?.deviceId !== undefined
+    gatewayValid && options.deviceId !== undefined
       ? { deviceId: options.deviceId, transport: options.transport ?? "unknown" }
       : undefined;
   // A remote-origin request can never exercise human-decision routes even
@@ -399,7 +399,7 @@ export async function handleVaultRequest(
           service.pairBegin({
             code: b["code"],
             deviceName: b["deviceName"],
-            platform: typeof b["platform"] === "string" ? (b["platform"] as string) : "",
+            platform: typeof b["platform"] === "string" ? (b["platform"]) : "",
             clientPublicKeyPem: b["clientPublicKeyPem"],
             clientNonce: b["clientNonce"],
           }),
@@ -414,30 +414,29 @@ export async function handleVaultRequest(
       if (typeof b["pairingId"] !== "string" || typeof b["sas"] !== "string") {
         return BAD_REQUEST;
       }
-      return run(service.attachPairingSas(b["pairingId"], b["sas"])).then(() => ({ status: 200, body: { status: "ok" } }));
+      return run(service.attachPairingSas(b["pairingId"], b["sas"]).pipe(Effect.map(() => ({ status: "ok" as const }))));
     }
     if (method === "POST" && path === "/internal/pair-status") {
       const b = (body ?? {}) as Record<string, unknown>;
       if (typeof b["pairingId"] !== "string") {
         return BAD_REQUEST;
       }
-      return run(service.pairingInternalStatus(b["pairingId"])).then((status) => ({ status: 200, body: status }));
+      return run(service.pairingInternalStatus(b["pairingId"]));
     }
     if (method === "POST" && path === "/internal/device-status") {
       const b = (body ?? {}) as Record<string, unknown>;
       if (typeof b["fingerprint"] !== "string" || b["fingerprint"] === "") {
         return BAD_REQUEST;
       }
-      return run(service.getDeviceByFingerprint(b["fingerprint"])).then((result) => {
-        const device = result.body as { id: string; name: string; revoked: boolean } | undefined;
-        return {
-          status: 200,
-          body:
-            device === undefined || device === null
+      return run(
+        service.getDeviceByFingerprint(b["fingerprint"]).pipe(
+          Effect.map((device) =>
+            device === undefined
               ? { known: false, revoked: true }
               : { known: true, revoked: device.revoked, deviceId: device.id, name: device.name },
-        };
-      });
+          ),
+        ),
+      );
     }
     return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
   }
@@ -1054,7 +1053,7 @@ export async function handleVaultRequest(
       try {
         const ca = ensureVaultCa(options.vaultDir);
         ensureGatewayCertificate(options.vaultDir, ca);
-        ensureGatewaySecret(options.vaultDir === undefined ? "" : join(options.vaultDir, "metavault.db"));
+        ensureGatewaySecret(join(options.vaultDir, "metavault.db"));
       } catch (err) {
         return {
           status: 500,

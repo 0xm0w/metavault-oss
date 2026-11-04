@@ -1,5 +1,4 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { dirname } from "node:path";
 import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from "effect";
 import { Brain } from "../../brain/src/brain.js";
 import { Connector } from "../../core/src/connector.js";
@@ -159,7 +158,7 @@ function hashPairingCode(code: string): string {
 function generatePairingCode(): string {
   const bytes = randomBytes(8);
   let out = "";
-  for (const b of bytes) out += PAIRING_CODE_ALPHABET[b % PAIRING_CODE_ALPHABET.length];
+  for (const b of bytes) out += PAIRING_CODE_ALPHABET[b % PAIRING_CODE_ALPHABET.length] ?? "";
   return out;
 }
 
@@ -1571,7 +1570,7 @@ export function makeVaultServiceLive(
               requireAuthForRemoteApproval: patch.requireAuthForRemoteApproval ?? current.requireAuthForRemoteApproval,
             };
             yield* store.setRemoteSettingsRow(next);
-            yield* audit("settings", "*", "*", "settings-changed", `remote access ${next.enabled ? "enabled" : "disabled"} (${next.host}:${next.port})`, false, undefined, {});
+            yield* audit("settings", "*", "*", "settings-changed", `remote access ${next.enabled ? "enabled" : "disabled"} (${next.host}:${String(next.port)})`, false, undefined, {});
             return next;
           }),
         createPairingSession: () =>
