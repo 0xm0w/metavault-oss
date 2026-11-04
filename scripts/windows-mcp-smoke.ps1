@@ -32,7 +32,7 @@ function Test-PackagedMcp {
     $read = $p.StandardOutput.ReadLineAsync()
     if (-not $read.Wait(15000)) { throw "Installed MCP tools/list timed out" }
     $reply = $read.Result | ConvertFrom-Json
-    Check ($reply.id -eq 2 -and @($reply.result.tools).Count -eq 5) "installed MCP exposes exactly five secret-blind tools"
+    Check ($reply.id -eq 2 -and (@($reply.result.tools | ForEach-Object { $_.name } | Sort-Object) -join ",") -eq "enrollment_status,grant_status,list_aliases,register_agent,registration_status,request_capability,request_enrollment,revoke") "installed MCP exposes exactly the eight expected secret-blind tools"
     Check (@($reply.result.tools.name) -contains "request_capability") "installed MCP includes request_capability"
   } finally {
     if ($p.Id -and -not $p.HasExited) { $p.Kill() }

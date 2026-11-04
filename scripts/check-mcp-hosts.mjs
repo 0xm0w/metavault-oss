@@ -40,7 +40,7 @@ const daemon = await startVaultDaemon({
 });
 const daemonUrl = `http://127.0.0.1:${daemon.address().port}`;
 
-const EXPECTED_TOOLS = ["enrollment_status", "list_aliases", "request_capability", "request_enrollment", "revoke"];
+const EXPECTED_TOOLS = ["enrollment_status", "grant_status", "list_aliases", "register_agent", "registration_status", "request_capability", "request_enrollment", "revoke"];
 
 let failures = 0;
 for (const host of ["vscode", "claude-code"]) {
