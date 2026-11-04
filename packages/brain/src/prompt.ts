@@ -17,7 +17,8 @@ export function escapeUntrustedValue(value: string): string {
     .replace(/\r\n/g, "\\n")
     .replace(/\r/g, "\\r")
     .replace(/\n/g, "\\n")
-    .replace(/<\/?[a-zA-Z0-9_\-:]+/g, (match) => match.replace("<", "&lt;"));
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export function buildMarshalPrompt(
