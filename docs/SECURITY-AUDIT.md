@@ -1,3 +1,11 @@
+> Current scope note (2026-11-04): this is a historical audit of tested paths,
+> not a formal security certification. Broad words such as "never" describe the
+> intended data boundary, not a zero-memory or all-attacks guarantee. Current
+> token migration/rotation, recovery and uninstall behavior is in SECURITY.md
+> and RECOVERY.md. PID inspection is self-reported defense-in-depth. Windows
+> Hello screen lock is not passkey encryption custody; remote access is not in
+> the local-hardening candidate.
+
 # MetaVault OSS: OWASP LLM Top 10 Compliance Audit & Post-Quantum Cryptography Specification
 
 **Document Version:** 1.0.0  

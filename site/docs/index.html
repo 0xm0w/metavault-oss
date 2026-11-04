@@ -83,9 +83,10 @@ npx tsc -p tsconfig.json --outDir dist</pre>
   <section class="hack-slide" id="firstrun" data-label="First run">
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">02</span>
-      <h2>Three commands, then the app</h2>
+      <h2>Set up locally, then connect your IDE</h2>
+      <p class="pg-note">Local-hardening candidate, not a new release: deliberate uninstall warns then wipes the fixed app profile; Cancel preserves it and in-place updates retain it. Shared legacy keys or linked profiles block cleanup. Back up the matching stopped DB and key together. Windows Hello screen lock is not passkey-backed encryption; PRF custody and remote Connections are not included in this candidate.</p>
       <div class="pg-grid">
-        <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The master key is wrapped with your passphrase (scrypt by default) and the daemon starts locked. Run <code>metavault unlock</code>; it auto-locks after 15 idle minutes.</p></article>
+        <article class="pg-card"><span class="n">1 · init</span><h3>Create the vault</h3><p class="pg-note"><span class="buzz">AES-256-GCM</span>. The installed Windows app has a password setup/unlock screen. The master key is password-wrapped (scrypt by default) and later daemon starts are locked. Run <code>metavault unlock</code>; it auto-locks after 15 idle minutes.</p></article>
         <article class="pg-card"><span class="n">2 · Settings</span><h3>Optional warden</h3><p class="pg-note">Add a Meta API key for Muse Spark, or set your own local endpoint. Skip this and policy still holds the ceiling; anything that needs judgement comes to you.</p></article>
         <article class="pg-card"><span class="n">3 · add</span><h3>Store a secret once</h3><p class="pg-note"><code>metavault add stripe --scope charges.read</code> reads a hidden prompt. The agent learns the alias and the ceiling.</p></article>
       </div>
@@ -96,7 +97,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
     <div class="hack-slide-inner">
       <span class="caption-mono-sm pg-kicker">03 · MCP</span>
       <h2>One snippet per IDE</h2>
-      <p class="pg-lead" style="margin:0 auto 16px">Replace <code>&lt;metavault-oss&gt;</code> with your checkout. The agent id is how audit and revoke find that IDE. Full host notes live in <code>docs/MCP.md</code>.</p>
+      <p class="pg-lead" style="margin:0 auto 16px">Installed Windows candidate: use Settings &gt; Daemon &gt; Agent Integration &amp; MCP to generate/rotate a private token and copy the installed-runtime config. No separate Node or source checkout is needed. Raw tokens are shown once; rotate after losing the config. The examples below are source-development examples only: replace <code>&lt;metavault-oss&gt;</code> with your checkout. Full host notes live in <code>docs/MCP.md</code>.</p>
       <div data-tabs>
         <div class="pg-tablist" role="tablist" aria-label="IDE setup">
           <button type="button" data-tab="cursor" aria-selected="true">Cursor</button>
@@ -113,6 +114,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
         "METAVAULT_AGENT_ID": "cursor",
+        "METAVAULT_AGENT_TOKEN": "&lt;generated-private-agent-token&gt;",
         "METAVAULT_IDE": "Cursor"
       }
     }
@@ -127,6 +129,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
         "METAVAULT_AGENT_ID": "claude-code",
+        "METAVAULT_AGENT_TOKEN": "&lt;generated-private-agent-token&gt;",
         "METAVAULT_IDE": "Claude Code"
       }
     }
@@ -143,6 +146,7 @@ npx tsc -p tsconfig.json --outDir dist</pre>
       "args": ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "env": {
         "METAVAULT_AGENT_ID": "vscode",
+        "METAVAULT_AGENT_TOKEN": "&lt;generated-private-agent-token&gt;",
         "METAVAULT_IDE": "VS Code"
       }
     }
@@ -156,6 +160,7 @@ args = ["&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"]
 
 [mcp_servers.metavault.env]
 METAVAULT_AGENT_ID = "codex"
+METAVAULT_AGENT_TOKEN = "&lt;generated-private-agent-token&gt;"
 METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</button></div>
         </div>
         <div data-panel="opencode" hidden>
@@ -166,6 +171,7 @@ METAVAULT_IDE = "Codex"</pre><button type="button" data-copy="snip-codex">Copy</
       "command": ["node", "&lt;metavault-oss&gt;/dist/packages/mcp/src/server.js"],
       "environment": {
         "METAVAULT_AGENT_ID": "opencode",
+        "METAVAULT_AGENT_TOKEN": "&lt;generated-private-agent-token&gt;",
         "METAVAULT_IDE": "OpenCode"
       }
     }

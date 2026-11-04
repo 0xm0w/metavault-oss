@@ -1,3 +1,13 @@
+# Current handover note - November 4, 2026
+
+The historical handover below predates the local-hardening candidate. Do not use
+its old missing-password-screen or source-only-MCP statements as current status.
+Follow README.md, docs/MCP.md, docs/RECOVERY.md and docs/VERIFICATION.md for the
+candidate and exact test limits. No new release is implied. Windows PRF custody,
+legacy0.1.0 compatibility and remote Connections are not proven by local tests.
+
+---
+
 # MetaVault OSS — Handover (2026-10-31, repo renamed from metavault)
 
 Read this first when resuming. Repo: your local clone
@@ -10,7 +20,7 @@ Private remote: `https://github.com/0xm0w/metavault-oss` (renamed from 0xm0w/met
 > warden model (`METAVAULT_WARDEN_MODEL`, since removed in 0.1.0-alpha), optional
 > UD-IQ3_XXS quant in the eval scripts, and a fixed eval memory measurement.
 > The ps1 scripts are parse-checked only; no Windows run and no IQ3_XXS
-> numbers yet. The app has no passphrase unlock screen yet (use
+> numbers yet. Historical note, now superseded: the app had no password unlock screen (used
 > `metavault unlock`). Exposures still open: `SECURITY.md#master-key-protection`.
 
 - Branch `main` pushed and merged via PR #1 (https://github.com/0xm0w/metavault-oss/pull/1).

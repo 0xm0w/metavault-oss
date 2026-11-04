@@ -34,6 +34,7 @@ MetaVault OSS implements multi-tiered, defense-in-depth protections to prevent a
 4. **Caller Process & Binary Boundary Inspection (Defense-in-Depth)**:
    - When enabled in Settings, `vaultd` inspects the client's OS process ID (PID) and executable binary.
    - Cross-references the caller binary against approved agent runtimes (`Cursor.exe`, `Code.exe`, `node.exe`, `electron.exe`, `claude.exe`).
+   - PID/process data is supplied by the client and is defense-in-depth, not cryptographic proof of the caller. A stolen bearer token remains a risk; rotate/revoke it.
    - If an unauthorized script runner or tool (`python.exe`, `curl.exe`, `powershell.exe`, `cmd.exe`, `bash`) attempts to exploit a stolen agent token, the process inspection engine blocks the call with HTTP `403 Forbidden` (`process-verification-failed`).
 
 ## Security model (summary)
@@ -54,10 +55,10 @@ MetaVault OSS implements multi-tiered, defense-in-depth protections to prevent a
   marshal model sees metadata only — never a secret, fragment, or hash.
 - Deterministic policy ceilings cannot be widened by the model.
   Standing approvals cover read-only, low-risk scopes only.
-- Prompt injection and scope escalation are neutralized via nonce-delimited
-  XML tags and automated scope clamping (OWASP LLM01/LLM02 compliance).
+- Prompt injection is untrusted input. Nonce-delimited XML and scope clamping
+  are defenses tested on defined cases, not a guarantee against every injection.
 - Post-quantum hybrid envelope encryption (NIST FIPS 203 ML-KEM-768 + X25519)
-  is available for long-term vault export and inter-daemon synchronization.
+  is available as a tested core primitive; no user-facing encrypted export or inter-daemon synchronization is implemented.
 - The daemon binds to `127.0.0.1`; human-decision routes require the
   daemon token. MCP exposes no approval operation.
 - The canary test in `test/canary.test.ts` fails the build if a planted
@@ -66,13 +67,35 @@ MetaVault OSS implements multi-tiered, defense-in-depth protections to prevent a
 See [`docs/SECURITY-AUDIT.md`](docs/SECURITY-AUDIT.md) for the full OWASP LLM Top 10
 compliance matrix and Post-Quantum Cryptography threat model.
 
+## Local-hardening candidate, not a new release
+
+Agent tokens are stored as SHA-256 hashes after a backed-up migration. A private
+`before-agent-hash` snapshot intentionally retains the old raw tokens. Protect it
+like credentials. Existing tokens remain valid until rotated. Generate/rotate
+returns the new raw token once; normal listing never returns it. Revoke/rotate
+invalidates future authentication and live grants, but cannot undo an upstream
+operation already executing. See [MCP lifecycle](docs/MCP.md#agent-token-lifecycle).
+
+Unlock authenticates every existing credential record before accepting the key;
+mismatch or damage remains locked and requires matching-backup recovery. Empty
+DBs cannot prove a pairing. The fingerprint is shown only while unlocked and is
+not a recovery key. Migration snapshot/restore and uninstall boundaries are in
+[RECOVERY.md](docs/RECOVERY.md).
+
+Windows Hello consent verification is a screen lock, not key custody. No Windows
+PRF passkey-backed vault or automatic CNG/DPAPI fallback is claimed. Remote
+Connections are not in this local candidate. The daemon remains loopback-only.
+JavaScript strings and runtime copies cannot be reliably erased or proven absent
+from a heap. Buffer zeroing and canary tests reduce risk on tested paths, not a
+zero-plaintext-memory guarantee.
+
 ## Master key protection
 
 ### What the code does
 
 | Mode | How the daemon gets the key | Auto-lock | Default? |
 | --- | --- | --- | --- |
-| Passphrase (`metavault.key.json`) | `metavault unlock` sends your passphrase to `POST /unlock` (the app's preload exposes the same call, but the app has no passphrase screen yet); the daemon derives a key-encryption key (KEK) and unwraps the master key with AES-256-GCM | Yes, 15 min idle (`METAVAULT_AUTO_LOCK_MINUTES`, 1 to 1440); `metavault lock` locks now | Yes (`metavault init`) |
+| Passphrase (`metavault.key.json`) | The desktop password screen or `metavault unlock` sends the password to token-guarded `POST /unlock`; the daemon derives a key-encryption key (KEK) and unwraps the master key with AES-256-GCM | Yes, 15 min idle (`METAVAULT_AUTO_LOCK_MINUTES`, 1 to 1440); `metavault lock` locks now | Yes (`metavault init`) |
 | Legacy OS keychain | Read from the OS keychain at start | No | Only with `init --legacy-keychain`, or an existing vault that has not been migrated (the daemon warns) |
 | Environment variable | `METAVAULT_MASTER_KEY` | No | No. Ignored unless `METAVAULT_ALLOW_ENV_MASTER_KEY=1` |
 | Dev plaintext file | `./metavault.key` (mode 0600) written by `scripts/run-daemon.mjs` | No | No. Only with `METAVAULT_DEV_PLAINTEXT_KEY=1` |
