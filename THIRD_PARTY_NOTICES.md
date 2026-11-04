@@ -26,8 +26,14 @@ tooling before redistributing.
 
 ## Windows installer
 
-The Windows installer packages the app with Electron (MIT; it also carries
-Chromium's third-party licenses). Installer builds should include the license
-files that Electron and electron-builder place in the application directory
-(`LICENSE`, `LICENSES.chromium.html`). Check a release asset to confirm before
-publishing a new build.
+The installer packages the app with Electron (MIT; it also carries Chromium's
+third-party licenses: `LICENSE.electron.txt` and `LICENSES.chromium.html` in the
+install folder). The build also writes into `resources/vaultd/`:
+
+- `LICENSE-MetaVault-OSS.txt`: the project's Apache-2.0 license.
+- `THIRD_PARTY_LICENSES.txt`: the license text of every npm package esbuild
+  bundled into the app and daemon (generated from the build's metafile, so it
+  tracks what is really shipped), plus better-sqlite3.
+
+The Windows installer smoke test checks that these files are present after
+install.

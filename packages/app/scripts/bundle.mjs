@@ -15,7 +15,7 @@
 // extraResources) and the bundles require it by that relative path.
 // No model is bundled.
 import { build } from "esbuild";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,16 +34,18 @@ const shared = {
   sourcemap: false,
   legalComments: "none",
   logLevel: "warning",
+  metafile: true,
   define: { "import.meta.url": "__metavault_import_meta_url" },
   banner: { js: 'const __metavault_import_meta_url = require("node:url").pathToFileURL(__filename).href;' },
 };
 
-await build({
+const metafiles = [];
+metafiles.push((await build({
   ...shared,
   entryPoints: [join(appRoot, "src", "main.ts")],
   outfile: join(appRoot, "dist", "main.bundle.cjs"),
   external: ["electron"],
-});
+})).metafile);
 
 const nativeSqlite = {
   name: "native-better-sqlite3",
@@ -61,12 +63,12 @@ const entries = [
   ["gateway/src/index.ts", "gateway.cjs"],
 ];
 for (const [entry, out] of entries) {
-  await build({
+  metafiles.push((await build({
     ...shared,
     entryPoints: [join(repoRoot, "packages", entry)],
     outfile: join(outVaultd, out),
     plugins: [nativeSqlite],
-  });
+  })).metafile);
 }
 
 // better-sqlite3: package.json + lib + the one Node-API prebuild we need.
@@ -82,5 +84,36 @@ cpSync(join(sqliteSrc, "LICENSE"), join(sqliteDst, "LICENSE"));
 cpSync(join(sqliteSrc, "lib"), join(sqliteDst, "lib"), { recursive: true });
 cpSync(prebuild, join(sqliteDst, "prebuilds", `${target}.node`));
 writeFileSync(join(outVaultd, "package.json"), `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`);
+
+// Distribution notices: the project license plus the license text of every
+// npm package esbuild actually bundled (read from the metafile), so the
+// installer carries the notices the dependencies require.
+cpSync(join(repoRoot, "LICENSE"), join(outVaultd, "LICENSE-MetaVault-OSS.txt"));
+const pkgDirs = new Set([sqliteSrc]);
+for (const m of metafiles) {
+  for (const input of Object.keys(m.inputs)) {
+    const i = input.replaceAll("\\", "/").lastIndexOf("node_modules/");
+    if (i < 0) continue;
+    const rest = input.replaceAll("\\", "/").slice(i + "node_modules/".length).split("/");
+    const name = rest[0].startsWith("@") ? `${rest[0]}/${rest[1]}` : rest[0];
+    pkgDirs.add(join(repoRoot, "node_modules", name));
+  }
+}
+const sections = [];
+for (const dir of [...pkgDirs].sort()) {
+  const pj = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  const lic = readdirSync(dir).filter((f) => /^(licen[sc]e|notice|copying)/i.test(f));
+  const texts = lic.map((f) => readFileSync(join(dir, f), "utf8").trim());
+  sections.push(
+    `=== ${pj.name}@${pj.version} (declared license: ${typeof pj.license === "string" ? pj.license : JSON.stringify(pj.license ?? "none declared")}) ===\n` +
+      `Author: ${typeof pj.author === "string" ? pj.author : (pj.author?.name ?? "not declared")}; repository: ${typeof pj.repository === "string" ? pj.repository : (pj.repository?.url ?? "not declared")}\n` +
+      (texts.length ? texts.join("\n\n") : "(the upstream repository and npm package publish no license or copyright text; only the license identifier above is declared by the author)"),
+  );
+}
+writeFileSync(
+  join(outVaultd, "THIRD_PARTY_LICENSES.txt"),
+  `Third-party software bundled in MetaVault OSS (resources/vaultd and the app main bundle).\nGenerated at build time from the esbuild metafile. Electron and Chromium licenses are in the application directory (LICENSE.electron.txt, LICENSES.chromium.html).\n\n${sections.join("\n\n")}\n`,
+);
+console.log(`bundle: ${pkgDirs.size} bundled npm packages with notices`);
 
 console.log(`bundle: dist/main.bundle.cjs, bundle/vaultd/{vaultd,metavault,mcp,gateway}.cjs, better-sqlite3 ${target}`);

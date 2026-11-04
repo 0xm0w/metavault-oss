@@ -273,6 +273,10 @@ function Check-Installed-Layout {
       (Join-Path $installDir "resources\vaultd\metavault.cjs"),
       (Join-Path $installDir "resources\vaultd\mcp.cjs"),
       (Join-Path $installDir "resources\vaultd\gateway.cjs"),
+      (Join-Path $installDir "resources\vaultd\LICENSE-MetaVault-OSS.txt"),
+      (Join-Path $installDir "resources\vaultd\THIRD_PARTY_LICENSES.txt"),
+      (Join-Path $installDir "LICENSE.electron.txt"),
+      (Join-Path $installDir "LICENSES.chromium.html"),
       (Join-Path $installDir "resources\vaultd\native\better-sqlite3\prebuilds\win32-x64.node"),
       (Join-Path $binDir "metavault.cmd"),
       (Join-Path $binDir "vaultd.cmd"),
@@ -328,15 +332,15 @@ if ($PreviousInstallerDir -ne "") {
   if ($null -eq $previous) { throw 'Previous release installer missing' }
   $sums = Get-Content (Join-Path $PreviousInstallerDir 'SHA256SUMS') -Raw
   $hash = (Get-FileHash $previous.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ($sums -notmatch ('(?m)^' + [Regex]::Escape($hash) + '\s+\*?' + [Regex]::Escape($previous.Name) + '\s*$')) { throw 'Previous published installer SHA256/name mismatch' }
-  Log ("Previous published artifact: " + $previous.Name + " SHA256=" + $hash)
+  if ($sums -notmatch ('(?m)^' + [Regex]::Escape($hash) + '\s+\*?' + [Regex]::Escape($previous.Name) + '\s*$')) { throw 'Previous installer SHA256/name mismatch' }
+  Log ("Previous artifact (built from tag, not redistributed): " + $previous.Name + " SHA256=" + $hash)
   $installer = $previous
-  Install-App 'published previous release'
-  Launch-App-Wait-Health 'published previous release'
+  Install-App 'previous release (built from tag)'
+  Launch-App-Wait-Health 'previous release (built from tag)'
   $status = Invoke-Daemon 'GET' '/key/status'
   Check ($status.mode -eq 'uninitialized') 'previous release starts synthetic empty vault'
   $result = Invoke-Daemon 'POST' '/setup' @{passphrase=$smokePassphrase}
-  Check ($result.status -eq 'initialized') 'previous published release creates password vault'
+  Check ($result.status -eq 'initialized') 'previous release built from tag creates password vault'
   $result = Invoke-Daemon 'POST' '/credentials' @{alias='previous-release-dummy';scope='smoke';secret=$smokeSecret}
   Check ($null -ne $result -and $null -eq $result.__httpStatus) 'previous release stores synthetic encrypted credential'
   $keyBeforeUpgrade = (Get-FileHash $keyFile -Algorithm SHA256).Hash
@@ -346,7 +350,7 @@ if ($PreviousInstallerDir -ne "") {
   Launch-App-Wait-Health 'candidate over published release'
   $status = Invoke-Daemon 'GET' '/key/status'
   Check ($status.mode -eq 'passphrase' -and $status.locked) 'published-to-candidate upgrade preserves locked password vault'
-  Check ((Get-FileHash $keyFile -Algorithm SHA256).Hash -eq $keyBeforeUpgrade) 'published upgrade retains exact wrapped key file'
+  Check ((Get-FileHash $keyFile -Algorithm SHA256).Hash -eq $keyBeforeUpgrade) 'upgrade from previous build retains exact wrapped key file'
   $result = Invoke-Daemon 'POST' '/unlock' @{passphrase=$smokePassphrase}
   Check ($result.status -eq 'unlocked') 'published vault password unlocks candidate'
   $identity = Invoke-Daemon 'GET' '/key/status'
@@ -359,7 +363,7 @@ if ($PreviousInstallerDir -ne "") {
   $identity = Invoke-Daemon 'GET' '/key/status'
   Check ($identity.fingerprint -eq $fingerprint) 'reunlock retains same key fingerprint'
   $aliases = Invoke-Daemon 'GET' '/aliases'
-  Check (@($aliases.aliases).Contains('previous-release-dummy')) 'published credential alias remains in candidate'
+  Check (@($aliases.aliases).Contains('previous-release-dummy')) 'previous-release credential alias remains in candidate'
   Stop-App
   $env:MV_UPGRADE_DB = $dbFile; $env:MV_UPGRADE_KEY = $keyFile
   $env:MV_UPGRADE_PASSWORD = $smokePassphrase; $env:MV_UPGRADE_EXPECTED = $smokeSecret
