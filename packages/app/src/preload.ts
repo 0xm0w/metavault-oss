@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   CapabilityRequestLike,
+  RemoteSettingsPatchLike,
   CardInputLike,
   DeeplinkAddParams,
   AgentSecuritySettingsPatchLike,
@@ -95,6 +96,22 @@ const api: VaultApi = {
   updateLocalAuthSettings: (patch: LocalAuthPatchLike) => invoke("PATCH", "/settings/local-auth", patch),
   getAgentSecuritySettings: () => invoke("GET", "/settings/security"),
   updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => invoke("PATCH", "/settings/security", patch),
+  // Remote Connections: pairing and device management. The daemon token
+  // stays in main; the renderer only ever sees session/device state, never
+  // the pairing code once consumed, and never any secret material.
+  getRemoteSettings: () => invoke("GET", "/settings/remote"),
+  updateRemoteSettings: (patch: RemoteSettingsPatchLike) => invoke("PATCH", "/settings/remote", patch),
+  listDevices: () => invoke("GET", "/devices"),
+  startPairing: () => invoke("POST", "/devices/pair", {}),
+  getPairingSession: () => invoke("GET", "/devices/pairing"),
+  confirmPairing: (pairingId: string) => invoke("POST", "/devices/pairing/confirm", { pairingId }),
+  cancelPairing: (pairingId: string) => invoke("POST", "/devices/pairing/cancel", { pairingId }),
+  renameDevice: (id: string, name: string) => invoke("POST", "/devices/rename", { id, name }),
+  revokeDevice: (target: string) => invoke("POST", "/devices/revoke", { target }),
+  setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) =>
+    invoke("POST", "/devices/policy", { deviceId, alias, allowWrite }),
+  listDeviceAliasPolicies: (deviceId: string) =>
+    invoke("GET", `/devices/policies/${encodeURIComponent(deviceId)}`),
   setLocalPin: (pin: string, currentPin?: string) =>
     invoke("POST", "/settings/local-auth/pin", { pin, ...(currentPin !== undefined && currentPin !== "" ? { currentPin } : {}) }),
   verifyLocalPin: (pin: string) => invoke("POST", "/settings/local-auth/verify", { pin }),

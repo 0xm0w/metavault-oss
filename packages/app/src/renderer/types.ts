@@ -234,6 +234,40 @@ export interface LocalAuthStatusLike {
   readonly autoLockMinutes: number;
 }
 
+// Remote Connections state mirrored from the daemon. All fields readonly;
+// the renderer never holds tokens, keys, or pairing codes after use.
+export interface RemoteSettingsLike {
+  readonly enabled: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly requireAuthForRemoteApproval?: boolean;
+}
+
+export interface RemoteSettingsPatchLike {
+  readonly enabled?: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly requireAuthForRemoteApproval?: boolean;
+}
+
+export interface DeviceLike {
+  readonly id: string;
+  readonly name: string;
+  readonly platform?: string;
+  readonly pairedAt?: string;
+  readonly revoked?: boolean;
+  readonly lastSeenAt?: string;
+}
+
+export interface PairingSessionLike {
+  readonly pairingId?: string;
+  readonly status: string;
+  readonly sas?: string;
+  readonly deviceName?: string;
+  readonly platform?: string;
+  readonly expiresAt?: string;
+}
+
 export interface LocalAuthPatchLike {
   readonly enabled?: boolean;
   readonly biometricEnabled?: boolean;
@@ -301,6 +335,17 @@ export interface VaultApi {
   readonly testWarden: () => Promise<unknown>;
   readonly getLocalAuthStatus: () => Promise<unknown>;
   readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
+  readonly getRemoteSettings: () => Promise<unknown>;
+  readonly updateRemoteSettings: (patch: RemoteSettingsPatchLike) => Promise<unknown>;
+  readonly listDevices: () => Promise<unknown>;
+  readonly startPairing: () => Promise<unknown>;
+  readonly getPairingSession: () => Promise<unknown>;
+  readonly confirmPairing: (pairingId: string) => Promise<unknown>;
+  readonly cancelPairing: (pairingId: string) => Promise<unknown>;
+  readonly renameDevice: (id: string, name: string) => Promise<unknown>;
+  readonly revokeDevice: (target: string) => Promise<unknown>;
+  readonly setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) => Promise<unknown>;
+  readonly listDeviceAliasPolicies: (deviceId: string) => Promise<unknown>;
   readonly getAgentSecuritySettings: () => Promise<unknown>;
   readonly updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => Promise<unknown>;
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
