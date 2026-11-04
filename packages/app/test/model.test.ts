@@ -444,6 +444,7 @@ describe("website, favicon and edit payload", () => {
     expect(faviconUrl("  Example.COM ")).toBe("https://example.com/favicon.ico");
     expect(faviconUrl("")).toBeNull();
     expect(faviconUrl("localhost")).toBeNull();
+    for (const unsafe of ['example.com"><svg onload=alert(1)>', 'user@example.com', 'example.com:443', 'example.com\\evil', 'a'.repeat(254) + '.com']) expect(faviconUrl(unsafe)).toBeNull();
     expect(normalizeWebsite("https://Example.com/path?q=1")).toBe("example.com");
   });
 
