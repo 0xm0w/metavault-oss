@@ -165,7 +165,9 @@ describe("main-process daemon whitelist", () => {
     expect(clientSource).toContain("metavaultEnv");
     expect(clientSource).toContain("http://127.0.0.1:7077");
     expect(clientSource).toContain("./env.js");
-    expect(clientSource).toContain("metavault.token");
+    // The token is environment-only: no on-disk copy for same-UID readers.
+    expect(clientSource).toContain("METAVAULT_DAEMON_TOKEN");
+    expect(clientSource).not.toContain("metavault.token");
     expect(clientSource).toContain("x-metavault-token");
     expect(clientSource).not.toContain("electron");
   });

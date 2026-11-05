@@ -47,6 +47,42 @@ export interface ConnectorLiveOptions {
 
 const failed = (message: string): ConnectorFailed => new ConnectorFailed({ message });
 
+const REDACTED_SECRET = "[REDACTED]";
+// Too short and generic substring replacement would mangle response bodies
+// that legitimately contain similar short strings.
+const REDACTION_MIN_SECRET_LENGTH = 8;
+
+/**
+ * Replaces every occurrence of the injected credential in a response body
+ * with "[REDACTED]" before the body is parsed or returned. Upstream APIs
+ * sometimes echo authorization material back (auth-echo verification
+ * endpoints, error bodies that repeat headers, token metadata): the calling
+ * agent must never receive the secret string it enabled.
+ *
+ * Variants cover exact text, percent-encoding and Base64/Base64-URL encodings
+ * (with and without padding). Split/join avoids regex metacharacter surprises
+ * since a token can contain arbitrary characters.
+ */
+export function redactSecretFromBody(text: string, secret: string): string {
+  if (secret.length < REDACTION_MIN_SECRET_LENGTH) {
+    return text;
+  }
+  const encoded = Buffer.from(secret, "utf8").toString("base64");
+  const encodedUrl = encoded.replace(/\+/g, "-").replace(/\//g, "_");
+  const percent = encodeURIComponent(secret);
+  const variants = [
+    secret,
+    ...(percent !== secret ? [percent] : []),
+    ...(encoded !== secret ? [encoded, encoded.replace(/=+$/, "")] : []),
+    ...(encodedUrl !== encoded ? [encodedUrl, encodedUrl.replace(/=+$/, "")] : []),
+  ];
+  let out = text;
+  for (const variant of variants) {
+    out = out.split(variant).join(REDACTED_SECRET);
+  }
+  return out;
+}
+
 const failedWithStatus = (status: number): ConnectorFailed =>
   new ConnectorFailed({
     status,
@@ -118,14 +154,17 @@ export function executeHttp(
     const text = yield* response.text.pipe(
       Effect.mapError(() => failedWithStatus(status)),
     );
+    // Redact the credential before parsing: an upstream echo of auth
+    // material (headers, token metadata) must not reach the agent.
+    const safeText = redactSecretFromBody(text, opts.secret);
     let data: unknown;
-    if (text === "") {
+    if (safeText === "") {
       data = null;
     } else {
       try {
-        data = JSON.parse(text) as unknown;
+        data = JSON.parse(safeText) as unknown;
       } catch {
-        data = text;
+        data = safeText;
       }
     }
     return { status, data };

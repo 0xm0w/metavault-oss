@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Writable, type Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -135,8 +135,10 @@ function trimTrailingSlashes(url: string): string {
 }
 
 // Daemon token for the human-decision routes: explicit dep, then
-// METAVAULT_DAEMON_TOKEN, then the metavault.token file the daemon writes
-// next to the vault DB. The token itself is never printed.
+// METAVAULT_DAEMON_TOKEN. The daemon never writes a token file, so there is
+// no third fallback to a read-the-disk shortcut a prompt-injected agent
+// could use with the same reads you already allow it. The token itself is
+// never printed.
 function resolveDaemonToken(deps: CliDeps): string | undefined {
   if (deps.daemonToken !== undefined && deps.daemonToken !== "") {
     return deps.daemonToken;
@@ -145,15 +147,7 @@ function resolveDaemonToken(deps: CliDeps): string | undefined {
   if (fromEnv !== undefined && fromEnv !== "") {
     return fromEnv;
   }
-  try {
-    const text = readFileSync(
-      join(dirname(resolveDbPath(deps)), "metavault.token"),
-      "utf8",
-    ).trim();
-    return text === "" ? undefined : text;
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 function resolveIo(deps: CliDeps): ResolvedIo {
@@ -1032,6 +1026,11 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     return 0;
   }
   io.err(`error: ${failureName(exit.cause)}\n`);
+  if (failureName(exit.cause) === "Unauthorized" && io.daemonToken === undefined) {
+    io.err(
+      "hint: set METAVAULT_DAEMON_TOKEN to the daemon's token; the daemon no longer writes a token file\n",
+    );
+  }
   if (isUsageFailure(exit.cause)) {
     io.err(USAGE);
     return 2;

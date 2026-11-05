@@ -67,3 +67,68 @@ describe("rules-only warden (benchmark baseline)", () => {
     expect(stricterDecision(low, low).requireApproval).toBe(false);
   });
 });
+
+describe("payload awareness (intent vs effect)", () => {
+  const history = { requests24h: 1, denials24h: 0 };
+
+  it("escalates a declared mutating method on a read-only scope, even with a benign reason", () => {
+    const hits = ruleHits(
+      {
+        agentId: "a",
+        ide: "Cursor",
+        tool: "cloudflare.dns",
+        alias: "cloudflare",
+        requestedScope: "zones.read",
+        reason: "Read invoice summary",
+        payload: { method: "DELETE", path: "/zones/zoneid/dns_records/recordid" },
+      },
+      history,
+    ).map((h) => h.id);
+    expect(hits).toContain("payload-mutating-method-on-readonly-scope");
+    expect(hits).toContain("carries-declared-http-method");
+    const d = assessByRules(
+      {
+        agentId: "a",
+        ide: "Cursor",
+        tool: "cloudflare.dns",
+        alias: "cloudflare",
+        requestedScope: "zones.read",
+        reason: "Read invoice summary",
+        payload: { method: "DELETE", path: "/zones/zoneid/dns_records/recordid" },
+      },
+      history,
+    );
+    expect(d.risk).toBe("high");
+  });
+
+  it("does not flag a read-only payload method", () => {
+    const hits = ruleHits(
+      {
+        agentId: "a",
+        ide: "Cursor",
+        tool: "cloudflare.dns",
+        alias: "cloudflare",
+        requestedScope: "zones.read",
+        reason: "List DNS records",
+        payload: { method: "GET", path: "/zones/zoneid/dns_records" },
+      },
+      history,
+    ).filter((h) => h.id.startsWith("payload-"));
+    expect(hits).toEqual([]);
+  });
+
+  it("read-only scopes without any payload stay on the metadata rules", () => {
+    const hits = ruleHits(
+      {
+        agentId: "a",
+        ide: "Cursor",
+        tool: "http",
+        alias: "stripe",
+        requestedScope: "charges.read",
+        reason: "list charges",
+      },
+      history,
+    ).filter((h) => h.id.startsWith("payload-"));
+    expect(hits).toEqual([]);
+  });
+});

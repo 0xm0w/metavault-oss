@@ -166,6 +166,77 @@ describe("executeHttp", () => {
   });
 });
 
+describe("response secret redaction", () => {
+  // Chosen so the exact, percent-encoded, Base64 and Base64-URL forms all
+  // differ from each other.
+  const ECHOED = "sk:secret key/9f8e7d6c5b4a3210?";
+
+  it("redacts an exact secret echoed back by the upstream inside a JSON body", async () => {
+    const mock = await startServer((_req, res) => {
+      res.end(JSON.stringify({ echo: ECHOED, note: "verification ok" }));
+    });
+    const out = await Effect.runPromise(
+      executeHttp({ url: `${mock.url}/verify`, method: "GET", secret: ECHOED }),
+    );
+    expect(out.status).toBe(200);
+    const data = out.data as { echo: string };
+    expect(data.echo).toBe("[REDACTED]");
+    expect(JSON.stringify(out.data)).not.toContain(ECHOED);
+    await mock.close();
+  });
+
+  it("redacts secret material embedded inside larger strings, percent-encoded and base64", async () => {
+    const percent = encodeURIComponent(ECHOED);
+    const base64 = Buffer.from(ECHOED, "utf8").toString("base64");
+    const base64Url = base64.replace(/\+/g, "-").replace(/\//g, "_");
+    const mock = await startServer((_req, res) => {
+      res.end(
+        JSON.stringify({
+          a: `header: Bearer ${ECHOED} tail`,
+          b: `url=${percent}`,
+          c: base64,
+          d: base64Url,
+        }),
+      );
+    });
+    const out = await Effect.runPromise(
+      executeHttp({ url: `${mock.url}/logs`, method: "GET", secret: ECHOED }),
+    );
+    const data = out.data as Record<string, string>;
+    expect(data["a"]).toBe("header: Bearer [REDACTED] tail");
+    expect(data["b"]).toBe("url=[REDACTED]");
+    expect(data["c"]).toBe("[REDACTED]");
+    expect(data["d"]).toBe("[REDACTED]");
+    expect(JSON.stringify(out.data)).not.toContain(ECHOED);
+    expect(JSON.stringify(out.data)).not.toContain(percent);
+    expect(JSON.stringify(out.data)).not.toContain(base64);
+    expect(JSON.stringify(out.data)).not.toContain(base64Url);
+    await mock.close();
+  });
+
+  it("redacts a non-JSON body too, keeping the redacted text readable", async () => {
+    const mock = await startServer((_req, res) => {
+      res.end(`token=${ECHOED}; status=ok`);
+    });
+    const out = await Effect.runPromise(
+      executeHttp({ url: `${mock.url}/echo`, method: "GET", secret: ECHOED }),
+    );
+    expect(out.data).toBe("token=[REDACTED]; status=ok");
+    await mock.close();
+  });
+
+  it("leaves unrelated response bodies untouched", async () => {
+    const mock = await startServer((_req, res) => {
+      res.end(JSON.stringify({ ok: true, charges: 5, tag: "sk-r3d" }));
+    });
+    const out = await Effect.runPromise(
+      executeHttp({ url: `${mock.url}/normal`, method: "GET", secret: "sk_long_secret_value_abcd" }),
+    );
+    expect(out.data).toEqual({ ok: true, charges: 5, tag: "sk-r3d" });
+    await mock.close();
+  });
+});
+
 describe("ConnectorLive", () => {
   it("has stripe/github presets by default", () => {
     expect(DEFAULT_CONNECTOR_PRESETS["stripe"]).toBe("https://api.stripe.com/v1/charges");

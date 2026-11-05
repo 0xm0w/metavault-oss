@@ -58,7 +58,8 @@ export function assessBftQuorum(
     const requestedCloud = options.metaModel?.trim() ?? "";
     const cloudModel = requestedCloud !== "" && !requestedCloud.includes(":") ? requestedCloud : DEFAULT_META_API_MODEL;
     const metaKey = options.metaApiKey?.trim();
-    if (metaKey !== undefined && metaKey !== "") {
+    const metaConfigured = metaKey !== undefined && metaKey !== "";
+    if (metaConfigured) {
       const metaApiResult = yield* Effect.either(
         requestMetaApiDecision(
           {
@@ -82,7 +83,8 @@ export function assessBftQuorum(
 
     // 2. Local Co-Auditor: the user's own local endpoint, if configured.
     const local = options.localEndpoint;
-    if (local !== undefined && local.baseUrl.trim() !== "" && local.model.trim() !== "") {
+    const localConfigured = local !== undefined && local.baseUrl.trim() !== "" && local.model.trim() !== "";
+    if (localConfigured) {
       const localResult = yield* Effect.either(
         requestLocalDecision(local, prompt, options.localTimeoutMs ?? timeoutMs),
       );
@@ -106,7 +108,23 @@ export function assessBftQuorum(
       );
     }
 
-    // If only 1 warden participated (e.g. cloud unreachable or local endpoint offline), return its verdict
+    // One verdict is only proof when nothing else was ever configured. With
+    // both wardens configured, a single response means the other one failed
+    // (or was pushed offline): accepting it would silently drop Byzantine
+    // fault tolerance exactly when a cloud outage is attacker-triggerable.
+    // Fail closed instead — the daemon routes a warden failure to a human
+    // decision, which is the escalation the BFT contract promises.
+    if (verdicts.length === 1 && metaConfigured && localConfigured) {
+      return yield* Effect.fail(
+        new MarshalUnavailable({
+          message:
+            `MarshalUnavailable: BFT quorum not met (1 of 2 wardens responded); requesting a human decision`,
+        }),
+      );
+    }
+
+    // A single warden is accepted only when it is the only configured one
+    // (e.g. no Meta API key, so the local endpoint is the sole source).
     if (verdicts.length === 1) {
       const single = verdicts[0];
       if (single === undefined) {

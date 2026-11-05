@@ -87,10 +87,11 @@ npm run pack:win    # build + bundle + electron-builder --win --publish never
    > Environment variables were renamed `METAVAULT_*` → `METAVAULT_*` in the
    > rebrand. The legacy `METAVAULT_*` names still work everywhere; the new
    > names win when both are set. The daemon's wire header
-   > (`x-metavault-token`), token file (`metavault.token`), default vault
-   > filename (`metavault.db`), OS keychain entry and `metavault://` deeplink
-   > scheme are intentionally unchanged so existing vaults and IDE configs
-   > keep working.
+   > (`x-metavault-token`), the daemon token env var
+   > (`METAVAULT_DAEMON_TOKEN` — the daemon no longer writes a
+   > `metavault.token` file), the default vault filename (`metavault.db`),
+   > OS keychain entry and `metavault://` deeplink scheme are intentionally
+   > unchanged so existing vaults and IDE configs keep working.
 
    ```powershell
    node dist/packages/cli/src/cli.js init

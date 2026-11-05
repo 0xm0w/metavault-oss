@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, openSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 // Starts the vault daemon that ships inside the installed app
@@ -39,6 +40,22 @@ export function bundledDaemonEnv(base: NodeJS.ProcessEnv, dbPath: string): NodeJ
   };
 }
 
+// The app owns the daemon token: it generates one per session, hands it to
+// the bundled daemon through the environment and keeps it in its own
+// process for the human-decision routes. Nothing is written to disk, so a
+// same-UID IDE agent cannot read a stable copy of the admin secret. An
+// explicitly set METAVAULT_DAEMON_TOKEN (e.g. the user running a daemon by
+// hand) is respected, not overwritten.
+export function ensureSessionDaemonToken(base: NodeJS.ProcessEnv): string {
+  const existing = base["METAVAULT_DAEMON_TOKEN"];
+  if (existing !== undefined && existing !== "") {
+    return existing;
+  }
+  const token = randomBytes(32).toString("hex");
+  base["METAVAULT_DAEMON_TOKEN"] = token;
+  return token;
+}
+
 export async function daemonHealthy(baseUrl: string, timeoutMs = 1500): Promise<boolean> {
   try {
     const res = await fetch(`${baseUrl.replace(/\/+$/, "")}${DAEMON_HEALTH_PATH}`, {
@@ -66,9 +83,14 @@ export async function ensureBundledDaemon(options: {
   if (await daemonHealthy(options.baseUrl)) return { status: "already-running" };
   if (!existsSync(options.paths.script)) return { status: "not-bundled" };
   mkdirSync(options.paths.dataDir, { recursive: true });
+  // Mint the session token on the env the child will inherit; when the
+  // caller passed this process's env, the main process keeps the same
+  // value for its own client (daemon-client resolves it lazily from env).
+  const env = options.env ?? process.env;
+  ensureSessionDaemonToken(env);
   const log = openSync(options.paths.logPath, "a");
   const child = spawn(options.execPath, [options.paths.script], {
-    env: bundledDaemonEnv(options.env ?? process.env, options.paths.dbPath),
+    env: bundledDaemonEnv(env, options.paths.dbPath),
     stdio: ["ignore", log, log],
     windowsHide: true,
   });
