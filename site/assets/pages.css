@@ -859,6 +859,19 @@ body:has(.hack-deck) {
 .pg-chart-src { margin-top: 12px; }
 
 /* Independent audits. One card per reviewer. */
+.audit-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.audit-shell > .audit-page { flex: 1 0 auto; }
+.audit-shell > .mb-foot {
+  align-self: center;
+  width: min(1180px, 100%);
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
 .audit-page { padding: 48px 0 88px; }
 .audit-hero { text-align: center; max-width: 720px; margin: 0 auto 36px; }
 .audit-hero h1 {
