@@ -17,6 +17,31 @@ import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./wind
 import { initAutoUpdater } from "./updater.js";
 import { runtimePaths } from "./runtime-paths.js";
 import { registerWindowsHelloIpc } from "./windows-hello.js";
+import { IDE_CONFIG_CHANNEL, ideConfigIpc, type IdeConfigRequest } from "./ide-config-ipc.js";
+
+// Validates the fixed IDE-config channel shape; anything else throws so the
+// handler answers with a plain failure instead of injecting unknown keys.
+function decodeIdeConfigRequest(input: unknown): IdeConfigRequest {
+  if (typeof input !== "object" || input === null) throw new Error("malformed IDE-config request");
+  const record = input as Record<string, unknown>;
+  if (record["action"] !== "inspect" && record["action"] !== "apply") throw new Error("unknown IDE-config action");
+  const host = record["host"];
+  const entry = record["entry"];
+  const token = record["token"];
+  if (host !== undefined && typeof host !== "string") throw new Error("malformed IDE-config host");
+  if (token !== undefined && typeof token !== "string") throw new Error("malformed IDE-config token");
+  if (record["action"] === "apply") {
+    if (typeof host !== "string" || host === "") throw new Error("apply requires a host");
+    if (typeof token !== "string" || token === "") throw new Error("apply requires a token");
+    if (entry !== undefined && typeof entry !== "object") throw new Error("malformed IDE-config entry");
+  }
+  return {
+    action: record["action"],
+    ...(host !== undefined ? { host } : {}),
+    ...(entry !== undefined ? { entry } : {}),
+    ...(token !== undefined ? { token } : {}),
+  };
+}
 
 // MetaVault OSS desktop shell: a window over vaultd, in the wallet pattern.
 // This main process owns the daemon HTTP client and the daemon token (see
@@ -286,6 +311,16 @@ if (!hasLock) {
     ipcMain.handle(PRESENCE_PROOF_CHANNEL, async (_event, input: unknown) => issuePresenceProof(input, guardDeps));
     ipcMain.handle("metavault:runtime-paths", () => runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") }));
     ipcMain.handle("metavault:mcp-status", () => mcpSelfCheck);
+    ipcMain.handle(IDE_CONFIG_CHANNEL, async (_event, request: unknown) => {
+      try {
+        const decoded = decodeIdeConfigRequest(request);
+        return decoded.action === "inspect"
+          ? await ideConfigIpc({ action: "inspect" }, {})
+          : await ideConfigIpc(decoded, {});
+      } catch (err) {
+        return { ok: false, reason: err instanceof Error ? err.message : "malformed IDE-config request" };
+      }
+    });
     registerWindowsHelloIpc();
     // App-managed SSH tunnel for Remote Connections. Off unless the user
     // completed setup and left it connected; a restart then reconnects.

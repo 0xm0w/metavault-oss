@@ -383,6 +383,16 @@ export interface McpStatusLike {
   readonly checkedAt?: string;
 }
 
+// Fixed-shape request for the IDE-config channel (inspect | apply). The
+// token field is the one allowed secret in an MCP config: the app writes it
+// directly into the host config file, never into a chat.
+export interface IdeConfigRequestLike {
+  readonly action: "inspect" | "apply";
+  readonly host?: string;
+  readonly entry?: unknown;
+  readonly token?: string;
+}
+
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
   readonly registerAgent: (id: string, name: string, rotate: boolean) => Promise<unknown>;
@@ -391,6 +401,7 @@ export interface VaultApi {
   readonly revokeAgent: (id: string) => Promise<unknown>;
   readonly runtimePaths: () => Promise<{ command: string; args: string[]; env: Record<string, string>; dbPath: string }>;
   readonly mcpStatus: () => Promise<unknown>;
+  readonly ideConfig: (request: IdeConfigRequestLike) => Promise<unknown>;
   readonly request: (body: CapabilityRequestLike) => Promise<unknown>;
   readonly approve: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly deny: (grantId: string) => Promise<unknown>;

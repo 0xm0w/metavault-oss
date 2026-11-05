@@ -23,7 +23,7 @@ const WORKFLOW = `How to work with the vault
 - Respect denials. Never approve requests, unlock the vault, or edit vault files yourself.`;
 
 const RULES = `Rules that always apply
-- Never ask for or put secrets in chat, terminal output, logs, prompts, or IDE config. The one exception is the METAVAULT_AGENT_TOKEN launch variable above, which the user pastes into your MCP config themselves.
+- Never ask for or put secrets in chat, terminal output, logs, prompts, or IDE config. The one exception is the METAVAULT_AGENT_TOKEN placeholder written into the MCP config, which the app seals with the real token - the token itself never passes through chat.
 - Everything is local: the vault daemon listens on 127.0.0.1 only while MetaVault OSS is open. Do not look for a remote endpoint.
 - These instructions guide the agent; policy and human approval enforce access.`;
 
@@ -48,7 +48,19 @@ function connectionBlock(ctx: AgentInstructionsContext | null): string {
 ${envLines}
 - The token comes only from the user: MetaVault OSS > Settings > Daemon > Agent Integration & MCP, generate or rotate the token for your agent id. The same panel has ready-made configs for common hosts (Claude Code, Cursor, VS Code, Codex, OpenCode) with everything above already filled in. Tokens are shown once, at generation time.
 - The vault daemon (vaultd) for this installation listens locally at ${ctx.daemonUrl} while MetaVault OSS is open. Vault data lives at ${ctx.dbPath}. Never read, edit, move or unlock vault files yourself.
-- Pasting these instructions into a chat does NOT connect you. Connection happens only when your host launches the server above through its MCP configuration. After the config changes, the host must be restarted or its MCP connection reloaded.`;
+- Pasting these instructions into a chat does NOT connect you. Connection happens only when your host launches the server above through its MCP configuration. After the config changes, the host must be restarted or its MCP connection reloaded.
+
+Connect yourself (agent task, when the user asks)
+- Edit your host's MCP config file yourself. Merge - never remove or rewrite other content. Files:
+    OpenCode:    ~/.config/opencode/opencode.json  (key "mcp")
+    Claude Code: ~/.claude.json                    (key "mcpServers")
+    Cursor:      ~/.cursor/mcp.json                (key "mcpServers")
+    VS Code:     ~/.vscode/mcp.json                (key "servers")
+- Add a "metavault" entry exactly like this (keep METAVAULT_AGENT_TOKEN as the literal placeholder string - it is filled in by the app later, so it never passes through chat):
+    ${JSON.stringify({ mcp: { metavault: { type: "local", command: ctx.command, args: ctx.args, enabled: true, environment: { ...ctx.env, METAVAULT_DAEMON_URL: ctx.daemonUrl, METAVAULT_AGENT_ID: "<agent id from the panel>", METAVAULT_IDE: "<your host's display name>", METAVAULT_AGENT_TOKEN: "{env:METAVAULT_AGENT_TOKEN}" } } } }, null, 2)
+      .split("\n").join("\n    ")}
+- After the edit is valid JSON, tell the user: "Config written. Open MetaVault OSS and press 'Seal the token' in the Get started guide, then restart me."
+- If the config file exists but is not valid JSON, stop and tell the user to fix it by hand first. Never rewrite the whole file.`;
 }
 
 export function buildAgentInstructions(ctx: AgentInstructionsContext | null): string {

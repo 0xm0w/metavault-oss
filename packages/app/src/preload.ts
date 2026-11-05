@@ -12,7 +12,10 @@ import type {
   UpdaterStatusLike,
   VaultApi,
   WardenSettingsPatch,
+  IdeConfigRequestLike,
 } from "./renderer/types.js";
+
+const IDE_CONFIG_CHANNEL = "metavault:ide-config";
 
 // Thin IPC bridge: the sandboxed preload has no filesystem, network, or
 // token access. It only forwards the fixed VaultApi operations to the main
@@ -32,6 +35,7 @@ function invoke(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: strin
 const api: VaultApi = {
   runtimePaths: () => ipcRenderer.invoke("metavault:runtime-paths"),
   mcpStatus: () => ipcRenderer.invoke("metavault:mcp-status"),
+  ideConfig: (request: IdeConfigRequestLike) => ipcRenderer.invoke(IDE_CONFIG_CHANNEL, request),
   request: (body: CapabilityRequestLike) => invoke("POST", "/request", body),
   approve: (grantId: string, presenceProof?: string) =>
     invoke("POST", "/approve", { grantId, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),

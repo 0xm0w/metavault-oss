@@ -1689,6 +1689,20 @@ body.is-locked .view { padding: 0; max-width: none; }
 .wizard-steps li:not(.is-done):not(.is-next) { opacity: 0.65; }
 .wizard-steps li.is-next strong::before { content: "Next: "; color: var(--primary); }
 .wizard-reopen { margin-bottom: 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; cursor: pointer; }
+
+/* Paged wizard: one action per page, earlier steps collapse into a strip. */
+.wizard-page { display: grid; gap: 8px; margin-bottom: 12px; padding-top: 12px; border-top: 1px dashed var(--border); min-width: 0; }
+.wizard-page strong { font-size: 14px; color: var(--ink); }
+.wizard-page p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-soft); overflow-wrap: anywhere; }
+.wizard-page.is-attention strong { color: var(--danger); }
+.wizard-page .wizard-attention-body { color: var(--danger); margin: 0; }
+.wizard-page .action { justify-self: start; }
+.wizard-page .wizard-key-form { margin-top: 2px; }
+.wizard-page .settings-advanced { margin-top: 4px; }
+.wizard-page .settings-message { margin: 0; font-size: 12px; }
+.wizard-done-strip { margin: 0 0 4px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--ok) 6%, transparent); color: var(--ok); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.wizard-details-list { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.wizard-details-list li { overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .data-table-wrap { overflow-x: auto; }
   .agents-table, .agents-table tbody, .agents-table tr, .agents-table td { display: block; width: 100%; }

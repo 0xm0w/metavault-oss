@@ -3725,6 +3725,110 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
   host.append(skillInfo);
 }
 
+// First-run guide. Shown on the Vault page until dismissed. It only reflects
+// real state (a verified agent, a saved credential) and never claims a step
+// is done that MetaVault cannot see.
+// Wizard page state (agent-led IDE connection). currentStep is derived from
+// real state: the wizard always shows the first incomplete step, so a step
+// that completes - through any source - advances the pages automatically.
+// The IDE-config inspection is polled while pages 2-3 are visible; it is the
+// honest check that the agent really wrote the config file.
+const IDE_TOKEN_PLACEHOLDER = "{env:METAVAULT_AGENT_TOKEN}";
+interface IdeInspectRowLike {
+  readonly host: string;
+  readonly path: string;
+  readonly result: { present: boolean; valid: boolean; hasBlock: boolean; tokenState: "sealed" | "placeholder" | "missing" };
+}
+let wizardIdeInspection: IdeInspectRowLike[] | null = null;
+let wizardInspectTimer: number | null = null;
+let wizardIdeMessage: { text: string; ok: boolean } | null = null;
+let wizardSealing = false;
+
+const WIZARD_HOST_KEYS: Record<string, string> = {
+  claude: "claude-code",
+  cursor: "cursor",
+  vscode: "vscode",
+};
+
+function wizardHostId(tab: string): string | null {
+  if (tab === "opencode") return "opencode";
+  return WIZARD_HOST_KEYS[tab] ?? null;
+}
+
+function wizardHostToken(id: string): string {
+  const found = agentsData.find((a) => a.id === id);
+  return newAgentTokens.get(id) ?? found?.token ?? "";
+}
+
+// Minimal projection of the fixed-shape IDE-config inspect rows.
+function projectIdeInspection(raw: unknown): IdeInspectRowLike[] | null {
+  if (typeof raw !== "object" || raw === null || !Array.isArray(raw)) return null;
+  const rows: IdeInspectRowLike[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return null;
+    const record = item as Record<string, unknown>;
+    const host = record["host"];
+    const path = record["path"];
+    const result = record["result"];
+    if (typeof host !== "string" || typeof path !== "string" || typeof result !== "object" || result === null) return null;
+    const res = result as Record<string, unknown>;
+    const tokenState = res["tokenState"];
+    if (tokenState !== "sealed" && tokenState !== "placeholder" && tokenState !== "missing") return null;
+    rows.push({ host, path, result: { present: res["present"] === true, valid: res["valid"] === true, hasBlock: res["hasBlock"] === true, tokenState } });
+  }
+  return rows;
+}
+
+function wizardInspectFor(tab: string): IdeInspectRowLike["result"] | null {
+  if (wizardIdeInspection === null) return null;
+  const host = wizardHostId(tab);
+  if (host === null) return null;
+  return wizardIdeInspection.find((row) => row.host === host)?.result ?? null;
+}
+
+function startWizardInspection(): void {
+  if (wizardInspectTimer !== null) return;
+  const tick = (): void => {
+    if (localStorage.getItem("metavault_wizard_done") === "1") return;
+    void window.metavault.ideConfig({ action: "inspect" }).then((raw) => {
+      const rows = projectIdeInspection(raw);
+      if (rows === null) return;
+      const next = JSON.stringify(rows);
+      if (wizardIdeInspection === null || JSON.stringify(wizardIdeInspection) !== next) {
+        wizardIdeInspection = rows;
+        render();
+      }
+    }).catch(() => undefined);
+  };
+  tick();
+  wizardInspectTimer = window.setInterval(tick, 2000);
+}
+
+// Builds the per-host metavault MCP entry this installation uses. With a
+// token it is the full, sealable entry; without, the token stays the
+// {env:...} placeholder so no secret is ever written into chat text.
+function wizardHostEntry(tab: string, env: Record<string, string>): Record<string, unknown> | null {
+  if (mcpRuntime === null) return null;
+  const envBase = { ...env, METAVAULT_DAEMON_URL: "http://127.0.0.1:7077" };
+  if (tab === "opencode") {
+    return {
+      type: "local",
+      command: mcpRuntime.command,
+      args: mcpRuntime.args,
+      enabled: true,
+      environment: { ...envBase, METAVAULT_AGENT_ID: "opencode", METAVAULT_IDE: "OpenCode", METAVAULT_AGENT_TOKEN: IDE_TOKEN_PLACEHOLDER },
+    };
+  }
+  const agentId = WIZARD_HOST_KEYS[tab];
+  if (agentId === undefined) return null;
+  const ideName = tab === "claude" ? "Claude Code" : tab === "cursor" ? "Cursor" : "VS Code";
+  return {
+    command: mcpRuntime.command,
+    args: mcpRuntime.args,
+    env: { ...envBase, METAVAULT_AGENT_ID: agentId, METAVAULT_IDE: ideName, METAVAULT_AGENT_TOKEN: IDE_TOKEN_PLACEHOLDER },
+  };
+}
+
 function renderWizardWardenStep(item: HTMLElement): void {
   const form = el("div", "wizard-key-form");
   const status = el("p", "settings-copy", !wardenKeyStatusState.configured ? "No key saved yet." : wardenKeyStatusState.verified === true ? "Meta API key saved and the connection test passed." : "A Meta API key is saved but its connection test has not passed yet. Test it before connecting your IDE.");
@@ -3816,70 +3920,194 @@ function renderOnboardingWizard(view: HTMLElement): void {
     view.prepend(show);
     return;
   }
+  startWizardInspection();
   const card = el("section", "wizard-card");
   card.append(el("h3", "", "Get started"));
-  const hasAgent = agentsData.some((agent) => !agent.revoked);
-  const hasCredential = aliases.length > 0;
   const copied = localStorage.getItem("metavault_wizard_copied") === "1";
   const mcpReady = mcpStatus?.state === "ready";
-  const steps: { title: string; body: string; done: boolean; action?: HTMLElement }[] = [
+  const keyReady = wardenKeyStatusState.configured && wardenKeyStatusState.verified === true;
+  const ideHost = wizardHostId(activeAgentTab);
+  const inspection = wizardInspectFor(activeAgentTab);
+  const ideConnected = inspection !== null && inspection.hasBlock && inspection.tokenState === "sealed";
+  const manualOnly = ideHost === null; // codex (TOML) and the skill tab: agent instructions only
+  const ideAlreadyRegistered = !manualOnly && agentsData.some((agent) => agent.id === ideHost && !agent.revoked);
+  const mcpFailed = mcpStatus?.state === "failed";
+
+  // One page at a time: the current page is always the first incomplete
+  // step, so a step done by any source (the app, the agent, the user)
+  // advances the wizard automatically. Earlier steps collapse into a
+  // compact "Done" strip.
+  const steps: { title: string; body: string; done: boolean; attention?: boolean }[] = [
     {
-      title: mcpStatus?.state === "failed" ? "MCP launch check failed" : "MetaVault is running",
+      title: mcpFailed ? "MCP launch check failed" : "MetaVault is running",
       body: mcpReady
-        ? "The vault service is running locally, and the launch check confirmed the bundled MCP server answers with all 8 tools. Nothing leaves this computer."
+        ? "MetaVault is running and its bundled MCP server answered with all 8 tools. Nothing leaves this computer."
         : mcpStatusText(mcpStatus),
       done: mcpReady,
+      attention: mcpFailed,
     },
-    { title: "Add your Meta API key", body: "The warden vets each agent request from metadata only. Save the key here and test it before connecting an IDE.", done: wardenKeyStatusState.configured && wardenKeyStatusState.verified === true },
+    { title: "Add your Meta API key", body: "The warden vets each agent request from metadata only. Paste the key below - save and connection test are one button.", done: keyReady },
     {
-      title: "Connect your IDE",
-      body: "Pick your IDE below, generate its token, copy the config into your IDE's MCP config file, then fully restart the IDE. This is what makes the metavault tools appear; pasting the instructions into a chat alone does not connect anything.",
-      done: agentsData.some((agent) => auditEvents.some((event) => event.agentId === agent.id)),
+      title: "Ask your agent to connect",
+      body: ideConnected
+        ? "Done"
+        : manualOnly
+          ? "Copy the instructions below and paste them into your agent chat, or pick \"Copy Config\" in the Advanced panel and follow it manually. The token is part of the copied config."
+          : "Copy the instructions below and paste them into your agent chat. Tell it: \"connect MetaVault\". It edits its own MCP config with a token placeholder - the token never appears in chat. Then press \"Seal the token\" below: the app writes the real token straight into that config (a backup is kept). This page completes itself the moment the sealed block is detected.",
+      done: manualOnly ? copied : ideConnected,
     },
-    { title: "Copy the agent instructions", body: "Paste them into your IDE agent. They already carry this installation's local connection details and no secrets.", done: copied },
-    { title: "Let your IDE register", body: "The agent shows a 6-digit code. Approve the matching request here. That makes it a Verified agent. It gives it no access to anything.", done: hasAgent },
-    { title: "Add a token to test", body: "Tell your IDE: \"I will add a token to test.\" MetaVault opens in front with the secure input. Type the token here, never in the chat.", done: hasCredential },
-    { title: "Check it works", body: "Ask your IDE to use that token for one read-only check, for example reading traffic for one of your sites. You approve that access separately.", done: localStorage.getItem("metavault_wizard_tested") === "1" },
   ];
+
   const nextIndex = steps.findIndex((step) => !step.done);
-  const list = el("ol", "wizard-steps");
-  steps.forEach((step, index) => {
-    // A failed launch check is not "next", it needs attention first.
-    const attention = index === 0 && mcpStatus?.state === "failed";
-    const item = el("li", step.done ? "is-done" : attention ? "is-attention" : index === nextIndex ? "is-next" : "");
-    const prefix = step.done ? "Done: " : attention ? "Attention: " : "";
-    item.append(el("strong", "", `${prefix}${step.title}`), el("span", attention ? "wizard-attention-body" : "", step.body));
-    if (index === 1) {
-      renderWizardWardenStep(item);
+  const allDone = nextIndex === -1;
+  const completedTitles = steps.slice(0, Math.max(nextIndex, 0)).filter((s) => s.done).map((s) => s.title);
+  if (completedTitles.length > 0) {
+    const strip = el("p", "wizard-done-strip", `Done: ${completedTitles.join(" · ")}`);
+    card.append(strip);
+  }
+  if (allDone) {
+    card.append(el("p", "", "All set. Your IDE is connected."));
+  } else {
+    const step = steps[nextIndex] as { title: string; body: string; done: boolean; attention?: boolean };
+    const page = el("div", `wizard-page ${step.attention === true ? "is-attention" : ""}`);
+    page.append(el("strong", "", `Step ${String(nextIndex + 1)} of ${String(steps.length)}: ${step.title}`));
+    page.append(el("p", step.attention === true ? "wizard-attention-body" : "", step.body));
+
+    if (nextIndex === 1) {
+      renderWizardWardenStep(page);
+      // Keep one action per page: after a key exists but the test has not
+      // passed, "Test connection" is the page's single action (rendered by
+      // renderWizardWardenStep), so done follows the test outcome alone.
+      const save = page.querySelector<HTMLButtonElement>("#wizard-warden-save");
+      const test = page.querySelector<HTMLButtonElement>("#wizard-warden-test");
+      if (!wardenKeyStatusState.configured) {
+        page.addEventListener("keydown", (event: KeyboardEvent) => {
+          if (event.key === "Enter" && !keyReady && save !== null && !save.disabled) save.click();
+        });
+      }
+      if (keyReady) {
+        // Handled by auto-advance; nothing else to do here.
+      } else if (wardenKeyStatusState.configured && test !== null) {
+        test.textContent = "Test connection";
+      }
     }
-    if (index === 2) {
-      renderAgentIntegrationBox(item);
-    }
-    if (index === 3) {
-      const copy = el("button", "action btn-approve", copied ? "Copy again" : "Copy agent instructions") as HTMLButtonElement;
+
+    if (nextIndex === 2) {
+      const copy = el("button", "action btn-approve", "Copy agent instructions") as HTMLButtonElement;
+      copy.id = "wizard-copy-agent-instructions";
       copy.type = "button";
       copy.addEventListener("click", () => {
         void navigator.clipboard.writeText(buildAgentInstructions(agentInstructionsContext())).then(
-          () => { localStorage.setItem("metavault_wizard_copied", "1"); copy.textContent = "Copied"; },
+          () => {
+            localStorage.setItem("metavault_wizard_copied", "1");
+            copy.textContent = "Copied";
+            if (manualOnly) render();
+          },
           () => { copy.textContent = "Could not copy"; },
         );
       });
-      item.append(copy);
+      page.append(copy);
+      if (!manualOnly) {
+        const seal = el("button", "action btn-approve", wizardSealing ? "Writing token…" : "Seal the token") as HTMLButtonElement;
+        seal.id = "wizard-seal-token";
+        seal.type = "button";
+        seal.disabled = wizardSealing || mcpRuntime === null;
+        seal.addEventListener("click", () => {
+          wizardSealing = true;
+          wizardIdeMessage = null;
+          render();
+          const run = async (): Promise<void> => {
+            try {
+              const host = ideHost;
+              let token = wizardHostToken(host);
+              if (token === "") {
+                // Mint the agent token here, then seal it in one go. An
+                // already-registered agent is rotated in place: the daemon
+                // requires explicit rotation, and the old token (with its
+                // standing approvals) is retired.
+                const rotated = agentsData.some((agent) => agent.id === host && !agent.revoked);
+                const raw = await window.metavault.registerAgent(host, ideNameOf(activeAgentTab), rotated);
+                const minted = projectAgentsResponse([raw])[0];
+                if (minted === undefined || minted.token === "") throw new Error("No token returned");
+                newAgentTokens.set(host, minted.token);
+                agentsData = projectAgentsResponse(await window.metavault.agents());
+                token = minted.token;
+                if (rotated) {
+                  wizardIdeMessage = { text: "Rotated the existing agent token (standing approvals for it were reset).", ok: true };
+                }
+              }
+              const entry = wizardHostEntry(activeAgentTab, mcpRuntime !== null ? mcpRuntime.env : {});
+              if (entry === null) throw new Error("Runtime paths are not available yet - reopen the app once the daemon answers.");
+              const out = await window.metavault.ideConfig({ action: "apply", host, entry, token });
+              const record = (typeof out === "object" && out !== null ? out : {}) as Record<string, unknown>;
+              if (record["ok"] !== true) {
+                const reason = typeof record["reason"] === "string" ? record["reason"] : "unknown error";
+                wizardIdeMessage = { text: `Could not write the config: ${reason}`, ok: false };
+              } else {
+                const path = typeof record["path"] === "string" ? record["path"] : "the config";
+                const backup = typeof record["backupPath"] === "string" ? ` (backup: ${record["backupPath"]})` : "";
+                wizardIdeMessage = { text: `Token sealed into ${path}${backup}. Restart your IDE to pick it up.`, ok: true };
+              }
+            } catch (err) {
+              wizardIdeMessage = { text: err instanceof Error ? err.message : "Could not seal the token", ok: false };
+            } finally {
+              wizardSealing = false;
+              render();
+            }
+          };
+          if (shouldRequireAuthForSettings(localAuthStatus)) {
+            void confirmLocalPresence("Authenticate to write the IDE config", () => { void run(); });
+          } else {
+            void run();
+          }
+        });
+        page.append(seal);
+        if (ideAlreadyRegistered && wizardIdeMessage === null) {
+          page.append(el("p", "settings-copy", "The agent is already registered, so sealing rotates its token in place; standing approvals issued to that agent reset."));
+        }
+        if (wizardIdeMessage !== null) {
+          page.append(el("p", wizardIdeMessage.ok ? "settings-message is-ok" : "settings-message is-error", wizardIdeMessage.text));
+        }
+      }
+      if (!manualOnly && inspection !== null && !inspection.valid) {
+        page.append(el("p", "field-error", "The config file on this machine is not valid JSON, so nothing was changed. Open it manually to fix - nothing the app did caused this. The \"Details\" panel below shows the entry the agent should have merged."));
+      }
+      if (!manualOnly) {
+        const details = document.createElement("details");
+        details.className = "settings-advanced";
+        details.append(el("summary", "", "Details: which file, what the agent will add"));
+        const list = el("ul", "wizard-details-list");
+        if (wizardIdeInspection !== null) {
+          for (const row of wizardIdeInspection) {
+            const state = row.result.hasBlock ? (row.result.tokenState === "sealed" ? "connected" : `block present, token ${row.result.tokenState}`) : "not set up";
+            list.append(el("li", "", `${row.path} — ${state}`));
+          }
+        }
+        details.append(list);
+        page.append(details);
+      }
     }
-    if (index === 6 && !step.done && hasCredential) {
-      const mark = el("button", "action", "It worked") as HTMLButtonElement;
-      mark.type = "button";
-      mark.addEventListener("click", () => { localStorage.setItem("metavault_wizard_tested", "1"); render(); });
-      item.append(mark);
-    }
-    list.append(item);
-  });
-  if (nextIndex === -1) card.append(el("p", "", "All set. Your IDE is connected."));
-  const dismiss = el("button", "action", nextIndex === -1 ? "Close the guide" : "Skip for now") as HTMLButtonElement;
+
+    card.append(page);
+  }
+
+  const dismiss = el("button", "action", allDone ? "Close the guide" : "Skip for now") as HTMLButtonElement;
   dismiss.type = "button";
   dismiss.addEventListener("click", () => { localStorage.setItem("metavault_wizard_done", "1"); render(); });
-  card.append(list, dismiss);
+  card.append(dismiss);
   view.prepend(card);
+}
+
+// Display name for the IDE tab, used when minting the agent token.
+function ideNameOf(tab: string): string {
+  switch (tab) {
+    case "claude": return "Claude Code";
+    case "cursor": return "Cursor";
+    case "vscode": return "VS Code";
+    case "opencode": return "OpenCode";
+    case "codex": return "Codex";
+    default: return "Agent";
+  }
 }
 
 function renderRegistrationCards(view: HTMLElement): void {
