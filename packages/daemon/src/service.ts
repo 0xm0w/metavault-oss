@@ -320,6 +320,16 @@ export interface VaultServiceService {
     website?: string,
     enrollmentId?: string,
   ) => Effect.Effect<void, StorageError>;
+  // Human re-save through a pending enrollment for an alias that already
+  // exists. Returns false when the enrollment does not match, and does not
+  // change the stored credential in that case.
+  readonly replaceEnrolledCredential: (
+    alias: string,
+    ceiling: string,
+    plaintextSecret: string,
+    website: string,
+    enrollmentId: string,
+  ) => Effect.Effect<boolean, StorageError>;
   readonly createEnrollment: (
     alias: string,
     scope: string,
@@ -376,7 +386,8 @@ export interface VaultServiceService {
   readonly listPendingApprovals: () => Effect.Effect<PendingApproval[], StorageError>;
   readonly getGrant: (grantId: string) => Effect.Effect<Grant | undefined>;
   readonly checkGrantReceipt: (grantId: string, receipt: string) => Effect.Effect<boolean>;
-  readonly takeGrantResult: (grantId: string) => Effect.Effect<{ readonly taken: boolean; readonly result?: unknown }>;
+  readonly isGrantExecutionInFlight: (grantId: string) => Effect.Effect<boolean>;
+  readonly takeGrantResult: (grantId: string) => Effect.Effect<{ readonly taken: boolean; readonly pending?: boolean; readonly result?: unknown }>;
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
@@ -509,6 +520,10 @@ export function makeVaultServiceLive(
       // Result of an approved request, held for the requesting MCP process only.
       // One-time read, 5 minute life, dropped on revoke or credential change.
       const grantResults = new Map<string, { result: unknown; agentId: string; epoch: number; expiresAt: number }>();
+      // Set for the whole connector call. The grant is already "executed" in the
+      // registry so it cannot be approved twice, but the result does not exist
+      // yet. Callers must see a non-terminal grant until this flag drops.
+      const grantExecution = new Map<string, { agentId: string }>();
       const agentManagement = yield* Effect.makeSemaphore(1);
       const sleepers = yield* Ref.make(new Map<string, Fiber.Fiber<void, StorageError>>());
       const aliases = yield* Ref.make(new Set<string>());
@@ -785,22 +800,42 @@ export function makeVaultServiceLive(
             );
           }
           if ((agentEpoch.get(grantReq.agentId) ?? 0) !== epoch) return yield* Effect.fail(new GrantRevoked({grantId}));
+          grantExecution.set(grantId, { agentId: grantReq.agentId });
           const execExit = yield* Effect.exit(executeGrant(grantReq, consumed.allowedScope, credential.ciphertext));
+          const nowMs = yield* Clock.currentTimeMillis;
+          for (const [key, entry] of grantResults) if (entry.expiresAt <= nowMs) grantResults.delete(key);
+          if (grantResults.size >= 200) {
+            const oldest = grantResults.keys().next();
+            if (oldest.done !== true) grantResults.delete(oldest.value);
+          }
           if (Exit.isFailure(execExit)) {
+            const failure = Cause.failureOption(execExit.cause);
+            const upstreamStatus =
+              failure._tag === "Some" && failure.value instanceof ConnectorFailed && failure.value.status !== undefined
+                ? failure.value.status
+                : undefined;
+            if ((agentEpoch.get(grantReq.agentId) ?? 0) === epoch) {
+              grantResults.set(grantId, {
+                result: {
+                  status: "denied",
+                  reason: "connector-failed",
+                  ...(upstreamStatus !== undefined ? { upstreamStatus } : {}),
+                },
+                agentId: grantReq.agentId,
+                epoch,
+                expiresAt: nowMs + 300_000,
+              });
+            }
+            grantExecution.delete(grantId);
             yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "denied", "connector-failed", false, undefined, grantAuditExtras(auditCtx, "human"));
             return yield* Effect.failCause(execExit.cause);
           }
           const result = execExit.value;
-          yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", false, undefined, grantAuditExtras(auditCtx, "human"));
           if ((agentEpoch.get(grantReq.agentId) ?? 0) === epoch) {
-            const nowMs = yield* Clock.currentTimeMillis;
-            for (const [key, entry] of grantResults) if (entry.expiresAt <= nowMs) grantResults.delete(key);
-            if (grantResults.size >= 200) {
-              const oldest = grantResults.keys().next();
-              if (oldest.done !== true) grantResults.delete(oldest.value);
-            }
             grantResults.set(grantId, { result, agentId: grantReq.agentId, epoch, expiresAt: nowMs + 300_000 });
           }
+          grantExecution.delete(grantId);
+          yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", false, undefined, grantAuditExtras(auditCtx, "human"));
           return { status: "executed", result } as const;
         });
 
@@ -845,6 +880,46 @@ export function makeVaultServiceLive(
               ),
             ),
           ),
+
+        replaceEnrolledCredential: (alias, ceiling, plaintextSecret, website, enrollmentId) =>
+          alias === WARDEN_KEY_ALIAS
+            ? Effect.fail(new StorageError({ message: "reserved alias", operation: "seedCredential" }))
+            : isCardSecretPayload(plaintextSecret)
+              ? Effect.fail(
+                  new StorageError({ message: "use add-card for payment cards", operation: CARD_INVALID_OPERATION }),
+                )
+              : Effect.gen(function* () {
+                  const now = yield* Clock.currentTimeMillis;
+                  const existing = (yield* Ref.get(enrollments)).get(enrollmentId);
+                  if (
+                    existing === undefined ||
+                    existing.status !== "pending" ||
+                    existing.alias !== alias ||
+                    existing.scope !== ceiling ||
+                    existing.expiresAtMs <= now
+                  ) {
+                    return false;
+                  }
+                  const current = yield* store.getCredential(alias);
+                  if (current === undefined || current.kind === CARD_KIND) {
+                    return false;
+                  }
+                  const affected = yield* registry.revokePendingForAlias(alias);
+                  for (const grant of affected) {
+                    yield* forgetDecision(grant.grantId);
+                    yield* interruptSleeper(grant.grantId);
+                  }
+                  const ciphertext = yield* withKey((key) => encryptSecret(key, plaintextSecret));
+                  yield* store.updateCredential(alias, ceiling, ciphertext, website);
+                  yield* Ref.update(enrollments, (map) => {
+                    const next = new Map(map);
+                    next.set(enrollmentId, { ...existing, status: "completed" });
+                    return next;
+                  });
+                  yield* audit("human", alias, ceiling, "credential-added", `credential replaced: ${alias} (${ceiling})`, false);
+                  yield* audit("agent", alias, ceiling, "enrollment-completed", `enrollment completed: ${alias}`, false);
+                  return true;
+                }),
 
         createEnrollment: (alias, scope, website, reason, agentId) =>
           Effect.gen(function* () {
@@ -1273,8 +1348,13 @@ export function makeVaultServiceLive(
             if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) return { status: "denied", reason: "agent-credentials-changed" } as const;
             const exit = yield* Effect.exit(executeGrant(req, allowedScope, credential.ciphertext));
             if (Exit.isFailure(exit)) {
+              const failure = Cause.failureOption(exit.cause);
+              const upstreamStatus =
+                failure._tag === "Some" && failure.value instanceof ConnectorFailed && failure.value.status !== undefined
+                  ? failure.value.status
+                  : undefined;
               yield* audit(req.agentId, req.alias, allowedScope, "denied", "connector-failed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
-              return { status: "denied", reason: "connector-failed" } as const;
+              return { status: "denied", reason: "connector-failed", ...(upstreamStatus !== undefined ? { upstreamStatus } : {}) } as const;
             }
             yield* audit(req.agentId, req.alias, allowedScope, "executed", "executed", marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
             return { status: "executed", result: exit.value, reason: result.reason } as const;
@@ -1375,6 +1455,7 @@ export function makeVaultServiceLive(
           Effect.gen(function* () {
             const affected = yield* registry.revokePendingFor(agentIdOrAlias);
             for (const [key, entry] of grantResults) if (entry.agentId === agentIdOrAlias) grantResults.delete(key);
+            for (const [key, entry] of grantExecution) if (entry.agentId === agentIdOrAlias) grantExecution.delete(key);
             for (const grant of affected) {
               const auditCtx = (yield* Ref.get(grantAudit)).get(grant.grantId);
               yield* forgetDecision(grant.grantId);
@@ -1402,8 +1483,10 @@ export function makeVaultServiceLive(
           ),
         listAudit: () => store.listAudit(),
         getGrant: (grantId) => registry.get(grantId),
+        isGrantExecutionInFlight: (grantId) => Effect.sync(() => grantExecution.has(grantId)),
         takeGrantResult: (grantId) =>
           Effect.gen(function* () {
+            if (grantExecution.has(grantId)) return { taken: false, pending: true } as const;
             const nowMs = yield* Clock.currentTimeMillis;
             const held = grantResults.get(grantId);
             grantResults.delete(grantId);

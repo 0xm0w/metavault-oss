@@ -322,3 +322,158 @@ describe("payload-routed tool calls", () => {
     await mock.close();
   });
 });
+
+describe("cloudflare dns allowlist", () => {
+  it("posts an allowlisted Cloudflare DNS record and deletes it without leaking the secret", async () => {
+    const zoneId = "0123456789abcdef0123456789abcdef";
+    const recordId = "fedcba9876543210fedcba9876543210";
+    let seenMethod = "";
+    let seenUrl = "";
+    let seenAuth = "";
+    let seenBody = "";
+    const mock = await startServer((req, res) => {
+      seenMethod = req.method ?? "";
+      seenUrl = req.url ?? "";
+      seenAuth = req.headers.authorization ?? "";
+      req.on("data", (chunk: Buffer) => {
+        seenBody += chunk.toString("utf8");
+      });
+      req.on("end", () => {
+        if (seenMethod === "DELETE") {
+          res.end(JSON.stringify({ success: true, result: { id: recordId } }));
+          return;
+        }
+        res.end(JSON.stringify({ success: true, result: { id: recordId, type: "TXT" } }));
+      });
+    });
+    const created = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "dns.write",
+          SECRET,
+          {
+            method: "POST",
+            path: `/zones/${zoneId}/dns_records`,
+            body: { type: "TXT", name: "mv-test.goodrecmovies.com", content: "metavault-test", ttl: 120 },
+          },
+          "cloudflare.dns",
+        );
+      }).pipe(Effect.provide(makeConnectorLive({ cloudflare: `${mock.url}/verify` }, undefined, { cloudflareApiBase: `${mock.url}/client/v4` }))),
+    );
+    expect(seenMethod).toBe("POST");
+    expect(seenUrl).toBe(`/client/v4/zones/${zoneId}/dns_records`);
+    expect(seenAuth).toBe(`Bearer ${SECRET}`);
+    expect(JSON.parse(seenBody) as unknown).toEqual({
+      type: "TXT",
+      name: "mv-test.goodrecmovies.com",
+      content: "metavault-test",
+      ttl: 120,
+    });
+    expect(created).toEqual({ status: 200, data: { success: true, result: { id: recordId, type: "TXT" } } });
+    expect(JSON.stringify(created)).not.toContain(SECRET);
+
+    seenBody = "";
+    const deleted = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "dns.write",
+          SECRET,
+          { method: "DELETE", path: `/zones/${zoneId}/dns_records/${recordId}` },
+          "cloudflare.dns",
+        );
+      }).pipe(Effect.provide(makeConnectorLive({ cloudflare: `${mock.url}/verify` }, undefined, { cloudflareApiBase: `${mock.url}/client/v4` }))),
+    );
+    expect(seenMethod).toBe("DELETE");
+    expect(seenUrl).toBe(`/client/v4/zones/${zoneId}/dns_records/${recordId}`);
+    expect(seenBody).toBe("");
+    expect(deleted).toEqual({ status: 200, data: { success: true, result: { id: recordId } } });
+    expect(JSON.stringify(deleted)).not.toContain(SECRET);
+    await mock.close();
+  });
+
+  it("looks up a zone by name with an allowlisted query", async () => {
+    let seenUrl = "";
+    const mock = await startServer((req, res) => {
+      seenUrl = req.url ?? "";
+      res.end(JSON.stringify({ success: true, result: [] }));
+    });
+    const out = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "dns.read",
+          SECRET,
+          { method: "GET", path: "/zones", query: { name: "goodrecmovies.com" } },
+          "cloudflare.dns",
+        );
+      }).pipe(Effect.provide(makeConnectorLive({ cloudflare: `${mock.url}/verify` }, undefined, { cloudflareApiBase: `${mock.url}/client/v4` }))),
+    );
+    expect(seenUrl).toBe("/client/v4/zones?name=goodrecmovies.com");
+    expect(out).toEqual({ status: 200, data: { success: true, result: [] } });
+    expect(JSON.stringify(out)).not.toContain(SECRET);
+    await mock.close();
+  });
+
+  it("rejects a Cloudflare DNS path that leaves the allowlist before any request", async () => {
+    let hits = 0;
+    const mock = await startServer((_req, res) => {
+      hits += 1;
+      res.end("{}");
+    });
+    const err = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "dns.write",
+          SECRET,
+          { method: "POST", path: "https://evil.example/zones/0123456789abcdef0123456789abcdef/dns_records" },
+          "cloudflare.dns",
+        );
+      }).pipe(
+        Effect.provide(makeConnectorLive({ cloudflare: `${mock.url}/verify` }, undefined, { cloudflareApiBase: `${mock.url}/client/v4` })),
+        Effect.flip,
+      ),
+    );
+    expect(err._tag).toBe("ConnectorFailed");
+    expect(hits).toBe(0);
+    expect(JSON.stringify(err)).not.toContain(SECRET);
+    await mock.close();
+  });
+
+  it("does not send a DNS write when the scope is read-only", async () => {
+    let hits = 0;
+    const mock = await startServer((_req, res) => {
+      hits += 1;
+      res.end("{}");
+    });
+    const err = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "dns.read",
+          SECRET,
+          {
+            method: "POST",
+            path: "/zones/0123456789abcdef0123456789abcdef/dns_records",
+            body: { type: "TXT", name: "mv-test", content: "metavault-test" },
+          },
+          "cloudflare.dns",
+        );
+      }).pipe(
+        Effect.provide(makeConnectorLive({ cloudflare: `${mock.url}/verify` }, undefined, { cloudflareApiBase: `${mock.url}/client/v4` })),
+        Effect.flip,
+      ),
+    );
+    expect(err._tag).toBe("ConnectorFailed");
+    expect(hits).toBe(0);
+    expect(JSON.stringify(err)).not.toContain(SECRET);
+    await mock.close();
+  });
+});

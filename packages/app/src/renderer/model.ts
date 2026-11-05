@@ -1322,7 +1322,7 @@ export const WARDEN_PROVIDERS: readonly { id: WardenProvider; label: string }[] 
 
 export const DAEMON_URL_DISPLAY = "http://127.0.0.1:7077";
 export const VAULT_PATH_DISPLAY = "metavault.db (in vaultd's working directory; METAVAULT_DB_PATH can override it)";
-export const APP_VERSION_DISPLAY = "0.1.2-alpha";
+export const APP_VERSION_DISPLAY = "0.1.4-alpha";
 
 const WARDEN_PROVIDERS_LIST: readonly WardenProvider[] = ["none", "meta-api", "local", "bft"];
 const LOCAL_API_LIST: readonly LocalApiStyle[] = ["ollama", "openai"];

@@ -39,6 +39,12 @@ export const DEFAULT_TOOL_ROUTES: ToolRoutes = {
   "cloudflare:cloudflare-graphql.analytics": "https://api.cloudflare.com/client/v4/graphql",
 };
 
+export const DEFAULT_CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
+
+export interface ConnectorLiveOptions {
+  readonly cloudflareApiBase?: string;
+}
+
 const failed = (message: string): ConnectorFailed => new ConnectorFailed({ message });
 
 const failedWithStatus = (status: number): ConnectorFailed =>
@@ -127,12 +133,114 @@ export function executeHttp(
   return program.pipe(Effect.provide(FetchHttpClient.layer));
 }
 
+const DNS_WRITE_MARKERS = [".write", ".create", ".update", ".delete"];
+const DNS_ZONE_ID = "[a-f0-9]{32}";
+const DNS_PATH = new RegExp(`^/zones(?:/(${DNS_ZONE_ID})(?:/dns_records(?:/(${DNS_ZONE_ID}))?)?)?$`);
+const DNS_QUERY_KEYS = new Set(["name", "type", "content", "page", "per_page"]);
+
+function isDnsWriteScope(scope: string): boolean {
+  return DNS_WRITE_MARKERS.some((marker) => scope.includes(marker)) || scope.endsWith(":write");
+}
+
+interface DnsCall {
+  readonly method: string;
+  readonly path: string;
+  readonly query?: Readonly<Record<string, unknown>>;
+  readonly body?: unknown;
+}
+
+function parseDnsPayload(payload: unknown): DnsCall | null {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  if (typeof record["method"] !== "string" || typeof record["path"] !== "string") {
+    return null;
+  }
+  const query = record["query"];
+  if (query !== undefined && (typeof query !== "object" || query === null || Array.isArray(query))) {
+    return null;
+  }
+  return {
+    method: record["method"],
+    path: record["path"],
+    ...(query !== undefined ? { query: query as Readonly<Record<string, unknown>> } : {}),
+    ...(record["body"] !== undefined ? { body: record["body"] } : {}),
+  };
+}
+
+// Allowlisted Cloudflare DNS REST call. The host is the connector base,
+// never a value from the payload.
+function resolveCloudflareDns(
+  base: string,
+  scope: string,
+  payload: unknown,
+): { readonly url: string; readonly method: string; readonly body?: unknown } | string {
+  const call = parseDnsPayload(payload);
+  if (call === null) {
+    return "ConnectorFailed: DNS payload must be { method, path, query?, body? }";
+  }
+  const method = call.method.toUpperCase();
+  if (method !== "GET" && method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") {
+    return "ConnectorFailed: unsupported DNS method";
+  }
+  if (
+    call.path !== call.path.trim() ||
+    !call.path.startsWith("/") ||
+    call.path.includes("\\") ||
+    call.path.includes("?") ||
+    call.path.includes("#") ||
+    call.path.includes("://") ||
+    call.path.includes("..")
+  ) {
+    return "ConnectorFailed: DNS path is not allowlisted";
+  }
+  const match = DNS_PATH.exec(call.path);
+  if (match === null) {
+    return "ConnectorFailed: DNS path is not allowlisted";
+  }
+  const recordId = match[2];
+  const isRecord = recordId !== undefined;
+  const isCollection = call.path.endsWith("/dns_records");
+  if (method === "POST" && !isCollection) {
+    return "ConnectorFailed: DNS path is not allowlisted";
+  }
+  if ((method === "PUT" || method === "PATCH" || method === "DELETE") && !isRecord) {
+    return "ConnectorFailed: DNS path is not allowlisted";
+  }
+  if (method !== "GET" && !isDnsWriteScope(scope)) {
+    return "ConnectorFailed: DNS write requires a write scope";
+  }
+  if (call.query !== undefined && method !== "GET") {
+    return "ConnectorFailed: DNS query is only allowed on GET";
+  }
+  const root = base.replace(/\/$/, "");
+  let url = `${root}${call.path}`;
+  if (call.query !== undefined) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(call.query)) {
+      if (!DNS_QUERY_KEYS.has(key) || typeof value !== "string" || value.length === 0 || value.length > 253 || /[\0\r\n&#?]/.test(value)) {
+        return "ConnectorFailed: DNS query is not allowlisted";
+      }
+      params.append(key, value);
+    }
+    const qs = params.toString();
+    if (qs !== "") {
+      url = `${url}?${qs}`;
+    }
+  }
+  const sendBody = call.body !== undefined && method !== "GET" && method !== "DELETE";
+  return { url, method, ...(sendBody ? { body: call.body } : {}) };
+}
+
 export function makeConnectorLive(
   presets: ConnectorPresets = DEFAULT_CONNECTOR_PRESETS,
   toolRoutes: ToolRoutes = DEFAULT_TOOL_ROUTES,
+  options: ConnectorLiveOptions = {},
 ): Layer.Layer<Connector> {
+  const cloudflareApiBase = options.cloudflareApiBase ?? DEFAULT_CLOUDFLARE_API_BASE;
   return Layer.succeed(Connector, {
-    execute: (alias, _scope, secret, payload, tool) => {
+    execute: (alias, scope, secret, payload, tool) => {
       const url = presets[alias];
       if (url === undefined) {
         // The core Connector contract admits only ConnectorFailed, so the
@@ -152,6 +260,27 @@ export function makeConnectorLive(
           url,
           method: "GET",
           secret,
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
+        );
+      }
+      if (alias === "cloudflare" && tool === "cloudflare.dns") {
+        const resolved = resolveCloudflareDns(cloudflareApiBase, scope, payload);
+        if (typeof resolved === "string") {
+          return Effect.fail(new ConnectorFailed({ alias, message: resolved }));
+        }
+        return executeHttp({
+          url: resolved.url,
+          method: resolved.method,
+          secret,
+          ...(resolved.body !== undefined ? { body: resolved.body } : {}),
         }).pipe(
           Effect.mapError(
             (err) =>
