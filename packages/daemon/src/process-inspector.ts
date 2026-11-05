@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readlinkSync } from "node:fs";
 import { basename } from "node:path";
 
 export interface ProcessInspectionResult {
@@ -7,11 +7,26 @@ export interface ProcessInspectionResult {
   readonly pid: number;
   readonly binary: string;
   readonly reason?: string;
+  // True when the binary is a generic runtime (node, bun, deno). A generic
+  // runtime can execute arbitrarily re-written code, so its name proves
+  // nothing about what the caller actually runs; such callers are accepted
+  // only with an enrolled, human-approved agent token.
+  readonly genericRuntime?: boolean;
 }
 
-export const ALLOWED_AGENT_BINARIES: ReadonlySet<string> = new Set([
+// Generic runtimes: whitelisting them as "agents" lets any shell-executed
+// script pass as an IDE agent (node -e "..."), so they are separated out and
+// never enough on their own (Issue 2).
+export const GENERIC_RUNTIME_BINARIES: ReadonlySet<string> = new Set([
   "node",
   "node.exe",
+  "bun",
+  "bun.exe",
+  "deno",
+  "deno.exe",
+]);
+
+export const ALLOWED_AGENT_BINARIES: ReadonlySet<string> = new Set([
   "cursor",
   "cursor.exe",
   "code",
@@ -99,13 +114,22 @@ export function resolveProcessBinary(pid: number): string | null {
     }
   } else if (process.platform === "linux") {
     try {
-      return readFileSync(`/proc/${String(pid)}/comm`, "utf8").trim();
+      // /proc/<pid>/exe is the kernel's readlink to the real image; unlike
+      // /proc/<pid>/comm it cannot be renamed from userspace with
+      // prctl(PR_SET_NAME). When the link is not readable for this process
+      // (different user, yama ptrace scope, vanished pid) we answer
+      // null: the caller verification gate fails closed rather than
+      // trusting a spoofable name.
+      return basename(readlinkSync(`/proc/${String(pid)}/exe`));
     } catch {
-      // Fallback
+      return null;
     }
   }
 
-  // Generic POSIX ps fallback
+  // Generic POSIX ps fallback. On Linux this is unreachable (the /proc exe
+  // branch now answers null instead of falling back to a spoofable name);
+  // it covers macOS and other POSIX targets without kernel peer
+  // credentials, which cannot fully verify a binary name.
   try {
     const out = execSync(`ps -p ${String(pid)} -o comm=`, {
       encoding: "utf8",
@@ -141,6 +165,15 @@ export function inspectProcess(pid: number): ProcessInspectionResult {
       pid,
       binary,
       reason: `disallowed-binary: ${binary}`,
+    };
+  }
+
+  if (GENERIC_RUNTIME_BINARIES.has(normalized)) {
+    return {
+      ok: true,
+      pid,
+      binary,
+      genericRuntime: true,
     };
   }
 

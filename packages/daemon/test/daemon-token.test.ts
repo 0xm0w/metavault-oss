@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
@@ -149,27 +149,32 @@ describe("resolveDaemonToken", () => {
     }
   });
 
-  it("prefers METAVAULT_DAEMON_TOKEN from the environment", () => {
+  it("prefers METAVAULT_DAEMON_TOKEN from the environment and destroys any legacy token file", () => {
     process.env["METAVAULT_DAEMON_TOKEN"] = "env-token-value";
     const dir = mkdtempSync(join(tmpdir(), "metavault-token-"));
     try {
-      expect(resolveDaemonToken(join(dir, "metavault.db"))).toBe("env-token-value");
-      expect(existsSync(daemonTokenFilePath(join(dir, "metavault.db")))).toBe(false);
+      const dbPath = join(dir, "metavault.db");
+      writeFileSync(daemonTokenFilePath(dbPath), "legacy-on-disk-token", "utf8");
+      expect(resolveDaemonToken(dbPath)).toBe("env-token-value");
+      expect(existsSync(daemonTokenFilePath(dbPath))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("generates a random token and writes it next to the DB file otherwise", () => {
+  it("never writes a token file and removes leftovers, with or without the env var", () => {
     delete process.env["METAVAULT_DAEMON_TOKEN"];
     const dir = mkdtempSync(join(tmpdir(), "metavault-token-"));
     try {
       const dbPath = join(dir, "metavault.db");
+      // A legacy file the daemon must clean even without an env token.
+      writeFileSync(daemonTokenFilePath(dbPath), "legacy-on-disk-token", "utf8");
       const token = resolveDaemonToken(dbPath);
       expect(token.length).toBeGreaterThanOrEqual(32);
-      expect(readFileSync(daemonTokenFilePath(dbPath), "utf8")).toBe(token);
-      // A second resolve generates a fresh token (the file is the record).
-      expect(resolveDaemonToken(dbPath)).not.toBe(token);
+      expect(existsSync(daemonTokenFilePath(dbPath))).toBe(false);
+      // A second resolve still never materializes the token on disk.
+      resolveDaemonToken(dbPath);
+      expect(existsSync(daemonTokenFilePath(dbPath))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

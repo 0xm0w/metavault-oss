@@ -38,9 +38,12 @@ MetaVault OSS implements multi-tiered, defense-in-depth protections to prevent a
 
 4. **Caller Process & Binary Boundary Inspection (Defense-in-Depth)**:
    - When enabled in Settings, `vaultd` inspects the client's OS process ID (PID) and executable binary.
-   - Cross-references the caller binary against approved agent runtimes (`Cursor.exe`, `Code.exe`, `node.exe`, `electron.exe`, `claude.exe`).
+   - Cross-references the caller binary against approved agent runtimes (`Cursor.exe`, `Code.exe`, `electron.exe`, `claude.exe`).
+   - On Linux the binary is resolved from `readlink /proc/<pid>/exe` (the kernel-owned image link), not the `prctl`-renamable `/proc/<pid>/comm`; an unreadable link fails closed.
+   - Generic runtimes (`node`, `bun`, `deno`) can execute arbitrary re-written content, so their binary name proves nothing: a caller running under one is admitted only with an enrolled, human-approved agent token. A caller claiming the daemon's own PID is rejected outright, because loopback PID headers are self-reported.
    - PID/process data is supplied by the client and is defense-in-depth, not cryptographic proof of the caller. A stolen bearer token remains a risk; rotate/revoke it.
    - If an unauthorized script runner or tool (`python.exe`, `curl.exe`, `powershell.exe`, `cmd.exe`, `bash`) attempts to exploit a stolen agent token, the process inspection engine blocks the call with HTTP `403 Forbidden` (`process-verification-failed`).
+   - Researched, not implemented: a Unix-domain-socket listener with kernel peer credentials (`SO_PEERCRED` / `LOCAL_PEERPID`) would anchor caller identity in the kernel instead of a self-reported header. It needs a native module, has no Windows equivalent, and is tracked as follow-up work.
 
 ## Security model (summary)
 
@@ -165,13 +168,16 @@ These are not fixed, and the code doesn't claim to fix them:
 - **Legacy modes.** The keychain, env-var and dev-plaintext modes can't
   auto-lock. A same-user process can read the key from the keychain, the
   process environment or the file.
-- **Daemon token.** Any local process that can read `metavault.token` can
-  call the daemon, including `/unlock` (rate-limited), `/lock` and
-  `POST /cards`, and the human-decision routes `/approve`,
-  `/approve-always` and `/deny`. It can't read a secret or card value
-  back. It can approve a pending card use; that use then fails only
-  because no payment connector ships yet (`ConnectorFailed`), not
-  because the token is refused.
+- **Session daemon token in-process.** The privileged-route token
+  (`METAVAULT_DAEMON_TOKEN`) is never written to disk: the desktop app
+  mints one per session and shares it with the daemon it spawns through the
+  process environment, and a standalone daemon started without it keeps an
+  in-memory token nobody can read back (guarded routes stay 401). A
+  same-user process can still read the token from the app's or daemon's
+  process environment or memory for as long as both run (same boundary as
+  the unlocked master key above). What no longer exists is a stable token
+  file that survived restarts and could be replayed by any file-reading
+  agent.
 - **Offline guessing.** A copied `metavault.key.json` can be attacked
   offline. The KDF slows each guess down; a weak passphrase is still weak.
 

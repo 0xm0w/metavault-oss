@@ -1,12 +1,10 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { metavaultEnv } from "./env.js";
 
 // Daemon HTTP client for the Electron MAIN process. The daemon token lives
-// only here in main: it is resolved from the environment or the token file
-// and sent as a header, and it never crosses IPC into the preload or the
-// renderer. This module imports no Electron APIs so the whitelist and
-// validation logic are unit-testable headlessly.
+// only here in main: it is resolved from the environment and sent as a
+// header, and it never crosses IPC into the preload or the renderer. This
+// module imports no Electron APIs so the whitelist and validation logic are
+// unit-testable headlessly.
 
 export const DAEMON_CALL_CHANNEL = "metavault:daemon-call";
 
@@ -120,10 +118,12 @@ export const DAEMON_BASE_URL = (
 ).replace(/\/+$/, "");
 const daemonBase = DAEMON_BASE_URL;
 
-// Daemon token for the human-decision routes: METAVAULT_DAEMON_TOKEN, else
-// the metavault.token file the daemon writes next to the vault DB. Resolved
-// lazily (and cached once found) so a daemon started after this app still
-// authenticates. The token stays in the main process.
+// Daemon token for the human-decision routes: METAVAULT_DAEMON_TOKEN in the
+// environment, nothing else. The daemon never writes a token file, so there
+// is no on-disk copy for a same-UID IDE agent to read. When this app spawns
+// the bundled daemon it generates the token and both processes share it
+// through the environment. A daemon the app did not spawn (started by hand)
+// must be started with METAVAULT_DAEMON_TOKEN set to the same value.
 let cachedDaemonToken: string | undefined;
 function daemonToken(): string | undefined {
   if (cachedDaemonToken !== undefined) {
@@ -134,16 +134,8 @@ function daemonToken(): string | undefined {
     cachedDaemonToken = fromEnv;
     return cachedDaemonToken;
   }
-  try {
-    const dbPath = metavaultEnv("DB_PATH") ?? join(process.cwd(), "metavault.db");
-    const text = readFileSync(join(dirname(dbPath), "metavault.token"), "utf8").trim();
-    if (text !== "") {
-      cachedDaemonToken = text;
-    }
-  } catch {
-    // No token available yet; the daemon will 401 the guarded routes only.
-  }
-  return cachedDaemonToken;
+  // No token available: guarded routes stay 401 until the env var exists.
+  return undefined;
 }
 
 const daemonFetch = async (method: string, path: string, body: unknown): Promise<Response> => {
@@ -164,12 +156,11 @@ export async function callDaemon(input: unknown): Promise<unknown> {
   try {
     response = await daemonFetch(method, path, body);
     if (response.status === 401) {
-      // The daemon mints a fresh token on every start (resolveDaemonToken),
-      // so a token cached while a previous daemon process ran - or read from
-      // the file before the new daemon rewrote it - is stale forever after.
-      // Re-read once and retry; this is what lets a relaunched app talk to
-      // its restarted daemon (gateway autostart, renderer IPC after a
-      // daemon bounce).
+      // The daemon token is environment-only, so it does not rotate on a
+      // daemon restart the way the old on-disk token did. A relaunched app
+      // shares the session token with the daemon it spawns (gateway
+      // autostart, renderer IPC after a daemon bounce). Re-read the
+      // environment once on 401 and retry: harmless when unchanged.
       cachedDaemonToken = undefined;
       response = await daemonFetch(method, path, body);
     }

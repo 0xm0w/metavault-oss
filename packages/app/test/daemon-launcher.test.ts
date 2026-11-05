@@ -9,6 +9,7 @@ import {
   bundledDaemonPaths,
   daemonHealthy,
   ensureBundledDaemon,
+  ensureSessionDaemonToken,
 } from "../src/daemon-launcher.js";
 
 let server: Server | null = null;
@@ -71,5 +72,23 @@ describe("bundled daemon launcher", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("mints a session daemon token on the env the child shares, without overwriting one", () => {
+    // When the app injects env it is typically process.env, so the minted
+    // token must land on the SAME object (daemon-client resolves it lazily
+    // from env) — never on a copy.
+    const env: Record<string, string> = {};
+    const token = ensureSessionDaemonToken(env);
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(env["METAVAULT_DAEMON_TOKEN"]).toBe(token);
+
+    const explicitToken = ensureSessionDaemonToken({ METAVAULT_DAEMON_TOKEN: "user-set-token" });
+    expect(explicitToken).toBe("user-set-token");
+
+    // Distinct calls mint distinct tokens on distinct env objects.
+    const second = ensureSessionDaemonToken({});
+    expect(second).not.toBe(token);
+    expect(second).toMatch(/^[0-9a-f]{64}$/);
   });
 });

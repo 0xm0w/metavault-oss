@@ -1,14 +1,16 @@
 import { isWriteScope } from "../../core/src/policy.js";
+import { summarizeHttpRequestPayload } from "../../core/src/payload.js";
 import type { CapabilityRequest, MarshalDecision, Risk } from "../../core/src/types.js";
 import type { HistorySummary } from "./prompt.js";
 
 // Rules-only warden: the strongest deterministic baseline we could write in
 // good faith, used as the comparison arm in the research benchmark
 // (packages/brain/eval/run-thesis.ts). It sees exactly what the model warden
-// sees (request metadata, the agent's stated reason, a history summary) and
-// rates risk with keyword maps and a few semantic combinations instead of a
-// language model. It is not wired into the daemon; the daemon's own
-// deterministic layer is evaluatePolicy plus enforceScopeSafety.
+// sees (request metadata, the agent's stated reason, a canonical payload
+// summary, a history summary) and rates risk with keyword maps and a few
+// semantic combinations instead of a language model. It is not wired into
+// the daemon; the daemon's own deterministic layer is evaluatePolicy plus
+// enforceScopeSafety.
 //
 // Every rule that fires is reported in the explanation so a reviewer can see
 // why a request was escalated.
@@ -76,6 +78,7 @@ const PRIVILEGED_SCOPE =
 export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleHit[] {
   const reason = req.reason;
   const scope = `${req.alias} ${req.requestedScope}`;
+  const payload = summarizeHttpRequestPayload(req.payload);
   const hits: RuleHit[] = [];
   const add = (id: string, weight: RuleHit["weight"]): void => {
     hits.push({ id, weight });
@@ -90,6 +93,17 @@ export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleH
   const destination = DESTINATION.test(reason);
   const bulk = BULK.test(reason);
   const read = !isWriteScope(req.requestedScope);
+
+  // The payload executes only after approval, but the human approves on the
+  // stated intent: a declared state-changing method on a read-only scope is
+  // an intent/payload mismatch that must stamp the decision, not ride under
+  // a quiet reason.
+  if (payload !== null && payload.mutating && read) {
+    add("payload-mutating-method-on-readonly-scope", "high");
+  }
+  if (payload !== null && payload.declaredMethod !== null) {
+    add("carries-declared-http-method", "signal");
+  }
 
   if (sensitive && (exfil || destination)) add("sensitive-data-leaving", "high");
   if (bulk && exfil && destination) add("bulk-export-to-destination", "high");

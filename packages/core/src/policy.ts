@@ -1,4 +1,5 @@
 import type { CapabilityRequest, MarshalDecision } from "./types.js";
+import { summarizeHttpRequestPayload } from "./payload.js";
 
 export interface PolicyConfig {
   ceilings: Record<string, string>;
@@ -170,6 +171,17 @@ export function evaluatePolicy(
 
   if (cfg.deviceAllowWrite === false && isWriteScope(allowedScope)) {
     return { allowedScope: null, requireApproval: false, reason: "device-ceiling-readonly" };
+  }
+
+  // Deterministic intent/payload floor: a payload that declares a
+  // state-changing HTTP method can never execute under a read-only scope,
+  // whatever the agent's reason says and whatever any warden decided. The
+  // connector re-checks its own allowlists at execution time; this is the
+  // decision-time floor so the mismatch is denied, not silently moved to a
+  // post-approval ConnectorFailed.
+  const payload = summarizeHttpRequestPayload(req.payload);
+  if (payload !== null && payload.mutating && !isWriteScope(allowedScope)) {
+    return { allowedScope: null, requireApproval: true, reason: "payload-mutates-readonly-scope" };
   }
 
   const financial = cfg.financialAliases?.includes(req.alias) === true;

@@ -120,7 +120,8 @@ async function requestPending(): Promise<string> {
 }
 
 beforeAll(async () => {
-  writeFileSync(join(workDir, "metavault.token"), DAEMON_TOKEN, "utf8");
+  // No token file exists anymore: the daemon token travels by environment.
+  process.env["METAVAULT_DAEMON_TOKEN"] = DAEMON_TOKEN;
   service = await Effect.runPromise(
     Effect.gen(function* () {
       return yield* VaultService;
@@ -134,6 +135,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  const saved = process.env["METAVAULT_DAEMON_TOKEN"];
+  if (saved === DAEMON_TOKEN) {
+    delete process.env["METAVAULT_DAEMON_TOKEN"];
+  }
   try {
     rmSync(workDir, { recursive: true, force: true });
   } catch {
@@ -412,11 +417,11 @@ describe("metavault CLI (in-process daemon wire)", () => {
     expect(seenToken).toBe("cli-deps-token");
   });
 
-  it("approve falls back to the token file next to the DB path", async () => {
+  it("approve falls back to METAVAULT_DAEMON_TOKEN and never to a token file", async () => {
+    // The token file path is no longer a fallback: the daemon stopped
+    // writing it. The environment is the only automatic source.
     const saved = process.env["METAVAULT_DAEMON_TOKEN"];
-    delete process.env["METAVAULT_DAEMON_TOKEN"];
-    const tokenPath = join(workDir, "metavault.token");
-    writeFileSync(tokenPath, "file-token-value", "utf8");
+    process.env["METAVAULT_DAEMON_TOKEN"] = "env-token-value";
     try {
       let seenToken: string | undefined;
       const cap = capture({
@@ -433,13 +438,27 @@ describe("metavault CLI (in-process daemon wire)", () => {
       });
       const code = await runCli(["approve", "grant-1"], cap.deps);
       expect(code).toBe(0);
-      expect(seenToken).toBe("file-token-value");
-    } finally {
+      expect(seenToken).toBe("env-token-value");
+
+      // A stale legacy token file must not authenticate anything.
+      rmSync(join(workDir, "metavault.token"), { force: true });
+      writeFileSync(join(workDir, "metavault.token"), "stale-file-token", "utf8");
+      delete process.env["METAVAULT_DAEMON_TOKEN"];
       try {
-        rmSync(tokenPath, { force: true });
-      } catch {
-        // best effort
+        let hintSeen: string | undefined;
+        const noToken = capture({
+          err: (text) => {
+            hintSeen = (hintSeen ?? "") + text;
+          },
+        });
+        const failCode = await runCli(["approve", "grant-1"], noToken.deps);
+        expect(failCode).toBe(1);
+        expect(hintSeen).toContain("Unauthorized");
+        expect(hintSeen).toContain("METAVAULT_DAEMON_TOKEN");
+      } finally {
+        rmSync(join(workDir, "metavault.token"), { force: true });
       }
+    } finally {
       if (saved === undefined) {
         delete process.env["METAVAULT_DAEMON_TOKEN"];
       } else {

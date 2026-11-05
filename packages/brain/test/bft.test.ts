@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assessBftQuorum,
@@ -73,7 +73,7 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
     expect(decision.explanation).toContain("Local Co-Auditor (muse-glimmer:30b via your endpoint)");
   });
 
-  it("uses Meta API when valid key is provided in BFT options", async () => {
+  it("uses Meta API as the sole configured warden when no local endpoint is set", async () => {
     const metaResponseJson = JSON.stringify({
       choices: [
         {
@@ -102,13 +102,46 @@ describe("Meta BFT Consensus Engine (Meta API + Local Fallback)", () => {
     const decision = await Effect.runPromise(
       assessBftQuorum(testRequest, historySummary, policyDigest, {
         metaApiKey: "test-meta-key-12345",
-        localEndpoint,
       }),
     );
 
     expect(decision.risk).toBe("low");
     expect(decision.recommendedScope).toBe("charges.read");
     expect(decision.explanation).toContain("Chief Warden (Meta API");
+  });
+
+  it("fails closed when both wardens are configured but the Meta API is unreachable", async () => {
+    // Cloud leg down, local leg up: one verdict from a dual-warden setup is
+    // not a quorum — the request must fail closed to a human decision.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() => Promise.reject(new Error("ECONNREFUSED"))),
+    );
+
+    setLocalInferenceHandler(() =>
+      Effect.succeed({
+        risk: "low",
+        recommendedScope: "charges.read",
+        requireApproval: false,
+        explanation: "local answered as the only surviving warden",
+      }),
+    );
+
+    const result = await Effect.runPromiseExit(
+      assessBftQuorum(testRequest, historySummary, policyDigest, {
+        metaApiKey: "test-meta-key-12345",
+        localEndpoint,
+      }),
+    );
+
+    expect(result._tag).toBe("Failure");
+    if (result._tag === "Failure") {
+      const failure = Cause.failureOption(result.cause);
+      expect(failure._tag).toBe("Some");
+      if (failure._tag === "Some") {
+        expect(String(failure.value)).toContain("BFT quorum not met");
+      }
+    }
   });
 
   it("supports any custom Meta AI model for the Cloud Warden", async () => {

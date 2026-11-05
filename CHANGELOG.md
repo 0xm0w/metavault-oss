@@ -4,6 +4,45 @@ All notable changes to MetaVault OSS are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Security-hardening candidate - 2026-11-06 (unreleased)
+
+### Breaking
+
+- **The daemon never writes `metavault.token`.** The admin token for the
+  human-decision routes travels only via `METAVAULT_DAEMON_TOKEN` in the
+  environment (the desktop app mints a per-session token for the bundled
+  daemon it spawns; a standalone daemon without it keeps an in-memory token
+  nobody can read back, so guarded routes stay 401). Any leftover
+  `metavault.token` from an older version is destroyed at daemon start and
+  nothing reads one.
+
+### Fixed / hardened
+
+- **Caller-process inspection (gate: Settings > Security).** Linux resolves
+  the caller binary from `readlink /proc/<pid>/exe` instead of the
+  `prctl`-renamable `/proc/<pid>/comm` and fails closed when the link is
+  unreadable; generic runtimes (`node`, `bun`, `deno`) are no longer
+  treated as proof of identity - such callers are admitted only with an
+  enrolled agent token, and a request claiming the daemon's own PID is
+  rejected. UDS + `SO_PEERCRED` remains researched follow-up work.
+- **Warden and deterministic rules see the payload.** Both the rules
+  baseline and the marshal prompt now include a canonical payload summary
+  (declared HTTP method, sha-256 digest, bounded preview). The policy floor
+  denies any request whose payload declares a mutating method
+  (POST/PUT/PATCH/DELETE) under a read-only scope, whatever the stated
+  reason (`payload-mutates-readonly-scope`).
+- **Connector responses redact the credential.** Occurrences of the
+  injected secret (exact, percent-encoded, Base64, Base64-URL) in upstream
+  response bodies are replaced with `[REDACTED]` before the body reaches
+  the agent.
+- **BFT quorum no longer degrades to one warden.** When both the Meta API
+  and a local endpoint are configured and only one responds, the assessment
+  fails closed (`MarshalUnavailable`) and the request goes to a human
+  decision instead of silently trusting a single model.
+
+The entries below are historical. They do not override the current
+candidates' uninstall contract or prove their validation.
+
 ## Local-hardening candidate - 2026-11-04 (unreleased)
 
 - Installed Windows MCP paths/runtime and static agent instructions, tested in

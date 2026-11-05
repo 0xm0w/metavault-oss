@@ -1,6 +1,6 @@
 import { AgentRegistrations } from "./registrations.js";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
@@ -317,7 +317,6 @@ export function daemonTokenFilePath(dbPath: string): string {
 export function gatewaySecretFilePath(dbPath: string): string {
   return join(dirname(dbPath), "metavault.gateway-token");
 }
-
 // The gateway secret authenticates the sibling gateway process over
 // loopback so local processes cannot stamp forged device identity headers.
 // It is created only when remote access is enabled; until then every
@@ -343,21 +342,37 @@ export function ensureGatewaySecret(dbPath: string): string {
   return secret;
 }
 
+// The daemon token never touches disk. IDE agents and the daemon share one
+// OS user, so any file the daemon could write they could also read (0600
+// included); a stable on-disk token replayed across restarts is therefore a
+// standing local escalation path.
+//
+// Delivery: METAVAULT_DAEMON_TOKEN in the environment. The desktop app
+// generates a per-session token and passes it to the bundled daemon it
+// spawns (with the same value kept in the main process for the
+// human-decision routes); standalone users set it themselves. Without the
+// variable the daemon still guards its routes — with an in-memory token it
+// alone knows, so nothing token-gating is ever reachable.
+//
+// A legacy `metavault.token` from an older version is destroyed on start
+// with the env var present: that file is a live risk while any older daemon
+// still runs against it, and a replacement is never written.
 export function resolveDaemonToken(dbPath: string): string {
+  const tokenPath = daemonTokenFilePath(dbPath);
+  try {
+    if (existsSync(tokenPath)) {
+      unlinkSync(tokenPath);
+    }
+  } catch {
+    // No legacy file (or unreadable vault dir): nothing to clean up.
+  }
   const fromEnv = metavaultEnv("DAEMON_TOKEN");
   if (fromEnv !== undefined && fromEnv !== "") {
     return fromEnv;
   }
-  const token = randomBytes(32).toString("hex");
-  try {
-    // Best-effort restrictive perms; the token is exposed only via this
-    // file (or METAVAULT_DAEMON_TOKEN), never via an API response or log.
-    writeFileSync(daemonTokenFilePath(dbPath), token, { encoding: "utf8", mode: 0o600 });
-  } catch {
-    // A read-only vault directory must not stop the daemon from starting;
-    // the in-memory token still guards this process.
-  }
-  return token;
+  // No env token: fail closed on the guarded routes. The in-memory token is
+  // not published anywhere — precisely the point.
+  return randomBytes(32).toString("hex");
 }
 
 export interface VaultRequestOptions {
@@ -1070,6 +1085,23 @@ export async function handleVaultRequest(
           },
         };
       }
+      // The PID header is self-reported over loopback: a caller can claim
+      // any number, including this daemon's own PID to ride the trusted
+      // fast-path. Accepting the daemon's own PID would be proof of
+      // nothing, so it is rejected outright.
+      if (clientPid === process.pid) {
+        return {
+          status: 403,
+          body: {
+            status: "denied",
+            reason: "process-verification-failed",
+            error: {
+              _tag: "Forbidden",
+              message: "Process verification failed: the daemon's own PID is not a valid caller identity.",
+            },
+          },
+        };
+      }
       const inspectRes = inspectProcess(clientPid);
       if (!inspectRes.ok) {
         return {
@@ -1080,6 +1112,24 @@ export async function handleVaultRequest(
             error: {
               _tag: "Forbidden",
               message: `Caller process verification failed: ${inspectRes.reason ?? "unauthorized process"}`,
+            },
+          },
+        };
+      }
+      // A generic runtime's binary name proves nothing: node/bun run
+      // arbitrary script content, so a same-UID shell exec could pose as
+      // one. Generic-runtime callers pass this gate only with an enrolled,
+      // human-approved agent token.
+      if (inspectRes.genericRuntime === true && !verified) {
+        return {
+          status: 403,
+          body: {
+            status: "denied",
+            reason: "process-verification-failed",
+            error: {
+              _tag: "Forbidden",
+              message:
+                "Caller process verification failed: generic runtime callers (node/bun/deno) require an enrolled agent token.",
             },
           },
         };

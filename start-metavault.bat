@@ -2,7 +2,9 @@
 rem Run from the repo root (the folder this file is in).
 cd /d "%~dp0"
 set METAVAULT_DAEMON_URL=http://127.0.0.1:7077
-set /p METAVAULT_DAEMON_TOKEN=<metavault.token
+rem The daemon token is delivered via the environment only; the app mints a
+rem session token and shares it with the bundled daemon it spawns. To use a
+rem daemon started some other way, set METAVAULT_DAEMON_TOKEN yourself.
 if exist "packages\app\release\win-unpacked\MetaVault OSS.exe" (
   start "" "packages\app\release\win-unpacked\MetaVault OSS.exe"
 ) else (

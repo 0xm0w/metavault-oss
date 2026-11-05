@@ -96,6 +96,66 @@ describe("evaluatePolicy", () => {
   });
 });
 
+describe("payload floor: declared mutating methods on read-only scopes", () => {
+  const d = { risk: "low" as const, recommendedScope: "charges.read", requireApproval: false, explanation: "x" };
+
+  it("denies a payload DELETE under a read-only ceiling even with a low-risk marshal and a standing approval", () => {
+    const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
+    const result = evaluatePolicy(
+      { ...req, payload: { method: "DELETE", path: "/v1/charges/ch_1" } },
+      d,
+      c2,
+      0,
+    );
+    expect(result.allowedScope).toBeNull();
+    expect(result.reason).toBe("payload-mutates-readonly-scope");
+  });
+
+  it("keeps working identically when no method is declared (body-payload routes)", () => {
+    const result = evaluatePolicy(
+      { ...req, payload: { query: "aggregate { totals }" } },
+      d,
+      cfg,
+      0,
+    );
+    expect(result.allowedScope).toBe("charges.read");
+    expect(result.reason).toBe("allowed");
+  });
+
+  it("allows a declared GET under a read-only ceiling", () => {
+    const result = evaluatePolicy(
+      { ...req, payload: { method: "GET", path: "/v1/charges" } },
+      d,
+      cfg,
+      0,
+    );
+    expect(result.allowedScope).toBe("charges.read");
+  });
+
+  it("catches the mismatch before the marshal at the pre-check too", () => {
+    const result = evaluatePolicy(
+      { ...req, payload: { method: "POST", path: "/v1/charges" } },
+      null,
+      cfg,
+      0,
+    );
+    expect(result.allowedScope).toBeNull();
+    expect(result.reason).toBe("payload-mutates-readonly-scope");
+  });
+
+  it("a mutating payload under a write ceiling is unaffected", () => {
+    const dw = { risk: "low" as const, recommendedScope: "charges.write", requireApproval: false, explanation: "x" };
+    const c2 = { ...cfg, ceilings: { stripe: "charges.write" } };
+    const result = evaluatePolicy(
+      { ...req, requestedScope: "charges.write", payload: { method: "DELETE", path: "/v1/charges/ch_1" } },
+      dw,
+      c2,
+      0,
+    );
+    expect(result.allowedScope).toBe("charges.write");
+  });
+});
+
 describe("financial (payment card) aliases", () => {
   const card = { ceilings: { visa: "card.payment:write" }, standingApprovals: [{ agentId: "cursor", alias: "visa", scope: "card.payment:write" }], rateLimitPerHour: 20, financialAliases: ["visa"] };
   const cardReq = { ...req, alias: "visa", requestedScope: "card.payment:write" };
