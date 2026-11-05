@@ -7,6 +7,7 @@ import {
   DEFAULT_CONNECTOR_PRESETS,
   executeHttp,
   makeConnectorLive,
+  type ToolRoutes,
 } from "../src/http.js";
 
 const SECRET = "[REDACTED]";
@@ -217,6 +218,106 @@ describe("ConnectorLive", () => {
     );
     expect(err._tag).toBe("ConnectorFailed");
     expect(err.status).toBe(500);
+    expect(JSON.stringify(err)).not.toContain(SECRET);
+    await mock.close();
+  });
+});
+
+describe("payload-routed tool calls", () => {
+  const routes = (url: string): ToolRoutes => ({
+    "cloudflare:cloudflare-graphql.analytics": url,
+  });
+
+  it("POSTs the payload to the route URL for alias:tool with the secret injected", async () => {
+    let seenAuth = "";
+    let seenMethod = "";
+    let seenBody = "";
+    let seenPath = "";
+    const mock = await startServer((req, res) => {
+      seenAuth = req.headers.authorization ?? "";
+      seenMethod = req.method ?? "";
+      seenPath = req.url ?? "";
+      req.on("data", (chunk: Buffer) => {
+        seenBody += chunk.toString("utf8");
+      });
+      req.on("end", () => {
+        res.end(JSON.stringify({ zones: [{ zoneName: "example.com" }] }));
+      });
+    });
+    const out = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "read",
+          SECRET,
+          { query: "{ viewer { zones } }", variables: {} },
+          "cloudflare-graphql.analytics",
+        );
+      }).pipe(
+        Effect.provide(
+          makeConnectorLive(
+            { cloudflare: `${mock.url}/tokens/verify` },
+            routes(`${mock.url}/graphql`),
+          ),
+        ),
+      ),
+    );
+    expect(seenMethod).toBe("POST");
+    expect(seenPath).toBe("/graphql");
+    expect(seenAuth).toBe(`Bearer ${SECRET}`);
+    expect(JSON.parse(seenBody) as unknown).toEqual({
+      query: "{ viewer { zones } }",
+      variables: {},
+    });
+    expect(out).toEqual({ status: 200, data: { zones: [{ zoneName: "example.com" }] } });
+    expect(JSON.stringify(out)).not.toContain(SECRET);
+    await mock.close();
+  });
+
+  it("fails with NoConnectorRoute when no route is defined for alias:tool", async () => {
+    const err = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "read",
+          SECRET,
+          { query: "{ zones }" },
+          "unknown.tool",
+        );
+      }).pipe(
+        Effect.provide(makeConnectorLive({ cloudflare: "http://127.0.0.1:1/verify" })),
+        Effect.flip,
+      ),
+    );
+    expect(err._tag).toBe("ConnectorFailed");
+    expect(err.message).toContain("NoConnectorRoute");
+    expect(JSON.stringify(err)).not.toContain(SECRET);
+  });
+
+  it("maps route failures to ConnectorFailed carrying only the status", async () => {
+    const mock = await startServer((_req, res) => {
+      res.writeHead(503, { "x-secret-echo": SECRET });
+      res.end(SECRET);
+    });
+    const err = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "cloudflare",
+          "read",
+          SECRET,
+          { query: "{ zones }" },
+          "cloudflare-graphql.analytics",
+        );
+      }).pipe(
+        Effect.provide(makeConnectorLive({ cloudflare: `${mock.url}/verify` }, routes(`${mock.url}/graphql`))),
+        Effect.flip,
+      ),
+    );
+    expect(err._tag).toBe("ConnectorFailed");
+    expect(err.status).toBe(503);
     expect(JSON.stringify(err)).not.toContain(SECRET);
     await mock.close();
   });

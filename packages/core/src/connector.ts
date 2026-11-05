@@ -7,6 +7,7 @@ export interface ConnectorService {
     scope: string,
     secret: string,
     payload?: unknown,
+    tool?: string,
   ) => Effect.Effect<unknown, ConnectorFailed>;
 }
 

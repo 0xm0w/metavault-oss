@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
 import { assessFromSettings, Brain, MarshalUnavailable } from "../../brain/src/brain.js";
-import { ConnectorLive, makeConnectorLive, type ConnectorPresets } from "../../connectors/src/http.js";
+import { ConnectorLive, makeConnectorLive, type ConnectorPresets, type ToolRoutes } from "../../connectors/src/http.js";
 import { Connector } from "../../core/src/connector.js";
 import { DEFAULT_AGENT_SECURITY_SETTINGS, WARDEN_KEY_ALIAS, WARDEN_KEY_MIN_LENGTH, normalizeWardenProvider, type AgentSecuritySettings } from "../../core/src/settings.js";
 import { inspectProcess } from "./process-inspector.js";
@@ -989,6 +989,14 @@ export async function handleVaultRequest(
     if (decoded === null) {
       return BAD_REQUEST;
     }
+    // Untrusted agent input: bound the payload size before it is stored on
+    // the in-memory grant or forwarded to a connector.
+    if (
+      decoded.payload !== undefined &&
+      JSON.stringify(decoded.payload ?? null).length > 65536
+    ) {
+      return BAD_REQUEST;
+    }
     const tokenFromOptions = options?.providedAgentToken;
     const tokenFromBody = decoded.agentToken;
     const token =
@@ -1087,6 +1095,7 @@ export async function handleVaultRequest(
       requestedScope: decoded.requestedScope,
       reason: decoded.reason,
       verified,
+      ...(decoded.payload !== undefined ? { payload: decoded.payload } : {}),
       ...(clientPid !== undefined ? { clientPid } : {}),
       ...(clientProcess !== undefined ? { clientProcess } : {}),
     };
@@ -1510,6 +1519,7 @@ export interface VaultDaemonOptions {
   // these); production defaults are the real layers below.
   readonly connector?: Layer.Layer<Connector>;
   readonly connectorPresets?: ConnectorPresets;
+  readonly connectorToolRoutes?: ToolRoutes;
   readonly brain?: Layer.Layer<Brain>;
   readonly daemonToken?: string;
 }
@@ -1529,8 +1539,8 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
   // preset upstream URLs with the secret injected inside the daemon.
   const connectorLayer =
     options.connector ??
-    (options.connectorPresets !== undefined
-      ? makeConnectorLive(options.connectorPresets)
+    (options.connectorPresets !== undefined || options.connectorToolRoutes !== undefined
+      ? makeConnectorLive(options.connectorPresets, options.connectorToolRoutes)
       : ConnectorLive);
   // Brain is built from stored warden settings and re-read per request,
   // so a settings PATCH takes effect without a daemon restart. The Meta

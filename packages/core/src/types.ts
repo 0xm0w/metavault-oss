@@ -3,6 +3,10 @@ export type Risk = "low" | "medium" | "high";
 export interface CapabilityRequest {
   agentId: string; ide: string; tool: string; alias: string;
   requestedScope: string; reason: string;
+  // Agent-supplied call parameters (e.g. a GraphQL query). Carried on the
+  // grant so the connector can execute the exact call after approval;
+  // never contains secret material — the human approves the tool/alias/scope.
+  payload?: unknown;
   verified?: boolean;
   clientPid?: number | undefined;
   clientProcess?: string | undefined;

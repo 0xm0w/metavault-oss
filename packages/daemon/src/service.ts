@@ -736,7 +736,7 @@ export function makeVaultServiceLive(
                   alias: req.alias,
                 }),
               )
-            : connector.execute(req.alias, allowedScope, secret),
+            : connector.execute(req.alias, allowedScope, secret, req.payload, req.tool),
         );
 
       // Shared tail of approve / approve-always: consume the pending grant

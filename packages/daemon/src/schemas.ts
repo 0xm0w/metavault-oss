@@ -24,6 +24,9 @@ export const CapabilityRequestSchema = Schema.Struct({
   alias: SafeIdentifier,
   requestedScope: SafeIdentifier,
   reason: SafeText,
+  // Arbitrary agent call parameters (e.g. a GraphQL query document). Size is
+  // bounded by the request handler before execution, not by the schema.
+  payload: Schema.optional(Schema.Unknown),
   agentToken: Schema.optional(Schema.String),
   clientPid: Schema.optional(Schema.Number),
 });

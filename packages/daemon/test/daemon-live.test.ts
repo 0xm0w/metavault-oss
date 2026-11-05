@@ -139,4 +139,114 @@ describe("startVaultDaemon with the real connector layer", () => {
       }
     }
   });
+
+  it("forwards a request payload through approval to a routed connector call", async () => {
+    let seenAuth = "";
+    let seenMethod = "";
+    let seenBody = "";
+    const upstream = createServer((req, res) => {
+      seenMethod = req.method ?? "";
+      seenAuth = req.headers.authorization ?? "";
+      req.on("data", (chunk: Buffer) => {
+        seenBody += chunk.toString("utf8");
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, zones: [{ zoneName: "example.com" }] }));
+      });
+    });
+    closers.push(() => closeServer(upstream));
+    await new Promise<void>((resolve) => {
+      upstream.listen(0, "127.0.0.1", () => {
+        resolve();
+      });
+    });
+    const upstreamAddress = upstream.address();
+    if (upstreamAddress === null || typeof upstreamAddress === "string") {
+      throw new Error("mock upstream has no port");
+    }
+    const upstreamPort = String(upstreamAddress.port);
+    const upstreamUrl = `http://127.0.0.1:${upstreamPort}/graphql`;
+
+    const dir = mkdtempSync(join(tmpdir(), "metavault-live-"));
+    const dbPath = join(dir, "metavault.db");
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const store = yield* VaultStore;
+          yield* store.addCredential("cloudflare", "read", encryptSecret(MASTER_KEY, SECRET));
+        }).pipe(Effect.provide(VaultStoreLive(dbPath, MASTER_KEY))),
+      );
+
+      const daemon = await startVaultDaemon({
+        port: 0,
+        dbPath,
+        masterKey: MASTER_KEY,
+        daemonToken: TOKEN,
+        brain: BrainLowRisk,
+        connectorPresets: { cloudflare: `http://127.0.0.1:${upstreamPort}/verify` },
+        connectorToolRoutes: { "cloudflare:cloudflare-graphql.analytics": upstreamUrl },
+      });
+      closers.push(() => closeServer(daemon));
+      const address = daemon.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("daemon has no port");
+      }
+      const base = `http://127.0.0.1:${String(address.port)}`;
+
+      const requested = await fetch(`${base}/request`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          agentId: "cursor",
+          ide: "Cursor",
+          tool: "cloudflare-graphql.analytics",
+          alias: "cloudflare",
+          requestedScope: "read",
+          reason: "30-day traffic analytics",
+          payload: { query: "{ viewer { zones } }", variables: { zoneName: "example.com" } },
+        }),
+      });
+      expect(requested.status).toBe(200);
+      const requestedBody = (await requested.json()) as Record<string, unknown>;
+      expect(requestedBody["status"]).toBe("awaiting-approval");
+      const grantId = requestedBody["grantId"];
+      if (typeof grantId !== "string") {
+        throw new Error("expected a grantId");
+      }
+
+      const approved = await fetch(`${base}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-metavault-token": TOKEN },
+        body: JSON.stringify({ grantId }),
+      });
+      expect(approved.status).toBe(200);
+      const approvedText = await approved.text();
+      const approvedBody = JSON.parse(approvedText) as {
+        status: string;
+        result: { status: number; data: unknown };
+      };
+      expect(approvedBody.status).toBe("executed");
+      expect(approvedBody.result).toEqual({
+        status: 200,
+        data: { ok: true, zones: [{ zoneName: "example.com" }] },
+      });
+      // The payload survived the schema decode, the grant record and the
+      // approval, and reached the routed upstream; the secret stayed in the
+      // Authorization header and out of the response.
+      expect(seenMethod).toBe("POST");
+      expect(JSON.parse(seenBody) as unknown).toEqual({
+        query: "{ viewer { zones } }",
+        variables: { zoneName: "example.com" },
+      });
+      expect(seenAuth).toBe(`Bearer ${SECRET}`);
+      expect(approvedText).not.toContain(SECRET);
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // best effort: the daemon's sqlite handle may still be open on Windows
+      }
+    }
+  });
 });

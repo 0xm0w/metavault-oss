@@ -29,6 +29,16 @@ export const DEFAULT_CONNECTOR_PRESETS: ConnectorPresets = {
   cloudflare: "https://api.cloudflare.com/client/v4/user/tokens/verify",
 };
 
+// Payload-bearing calls POST to a URL chosen entirely inside this package —
+// never from agent input — keyed by `alias:tool`. The preset URL is the
+// secret-verification/no-payload endpoint; the route URL is where an
+// approved call body (e.g. a GraphQL read) may be sent.
+export type ToolRoutes = Readonly<Record<string, string>>;
+
+export const DEFAULT_TOOL_ROUTES: ToolRoutes = {
+  "cloudflare:cloudflare-graphql.analytics": "https://api.cloudflare.com/client/v4/graphql",
+};
+
 const failed = (message: string): ConnectorFailed => new ConnectorFailed({ message });
 
 const failedWithStatus = (status: number): ConnectorFailed =>
@@ -119,9 +129,10 @@ export function executeHttp(
 
 export function makeConnectorLive(
   presets: ConnectorPresets = DEFAULT_CONNECTOR_PRESETS,
+  toolRoutes: ToolRoutes = DEFAULT_TOOL_ROUTES,
 ): Layer.Layer<Connector> {
   return Layer.succeed(Connector, {
-    execute: (alias, _scope, secret, payload) => {
+    execute: (alias, _scope, secret, payload, tool) => {
       const url = presets[alias];
       if (url === undefined) {
         // The core Connector contract admits only ConnectorFailed, so the
@@ -136,11 +147,37 @@ export function makeConnectorLive(
           new ConnectorFailed({ alias, message: "card credentials cannot be sent by the HTTP connector" }),
         );
       }
+      if (payload === undefined) {
+        return executeHttp({
+          url,
+          method: "GET",
+          secret,
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
+        );
+      }
+      const routeKey = `${alias}:${typeof tool === "string" ? tool : ""}`;
+      const route = toolRoutes[routeKey];
+      if (route === undefined) {
+        return Effect.fail(
+          new ConnectorFailed({
+            alias,
+            message: `NoConnectorRoute: no payload route is defined for "${routeKey}"`,
+          }),
+        );
+      }
       return executeHttp({
-        url,
-        method: "GET",
+        url: route,
+        method: "POST",
         secret,
-        ...(payload !== undefined ? { body: payload } : {}),
+        body: payload,
       }).pipe(
         Effect.mapError(
           (err) =>
