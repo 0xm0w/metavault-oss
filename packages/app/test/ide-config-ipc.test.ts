@@ -1,5 +1,6 @@
 // Main-process IDE config IPC: inspect (for the wizard's live check) and
 // apply (seal the token). IO is injectable so tests run on in-memory files.
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ideConfigIpc,
@@ -17,7 +18,7 @@ function memoryIo(files: Map<string, string>): IdeConfigIo {
 }
 
 const HOME = "C:\\Users\\demo";
-const OPENCODE_PATH = `${HOME}\\.config\\opencode\\opencode.json`;
+const OPENCODE_PATH = join(HOME, ".config", "opencode", "opencode.json");
 
 const ENTRY = {
   command: "exe",
