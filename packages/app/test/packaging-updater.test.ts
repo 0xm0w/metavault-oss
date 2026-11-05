@@ -78,7 +78,7 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
 
   it("ships a short alpha TERMS page as the installer license", () => {
     const terms = readFileSync(join(appRoot, "TERMS.txt"), "utf8");
-    expect(terms).toContain("0.1.2-alpha");
+    expect(terms).toContain("0.1.4-alpha");
     expect(terms).toContain("Apache License");
     expect(terms).toContain("AS IS");
     const pkg = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8")) as {
@@ -90,7 +90,7 @@ describe("Packaging & Installer Wizard Specifications (#16)", () => {
         extraMetadata: { main: string };
       };
     };
-    expect(pkg.version).toBe("0.1.2-alpha");
+    expect(pkg.version).toBe("0.1.4-alpha");
     expect(pkg.build.nsis.license).toBe("TERMS.txt");
     expect(pkg.build.nsis.allowToChangeInstallationDirectory).toBe(true);
     expect(pkg.build.extraResources).toContainEqual({ from: "bundle/vaultd", to: "vaultd" });

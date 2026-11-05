@@ -14,7 +14,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { defaultCredentialPath, loadStoredCredential, storeCredentialPrivately } from "./credential-store.js";
 import { metavaultEnv } from "../../core/src/env.js";
 
-export const MCP_VERSION: string = "0.1.2-alpha";
+export const MCP_VERSION: string = "0.1.4-alpha";
 
 export type DaemonFetch = typeof fetch;
 
@@ -95,7 +95,7 @@ const TOOLS: readonly Tool[] = [
   {
     name: "request_capability",
     description:
-      "Request a scoped capability (e.g. alias stripe, scope charges.read) with a reason. Returns the daemon result: executed, awaiting-approval (with grantId; then call grant_status), or denied (final). Never returns secret values.",
+      "Request a scoped capability (e.g. alias stripe, scope charges.read) with a reason. Returns the daemon result: executed, awaiting-approval (with grantId; then call grant_status), or denied (final). Never returns secret values. Cloudflare DNS uses alias cloudflare, tool cloudflare.dns, and payload { method, path, query?, body? }. path is /zones, /zones/{32-hex-id}, /zones/{id}/dns_records, or /zones/{id}/dns_records/{32-hex-id}. query keys are name, type, content, page, per_page. GET needs a dns.read ceiling. POST, PUT, PATCH, and DELETE need dns.write and create or change only a dns_records path. No payload runs the preset read, which for cloudflare is token verify. A connector-failed denial may include upstreamStatus and is final.",
     inputSchema: toolInputSchema(RequestCapabilityToolSchema),
   },
   {

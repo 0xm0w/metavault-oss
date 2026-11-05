@@ -917,23 +917,28 @@ export async function handleVaultRequest(
     ) {
       return BAD_REQUEST;
     }
-    // Duplicate aliases conflict instead of silently overwriting: the
-    // store INSERT OR REPLACE stays for CLI/test seeding, but this
-    // endpoint never replaces an existing credential.
+    // Duplicate aliases conflict. The exception is a pending enrollment for
+    // that same alias and scope: the human is replacing the stored secret.
     const alias = decoded.alias.trim();
     if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
       return BAD_REQUEST;
     }
     const scope = decoded.scope.trim();
+    const website = (decoded.website ?? "").trim();
+    const enrollmentId = decoded.enrollmentId?.trim();
     const exists = await run(service.hasCredential(alias));
     if (exists.status !== 200) {
       return exists;
     }
     if (exists.body === true) {
-      return { status: 409, body: { error: "alias-exists" } };
+      if (enrollmentId === undefined || enrollmentId === "") {
+        return { status: 409, body: { error: "alias-exists" } };
+      }
+      const replaced = await run(service.replaceEnrolledCredential(alias, scope, decoded.secret, website, enrollmentId));
+      if (replaced.status !== 200) return replaced;
+      if (replaced.body !== true) return { status: 409, body: { error: "alias-exists" } };
+      return { status: 201, body: { alias, scope, website } };
     }
-    const website = (decoded.website ?? "").trim();
-    const enrollmentId = decoded.enrollmentId?.trim();
     const result = await run(
       service
         .seedCredential(alias, scope, decoded.secret, website, enrollmentId !== undefined && enrollmentId !== "" ? enrollmentId : undefined)
@@ -1119,7 +1124,10 @@ export async function handleVaultRequest(
     if (receiptOk.status !== 200 || receiptOk.body !== true) { return notFound; }
     const took = await run(service.takeGrantResult(grantId));
     if (took.status !== 200 || took.body === null || took.body === undefined) { return notFound; }
-    const held = took.body as { taken: boolean; result?: unknown };
+    const held = took.body as { taken: boolean; pending?: boolean; result?: unknown };
+    if (!held.taken && held.pending === true) {
+      return { status: 200, body: { grantId, status: "pending", message: "vaultd is still running this request." } };
+    }
     if (!held.taken) { return { status: 410, body: { grantId, status: "gone", message: "The result is no longer available: it was already delivered, expired or was revoked." } }; }
     return { status: 200, body: { grantId, status: "delivered", result: held.result } };
   }
@@ -1139,6 +1147,12 @@ export async function handleVaultRequest(
     if (found.status !== 200 || found.body === null || found.body === undefined) { return notFound; }
     const grant = found.body as { status: string; expiresAtMs: number };
     const outcome = grantOutcome(grant.status, grant.expiresAtMs, Date.now());
+    if (outcome.status === "executed") {
+      const inFlight = await run(service.isGrantExecutionInFlight(grantId));
+      if (inFlight.status === 200 && inFlight.body === true) {
+        return { status: 200, body: { grantId, status: "executed", terminal: false, message: "vaultd is still running this request." } };
+      }
+    }
     return { status: 200, body: { grantId, ...outcome } };
   }
   if (method === "POST" && path === "/approve") {

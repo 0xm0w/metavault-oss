@@ -50,6 +50,58 @@ describe("enrollments", () => {
     expect((await handleVaultRequest(service, "GET", "/enrollments/nope")).status).toBe(404);
     expect((await handleVaultRequest(service, "POST", "/enrollments", { alias: "" })).status).toBe(400);
   });
+  it("replaces an existing alias when the pending enrollment matches alias and scope", async () => {
+    const service = await makeService();
+    const first = "first-secret-value";
+    const second = "second-secret-value-much-longer";
+    const seeded = await handleVaultRequest(
+      service,
+      "POST",
+      "/credentials",
+      { alias: "cloudflare", scope: "dns.read", secret: first, website: "cloudflare.com" },
+      { daemonToken: TOKEN, providedToken: TOKEN },
+    );
+    expect(seeded.status).toBe(201);
+    const created = await handleVaultRequest(service, "POST", "/enrollments", {
+      alias: "cloudflare",
+      scope: "dns.write",
+      website: "cloudflare.com",
+    });
+    const enrollmentId = (created.body as { enrollmentId: string }).enrollmentId;
+    const replaced = await handleVaultRequest(
+      service,
+      "POST",
+      "/credentials",
+      { alias: "cloudflare", scope: "dns.write", secret: second, website: "cloudflare.com", enrollmentId },
+      { daemonToken: TOKEN, providedToken: TOKEN },
+    );
+    expect(replaced.status).toBe(201);
+    expect(JSON.stringify(replaced.body)).not.toContain(second);
+    expect((await handleVaultRequest(service, "GET", `/enrollments/${enrollmentId}`)).body).toEqual({
+      status: "completed",
+      alias: "cloudflare",
+      scope: "dns.write",
+    });
+    const requested = await handleVaultRequest(service, "POST", "/request", {
+      agentId: "cursor",
+      ide: "Cursor",
+      tool: "http",
+      alias: "cloudflare",
+      requestedScope: "dns.read",
+      reason: "confirm the replaced secret is the one that runs",
+    });
+    const grantId = (requested.body as { grantId?: string }).grantId;
+    expect(grantId).toBeDefined();
+    const approved = await handleVaultRequest(
+      service,
+      "POST",
+      "/approve",
+      { grantId },
+      { daemonToken: TOKEN, providedToken: TOKEN },
+    );
+    expect(approved.status).toBe(200);
+    expect((approved.body as { result?: { echoedLength?: number } }).result?.echoedLength).toBe(second.length);
+  });
   it("scope mismatch does not complete the enrollment", async () => {
     const service = await makeService();
     const created = await handleVaultRequest(service, "POST", "/enrollments", { alias: "stripe", scope: "charges.read" });

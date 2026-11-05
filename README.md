@@ -18,13 +18,38 @@ context, an audit row, or the desktop UI.
 
 > **Meta Hackathon (Indie Track)**: Live interactive deck at [metahackathon.whativedone.xyz](https://metahackathon.whativedone.xyz). From the crypto industry, securing wallets since 2025.
 
+## Acknowledgements
+
+Thank you to Meta and to Cerebral Valley for the [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon).
+
+Thank you to Meta for the $150 in API credits. That credit is what let me work on a problem many people have: an agent that needs a secret, and a chat that should never see it.
+
+This entry spent that $150 of Meta API usage. After it ran out, the rest of the work continued on a $0 Gemini Antigravity Pro subscription, and on Instinct while I was away from the keyboard.
+
+Muse Code, in the terminal, carried the long runs. It can stay on one task for two or three hours and come back with very little to revise. The free Muse Code allocation was gone after 9 hours, so the remaining work moved to those other free subscriptions. The foundation is solid enough for an MVP once that allocation is available again.
+
+The sprint for this entry was 5 days. The hackathon window was longer. The limit was API usage, not calendar time.
+
+The tests and the research use a small sample. A regular $200 subscription across 30 days, rather than these 5, would be enough to expand it.
+
 ## Install
 
-### Windows Installer (v0.1.2-alpha)
+Fork this repository and build from source. That is the start path. The desktop installer is not ready to be the way in.
 
-Download the Windows NSIS installer (`MetaVault-OSS-0.1.2-alpha-win-x64.exe`) and `SHA256SUMS` from the [GitHub Releases page](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.2-alpha). The installer is unsigned, so Windows SmartScreen may warn.
+### From source
 
-**Do not install the older `v0.1.0` build**: it crashes at startup with `ERR_MODULE_NOT_FOUND` (`electron-updater` was missing from the packaged app). It also bundled a local model. `0.1.2-alpha` is the current build: it bundles and downloads no model and defaults to Muse Spark via the Meta API. The app's update check never offers v0.1.0 to an alpha install.
+```powershell
+git clone https://github.com/0xm0w/metavault-oss.git
+cd metavault-oss
+npm ci               # Node 22; installs exactly from the lockfile
+npm test            # full suite (see docs/VERIFICATION.md for current counts)
+```
+
+### Windows installer (not the start path)
+
+A published NSIS build exists (`MetaVault-OSS-0.1.2-alpha-win-x64.exe`, plus `SHA256SUMS`, on the [v0.1.2-alpha release](https://github.com/0xm0w/metavault-oss/releases/tag/v0.1.2-alpha)). It is unsigned, so Windows SmartScreen may warn. Do not start there. Fork the repository and use the source checkout above.
+
+**Do not install the older `v0.1.0` build**: it crashes at startup with `ERR_MODULE_NOT_FOUND` (`electron-updater` was missing from the packaged app). It also bundled a local model. The published installer is `0.1.2-alpha`. Source in this repository is `0.1.4-alpha` and is ahead of that installer. Neither build bundles or downloads a model. The default warden is Muse Spark via the Meta API. The app's update check never offers v0.1.0 to an alpha install.
 
 The installer is built by the `Windows installer` workflow on `windows-latest`, which also runs a clean-install smoke test (silent install, launch, `/health`, uninstall) on the exact `.exe` before it reaches the release.
 
@@ -34,21 +59,12 @@ The installer is built by the `Windows installer` workflow on `windows-latest`, 
 - A deliberate uninstall removes the program, shortcuts, PATH/startup entries and the app-owned vault, password key, credentials, settings and migration backups in `%APPDATA%\MetaVault OSS`. Interactive uninstall warns before deletion; Cancel keeps it. Silent uninstall (`/S`) has the same destructive semantics without a prompt. Reinstall starts fresh. In-place updates (`--updated`) preserve data. A shared legacy key blocks cleanup before deletion. Custom external DB paths are never recursively deleted; see [recovery and uninstall](docs/RECOVERY.md).
 - Windows CI checks clean install, interactive uninstall warning/Cancel, deliberate silent wipe/fresh reinstall, and encrypted-vault preservation on install-over-install. Historical preservation-on-uninstall logs describe the previous behavior, not this change.
 
-To build the installer locally from source (on Windows):
+To build the installer locally from source (on Windows), after the source checkout above:
 
 ```powershell
 npm ci
 cd packages/app
 npm run pack:win    # build + bundle + electron-builder --win --publish never
-```
-
-### From source (works today)
-
-```powershell
-git clone https://github.com/0xm0w/metavault-oss.git
-cd metavault-oss
-npm ci               # Node 22; installs exactly from the lockfile
-npm test            # full suite (see docs/VERIFICATION.md for current counts)
 ```
 
 ## Setup
