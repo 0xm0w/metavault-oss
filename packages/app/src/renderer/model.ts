@@ -81,6 +81,17 @@ export function canAlwaysAllow(approval: PendingApproval): boolean {
   return approval.risk === "low" && isReadOnlyScope(approval.allowedScope) && approval.verified !== false;
 }
 
+// Session lease is the write-side counterpart of Always allow: a verified
+// local grant, not a card (cards are escalated to high), not a remote origin.
+export function canSessionLease(approval: PendingApproval): boolean {
+  return (
+    approval.verified === true &&
+    isWriteScope(approval.allowedScope) &&
+    approval.origin !== "remote" &&
+    approval.risk !== "high"
+  );
+}
+
 export function formatExpiry(expiresAtMs: number, nowMs: number): string {
   const remainingMs = expiresAtMs - nowMs;
   if (remainingMs <= 0) {
@@ -455,6 +466,7 @@ const AUDIT_STAGES: readonly AuditStage[] = [
   "enrollment-created",
   "enrollment-completed",
   "settings-changed",
+  "exported",
 ];
 
 export function projectAuditEvent(raw: unknown): AuditEventLike | null {
@@ -857,6 +869,7 @@ const STAGE_LABELS: Record<AuditStage, string> = {
   "enrollment-created": "Enrollment created",
   "enrollment-completed": "Enrollment completed",
   "settings-changed": "Settings changed",
+  exported: "Exported",
 };
 
 export function stageLabel(stage: AuditStage): string {

@@ -142,8 +142,9 @@ describe("gateway", () => {
       });
       expect(res.status, `${route.method} ${route.path}`).toBe(403);
     }
-    // The allowlist is exactly six routes; nothing more exists to expose.
-    expect(GATEWAY_ALLOWLIST.length).toBe(6);
+    // The allowlist is exactly ten routes: the original six, plus grant
+    // pickup and agent registration claim. Human routes stay off it.
+    expect(GATEWAY_ALLOWLIST.length).toBe(10);
   }, 120_000);
 
   it("enforces device-bound agent tokens in both directions", async () => {

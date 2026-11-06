@@ -7,6 +7,8 @@ import {
   DEFAULT_CONNECTOR_PRESETS,
   executeHttp,
   makeConnectorLive,
+  redactSecretFromBody,
+  resolveScopedRest,
   type ToolRoutes,
 } from "../src/http.js";
 
@@ -546,5 +548,45 @@ describe("cloudflare dns allowlist", () => {
     expect(hits).toBe(0);
     expect(JSON.stringify(err)).not.toContain(SECRET);
     await mock.close();
+  });
+});
+
+describe("redactSecretFromBody", () => {
+  it("strips raw, percent-encoded, JSON-escaped and base64 forms at a floor of 4", () => {
+    const secret = "ab/c+";
+    expect(redactSecretFromBody(`token=${secret}`, secret)).toBe("token=[REDACTED]");
+    const encoded = encodeURIComponent(secret);
+    expect(redactSecretFromBody(`q=${encoded}`, secret)).toBe("q=[REDACTED]");
+    const lower = `q=${encoded.replace(/%[0-9A-F]{2}/g, (part) => part.toLowerCase())}`;
+    expect(redactSecretFromBody(lower, secret)).toBe("q=[REDACTED]");
+    const json = JSON.stringify({ echo: secret });
+    expect(redactSecretFromBody(json, secret)).not.toContain(secret);
+    expect(redactSecretFromBody(json, secret)).toContain("[REDACTED]");
+    const slashEscaped = json.replace(/\//g, "\\/");
+    expect(redactSecretFromBody(slashEscaped, secret)).not.toContain("ab\\/c+");
+    const unicode = json.replace(/\//g, "\\u002f").replace(/\+/g, "\\u002b");
+    expect(redactSecretFromBody(unicode, secret)).not.toContain("\\u002f");
+    const b64 = Buffer.from(secret, "utf8").toString("base64");
+    expect(redactSecretFromBody(`x${b64}y`, secret)).toBe("x[REDACTED]y");
+    expect(redactSecretFromBody("abcd", "ab")).toBe("abcd");
+  });
+});
+
+describe("resolveScopedRest", () => {
+  it("joins a pinned prefix, allows loopback http, and rejects traversal and scope mismatch", () => {
+    expect(resolveScopedRest("https://api.stripe.com/v1", "charges.read", { method: "GET", path: "/charges" })).toEqual({
+      url: "https://api.stripe.com/v1/charges",
+      method: "GET",
+    });
+    expect(resolveScopedRest("http://127.0.0.1:9/api", "read", { method: "GET", path: "/health" })).toMatchObject({
+      url: "http://127.0.0.1:9/api/health",
+      method: "GET",
+    });
+    expect(typeof resolveScopedRest("https://api.stripe.com/v1", "charges.write", { method: "GET", path: "/charges" })).toBe("string");
+    expect(typeof resolveScopedRest("https://api.stripe.com/v1", "charges.read", { method: "POST", path: "/charges" })).toBe("string");
+    expect(typeof resolveScopedRest("http://evil.example/v1", "charges.read", { method: "GET", path: "/charges" })).toBe("string");
+    expect(typeof resolveScopedRest("https://api.stripe.com/v1", "charges.read", { method: "GET", path: "/../admin" })).toBe("string");
+    expect(typeof resolveScopedRest("https://api.stripe.com/v1", "charges.read", { method: "GET", path: "//evil.example/x" })).toBe("string");
+    expect(typeof resolveScopedRest("https://api.stripe.com/v1", "charges.read", { method: "GET", path: "/%2e%2e/admin" })).toBe("string");
   });
 });

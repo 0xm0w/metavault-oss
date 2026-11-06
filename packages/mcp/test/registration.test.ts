@@ -12,6 +12,10 @@ import { handleVaultRequest } from "../../daemon/src/server.js";
 import { makeVaultServiceLive, VaultService, type VaultServiceService } from "../../daemon/src/service.js";
 import { createMetavaultMcpServer, type DaemonFetch } from "../src/server.js";
 
+// The parent shell may hold a real agent token. These servers must start
+// unverified and then load only the credential file this test writes.
+delete process.env["METAVAULT_AGENT_TOKEN"];
+
 // Synthetic fixtures only: a fake canary secret and fake agent ids. Covers
 // the user's report that denying a request in the app left the agent with
 // no way to learn the decision.

@@ -72,7 +72,10 @@ export function assessBftQuorum(
         ).pipe(Effect.provide(FetchHttpClient.layer)),
       );
       if (metaApiResult._tag === "Right") {
-        const metaVerdict = enforceScopeSafety(metaApiResult.right, req.requestedScope, req.reason);
+        const metaVerdict = enforceScopeSafety(metaApiResult.right, req.requestedScope, req.reason, {
+          tool: req.tool,
+          payload: req.payload,
+        });
         verdicts.push({
           name: "Meta Family of AIs",
           role: `Chief Warden (Meta API: ${cloudModel})`,
@@ -89,7 +92,10 @@ export function assessBftQuorum(
         requestLocalDecision(local, prompt, options.localTimeoutMs ?? timeoutMs),
       );
       if (localResult._tag === "Right") {
-        const localVerdict = enforceScopeSafety(localResult.right, req.requestedScope, req.reason);
+        const localVerdict = enforceScopeSafety(localResult.right, req.requestedScope, req.reason, {
+          tool: req.tool,
+          payload: req.payload,
+        });
         verdicts.push({
           name: "Meta Family of AIs",
           role: `Local Co-Auditor (${local.model.trim()} via your endpoint)`,
@@ -182,6 +188,7 @@ export function assessBftQuorum(
       },
       req.requestedScope,
       req.reason,
+      { tool: req.tool, payload: req.payload },
     );
   });
 }

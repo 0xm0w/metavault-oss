@@ -87,13 +87,14 @@ describe("caller process verification gate", () => {
 
   it("rejects a caller claiming the daemon's own PID", async () => {
     const service = await makeDaemonService();
+    const agent = await Effect.runPromise(service.registerAgent("cursor", "Cursor"));
     setTestProcessResolver(() => "cursor.exe");
     const res = await handleVaultRequest(
       service,
       "POST",
       "/request",
       req,
-      { ...base, clientPid: process.pid },
+      { ...base, clientPid: process.pid, providedAgentToken: agent.token },
     );
     expect(res.status).toBe(403);
     expect(JSON.stringify(res.body)).toContain("not a valid caller identity");
@@ -110,7 +111,7 @@ describe("caller process verification gate", () => {
       { ...base, clientPid: 4242 },
     );
     expect(res.status).toBe(403);
-    expect(JSON.stringify(res.body)).toContain("generic runtime callers");
+    expect(JSON.stringify(res.body)).toContain("Process verification requires an enrolled, verified agent token.");
   });
 
   it("admits a generic-runtime caller that presents an enrolled agent token", async () => {
@@ -128,7 +129,7 @@ describe("caller process verification gate", () => {
     expect((res.body as Record<string, unknown>)["status"]).toBe("awaiting-approval");
   });
 
-  it("admits a dedicated agent binary without a token (gate on)", async () => {
+  it("rejects a dedicated agent binary without an enrolled token (gate on)", async () => {
     const service = await makeDaemonService();
     setTestProcessResolver(() => "cursor.exe");
     const res = await handleVaultRequest(
@@ -138,19 +139,20 @@ describe("caller process verification gate", () => {
       req,
       { ...base, clientPid: 4242 },
     );
-    expect(res.status).toBe(200);
-    expect((res.body as Record<string, unknown>)["status"]).toBe("awaiting-approval");
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).toContain("Process verification requires an enrolled, verified agent token.");
   });
 
   it("denies disallowed caller binaries", async () => {
     const service = await makeDaemonService();
+    const agent = await Effect.runPromise(service.registerAgent("cursor", "Cursor"));
     setTestProcessResolver(() => "powershell.exe");
     const res = await handleVaultRequest(
       service,
       "POST",
       "/request",
       req,
-      { ...base, clientPid: 4242 },
+      { ...base, clientPid: 4242, providedAgentToken: agent.token },
     );
     expect(res.status).toBe(403);
     expect(JSON.stringify(res.body)).toContain("disallowed-binary");
@@ -158,13 +160,14 @@ describe("caller process verification gate", () => {
 
   it("denies when the binary cannot be resolved (fail closed)", async () => {
     const service = await makeDaemonService();
+    const agent = await Effect.runPromise(service.registerAgent("cursor", "Cursor"));
     setTestProcessResolver(() => null);
     const res = await handleVaultRequest(
       service,
       "POST",
       "/request",
       req,
-      { ...base, clientPid: 4242 },
+      { ...base, clientPid: 4242, providedAgentToken: agent.token },
     );
     expect(res.status).toBe(403);
     expect(JSON.stringify(res.body)).toContain("process-not-found");

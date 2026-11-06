@@ -7,7 +7,7 @@ interface ToolResult { readonly isError?: boolean; readonly content?: readonly {
 const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? "").join("\n");
 
 async function makeClient(fetchFn: DaemonFetch, launchDeeplink: (url: string) => Promise<boolean> = () => Promise.resolve(false), daemonUrl = "http://127.0.0.1:7077"): Promise<Client> {
-  const server = createMetavaultMcpServer({ daemonUrl, fetchFn, launchDeeplink });
+  const server = createMetavaultMcpServer({ daemonUrl, fetchFn, launchDeeplink, agentToken: "" });
   const client = new Client({ name: "enroll-test", version: "0.0.1" });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);

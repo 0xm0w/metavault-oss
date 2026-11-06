@@ -269,7 +269,14 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
     }
     const deadline = Date.now() + waitMs;
     for (;;) {
-      const res = await callDaemon("GET", `/grants/${encodeURIComponent(grantId)}`, undefined, { "x-metavault-grant-receipt": receipt });
+      const remaining = Math.max(0, deadline - Date.now());
+      const pollWait = Math.min(20_000, remaining);
+      const started = Date.now();
+      const grantPath =
+        pollWait > 0
+          ? `/grants/${encodeURIComponent(grantId)}?waitMs=${String(pollWait)}`
+          : `/grants/${encodeURIComponent(grantId)}`;
+      const res = await callDaemon("GET", grantPath, undefined, { "x-metavault-grant-receipt": receipt });
       let parsed: unknown;
       try { parsed = JSON.parse(textOfResult(res)) as unknown; } catch { parsed = null; }
       const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
@@ -302,7 +309,13 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
       if (Date.now() >= deadline) {
         return { ...record, final: false, timedOut: waitMs > 0, message: "Still waiting for the user to decide in MetaVault OSS. The wait ended; this is not a denial. Call grant_status again, and do not send the request again." };
       }
-      await sleep(Math.min(approvalPollMs, Math.max(10, deadline - Date.now())));
+      const elapsed = Date.now() - started;
+      // An old daemon ignores ?waitMs= and returns immediately. A short
+      // sleep stops that from becoming a tight loop. approvalPollMs still
+      // caps the fallback so tests can keep the wait short.
+      if (elapsed < 50) {
+        await sleep(Math.min(50, approvalPollMs, Math.max(10, deadline - Date.now())));
+      }
     }
   };
 

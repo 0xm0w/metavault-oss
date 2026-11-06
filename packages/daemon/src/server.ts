@@ -125,6 +125,39 @@ export class HttpBodyError extends Error {
   }
 }
 
+const ALLOWED_HOST_PATTERN = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i;
+
+export function validateLoopbackHttpHeaders(
+  req: IncomingMessage,
+): { ok: true } | { ok: false; status: number; message: string } {
+  const host = req.headers["host"];
+  if (typeof host !== "string" || !ALLOWED_HOST_PATTERN.test(host.trim())) {
+    return { ok: false, status: 403, message: "forbidden host header" };
+  }
+  const origin = req.headers["origin"];
+  if (typeof origin === "string" && origin !== "null" && !origin.startsWith("file://")) {
+    return { ok: false, status: 403, message: "browser origin header not permitted" };
+  }
+  const secFetchSite = req.headers["sec-fetch-site"];
+  if (
+    typeof secFetchSite === "string" &&
+    secFetchSite !== "none" &&
+    secFetchSite !== "same-origin"
+  ) {
+    return { ok: false, status: 403, message: "cross-site fetch rejected" };
+  }
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "POST" || method === "PATCH" || method === "PUT") {
+    const contentTypeHeader = req.headers["content-type"];
+    const contentType = typeof contentTypeHeader === "string" ? contentTypeHeader : "";
+    const contentLength = req.headers["content-length"];
+    if (contentLength !== "0" && !contentType.toLowerCase().startsWith("application/json")) {
+      return { ok: false, status: 415, message: "content-type must be application/json" };
+    }
+  }
+  return { ok: true };
+}
+
 async function readBodyWithText(req: IncomingMessage): Promise<{ parsed: unknown; text: string }> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -395,6 +428,8 @@ export interface VaultRequestOptions {
   readonly transport?: string;
   // Vault directory for remote-enable asset creation (CA, gateway cert).
   readonly vaultDir?: string;
+  // Long-poll cap for GET /grants/:id. The HTTP layer parses ?waitMs=.
+  readonly grantWaitMs?: number;
 }
 
 const UNAUTHORIZED: { status: number; body: unknown } = {
@@ -428,6 +463,7 @@ function isTokenProtected(method: string, path: string): boolean {
     method === "POST" &&
     (path === "/approve" ||
       path === "/approve-always" ||
+      path === "/approve-session" ||
       path === "/deny" ||
       path === "/credentials" ||
       path === "/cards" ||
@@ -803,7 +839,19 @@ export async function handleVaultRequest(
     if (typeof pin !== "string") {
       return BAD_REQUEST;
     }
-    return run(service.verifyLocalPin(pin.trim()));
+    const verifiedPin = await run(service.verifyLocalPin(pin.trim()));
+    const pinBody = verifiedPin.body as { throttled?: boolean; retryAfterMs?: number } | null;
+    if (verifiedPin.status === 200 && pinBody?.throttled === true) {
+      return {
+        status: 429,
+        body: {
+          ok: false,
+          retryAfterMs: pinBody.retryAfterMs ?? 0,
+          error: { _tag: "RateLimited", message: "too many pin attempts" },
+        },
+      };
+    }
+    return verifiedPin;
   }
   if (method === "POST" && path === "/settings/local-auth/verify-biometric") {
     return run(service.verifyBiometric());
@@ -1072,6 +1120,22 @@ export async function handleVaultRequest(
     let clientProcess: string | undefined = deviceCtx !== undefined ? "remote-gateway" : undefined;
 
     if (secSettings.verifyCallerProcess && deviceCtx === undefined) {
+      // A self-reported PID is not an identity. An enrolled agent token is
+      // required before any binary check, so a local script cannot pass
+      // Cursor's PID and skip the token.
+      if (!verified) {
+        return {
+          status: 403,
+          body: {
+            status: "denied",
+            reason: "process-verification-failed",
+            error: {
+              _tag: "Forbidden",
+              message: "Process verification requires an enrolled, verified agent token.",
+            },
+          },
+        };
+      }
       if (clientPid === undefined) {
         return {
           status: 403,
@@ -1116,24 +1180,8 @@ export async function handleVaultRequest(
           },
         };
       }
-      // A generic runtime's binary name proves nothing: node/bun run
-      // arbitrary script content, so a same-UID shell exec could pose as
-      // one. Generic-runtime callers pass this gate only with an enrolled,
-      // human-approved agent token.
-      if (inspectRes.genericRuntime === true && !verified) {
-        return {
-          status: 403,
-          body: {
-            status: "denied",
-            reason: "process-verification-failed",
-            error: {
-              _tag: "Forbidden",
-              message:
-                "Caller process verification failed: generic runtime callers (node/bun/deno) require an enrolled agent token.",
-            },
-          },
-        };
-      }
+      // Unverified callers already returned above. A generic runtime still
+      // only reaches here with an enrolled token, which is the identity.
       clientProcess = inspectRes.binary;
     } else if (clientPid !== undefined) {
       const inspectRes = inspectProcess(clientPid);
@@ -1193,6 +1241,14 @@ export async function handleVaultRequest(
     if (receipt === undefined || receipt === "") { return notFound; }
     const receiptOk = await run(service.checkGrantReceipt(grantId, receipt));
     if (receiptOk.status !== 200 || receiptOk.body !== true) { return notFound; }
+    const waitMs = Math.min(20_000, Math.max(0, Math.floor(options?.grantWaitMs ?? 0)));
+    if (waitMs > 0) {
+      const preview = await run(service.getGrant(grantId));
+      const previewGrant = preview.body as { status?: string } | null;
+      if (preview.status === 200 && previewGrant?.status === "pending") {
+        await run(service.waitForGrant(grantId, waitMs));
+      }
+    }
     const found = await run(service.getGrant(grantId));
     if (found.status !== 200 || found.body === null || found.body === undefined) { return notFound; }
     const grant = found.body as { status: string; expiresAtMs: number };
@@ -1212,6 +1268,14 @@ export async function handleVaultRequest(
     }
     const proof = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["presenceProof"] : undefined;
     return run(service.approve(decoded.grantId, typeof proof === "string" ? proof : undefined));
+  }
+  if (method === "POST" && path === "/approve-session") {
+    const decoded = await decode(GrantIdSchema, body ?? {});
+    if (decoded === null) {
+      return BAD_REQUEST;
+    }
+    const proof = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["presenceProof"] : undefined;
+    return run(service.approveSession(decoded.grantId, typeof proof === "string" ? proof : undefined));
   }
   if (method === "POST" && path === "/approve-always") {
     const decoded = await decode(GrantIdSchema, body ?? {});
@@ -1378,8 +1442,17 @@ export function createVaultHttpServer(
   return createServer((req, res) => {
     void (async () => {
       try {
+        const headerCheck = validateLoopbackHttpHeaders(req);
+        if (!headerCheck.ok) {
+          sendJson(res, headerCheck.status, {
+            error: { _tag: headerCheck.status === 415 ? "UnsupportedMediaType" : "Forbidden", message: headerCheck.message },
+          });
+          return;
+        }
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         const reqMethod = req.method ?? "GET";
+        const waitRaw = url.searchParams.get("waitMs");
+        const grantWaitMs = waitRaw === null ? undefined : Number(waitRaw);
         const hasBody = reqMethod === "POST" || reqMethod === "PATCH" || reqMethod === "PUT";
         const bodyResult = hasBody ? await readBodyWithText(req) : undefined;
         const body: unknown = bodyResult?.parsed;
@@ -1462,6 +1535,7 @@ export function createVaultHttpServer(
           ...(gatewayStampValid && deviceId !== undefined ? { deviceId } : {}),
           ...(gatewayStampValid && transport !== undefined ? { transport } : {}),
           ...(options.vaultDir !== undefined ? { vaultDir: options.vaultDir } : {}),
+          ...(grantWaitMs !== undefined && Number.isFinite(grantWaitMs) ? { grantWaitMs } : {}),
         });
         sendJson(res, out.status, out.body);
       } catch (err) {
@@ -1531,8 +1605,19 @@ export function assertDatabaseKeyMatches(dbPath: string, key: Buffer): void {
   let db: Database.Database | undefined;
   try {
     db = new Database(dbPath, { readonly: true, fileMustExist: true });
-    for (const row of db.prepare("SELECT ciphertext FROM credentials").iterate() as Iterable<{ciphertext: string}>) {
-      decryptSecret(key, row.ciphertext);
+    const columns = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
+    const hasKind = columns.some((column) => column.name === "kind");
+    const sql = hasKind
+      ? "SELECT alias, kind, ciphertext FROM credentials"
+      : "SELECT alias, ciphertext FROM credentials";
+    for (const row of db.prepare(sql).iterate() as Iterable<{ alias: string; kind?: string; ciphertext: string }>) {
+      decryptSecret(
+        key,
+        row.ciphertext,
+        row.ciphertext.startsWith("v2.")
+          ? { alias: row.alias, kind: row.kind ?? "secret" }
+          : undefined,
+      );
     }
   } catch {
     throw new Error("Vault recovery required: the key does not authenticate the stored records, or the database is damaged. Stop MetaVault and restore the matching database and key backup. No new key was created.");
@@ -1618,7 +1703,7 @@ export async function startVaultDaemon(options: VaultDaemonOptions = {}): Promis
           cred === undefined
             ? Effect.succeed<string | null>(null)
             : Effect.try({
-                try: () => decryptSecret(keySession.key(), cred.ciphertext) as string | null,
+                try: () => decryptSecret(keySession.key(), cred.ciphertext, { alias: WARDEN_KEY_ALIAS, kind: cred.kind }) as string | null,
                 catch: () => null,
               }),
         ).pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));

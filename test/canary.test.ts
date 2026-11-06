@@ -146,6 +146,7 @@ describe("canary: the stored secret appears on no observable surface", () => {
       ide: "Cursor",
       fetchFn: daemonFetch,
       approvalWaitMs: 0,
+      agentToken: "",
       launchDeeplink: () => Promise.resolve(false),
     });
     client = new Client({ name: "canary-test-client", version: "0.0.1" });

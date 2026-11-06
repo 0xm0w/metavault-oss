@@ -1,3 +1,4 @@
+import { summarizeHttpRequestPayload } from "../../core/src/payload.js";
 import { isWriteScope } from "../../core/src/policy.js";
 import type { MarshalDecision } from "../../core/src/types.js";
 
@@ -32,6 +33,7 @@ export function enforceScopeSafety(
   decision: MarshalDecision,
   requestedScope: string,
   reason?: string,
+  extraUntrusted?: { readonly tool?: string; readonly payload?: unknown },
 ): MarshalDecision {
   const isSafe =
     decision.recommendedScope === requestedScope ||
@@ -54,22 +56,27 @@ export function enforceScopeSafety(
     };
   }
 
-  if (reason !== undefined && reason.trim() !== "") {
+  const payloadPreview = summarizeHttpRequestPayload(extraUntrusted?.payload)?.preview ?? "";
+  const combinedText = [reason ?? "", extraUntrusted?.tool ?? "", requestedScope, payloadPreview]
+    .filter((s) => s.trim() !== "")
+    .join("\n");
+
+  if (combinedText !== "") {
     const isAdversarial =
-      /(?:classify|mark|set|return|rate)\s+(?:this|operation|request)?\s*(?:as)?\s*(?:risk)?\s*low/i.test(reason) ||
-      /(?:requireapproval|require_approval)\s*(?:false|no|none)/i.test(reason) ||
-      /(?:ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+override|developer\s+mode)/i.test(reason) ||
-      /(?:approve|grant|execute)\s+[\w.:-]*write/i.test(reason) ||
-      /https?:\/\/[^\s"'>]+/i.test(reason) ||
-      /\|\s*(?:bash|sh|zsh|pwsh|powershell|cmd)\b/i.test(reason) ||
-      /(?:\/etc\/(?:shadow|passwd)|\.ssh\/id_|\.aws\/credentials)/i.test(reason);
+      /(?:classify|mark|set|return|rate)\s+(?:this|operation|request)?\s*(?:as)?\s*(?:risk)?\s*low/i.test(combinedText) ||
+      /(?:requireapproval|require_approval)\s*(?:false|no|none)/i.test(combinedText) ||
+      /(?:ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+override|developer\s+mode)/i.test(combinedText) ||
+      /(?:approve|grant|execute)\s+[\w.:-]*write/i.test(combinedText) ||
+      /https?:\/\/[^\s"'>]+/i.test(combinedText) ||
+      /\|\s*(?:bash|sh|zsh|pwsh|powershell|cmd)\b/i.test(combinedText) ||
+      /(?:\/etc\/(?:shadow|passwd)|\.ssh\/id_|\.aws\/credentials)/i.test(combinedText);
 
     if (isAdversarial && decision.risk !== "high") {
       return {
         risk: "high",
         recommendedScope: requestedScope,
         requireApproval: true,
-        explanation: `Adversarial pattern or policy override attempt detected in request reason; escalated to high risk. ${decision.explanation}`,
+        explanation: `Adversarial pattern or policy override attempt detected in request inputs; escalated to high risk. ${decision.explanation}`,
       };
     }
   }

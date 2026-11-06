@@ -110,7 +110,7 @@ export interface WardenKeyStatus {
   readonly verified: boolean;
 }
 
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export interface LocalAuthRecord {
   readonly enabled: boolean;
@@ -154,18 +154,40 @@ export const DEFAULT_LOCAL_AUTH_STATUS: LocalAuthStatus = {
   autoLockMinutes: 0,
 };
 
+// Same cost as the vault passphrase KDF (keywrap SCRYPT_DEFAULT_PARAMS).
+// A 4-digit PIN under single-round SHA-256 was exhausted in ~120 ms.
+const PIN_SCRYPT_PARAMS = { N: 2 ** 17, r: 8, p: 1, maxmem: 128 * (2 ** 17) * 8 * 2 };
+const PIN_HASH_PREFIX = "scrypt-v1:";
+
 export function hashPin(pin: string, salt: string): string {
-  return createHash("sha256").update(salt + ":" + pin).digest("hex");
+  const derived = scryptSync(
+    Buffer.from(pin.normalize("NFKC"), "utf8"),
+    Buffer.from(salt, "hex"),
+    32,
+    PIN_SCRYPT_PARAMS,
+  );
+  return `${PIN_HASH_PREFIX}${derived.toString("hex")}`;
 }
 
 export function generatePinSalt(): string {
   return randomBytes(16).toString("hex");
 }
 
+export function isLegacyPinHash(expectedHash: string): boolean {
+  return !expectedHash.startsWith(PIN_HASH_PREFIX);
+}
+
 export function verifyPin(pin: string, salt: string, expectedHash: string): boolean {
-  const actual = hashPin(pin, salt);
-  const bufA = Buffer.from(actual, "hex");
+  if (expectedHash.startsWith(PIN_HASH_PREFIX)) {
+    const actual = hashPin(pin, salt);
+    const bufA = Buffer.from(actual, "utf8");
+    const bufB = Buffer.from(expectedHash, "utf8");
+    return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+  }
+  // Legacy single-round SHA-256. Callers re-hash with scrypt after a match
+  // so the weak digest does not stay in the database.
+  const legacyActual = createHash("sha256").update(salt + ":" + pin).digest("hex");
+  const bufA = Buffer.from(legacyActual, "hex");
   const bufB = Buffer.from(expectedHash, "hex");
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 }

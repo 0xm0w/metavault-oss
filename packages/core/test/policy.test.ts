@@ -31,6 +31,15 @@ describe("evaluatePolicy", () => {
     expect(result.allowedScope).toBe("charges.read");
     expect(result.requireApproval).toBe(false);
   });
+  it("standing approval covers a null decision when deterministic risk is low", () => {
+    const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
+    const honored = evaluatePolicy(req, null, c2, 0, { deterministicRisk: "low" });
+    expect(honored.requireApproval).toBe(false);
+    expect(honored.reason).toBe("standing-approval");
+    expect(evaluatePolicy(req, null, c2, 0).requireApproval).toBe(true);
+    expect(evaluatePolicy(req, null, c2, 0, { deterministicRisk: "medium" }).requireApproval).toBe(true);
+    expect(evaluatePolicy(req, null, cfg, 0, { deterministicRisk: "low" }).requireApproval).toBe(true);
+  });
   it("standing approval covers a low-risk read even when the marshal asks for approval", () => {
     const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
     const d = { risk: "low" as const, recommendedScope: "charges.read", requireApproval: true, explanation: "x" };

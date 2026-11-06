@@ -1,8 +1,9 @@
 import { isCardSecretPayload } from "../../core/src/card.js";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "@effect/platform";
 import { Effect, Layer } from "effect";
-import { Connector } from "../../core/src/connector.js";
+import { Connector, type CredentialAuthStyle } from "../../core/src/connector.js";
 import { ConnectorFailed } from "../../core/src/errors.js";
+import { isWriteScope } from "../../core/src/policy.js";
 
 export { Connector } from "../../core/src/connector.js";
 export type { ConnectorService } from "../../core/src/connector.js";
@@ -13,6 +14,7 @@ export interface ExecuteHttpOptions {
   readonly method: string;
   readonly secret: string;
   readonly headerName?: string;
+  readonly auth?: CredentialAuthStyle;
   readonly body?: unknown;
 }
 
@@ -48,9 +50,9 @@ export interface ConnectorLiveOptions {
 const failed = (message: string): ConnectorFailed => new ConnectorFailed({ message });
 
 const REDACTED_SECRET = "[REDACTED]";
-// Too short and generic substring replacement would mangle response bodies
-// that legitimately contain similar short strings.
-const REDACTION_MIN_SECRET_LENGTH = 8;
+// Short tokens still have to be stripped. Four characters is the floor:
+// below that, substring replacement mangles ordinary JSON.
+const REDACTION_MIN_SECRET_LENGTH = 4;
 
 /**
  * Replaces every occurrence of the injected credential in a response body
@@ -59,8 +61,9 @@ const REDACTION_MIN_SECRET_LENGTH = 8;
  * endpoints, error bodies that repeat headers, token metadata): the calling
  * agent must never receive the secret string it enabled.
  *
- * Variants cover exact text, percent-encoding and Base64/Base64-URL encodings
- * (with and without padding). Split/join avoids regex metacharacter surprises
+ * Variants cover exact text, percent-encoding in both hex cases, JSON string
+ * escapes (including \/ and \\u002f), and Base64/Base64-URL encodings (with
+ * and without padding). Split/join avoids regex metacharacter surprises
  * since a token can contain arbitrary characters.
  */
 export function redactSecretFromBody(text: string, secret: string): string {
@@ -69,18 +72,60 @@ export function redactSecretFromBody(text: string, secret: string): string {
   }
   const encoded = Buffer.from(secret, "utf8").toString("base64");
   const encodedUrl = encoded.replace(/\+/g, "-").replace(/\//g, "_");
-  const percent = encodeURIComponent(secret);
-  const variants = [
+  const percentUpper = encodeURIComponent(secret);
+  const percentLower = percentUpper.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
+  const jsonEscaped = JSON.stringify(secret).slice(1, -1);
+  const jsonSlashEscaped = jsonEscaped.replace(/\//g, "\\/");
+  const unicodeEscaped = jsonEscaped.replace(/\//g, "\\u002f").replace(/\+/g, "\\u002b");
+
+  const variants = new Set<string>([
     secret,
-    ...(percent !== secret ? [percent] : []),
-    ...(encoded !== secret ? [encoded, encoded.replace(/=+$/, "")] : []),
-    ...(encodedUrl !== encoded ? [encodedUrl, encodedUrl.replace(/=+$/, "")] : []),
-  ];
+    percentUpper,
+    percentLower,
+    jsonEscaped,
+    jsonSlashEscaped,
+    unicodeEscaped,
+    encoded,
+    encoded.replace(/=+$/, ""),
+    encodedUrl,
+    encodedUrl.replace(/=+$/, ""),
+  ]);
+
   let out = text;
   for (const variant of variants) {
-    out = out.split(variant).join(REDACTED_SECRET);
+    if (variant.length >= REDACTION_MIN_SECRET_LENGTH) {
+      out = out.split(variant).join(REDACTED_SECRET);
+    }
   }
   return out;
+}
+
+export function credentialAuthStyle(publicMeta: string): CredentialAuthStyle {
+  if (publicMeta.trim() === "") {
+    return "bearer";
+  }
+  try {
+    const parsed = JSON.parse(publicMeta) as { auth?: unknown };
+    if (parsed.auth === "api-key" || parsed.auth === "basic" || parsed.auth === "bearer") {
+      return parsed.auth;
+    }
+  } catch {
+    // Card public meta and plain website notes stay on bearer.
+  }
+  return "bearer";
+}
+
+function credentialHeader(secret: string, auth: CredentialAuthStyle | undefined, headerName?: string): { readonly name: string; readonly value: string } {
+  if (headerName !== undefined) {
+    return { name: headerName, value: `Bearer ${secret}` };
+  }
+  if (auth === "api-key") {
+    return { name: "x-api-key", value: secret };
+  }
+  if (auth === "basic") {
+    return { name: "Authorization", value: `Basic ${Buffer.from(secret, "utf8").toString("base64")}` };
+  }
+  return { name: "Authorization", value: `Bearer ${secret}` };
 }
 
 const failedWithStatus = (status: number): ConnectorFailed =>
@@ -140,8 +185,8 @@ export function executeHttp(
       );
     }
 
-    const headerName = opts.headerName ?? "Authorization";
-    request = request.pipe(HttpClientRequest.setHeader(headerName, `Bearer ${opts.secret}`));
+    const header = credentialHeader(opts.secret, opts.auth, opts.headerName);
+    request = request.pipe(HttpClientRequest.setHeader(header.name, header.value));
 
     const client = yield* HttpClient.HttpClient;
     const response = yield* client.execute(request).pipe(
@@ -272,6 +317,161 @@ function resolveCloudflareDns(
   return { url, method, ...(sendBody ? { body: call.body } : {}) };
 }
 
+const READ_METHODS = new Set(["GET", "HEAD"]);
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function isReadScope(scope: string): boolean {
+  return !isWriteScope(scope) && (scope.includes(".read") || scope.endsWith(":read") || scope === "read");
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
+}
+
+function pathIsUnsafe(path: string): boolean {
+  if (path !== path.trim() || !path.startsWith("/") || path.startsWith("//")) {
+    return true;
+  }
+  if (
+    path.includes("\\") ||
+    path.includes("?") ||
+    path.includes("#") ||
+    path.includes("://") ||
+    path.includes("@") ||
+    path.includes("..")
+  ) {
+    return true;
+  }
+  if (/[\u0000-\u001f\u007f]/.test(path)) {
+    return true;
+  }
+  try {
+    const decoded = decodeURIComponent(path);
+    if (
+      decoded.includes("..") ||
+      decoded.includes("\\") ||
+      decoded.includes("@") ||
+      decoded.includes("://") ||
+      /[\u0000-\u001f\u007f]/.test(decoded)
+    ) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+export interface ScopedRestCall {
+  readonly url: string;
+  readonly method: string;
+  readonly body?: unknown;
+}
+
+// Website-pinned REST call. The origin comes from the credential, never
+// from the agent. The agent may only choose a path beneath that origin.
+export function resolveScopedRest(
+  baseUrl: string,
+  scope: string,
+  payload: unknown,
+): ScopedRestCall | string {
+  const call = parseDnsPayload(payload);
+  if (call === null) {
+    return "ConnectorFailed: REST payload must be { method, path, query?, body? }";
+  }
+  const method = call.method.toUpperCase();
+  if (!READ_METHODS.has(method) && !WRITE_METHODS.has(method)) {
+    return "ConnectorFailed: unsupported REST method";
+  }
+  if (pathIsUnsafe(call.path)) {
+    return "ConnectorFailed: REST path is not allowed";
+  }
+  if (READ_METHODS.has(method) && !isReadScope(scope)) {
+    return "ConnectorFailed: REST read requires a read scope";
+  }
+  if (WRITE_METHODS.has(method) && !isWriteScope(scope)) {
+    return "ConnectorFailed: REST write requires a write scope";
+  }
+  let pinned: URL;
+  try {
+    pinned = new URL(baseUrl);
+  } catch {
+    return "ConnectorFailed: credential base URL is invalid";
+  }
+  if (pinned.username !== "" || pinned.password !== "") {
+    return "ConnectorFailed: credential base URL is invalid";
+  }
+  const loopback = isLoopbackHost(pinned.hostname);
+  if (pinned.protocol !== "https:" && !(pinned.protocol === "http:" && loopback)) {
+    return "ConnectorFailed: credential base URL must be https";
+  }
+  const rootPath = pinned.pathname.replace(/\/$/, "");
+  let next: URL;
+  try {
+    next = new URL(`${pinned.origin}${rootPath}${call.path}`);
+  } catch {
+    return "ConnectorFailed: REST path is not allowed";
+  }
+  if (next.origin !== pinned.origin || !next.pathname.startsWith(rootPath === "" ? "/" : rootPath)) {
+    return "ConnectorFailed: REST path is not allowed";
+  }
+  if (call.query !== undefined) {
+    if (!READ_METHODS.has(method)) {
+      return "ConnectorFailed: REST query is only allowed on read methods";
+    }
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(call.query)) {
+      if (!/^[A-Za-z0-9_.-]{1,64}$/.test(key) || typeof value !== "string" || value.length === 0 || value.length > 2000 || /[\u0000-\u001f\u007f]/.test(value)) {
+        return "ConnectorFailed: REST query is not allowed";
+      }
+      params.append(key, value);
+    }
+    const qs = params.toString();
+    if (qs !== "") {
+      next.search = qs;
+    }
+  }
+  const sendBody = call.body !== undefined && method !== "GET" && method !== "HEAD" && method !== "DELETE";
+  return { url: next.toString(), method, ...(sendBody ? { body: call.body } : {}) };
+}
+
+function isRestPayload(payload: unknown): boolean {
+  return parseDnsPayload(payload) !== null;
+}
+
+function resolveGraphql(
+  baseUrl: string,
+  scope: string,
+  payload: unknown,
+): ScopedRestCall | string {
+  let text = "";
+  try {
+    text = JSON.stringify(payload);
+  } catch {
+    return "ConnectorFailed: GraphQL payload is not JSON";
+  }
+  const mutating = /\bmutation\b/i.test(text);
+  if (mutating && !isWriteScope(scope)) {
+    return "ConnectorFailed: GraphQL mutation requires a write scope";
+  }
+  if (!mutating && !isReadScope(scope)) {
+    return "ConnectorFailed: GraphQL query requires a read scope";
+  }
+  let pinned: URL;
+  try {
+    pinned = new URL(baseUrl);
+  } catch {
+    return "ConnectorFailed: credential base URL is invalid";
+  }
+  if (pinned.username !== "" || pinned.password !== "" || (pinned.protocol !== "https:" && !(pinned.protocol === "http:" && isLoopbackHost(pinned.hostname)))) {
+    return "ConnectorFailed: credential base URL must be https";
+  }
+  if (pinned.pathname === "/" || pinned.pathname === "") {
+    pinned.pathname = "/graphql";
+  }
+  return { url: pinned.toString(), method: "POST", body: payload };
+}
+
 export function makeConnectorLive(
   presets: ConnectorPresets = DEFAULT_CONNECTOR_PRESETS,
   toolRoutes: ToolRoutes = DEFAULT_TOOL_ROUTES,
@@ -279,7 +479,7 @@ export function makeConnectorLive(
 ): Layer.Layer<Connector> {
   const cloudflareApiBase = options.cloudflareApiBase ?? DEFAULT_CLOUDFLARE_API_BASE;
   return Layer.succeed(Connector, {
-    execute: (alias, scope, secret, payload, tool) => {
+    execute: (alias, scope, secret, payload, tool, route) => {
       const url = presets[alias];
       if (url === undefined) {
         // The core Connector contract admits only ConnectorFailed, so the
@@ -332,29 +532,65 @@ export function makeConnectorLive(
         );
       }
       const routeKey = `${alias}:${typeof tool === "string" ? tool : ""}`;
-      const route = toolRoutes[routeKey];
-      if (route === undefined) {
-        return Effect.fail(
-          new ConnectorFailed({
-            alias,
-            message: `NoConnectorRoute: no payload route is defined for "${routeKey}"`,
-          }),
+      const fixedRoute = toolRoutes[routeKey];
+      if (fixedRoute !== undefined) {
+        return executeHttp({
+          url: fixedRoute,
+          method: "POST",
+          secret,
+          ...(route?.auth !== undefined ? { auth: route.auth } : {}),
+          body: payload,
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
         );
       }
-      return executeHttp({
-        url: route,
-        method: "POST",
-        secret,
-        body: payload,
-      }).pipe(
-        Effect.mapError(
-          (err) =>
+      const baseUrl = route?.baseUrl?.trim() ?? "";
+      const dynamicTool = tool === "rest.call" || tool === "graphql.call" || (baseUrl !== "" && isRestPayload(payload));
+      if (dynamicTool) {
+        if (baseUrl === "") {
+          return Effect.fail(
             new ConnectorFailed({
               alias,
-              ...(err.status !== undefined ? { status: err.status } : {}),
-              message: err.message,
+              message: "NoConnectorRoute: credential has no pinned base URL",
             }),
-        ),
+          );
+        }
+        const resolved =
+          tool === "graphql.call" && !isRestPayload(payload)
+            ? resolveGraphql(baseUrl, scope, payload)
+            : resolveScopedRest(baseUrl, scope, payload);
+        if (typeof resolved === "string") {
+          return Effect.fail(new ConnectorFailed({ alias, message: resolved }));
+        }
+        return executeHttp({
+          url: resolved.url,
+          method: resolved.method,
+          secret,
+          ...(route?.auth !== undefined ? { auth: route.auth } : {}),
+          ...(resolved.body !== undefined ? { body: resolved.body } : {}),
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
+        );
+      }
+      return Effect.fail(
+        new ConnectorFailed({
+          alias,
+          message: `NoConnectorRoute: no payload route is defined for "${routeKey}"`,
+        }),
       );
     },
   });

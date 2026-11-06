@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   isAgentRateLimited,
   recordAgentRequest,
+  velocityConfigForAgent,
+  VERIFIED_VELOCITY_CONFIG,
   type AgentVelocityConfig,
   type AgentVelocityTracker,
 } from "../src/policy.js";
@@ -85,5 +87,27 @@ describe("Agent Velocity, Rate Limiting & Burst Protection (#18)", () => {
     // But check checkAfterCooldown at 33000ms
     const checkAfterCooldown = isAgentRateLimited(tracker, velocityCfg, 33000);
     expect(checkAfterCooldown.limited).toBe(false);
+  });
+
+  it("keeps unknown-alias misses out of the failure streak", () => {
+    let tracker: AgentVelocityTracker | undefined;
+    tracker = recordAgentRequest(tracker, 1000, false, undefined, { countFailure: false });
+    tracker = recordAgentRequest(tracker, 1100, false, undefined, { countFailure: false });
+    tracker = recordAgentRequest(tracker, 1200, false, undefined, { countFailure: false });
+    expect(tracker.consecutiveFailures).toBe(0);
+    expect(tracker.requestsInWindow).toBe(3);
+    expect(isAgentRateLimited(tracker, undefined, 1300).limited).toBe(false);
+  });
+
+  it("gives a verified agent 60 requests per minute and a 5-failure breaker", () => {
+    const cfg = velocityConfigForAgent(true);
+    expect(cfg).toEqual(VERIFIED_VELOCITY_CONFIG);
+    expect(velocityConfigForAgent(false).maxRequestsPerMinute).toBe(15);
+    let tracker: AgentVelocityTracker | undefined;
+    for (let i = 0; i < 60; i += 1) {
+      tracker = recordAgentRequest(tracker, 5000, true, cfg);
+    }
+    expect(isAgentRateLimited(tracker, cfg, 5000).limited).toBe(true);
+    expect(isAgentRateLimited(tracker, velocityConfigForAgent(false), 5000).limited).toBe(true);
   });
 });
