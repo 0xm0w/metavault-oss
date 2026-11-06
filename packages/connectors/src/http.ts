@@ -114,6 +114,36 @@ export function redactSecretFromBody(text: string, secret: string): string {
   return out;
 }
 
+export function describePublicCredential(
+  alias: string,
+  website: string,
+  publicMeta: string,
+): { readonly baseUrl: string; readonly authStyle: CredentialAuthStyle; readonly supportedTools: readonly string[] } {
+  let baseUrl = "";
+  const trimmed = website.trim();
+  if (trimmed !== "") {
+    try {
+      const url = new URL(trimmed);
+      if (
+        url.username === "" &&
+        url.password === "" &&
+        (url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname)))
+      ) {
+        baseUrl = trimmed;
+      }
+    } catch {
+      baseUrl = "";
+    }
+  }
+  const tools: string[] = [];
+  if (alias === "stripe" || alias === "github" || alias === "cloudflare") tools.push("preset");
+  if (alias === "cloudflare") tools.push("cloudflare.dns", "cloudflare-graphql.analytics");
+  if (baseUrl !== "") {
+    tools.push("rest.call", "graphql.call");
+  }
+  return { baseUrl, authStyle: credentialAuthStyle(publicMeta), supportedTools: tools };
+}
+
 export function credentialAuthStyle(publicMeta: string): CredentialAuthStyle {
   if (publicMeta.trim() === "") {
     return "bearer";
@@ -353,6 +383,17 @@ function isLoopbackHost(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
 }
 
+function acceptableDefaultGet(baseUrl: string): boolean {
+  try {
+    const pinned = new URL(baseUrl);
+    if (pinned.username !== "" || pinned.password !== "") return false;
+    if (pinned.protocol === "https:") return true;
+    return pinned.protocol === "http:" && isLoopbackHost(pinned.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function pathIsUnsafe(path: string): boolean {
   if (path !== path.trim() || !path.startsWith("/") || path.startsWith("//")) {
     return true;
@@ -512,6 +553,56 @@ export function makeConnectorLive(
         );
       }
       const baseUrl = route?.baseUrl?.trim() ?? "";
+      const routeKey = `${alias}:${typeof tool === "string" ? tool : ""}`;
+      const fixedRoute = payload !== undefined ? toolRoutes[routeKey] : undefined;
+      if (fixedRoute !== undefined) {
+        let serialized = "";
+        try {
+          serialized = JSON.stringify(payload);
+        } catch {
+          return Effect.fail(new ConnectorFailed({ alias, message: "ConnectorFailed: GraphQL payload is not JSON" }));
+        }
+        if (/\bmutation\b/i.test(serialized) && !isWriteScope(scope)) {
+          return Effect.fail(new ConnectorFailed({ alias, message: "ConnectorFailed: GraphQL mutation requires a write scope" }));
+        }
+        return executeHttp({
+          url: fixedRoute,
+          method: "POST",
+          secret,
+          ...(route?.auth !== undefined ? { auth: route.auth } : {}),
+          body: payload,
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
+        );
+      }
+      if (alias === "cloudflare" && tool === "cloudflare.dns" && payload !== undefined) {
+        const resolved = resolveCloudflareDns(cloudflareApiBase, scope, payload);
+        if (typeof resolved === "string") {
+          return Effect.fail(new ConnectorFailed({ alias, message: resolved }));
+        }
+        return executeHttp({
+          url: resolved.url,
+          method: resolved.method,
+          secret,
+          ...(resolved.body !== undefined ? { body: resolved.body } : {}),
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
+        );
+      }
       const dynamicTool = tool === "rest.call" || tool === "graphql.call" || (baseUrl !== "" && isRestPayload(payload));
       if (dynamicTool) {
         if (baseUrl === "") {
@@ -546,79 +637,44 @@ export function makeConnectorLive(
           ),
         );
       }
-      const url = presets[alias];
-      if (url === undefined) {
-        // The core Connector contract admits only ConnectorFailed, so the
-        // brief's UnknownAlias surfaces as the alias + message, never a secret.
-        return Effect.fail(
-          new ConnectorFailed({ alias, message: `UnknownAlias: ${alias}` }),
-        );
-      }
+      const presetUrl = presets[alias];
       if (payload === undefined) {
-        return executeHttp({
-          url,
-          method: "GET",
-          secret,
-        }).pipe(
-          Effect.mapError(
-            (err) =>
-              new ConnectorFailed({
-                alias,
-                ...(err.status !== undefined ? { status: err.status } : {}),
-                message: err.message,
-              }),
-          ),
-        );
+        if (presetUrl !== undefined) {
+          return executeHttp({ url: presetUrl, method: "GET", secret }).pipe(
+            Effect.mapError(
+              (err) =>
+                new ConnectorFailed({
+                  alias,
+                  ...(err.status !== undefined ? { status: err.status } : {}),
+                  message: err.message,
+                }),
+            ),
+          );
+        }
+        if (baseUrl !== "") {
+          if (isReadScope(scope) && acceptableDefaultGet(baseUrl)) {
+            return executeHttp({ url: baseUrl, method: "GET", secret }).pipe(
+              Effect.mapError(
+                (err) =>
+                  new ConnectorFailed({
+                    alias,
+                    ...(err.status !== undefined ? { status: err.status } : {}),
+                    message: err.message,
+                  }),
+              ),
+            );
+          }
+          return Effect.fail(
+            new ConnectorFailed({
+              alias,
+              message: 'NoDefaultEndpoint: pass tool "rest.call" with { method, path } or "graphql.call" with { query }',
+            }),
+          );
+        }
+        return Effect.fail(new ConnectorFailed({ alias, message: `UnknownAlias: ${alias}` }));
       }
-      if (alias === "cloudflare" && tool === "cloudflare.dns") {
-        const resolved = resolveCloudflareDns(cloudflareApiBase, scope, payload);
-        if (typeof resolved === "string") {
-          return Effect.fail(new ConnectorFailed({ alias, message: resolved }));
-        }
-        return executeHttp({
-          url: resolved.url,
-          method: resolved.method,
-          secret,
-          ...(resolved.body !== undefined ? { body: resolved.body } : {}),
-        }).pipe(
-          Effect.mapError(
-            (err) =>
-              new ConnectorFailed({
-                alias,
-                ...(err.status !== undefined ? { status: err.status } : {}),
-                message: err.message,
-              }),
-          ),
-        );
-      }
-      const routeKey = `${alias}:${typeof tool === "string" ? tool : ""}`;
-      const fixedRoute = toolRoutes[routeKey];
-      if (fixedRoute !== undefined) {
-        let serialized = "";
-        try {
-          serialized = JSON.stringify(payload);
-        } catch {
-          return Effect.fail(new ConnectorFailed({ alias, message: "ConnectorFailed: GraphQL payload is not JSON" }));
-        }
-        if (/\bmutation\b/i.test(serialized) && !isWriteScope(scope)) {
-          return Effect.fail(new ConnectorFailed({ alias, message: "ConnectorFailed: GraphQL mutation requires a write scope" }));
-        }
-        return executeHttp({
-          url: fixedRoute,
-          method: "POST",
-          secret,
-          ...(route?.auth !== undefined ? { auth: route.auth } : {}),
-          body: payload,
-        }).pipe(
-          Effect.mapError(
-            (err) =>
-              new ConnectorFailed({
-                alias,
-                ...(err.status !== undefined ? { status: err.status } : {}),
-                message: err.message,
-              }),
-          ),
-        );
+      if (presetUrl === undefined && baseUrl === "") {
+        return Effect.fail(new ConnectorFailed({ alias, message: `UnknownAlias: ${alias}` }));
       }
       return Effect.fail(
         new ConnectorFailed({

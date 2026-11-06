@@ -1,4 +1,5 @@
 import { AgentRegistrations } from "./registrations.js";
+import { subscribeVaultEvents, vaultEventData, type VaultLiveEvent } from "./live-events.js";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
@@ -505,6 +506,9 @@ function isTokenProtected(method: string, path: string): boolean {
   if (path.startsWith("/settings/local-auth") && method !== "GET") {
     return true;
   }
+  if (method === "GET" && path === "/events") {
+    return true;
+  }
   return false;
 }
 
@@ -648,8 +652,12 @@ export async function handleVaultRequest(
           // Cards expose brand + last 4 only: never name, expiry or CVV.
           credentials: meta.map((m) => ({
             alias: m.alias,
-            website: m.website,
             kind: m.kind,
+            scopeCeiling: m.scopeCeiling,
+            website: m.website,
+            baseUrl: m.baseUrl,
+            authStyle: m.authStyle,
+            supportedTools: m.supportedTools,
             ...(m.card !== undefined ? { card: { brand: m.card.brand, last4: m.card.last4, masked: m.card.masked } } : {}),
           })),
         })),
@@ -679,7 +687,17 @@ export async function handleVaultRequest(
       if (m[2] === "claim") {
         const secret = input["claim"];
         if (typeof secret !== "string" || secret.length < 16 || secret.length > 256) return BAD_REQUEST;
-        const out = await regs.claim(id, secret);
+        const waitRaw = input["waitMs"];
+        const waitMs = Math.min(
+          25_000,
+          Math.max(0, Math.floor(typeof waitRaw === "number" ? waitRaw : options?.grantWaitMs ?? 0)),
+        );
+        const deadline = Date.now() + waitMs;
+        let out = await regs.claim(id, secret);
+        while (!out.ok && out.status2 === "pending" && Date.now() < deadline) {
+          await regs.waitForChange(id, deadline - Date.now());
+          out = await regs.claim(id, secret);
+        }
         return out.ok ? { status: 200, body: { status: "claimed", agentId: out.agentId, token: out.token } } : fail(out.status, out.error, { status: out.status2 });
       }
       // Deciding a registration needs an unlocked vault, so a locked app
@@ -882,7 +900,8 @@ export async function handleVaultRequest(
     if (decodedId === null) { return BAD_REQUEST; }
     const id = decodedId.trim();
     if (id === "" || id.includes("/")) { return BAD_REQUEST; }
-    const found = await run(service.getEnrollment(id));
+    const waitMs = Math.min(25_000, Math.max(0, Math.floor(options?.grantWaitMs ?? 0)));
+    const found = await run(waitMs > 0 ? service.waitForEnrollment(id, waitMs) : service.getEnrollment(id));
     if (found.status !== 200) { return found; }
     if (found.body === null) { return { status: 404, body: { error: { _tag: "NotFound", message: "enrollment not found" } } }; }
     const record = found.body as { enrollmentId: string; status: string; alias: string; scope: string; website?: string; expiresAtMs?: number };
@@ -1183,7 +1202,7 @@ export async function handleVaultRequest(
           },
         };
       }
-      const inspectRes = inspectProcess(clientPid);
+      const inspectRes = await inspectProcess(clientPid);
       if (!inspectRes.ok) {
         return {
           status: 403,
@@ -1200,11 +1219,6 @@ export async function handleVaultRequest(
       // Unverified callers already returned above. A generic runtime still
       // only reaches here with an enrolled token, which is the identity.
       clientProcess = inspectRes.binary;
-    } else if (clientPid !== undefined) {
-      const inspectRes = inspectProcess(clientPid);
-      if (inspectRes.ok) {
-        clientProcess = inspectRes.binary;
-      }
     }
 
         const request: CapabilityRequest = {
@@ -1469,6 +1483,32 @@ export interface VaultHttpServerOptions {
   readonly vaultDir?: string;
 }
 
+// SSE stream for the loopback app and MCP hosts. Token-guarded above;
+// frames carry counts and ids only (see live-events.ts).
+const EVENT_STREAM_KEEPALIVE_MS = 15_000;
+
+export function streamVaultEvents(res: ServerResponse): void {
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+  const send = (event: VaultLiveEvent): void => {
+    if (res.writableEnded) return;
+    res.write(`event: ${event.type}\n`);
+    res.write(`data: ${JSON.stringify(vaultEventData(event))}\n\n`);
+  };
+  const unsubscribe = subscribeVaultEvents(send);
+  const keepalive = setInterval(() => {
+    if (!res.writableEnded) res.write(": keepalive\n\n");
+  }, EVENT_STREAM_KEEPALIVE_MS);
+  keepalive.unref();
+  res.on("close", () => {
+    clearInterval(keepalive);
+    unsubscribe();
+  });
+}
+
 export function createVaultHttpServer(
   service: VaultServiceService,
   options: VaultHttpServerOptions = {},
@@ -1504,6 +1544,16 @@ export function createVaultHttpServer(
             ? authHeader.slice(7).trim()
             : undefined;
         const providedToken = (Array.isArray(header) ? header[0] : header) ?? bearerToken;
+        // SSE: /events streams live counts; same daemon-token guard as other
+        // protected routes, then a text/event-stream response below.
+        if (reqMethod === "GET" && url.pathname === "/events") {
+          if (!tokenMatches(guardToken, providedToken)) {
+            sendJson(res, UNAUTHORIZED.status, UNAUTHORIZED.body);
+          } else {
+            streamVaultEvents(res);
+          }
+          return;
+        }
         const agentTokenHeader = req.headers["x-metavault-agent-token"];
         const rawAgentToken = Array.isArray(agentTokenHeader) ? agentTokenHeader[0] : agentTokenHeader;
         const bearerIsDaemon = bearerToken !== undefined && tokenMatches(guardToken, bearerToken);

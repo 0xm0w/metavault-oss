@@ -198,9 +198,26 @@ describe("website + PATCH/DELETE /credentials/:alias", () => {
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ alias: "cf", scope: "dns.read", website: "cloudflare.com" });
     const aliases = await handleVaultRequest(service, "GET", "/aliases");
-    const body = aliases.body as { aliases: string[]; credentials: { alias: string; website: string }[] };
+    const body = aliases.body as {
+      aliases: string[];
+      credentials: { alias: string; kind: string; scopeCeiling: string; website: string; baseUrl: string; authStyle: string; supportedTools: string[] }[];
+    };
     expect(body.aliases).toContain("cf");
-    expect(body.credentials).toEqual([{ alias: "cf", website: "cloudflare.com", kind: "secret" }]);
+    // Enriched per-IDE discovery shape: zero secret material, just routing
+    // metadata so agents can pick tool + payload without a request round-trip.
+    expect(body.credentials).toEqual([
+      {
+        alias: "cf",
+        kind: "secret",
+        scopeCeiling: "dns.read",
+        website: "cloudflare.com",
+        baseUrl: "",
+        authStyle: "bearer",
+        // "cf" is not a preset alias name and "cloudflare.com" is not a
+        // parseable https:// pinned URL, so no dynamic tools are offered.
+        supportedTools: [],
+      },
+    ]);
     expect(JSON.stringify(aliases.body)).not.toContain(SECRET);
   });
 

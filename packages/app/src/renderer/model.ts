@@ -28,7 +28,7 @@ import type {
   WardenProvider,
   WardenSettingsLike,
   WardenSettingsPatch,
-  WardenTestResultLike, RemoteSettingsLike } from "./types.js";
+  WardenTestResultLike, RemoteSettingsLike, DesktopPreferencesLike, SoundModeLike } from "./types.js";
 
 // Unified warm theme (promoted from the Vault page). These exact hex
 // values are the theme contract; styles.css mirrors them as CSS variables.
@@ -302,6 +302,8 @@ export function projectApproval(raw: unknown): PendingApproval | null {
   ) {
     return null;
   }
+  const verifiedRaw = raw["verified"];
+  const verified = typeof verifiedRaw === "boolean" ? verifiedRaw : false;
   const base: PendingApproval = {
     grantId,
     agentId,
@@ -315,6 +317,7 @@ export function projectApproval(raw: unknown): PendingApproval | null {
     marshalExplanation,
     createdAtMs,
     expiresAtMs,
+    verified,
   };
   const modelId = raw["modelId"];
   const deviceId = raw["deviceId"];
@@ -370,7 +373,7 @@ export function shouldRequireAuthForRemoteApproval(
 
 // Canonical settings tabs. The settings click dispatcher uses isSettingsTab
 // so a tab that exists in the UI can never be dropped from dispatch again.
-export const SETTINGS_TABS = ["general", "warden", "daemon", "security", "connections"] as const;
+export const SETTINGS_TABS = ["general", "notifications", "warden", "daemon", "security", "connections"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export function isSettingsTab(value: unknown): value is SettingsTab {
   return typeof value === "string" && (SETTINGS_TABS as readonly string[]).includes(value);
@@ -1781,4 +1784,70 @@ export function projectPairingSession(raw: unknown): PairingSessionLike | null {
   if (typeof platform === "string" && platform !== "") out.platform = platform;
   if (typeof expiresAt === "string" && expiresAt !== "") out.expiresAt = expiresAt;
   return out;
+}
+
+
+export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferencesLike = {
+  minimizeToTrayOnClose: true,
+  startMinimizedAtLogin: true,
+  popWindowOnApproval: false,
+  toastNotificationsEnabled: true,
+  redactToastWhenLocked: true,
+  soundMode: "all",
+  firstCloseNoticeShown: false,
+};
+
+export function projectDesktopPreferences(raw: unknown): DesktopPreferencesLike {
+  if (!isRecord(raw)) return { ...DEFAULT_DESKTOP_PREFERENCES };
+  const soundRaw = raw["soundMode"];
+  const soundMode: SoundModeLike =
+    soundRaw === "all" || soundRaw === "high-risk-only" || soundRaw === "off"
+      ? soundRaw
+      : DEFAULT_DESKTOP_PREFERENCES.soundMode;
+  return {
+    minimizeToTrayOnClose:
+      typeof raw["minimizeToTrayOnClose"] === "boolean"
+        ? raw["minimizeToTrayOnClose"]
+        : DEFAULT_DESKTOP_PREFERENCES.minimizeToTrayOnClose,
+    startMinimizedAtLogin:
+      typeof raw["startMinimizedAtLogin"] === "boolean"
+        ? raw["startMinimizedAtLogin"]
+        : DEFAULT_DESKTOP_PREFERENCES.startMinimizedAtLogin,
+    popWindowOnApproval:
+      typeof raw["popWindowOnApproval"] === "boolean"
+        ? raw["popWindowOnApproval"]
+        : DEFAULT_DESKTOP_PREFERENCES.popWindowOnApproval,
+    toastNotificationsEnabled:
+      typeof raw["toastNotificationsEnabled"] === "boolean"
+        ? raw["toastNotificationsEnabled"]
+        : DEFAULT_DESKTOP_PREFERENCES.toastNotificationsEnabled,
+    redactToastWhenLocked:
+      typeof raw["redactToastWhenLocked"] === "boolean"
+        ? raw["redactToastWhenLocked"]
+        : DEFAULT_DESKTOP_PREFERENCES.redactToastWhenLocked,
+    soundMode,
+    firstCloseNoticeShown:
+      typeof raw["firstCloseNoticeShown"] === "boolean"
+        ? raw["firstCloseNoticeShown"]
+        : DEFAULT_DESKTOP_PREFERENCES.firstCloseNoticeShown,
+  };
+}
+
+export const APPROVAL_FOCUS_GUARD_MS = 500;
+
+export function isApprovalButtonArmed(
+  nowMs: number,
+  cardShownAtMs: number,
+  windowFocusedAtMs: number,
+): boolean {
+  return nowMs >= Math.max(cardShownAtMs, windowFocusedAtMs) + APPROVAL_FOCUS_GUARD_MS;
+}
+
+export function normalizeNavigateSettingsTab(section: string | undefined): SettingsTab {
+  if (section === undefined || section === "") return "general";
+  const cleaned = section.trim().toLowerCase();
+  if (cleaned === "agents" || cleaned === "mcp") return "daemon";
+  if (cleaned === "tray" || cleaned === "sounds") return "notifications";
+  if (isSettingsTab(cleaned)) return cleaned;
+  return "general";
 }

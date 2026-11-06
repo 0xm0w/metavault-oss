@@ -1726,3 +1726,72 @@ body.is-locked .view { padding: 0; max-width: none; }
   .settings-row > .btns { flex-wrap: wrap !important; }
   .settings-row > .btns > button { flex: 0 1 auto; }
 }
+
+
+/* Two-option header lock menu & segmented sound selector */
+.header-lock-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.header-lock-wrap[hidden],
+.header-lock-menu[hidden] {
+  display: none !important;
+}
+.header-lock-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 280px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14);
+  z-index: 60;
+  display: grid;
+  gap: 4px;
+}
+.header-lock-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.header-lock-item:hover:not(:disabled) {
+  background: var(--field);
+}
+.header-lock-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.header-lock-item-title {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.header-lock-item.is-danger .header-lock-item-title {
+  color: var(--danger);
+}
+.header-lock-item-sub {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.segmented-sound-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.segmented-sound-btn.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}

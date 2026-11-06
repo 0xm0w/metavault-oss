@@ -3,7 +3,11 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -31,6 +35,11 @@ export interface MetavaultMcpOptions {
   // outlives a client's own tool timeout. 0 disables waiting.
   readonly approvalWaitMs?: number;
   readonly approvalPollMs?: number;
+  // How long enrollment_status / registration_status long-poll before
+  // reporting "pending". The human types a secret or a 6-digit code while
+  // the tool call blocks, so waiting here costs zero agent turns. 0
+  // disables waiting.
+  readonly statusWaitMs?: number;
   // Where the credential from a verified registration is kept. Defaults to
   // ~/.metavault/agents/<agent id>.token.
   readonly credentialPath?: string;
@@ -39,10 +48,21 @@ export interface MetavaultMcpOptions {
   readonly launchDeeplink?: (url: string) => Promise<boolean>;
 }
 
-const ENROLLMENT_LINK = /^metavault:\/\/add\?[A-Za-z0-9%=&._~:@+-]{1,2000}$/;
+const DEFAULT_LAUNCH_LINK = /^metavault:\/\/(add|approve|register|unlock)\?[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]{1,2000}$/;
+
+// First-turn agent context. High signal, under 1500 chars, zero secrets.
+export const METAVAULT_MCP_INSTRUCTIONS = `Never ask the user to paste raw API keys, tokens, or card details into chat or .env files: MetaVault OSS keeps credentials in their local vault (vaultd) and executes calls there; secrets never move, only results come back.
+
+Call list_aliases first, then request_capability. Each credential reports alias, scopeCeiling, baseUrl, authStyle, supportedTools. Scopes: <resource>.read for GET/HEAD/GraphQL queries, <resource>.write for POST/PUT/PATCH/DELETE and mutations; stay inside scopeCeiling (ceiling "charges.write" allows charges.read or charges.write).
+
+Shapes: preset verify/read (stripe, github, cloudflare): omit tool and payload. Website-pinned REST: tool "rest.call", payload { method, path: "/v1/...", query?, body? }. GraphQL: tool "graphql.call", payload { query, variables?, operationName? }. Cloudflare DNS: alias "cloudflare", tool "cloudflare.dns", payload { method, path: "/zones/<32hex>/dns_records", query?, body? }. Cloudflare analytics: tool "cloudflare-graphql.analytics", payload { query, variables? }.
+
+Recovery: awaiting-approval -> share metavault://approve?grantId=..., then grant_status. vault-locked -> share metavault://unlock?target=daemon, wait for the user, then grant_status. Missing alias -> request_enrollment({alias, scope, website}) opens metavault://add; enrollment_status long-polls. Unverified caller or 401 -> register_agent, show the 6-digit code and metavault://register?registrationId=..., then registration_status (also waits).
+
+Never fabricate or resend an approval.`;
 
 function defaultLaunchDeeplink(url: string): Promise<boolean> {
-  if (!ENROLLMENT_LINK.test(url)) return Promise.resolve(false);
+  if (!DEFAULT_LAUNCH_LINK.test(url)) return Promise.resolve(false);
   const [cmd, args]: [string, string[]] =
     process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
     : process.platform === "darwin" ? ["open", [url]]
@@ -63,6 +83,9 @@ const RequestCapabilityToolSchema = Schema.Struct({
   alias: Schema.String,
   scope: Schema.String,
   reason: Schema.String,
+  // Optional: vaultd derives the identity from the authenticated token, so
+  // an explicit agentId here is metadata, not authentication.
+  agentId: Schema.optional(Schema.String),
   tool: Schema.optional(Schema.String),
   payload: Schema.optional(Schema.Unknown),
 });
@@ -161,6 +184,51 @@ async function decode<A, I>(schema: Schema.Schema<A, I>, value: unknown): Promis
   return Exit.isSuccess(exit) ? exit.value : null;
 }
 
+// Terminal-vs-pending check for the enrollment/registration long-poll.
+function statusFieldOf(result: CallToolResult): string | null {
+  const text = result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n");
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const status = (parsed as Record<string, unknown>)["status"];
+      return typeof status === "string" ? status : null;
+    }
+  } catch {
+    // Non-JSON answer: treat as unknown so callers return it unchanged.
+  }
+  return null;
+}
+
+// ReadResource metatype quick-reference; mirrors METAVAULT_MCP_INSTRUCTIONS in full detail.
+const CONTEXT_GUIDE_RESOURCE = `# MetaVault OSS — agent context guide
+
+MetaVault OSS stores the user's API credentials in the local vault (vaultd) and executes every call inside it. Never ask the user to paste an API key, token, or card number into chat or a config file.
+
+## Scopes
+- \`<resource>.read\` — GET/HEAD requests and GraphQL queries.
+- \`<resource>.write\` — POST/PUT/PATCH/DELETE and GraphQL mutations.
+- A request must stay inside the credential's \`scopeCeiling\`: ceiling \`charges.write\` allows \`charges.read\` or \`charges.write\`.
+
+## Tools and payloads
+- Preset verify/read (aliases \`stripe\`, \`github\`, \`cloudflare\`): omit \`tool\` and \`payload\`; the preset read runs.
+- Website-pinned REST — \`tool: "rest.call"\`: payload \`{ method: "GET"|"POST"|"PUT"|"PATCH"|"DELETE", path: "/v1/...", query?: { k: "v" }, body?: {...} }\`. GET needs a read scope; mutating methods need a write scope.
+- Website-pinned GraphQL — \`tool: "graphql.call"\`: payload \`{ query, variables?, operationName? }\`. Mutations need a write scope.
+- Cloudflare DNS — alias \`cloudflare\`, \`tool: "cloudflare.dns"\`: payload \`{ method, path: "/zones/<32hex>/dns_records", query?, body? }\`; write only on a \`dns_records\` segment.
+- Cloudflare analytics — \`tool: "cloudflare-graphql.analytics"\`: payload \`{ query, variables? }\`.
+
+## Async lifecycle
+| Answer | Next step |
+|---|---|
+| executed (+result) | done |
+| awaiting-approval, pending | call \`grant_status({grantId})\`; share \`metavault://approve?grantId=...| if the user may have missed the toast |
+| vault-locked | share \`metavault://unlock?target=daemon\`, wait, then \`grant_status\` |
+| denied (final) | stop; tell the user |
+| scope-above-ceiling denied | retry with a narrower \`<resource>.read\` inside \`allowedCeiling\`, or ask the user to enroll a wider scope |
+| missing alias | \`request_enrollment({alias, scope, website})\`, then \`enrollment_status\` (long-polls) |
+| unverified / 401 | \`register_agent\`, show the 6-digit code + \`metavault://register?registrationId=...\`, then \`registration_status\` (long-polls) |
+
+Registration, approval, and vault-locked links open the right screen in the desktop app. Agents never see credentials.`;
+
 // Low-level Server (not McpServer): tool inputs are validated with Effect
 // Schema, not the SDK's Zod dialect — the SDK's own "advanced use case".
 // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -194,8 +262,8 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
       response = await fetchFn(`${daemonUrl}${path}`, {
         method,
         headers: {
-          "content-type": "application/json",
           "x-metavault-client-pid": String(process.pid),
+          ...(body !== undefined ? { "content-type": "application/json" } : {}),
           ...(extraHeaders ?? {}),
           ...(agentToken !== undefined && agentToken !== ""
             ? { "x-metavault-agent-token": agentToken }
@@ -220,6 +288,27 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
 
   const textOfResult = (result: CallToolResult): string => result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n");
 
+  // Plain parsed read for GET endpoints (resources list). Null on any error.
+  const daemonJson = async (path: string): Promise<Record<string, unknown> | null> => {
+    try {
+      const response = await fetchFn(`${daemonUrl}${path}`, {
+        method: "GET",
+        headers: {
+          "x-metavault-client-pid": String(process.pid),
+          ...(agentToken !== undefined && agentToken !== "" ? { "x-metavault-agent-token": agentToken } : {}),
+          ...(shimToken !== undefined && shimToken !== "" ? { "x-metavault-shim-token": shimToken } : {}),
+        },
+      });
+      if (!response.ok) return null;
+      const parsed: unknown = JSON.parse(await response.text());
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleRequestCapability = async (args: unknown): Promise<CallToolResult> => {
     const input: RequestCapabilityToolInput | null = await decode(
       RequestCapabilityToolSchema,
@@ -229,7 +318,7 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
       return errorResult("invalid arguments for request_capability");
     }
     const candidate = {
-      agentId,
+      agentId: (input.agentId ?? agentId).trim() === "" ? "mcp-agent" : (input.agentId ?? agentId).trim(),
       ide,
       tool: input.tool ?? defaultTool,
       alias: input.alias,
@@ -255,6 +344,7 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
   const finals = new Map<string, Record<string, unknown>>();
   const approvalWaitMs = Math.max(0, Math.min(options.approvalWaitMs ?? 20_000, 25_000));
   const approvalPollMs = Math.max(10, options.approvalPollMs ?? 750);
+  const statusWaitMs = Math.max(0, Math.min(options.statusWaitMs ?? 20_000, 25_000));
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); });
 
   // One read of a grant's outcome, then a bounded wait while it is pending.
@@ -335,11 +425,43 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
       delete record["receipt"];
       if (typeof receipt !== "string") { return verbatimResult(record, result.isError !== true); }
       receipts.set(grantId, receipt);
+      // The vault is locked and the request cannot be assessed until the
+      // human unlocks it: report that instead of letting the agent wait on a
+      // grant nobody can decide yet.
+      if (record["vaultLocked"] === true) {
+        const lockedOut = {
+          status: "vault-locked",
+          grantId,
+          deeplink: "metavault://unlock?target=daemon",
+          instruction: "The vault is locked. Tell the user to unlock MetaVault OSS (or open metavault://unlock?target=daemon), then call grant_status with this grantId. Do not resend the request.",
+        };
+        return verbatimResult(lockedOut, true);
+      }
       const outcome = await readGrant(grantId, approvalWaitMs);
-      const merged = { ...record, ...(outcome["final"] === true || outcome["status"] === "unavailable" ? outcome : { status: "awaiting-approval", timedOut: outcome["timedOut"], instruction: "The user must decide in MetaVault OSS. Call grant_status with this grantId to learn the outcome. Do not send this request again while it is pending." }) };
-      return { content: [{ type: "text", text: JSON.stringify(merged) }], structuredContent: merged };
+      if (outcome["final"] === true || outcome["status"] === "unavailable") {
+        const merged = { ...record, ...outcome };
+        return { content: [{ type: "text", text: JSON.stringify(merged) }], structuredContent: merged };
+      }
+      // Still pending when the wait budget ends: hand the agent a clickable
+      // deeplink so the user can decide even without the toast visible.
+      const timedOut = {
+        ...record,
+        status: "awaiting-approval",
+        timedOut: outcome["timedOut"],
+        deeplink: `metavault://approve?grantId=${encodeURIComponent(grantId)}`,
+        instruction: "The user must decide in MetaVault OSS. Show the deeplink if they may have missed the toast, then call grant_status with this grantId to learn the outcome. Do not send this request again while it is pending.",
+      };
+      return { content: [{ type: "text", text: JSON.stringify(timedOut) }], structuredContent: timedOut };
     }
     if (record["status"] === "denied") {
+      if (record["reason"] === "scope-above-ceiling") {
+        const ceiling = typeof record["allowedCeiling"] === "string" ? record["allowedCeiling"] : "";
+        return verbatimResult({
+          ...record,
+          final: true,
+          instruction: `Requested scope exceeds this credential's ceiling${ceiling !== "" ? ` (${ceiling})` : ""}. Retry with <resource>.read within that ceiling, or ask the user before requesting enrollment for a wider scope.`,
+        }, result.isError !== true);
+      }
       return verbatimResult({ ...record, final: true, instruction: "This request was denied. Nothing ran. Do not retry it or look for another way around it; tell the user and ask what they want." }, result.isError !== true);
     }
     return result;
@@ -388,7 +510,18 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
   const handleEnrollmentStatus = async (args: unknown): Promise<CallToolResult> => {
     const decoded = await decode(EnrollmentIdSchema, args ?? {});
     if (decoded === null || decoded.enrollmentId.trim() === "") { return errorResult("invalid arguments for enrollment_status"); }
-    return callDaemon("GET", `/enrollments/${encodeURIComponent(decoded.enrollmentId.trim())}`);
+    const id = encodeURIComponent(decoded.enrollmentId.trim());
+    const deadline = Date.now() + statusWaitMs;
+    for (;;) {
+      const remaining = Math.max(0, deadline - Date.now());
+      // The real server blocks up to ?waitMs= before answering; older ones
+      // answer immediately and the loop below keeps the wait bounded.
+      const res = await callDaemon("GET", `/enrollments/${id}${remaining > 0 ? `?waitMs=${String(Math.min(25_000, Math.floor(remaining)))}` : ""}`);
+      if (res.isError === true) return res;
+      const status = statusFieldOf(res);
+      if (remaining <= 0 || (status !== "pending" && status !== null)) return res;
+      await sleep(Math.min(Math.max(10, approvalPollMs), Math.max(1, remaining)));
+    }
   };
 
   const handleRevoke = async (args: unknown): Promise<CallToolResult> => {
@@ -402,10 +535,136 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const server = new Server(
     { name: "metavault", version: MCP_VERSION },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: { tools: {}, resources: {}, prompts: {} },
+      instructions: METAVAULT_MCP_INSTRUCTIONS,
+    },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [...TOOLS] }));
+
+  // Resources: static quick-reference + a live, secret-free status snapshot.
+  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: [
+      {
+        uri: "metavault://context/guide",
+        name: "MetaVault context guide",
+        description: "Connector, scope, payload, and deeplink quick-reference.",
+        mimeType: "text/markdown",
+      },
+      {
+        uri: "metavault://context/status",
+        name: "Live vault status",
+        description: "Current aliases, credential routing metadata, and lock state.",
+        mimeType: "application/json",
+      },
+    ],
+  }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = request.params.uri;
+    if (uri === "metavault://context/guide") {
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "text/markdown",
+            text: CONTEXT_GUIDE_RESOURCE,
+          },
+        ],
+      };
+    }
+    if (uri === "metavault://context/status") {
+      const [health, aliases, keyStatus] = await Promise.all([
+        daemonJson("/health"),
+        daemonJson("/aliases"),
+        daemonJson("/key/status"),
+      ]);
+      const locked = typeof keyStatus?.["locked"] === "boolean" ? (keyStatus["locked"]) : undefined;
+      const status = {
+        daemon: health !== null ? health : { reachable: false },
+        aliases: aliases?.["aliases"] ?? [],
+        credentials: aliases?.["credentials"] ?? [],
+        ...(locked !== undefined ? { locked } : {}),
+      };
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(status),
+          },
+        ],
+      };
+    }
+    return {
+      contents: [],
+      isError: true,
+      error: { code: -32602, message: `unknown resource: ${uri}` },
+    };
+  });
+
+  // Prompt templates for agents that need a first-turn script.
+  server.setRequestHandler(ListPromptsRequestSchema, () => ({
+    prompts: [
+      {
+        name: "use-secret",
+        description: "Make a scoped request through MetaVault with an existing credential.",
+        arguments: [{ name: "alias", description: "Credential alias to use", required: false }],
+      },
+      {
+        name: "enroll-secret",
+        description: "Ask the user to add a credential to MetaVault without pasting the secret.",
+        arguments: [
+          { name: "alias", description: "Alias for the credential", required: true },
+          { name: "website", description: "Pinned https:// base URL", required: false },
+        ],
+      },
+    ],
+  }));
+  server.setRequestHandler(GetPromptRequestSchema, (request) => {
+    const name = request.params.name;
+    const args = request.params.arguments ?? {};
+    if (name === "use-secret") {
+      const alias = typeof args["alias"] === "string" && args["alias"].trim() !== "" ? args["alias"].trim() : null;
+      const target = alias !== null
+        ? `MetaVault credential alias "${alias}\"`
+        : "one of the user's MetaVault credentials (call list_aliases to see them)";
+      return {
+        description: "Scoped request through vaultd; the secret never leaves the vault.",
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `Use the ${target} to make the read/web request I need. Call request_capability with the alias, a scope like <resource>.read (or <resource>.write for mutating calls) inside its scopeCeiling, and a one-line reason; add tool "rest.call" or "graphql.call" with a payload when the credential pins a website baseUrl. If the answer is awaiting-approval with a grantId, share metavault://approve?grantId=... with me if helpful and call grant_status; if vault-locked, share metavault://unlock?target=daemon and wait. Never ask me to paste the secret itself, and never resend a pending request.`,
+            },
+          },
+        ],
+      };
+    }
+    if (name === "enroll-secret") {
+      const alias = typeof args["alias"] === "string" ? args["alias"].trim() : "";
+      const website = typeof args["website"] === "string" ? args["website"].trim() : "";
+      return {
+        description: "Enroll a new credential without the secret ever entering chat.",
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `I need you to add a MetaVault credential${alias !== "" ? ` named "${alias}"` : ""}${website !== "" ? ` pinned to ${website}` : ""}. Call request_enrollment with the alias, the narrowest sensible scope (for example <resource>.read),${website !== "" ? ` website "${website}",` : ""} and a short reason; it opens metavault://add on my computer with the form ready. Then call enrollment_status, which waits for me to save it. Ask me only for things like the alias name or scope — never for the API key itself, and never tell me to paste it anywhere.`,
+            },
+          },
+        ],
+      };
+    }
+    return {
+      description: "",
+      messages: [],
+      isError: true,
+      error: { code: -32602, message: `unknown prompt: ${name}` },
+    };
+  });
 
   // Verified-agent registration. The claim secret lives only in this process;
   // the daemon holds its hash. The credential goes daemon -> this process ->
@@ -426,15 +685,21 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
       return errorResult(`Registration could not be started: ${textOfResult(res).slice(0, 160)}`);
     }
     claim = { registrationId: rec["registrationId"], secret };
+    const deeplink = `metavault://register?registrationId=${encodeURIComponent(rec["registrationId"])}`;
+    const sameMachine = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(daemonUrl);
+    const launched = sameMachine ? await (options.launchDeeplink ?? defaultLaunchDeeplink)(deeplink).catch(() => false) : false;
     return verbatimResult({
-      status: "pending", registrationId: rec["registrationId"], code: rec["code"],
-      message: `Tell the user to open MetaVault OSS and approve the registration request that shows code ${String(rec["code"])}. Then call registration_status. Do not retry registration while it is pending.`,
+      status: "pending", agentId, registrationId: rec["registrationId"], code: rec["code"], deeplink, launched,
+      message: `Tell the user to open MetaVault OSS and approve the registration request that shows code ${String(rec["code"])}. The deeplink opens the approval screen${launched ? " (it was opened on this machine)" : ""}. Then call registration_status once, which waits for their decision. Do not retry registration while it is pending.`,
     }, true);
   };
   const handleRegistrationStatus = async (): Promise<CallToolResult> => {
     if (agentToken !== undefined && agentToken !== "") return verbatimResult({ status: "verified", message: "This agent holds an approved credential." }, true);
     if (claim === null) return verbatimResult({ status: "none", message: "No registration is in progress. Call register_agent." }, true);
-    const res = await callDaemon("POST", `/agent-registrations/${encodeURIComponent(claim.registrationId)}/claim`, { claim: claim.secret });
+    // Server-side long-poll: the daemon holds the claim call open until the
+    // user approves or the budget ends, so this single tool call is the wait.
+    const waitMs = Math.min(25_000, statusWaitMs);
+    const res = await callDaemon("POST", `/agent-registrations/${encodeURIComponent(claim.registrationId)}/claim`, { claim: claim.secret, waitMs });
     let body: unknown;
     try { body = JSON.parse(textOfResult(res)) as unknown; } catch { body = null; }
     const rec = typeof body === "object" && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : null;

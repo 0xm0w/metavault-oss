@@ -50,29 +50,29 @@ afterEach(() => {
 });
 
 describe("process inspector classification", () => {
-  it("flags generic runtime binaries", () => {
+  it("flags generic runtime binaries", async () => {
     setTestProcessResolver(() => "node.exe");
-    expect(inspectProcess(1234)).toMatchObject({ ok: true, genericRuntime: true, binary: "node.exe" });
+    await expect(inspectProcess(1234)).resolves.toMatchObject({ ok: true, genericRuntime: true, binary: "node.exe" });
     setTestProcessResolver(() => "bun");
-    expect(inspectProcess(1234)).toMatchObject({ ok: true, genericRuntime: true });
+    await expect(inspectProcess(1234)).resolves.toMatchObject({ ok: true, genericRuntime: true });
     setTestProcessResolver(() => "deno.exe");
-    expect(inspectProcess(1234)).toMatchObject({ ok: true, genericRuntime: true });
+    await expect(inspectProcess(1234)).resolves.toMatchObject({ ok: true, genericRuntime: true });
   });
 
-  it("accepts dedicated agent binaries without the runtime caveat", () => {
+  it("accepts dedicated agent binaries without the runtime caveat", async () => {
     setTestProcessResolver(() => "cursor.exe");
-    const res = inspectProcess(1234);
+    const res = await inspectProcess(1234);
     expect(res.ok).toBe(true);
     expect(res.genericRuntime).toBeUndefined();
     setTestProcessResolver(() => "metavault oss");
-    expect(inspectProcess(1234).ok).toBe(true);
+    await expect(inspectProcess(1234)).resolves.toMatchObject({ ok: true });
   });
 
-  it("denies disallowed binaries and unknown processes", () => {
+  it("denies disallowed binaries and unknown processes", async () => {
     setTestProcessResolver(() => "python.exe");
-    expect(inspectProcess(1234).ok).toBe(false);
+    await expect(inspectProcess(1234)).resolves.toMatchObject({ ok: false });
     setTestProcessResolver(() => null);
-    expect(inspectProcess(1234)).toMatchObject({ ok: false, reason: "process-not-found" });
+    await expect(inspectProcess(1234)).resolves.toMatchObject({ ok: false, reason: "process-not-found" });
   });
 });
 

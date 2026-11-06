@@ -13,6 +13,12 @@ import type {
   VaultApi,
   WardenSettingsPatch,
   IdeConfigRequestLike,
+  LockStateLike,
+  NavigateLike,
+  SoundCue,
+  FlyoutStateLike,
+  FlyoutActionLike,
+  DesktopPreferencesPatchLike,
 } from "./renderer/types.js";
 
 const IDE_CONFIG_CHANNEL = "metavault:ide-config";
@@ -81,6 +87,91 @@ const api: VaultApi = {
   unlockVault: (passphrase: string) => invoke("POST", "/unlock", { passphrase }),
   setupVault: (passphrase: string) => invoke("POST", "/setup", { passphrase }),
   lockVault: () => invoke("POST", "/lock"),
+  // Desktop UI windowing, tray, and sounds. Main owns the state; the
+  // renderer only reports its own UI-lock status and receives broadcasts.
+  desktopPrefsGet: () => ipcRenderer.invoke("metavault:desktop-prefs:get") as Promise<unknown>,
+  desktopPrefsUpdate: (patch: DesktopPreferencesPatchLike) => ipcRenderer.invoke("metavault:desktop-prefs:update", patch) as Promise<unknown>,
+  lockUi: () => ipcRenderer.invoke("metavault:lock-ui") as Promise<void>,
+  reportUiLock: (locked: boolean) => {
+    ipcRenderer.send("metavault:ui-lock-state", locked);
+  },
+  // Renderer asks for the current lock state on boot.
+  lockStateGet: async (): Promise<LockStateLike> => {
+    const raw: unknown = await ipcRenderer.invoke("metavault:lock-state-get");
+    if (typeof raw !== "object" || raw === null) {
+      return { uiLocked: false, daemonLocked: false };
+    }
+    const record = raw as Record<string, unknown>;
+    return {
+      uiLocked: record["uiLocked"] === true,
+      daemonLocked: record["daemonLocked"] === true,
+    };
+  },
+  onLockState: (handler: (state: LockStateLike) => void) => {
+    const listener = (_event: unknown, value: unknown): void => {
+      if (typeof value !== "object" || value === null) return;
+      const record = value as Record<string, unknown>;
+      handler({
+        uiLocked: record["uiLocked"] === true,
+        daemonLocked: record["daemonLocked"] === true,
+      });
+    };
+    ipcRenderer.on("metavault:lock-state", listener);
+    return () => {
+      ipcRenderer.removeListener("metavault:lock-state", listener);
+    };
+  },
+  onNavigate: (handler: (nav: NavigateLike) => void) => {
+    const listener = (_event: unknown, value: unknown): void => {
+      if (typeof value !== "object" || value === null) return;
+      const record = value as Record<string, unknown>;
+      const kind = record["kind"];
+      if (
+        kind !== "approval" && kind !== "registration" &&
+        kind !== "unlock" && kind !== "audit" && kind !== "settings" &&
+        kind !== "add-credential"
+      ) {
+        return;
+      }
+      handler({
+        kind,
+        ...(typeof record["id"] === "string" ? { id: record["id"] } : {}),
+        ...(typeof record["section"] === "string" ? { section: record["section"] } : {}),
+        ...(typeof record["target"] === "string" ? { target: record["target"] } : {}),
+      });
+    };
+    ipcRenderer.on("metavault:navigate", listener);
+    return () => {
+      ipcRenderer.removeListener("metavault:navigate", listener);
+    };
+  },
+  onPlaySound: (handler: (cue: SoundCue) => void) => {
+    const listener = (_event: unknown, value: unknown): void => {
+      if (typeof value !== "object" || value === null) return;
+      const record = value as Record<string, unknown>;
+      if (typeof record["cue"] === "string") handler(record["cue"] as SoundCue);
+    };
+    ipcRenderer.on("metavault:play-sound", listener);
+    return () => {
+      ipcRenderer.removeListener("metavault:play-sound", listener);
+    };
+  },
+  onFlyoutState: (handler: (state: FlyoutStateLike) => void) => {
+    const listener = (_event: unknown, value: unknown): void => {
+      if (typeof value !== "object" || value === null) return;
+      handler(value as FlyoutStateLike);
+    };
+    ipcRenderer.on("metavault:flyout-state", listener);
+    return () => {
+      ipcRenderer.removeListener("metavault:flyout-state", listener);
+    };
+  },
+  flyoutReady: () => {
+    ipcRenderer.send("metavault:flyout-ready");
+  },
+  flyoutAction: (action: FlyoutActionLike) => {
+    ipcRenderer.send("metavault:flyout-action", action);
+  },
   onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => {
     // Fixed channel, validated shape only: no new privilege, just a
     // prefill notification from main. Extra keys are dropped here too.

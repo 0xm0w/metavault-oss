@@ -1,0 +1,325 @@
+:root {
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --border: #e5e5ea;
+  --text: #1c1c1e;
+  --muted: #636366;
+  --accent: #8629ff;
+  --accent-hover: #701ee0;
+  --ok-bg: #eaf9ef;
+  --ok-fg: #146c2e;
+  --warn-bg: #fff6e5;
+  --warn-fg: #9a5b00;
+  --danger-bg: #ffecee;
+  --danger-fg: #b42318;
+  --lock-bg: #eef2ff;
+  --lock-fg: #3538cd;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 360px;
+  height: 480px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.flyout-shell {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  height: 480px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.flyout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.flyout-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flyout-brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.flyout-brand-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.flyout-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.flyout-status-pill.is-unlocked {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.flyout-status-pill.is-ui-locked {
+  background: var(--lock-bg);
+  color: var(--lock-fg);
+}
+
+.flyout-status-pill.is-daemon-locked {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+.flyout-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flyout-icon-btn,
+.flyout-open-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.flyout-icon-btn:hover,
+.flyout-open-btn:hover {
+  background: #f1f1f4;
+}
+
+.flyout-icon-btn.is-muted {
+  color: var(--muted);
+  background: #f2f2f5;
+}
+
+.flyout-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flyout-banner-error {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.flyout-empty,
+.flyout-locked {
+  margin: auto 0;
+  padding: 20px 14px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.flyout-empty-title,
+.flyout-locked-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.flyout-empty-sub,
+.flyout-locked-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flyout-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.flyout-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.flyout-agent {
+  font-weight: 600;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flyout-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.flyout-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.flyout-tag.is-ok {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.flyout-tag.is-warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.flyout-tag.is-danger {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+.flyout-target {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.flyout-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: #f3f3f6;
+  padding: 3px 6px;
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.flyout-explain {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.flyout-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.flyout-code-input {
+  width: 96px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: #f1f1f4;
+}
+
+.btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.btn-approve {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  flex: 1;
+}
+
+.btn-approve:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-deny {
+  color: var(--danger-fg);
+  border-color: #f4c7cb;
+  background: #fffafa;
+}
+
+.btn-deny:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+
+.flyout-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.flyout-footer .btn {
+  width: 100%;
+  text-align: center;
+}

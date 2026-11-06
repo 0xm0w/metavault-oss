@@ -159,6 +159,90 @@ export interface DeeplinkAddParams {
   readonly untrusted?: boolean;
 }
 
+// Main-window lock state broadcast (Lock UI vs Lock Vault Daemon).
+export interface LockStateLike {
+  readonly uiLocked: boolean;
+  readonly daemonLocked: boolean;
+}
+
+// Toast/deeplink click routing: main tells the renderer to open a target.
+export interface NavigateLike {
+  readonly kind: "approval" | "registration" | "unlock" | "audit" | "settings" | "add-credential";
+  readonly id?: string;
+  readonly section?: string;
+  readonly target?: string;
+}
+
+export type SoundModeLike = "all" | "high-risk-only" | "off";
+
+export interface DesktopPreferencesLike {
+  readonly minimizeToTrayOnClose: boolean;
+  readonly startMinimizedAtLogin: boolean;
+  readonly popWindowOnApproval: boolean;
+  readonly toastNotificationsEnabled: boolean;
+  readonly redactToastWhenLocked: boolean;
+  readonly soundMode: SoundModeLike;
+  readonly firstCloseNoticeShown: boolean;
+}
+
+export interface DesktopPreferencesPatchLike {
+  readonly minimizeToTrayOnClose?: boolean;
+  readonly startMinimizedAtLogin?: boolean;
+  readonly popWindowOnApproval?: boolean;
+  readonly toastNotificationsEnabled?: boolean;
+  readonly redactToastWhenLocked?: boolean;
+  readonly soundMode?: SoundModeLike;
+}
+
+// Web Audio earcon names (synthesized in the renderer; no media files).
+export type SoundCue =
+  | "approval-standard"
+  | "approval-high-risk"
+  | "agent-registration"
+  | "decision-approved"
+  | "decision-denied"
+  | "vault-locked";
+
+export interface FlyoutGrantLike {
+  readonly grantId: string;
+  readonly agentId: string;
+  readonly alias: string;
+  readonly requestedScope: string;
+  readonly allowedScope: string;
+  readonly risk: string;
+  readonly verified: boolean;
+  readonly origin?: "local" | "remote";
+  readonly explanation?: string;
+  readonly payloadHeadline?: string;
+}
+
+// Snapshot pushed to the tray flyout by main. No tokens, no secrets:
+// only counts and pending-card metadata the renderer already shows.
+export interface FlyoutStateLike {
+  readonly uiLocked: boolean;
+  readonly daemonLocked: boolean;
+  readonly localAuthConfigured: boolean;
+  readonly canLockDaemon: boolean;
+  readonly soundMode: SoundModeLike;
+  readonly pendingCount: number;
+  readonly registrationCount: number;
+  readonly credentialCount: number;
+  readonly grants: readonly FlyoutGrantLike[];
+  readonly registrations: readonly {
+    readonly id: string;
+    readonly agentId: string;
+    readonly name: string;
+    readonly ide?: string;
+  }[];
+}
+
+export type FlyoutActionLike =
+  | { readonly type: "open-app"; readonly nav?: NavigateLike }
+  | { readonly type: "lock-ui" }
+  | { readonly type: "lock-daemon" }
+  | { readonly type: "toggle-mute" }
+  | { readonly type: "close" };
+
 export type WardenProvider = "none" | "meta-api" | "local" | "bft";
 export type LocalApiStyle = "ollama" | "openai";
 export type WardenEffort = "fast" | "standard" | "deep";
@@ -428,6 +512,18 @@ export interface VaultApi {
   readonly unlockVault: (passphrase: string) => Promise<unknown>;
   readonly setupVault: (passphrase: string) => Promise<unknown>;
   readonly lockVault: () => Promise<unknown>;
+  // Desktop windowing, tray, lock state, navigation, and sound cues.
+  readonly desktopPrefsGet: () => Promise<unknown>;
+  readonly desktopPrefsUpdate: (patch: DesktopPreferencesPatchLike) => Promise<unknown>;
+  readonly lockUi: () => Promise<void>;
+  readonly lockStateGet: () => Promise<LockStateLike>;
+  readonly reportUiLock: (locked: boolean) => void;
+  readonly onLockState: (handler: (state: LockStateLike) => void) => () => void;
+  readonly onNavigate: (handler: (nav: NavigateLike) => void) => () => void;
+  readonly onPlaySound: (handler: (cue: SoundCue) => void) => () => void;
+  readonly onFlyoutState: (handler: (state: FlyoutStateLike) => void) => () => void;
+  readonly flyoutReady: () => void;
+  readonly flyoutAction: (action: FlyoutActionLike) => void;
   readonly onDeeplinkAdd: (handler: (params: DeeplinkAddParams) => void) => () => void;
   readonly updateCredential: (alias: string, patch: CredentialPatch) => Promise<unknown>;
   readonly deleteCredential: (alias: string) => Promise<unknown>;

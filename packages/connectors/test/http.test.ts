@@ -622,3 +622,66 @@ describe("resolveScopedRest", () => {
     expect(typeof resolveScopedRest("https://api.stripe.com/v1", "charges.read", { method: "GET", path: "/%2e%2e/admin" })).toBe("string");
   });
 });
+
+
+describe("custom non-preset connectors (rest.call & graphql.call)", () => {
+  it("executes rest.call and graphql.call for custom aliases (openai, custom-internal) using pinned baseUrl", async () => {
+    let seenRestPath = "";
+    let seenRestAuth = "";
+    let seenGraphqlBody = "";
+    const mock = await startServer((req, res) => {
+      if (req.url?.startsWith("/v1/models")) {
+        seenRestPath = req.url;
+        seenRestAuth = req.headers.authorization ?? "";
+        res.end(JSON.stringify({ data: [{ id: "gpt-test" }] }));
+        return;
+      }
+      if (req.url === "/api/graphql") {
+        req.on("data", (chunk: Buffer) => {
+          seenGraphqlBody += chunk.toString("utf8");
+        });
+        req.on("end", () => {
+          res.end(JSON.stringify({ data: { viewer: { login: "octocat" } } }));
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end("{}");
+    });
+
+    const restOut = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "openai",
+          "models.read",
+          SECRET,
+          { method: "GET", path: "/models" },
+          "rest.call",
+          { baseUrl: `${mock.url}/v1` },
+        );
+      }).pipe(Effect.provide(ConnectorLive)),
+    );
+    expect(seenRestPath).toBe("/v1/models");
+    expect(seenRestAuth).toBe(`Bearer ${SECRET}`);
+    expect(restOut).toEqual({ status: 200, data: { data: [{ id: "gpt-test" }] } });
+    expect("openai" in DEFAULT_CONNECTOR_PRESETS).toBe(false);
+
+    const gqlOut = await Effect.runPromise(
+      Effect.gen(function* () {
+        const connector = yield* Connector;
+        return yield* connector.execute(
+          "custom-internal",
+          "repo.read",
+          SECRET,
+          { query: "query { viewer { login } }" },
+          "graphql.call",
+          { baseUrl: `${mock.url}/api/graphql` },
+        );
+      }).pipe(Effect.provide(ConnectorLive)),
+    );
+    expect(JSON.parse(seenGraphqlBody)).toEqual({ query: "query { viewer { login } }" });
+    expect(gqlOut).toEqual({ status: 200, data: { data: { viewer: { login: "octocat" } } } });
+    await mock.close();
+  });
+});

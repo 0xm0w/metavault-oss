@@ -79,6 +79,8 @@ export interface KeySessionOptions {
   readonly sweepMs?: number;
   // Fail closed before accepting a readable key for an existing database.
   readonly validateKey?: (key: Buffer) => void;
+  // Fires when a live key is zeroed (explicit lock or auto-lock).
+  readonly onLock?: () => void;
 }
 
 export function createKeySession(options: KeySessionOptions): KeySession {
@@ -103,6 +105,7 @@ export function createKeySession(options: KeySessionOptions): KeySession {
     if (key !== null) {
       key.fill(0);
       key = null;
+      options.onLock?.();
     }
   };
 

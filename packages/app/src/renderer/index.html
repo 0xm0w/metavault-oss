@@ -17,10 +17,22 @@
       <h1 id="view-title" class="view-title">Vault</h1>
     </div>
     <div class="header-right">
-      <button type="button" id="lock-session-btn" class="header-lock-btn" aria-label="Lock session now" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-        Lock
-      </button>
+      <div id="header-lock-wrap" class="header-lock-wrap" hidden>
+        <button type="button" id="lock-session-btn" class="header-lock-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Lock options">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Lock ▾
+        </button>
+        <div id="header-lock-menu" class="header-lock-menu" role="menu" hidden>
+          <button type="button" id="header-lock-ui-btn" class="header-lock-item" role="menuitem">
+            <span class="header-lock-item-title">Lock UI</span>
+            <span class="header-lock-item-sub">Require Windows Hello / PIN · standing read approvals keep working</span>
+          </button>
+          <button type="button" id="header-lock-daemon-btn" class="header-lock-item is-danger" role="menuitem">
+            <span class="header-lock-item-title">Lock Vault Daemon</span>
+            <span class="header-lock-item-sub">Zero master key in vaultd · blocks all agent requests until passphrase unlock</span>
+          </button>
+        </div>
+      </div>
       <span id="marshal-line" class="marshal-line">Marshal · muse-spark-1.3 · Meta API</span>
       <span id="daemon-status" class="daemon-status" title="vaultd connection">● connecting</span>
     </div>
@@ -74,6 +86,7 @@
       </div>
       <div class="settings-tabs-list" role="tablist" aria-label="Settings">
         <button type="button" class="settings-tab is-active" role="tab" data-settings-tab="general" aria-selected="true">General</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="notifications" aria-selected="false">Notifications</button>
         <button type="button" class="settings-tab" role="tab" data-settings-tab="warden" aria-selected="false">Warden</button>
         <button type="button" class="settings-tab" role="tab" data-settings-tab="daemon" aria-selected="false">Daemon</button>
         <button type="button" class="settings-tab" role="tab" data-settings-tab="security" aria-selected="false">Security</button>

@@ -80,6 +80,17 @@ export interface VaultStoreService {
   readonly listCredentialAliases: () => Effect.Effect<string[], StorageError>;
   readonly appendAudit: (e: AuditEvent) => Effect.Effect<void, StorageError>;
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
+  readonly getAgentAuditStats: (
+    agentId: string,
+    since1hIso: string,
+    since24hIso: string,
+  ) => Effect.Effect<AgentAuditStats, StorageError>;
+  readonly listStandingApprovals: () => Effect.Effect<StandingApprovalRecord[], StorageError>;
+  readonly upsertStandingApproval: (record: StandingApprovalRecord) => Effect.Effect<void, StorageError>;
+  readonly deleteStandingApprovals: (match: {
+    readonly agentId?: string;
+    readonly alias?: string;
+  }) => Effect.Effect<void, StorageError>;
   readonly getWardenSettings: () => Effect.Effect<WardenSettings, StorageError>;
   readonly setWardenSettings: (settings: WardenSettings) => Effect.Effect<void, StorageError>;
   readonly getLocalAuthRecord: () => Effect.Effect<LocalAuthRecord, StorageError>;
@@ -103,6 +114,21 @@ export interface VaultStoreService {
   readonly deleteDeviceAliasPolicies: (deviceId: string) => Effect.Effect<void, StorageError>;
   readonly getRemoteSettingsRow: () => Effect.Effect<RemoteSettingsRow, StorageError>;
   readonly setRemoteSettingsRow: (row: RemoteSettingsRow) => Effect.Effect<void, StorageError>;
+}
+
+export interface AgentAuditStats {
+  readonly requests1h: number;
+  readonly denials1h: number;
+  readonly requests24h: number;
+  readonly denials24h: number;
+}
+
+export interface StandingApprovalRecord {
+  readonly agentId: string;
+  readonly alias: string;
+  readonly scope: string;
+  readonly verifiedOnly: boolean;
+  readonly createdAt: string;
 }
 
 export interface RemoteSettingsRow {
@@ -255,6 +281,11 @@ function protectDatabaseFile(dbPath: string): void {
 
 function makeStore(db: Database.Database): VaultStoreService {
   db.exec("PRAGMA secure_delete=ON");
+  if (db.name !== ":memory:") {
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+  }
+  db.pragma("busy_timeout = 5000");
   protectDatabaseFile(db.name);
   db.exec(
     `CREATE TABLE IF NOT EXISTS credentials (
@@ -324,7 +355,16 @@ function makeStore(db: Database.Database): VaultStoreService {
        host TEXT NOT NULL DEFAULT '127.0.0.1',
        port INTEGER NOT NULL DEFAULT 7078,
        require_auth_remote_approval INTEGER NOT NULL DEFAULT 1
-     );`,
+     );
+     CREATE TABLE IF NOT EXISTS standing_approvals (
+       agent_id TEXT NOT NULL,
+       alias TEXT NOT NULL,
+       scope TEXT NOT NULL,
+       verified_only INTEGER NOT NULL DEFAULT 0,
+       created_at TEXT NOT NULL,
+       PRIMARY KEY (agent_id, alias, scope)
+     );
+     CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit(agent, ts);`,
   );
   const cols = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "website")) {
@@ -577,6 +617,78 @@ function makeStore(db: Database.Database): VaultStoreService {
           insertAudit.run(e.ts, e.agentId, e.alias, e.scope, e.stage, e.detail, e.modelId ?? null, e.requestId ?? null, e.risk ?? null, e.recommendedScope ?? null, e.decisionSource ?? null, e.latencyMs ?? null, e.explanation ?? null, (e.verified === undefined ? null : e.verified ? 1 : 0), e.clientPid ?? null, e.clientProcess ?? null, e.deviceId ?? null, e.origin ?? null, e.transport ?? null);
         },
         catch: toStorageError("appendAudit"),
+      }),
+    getAgentAuditStats: (agentId, since1hIso, since24hIso) =>
+      Effect.try({
+        try: () => {
+          const row = db
+            .prepare(
+              `SELECT
+                 COALESCE(SUM(CASE WHEN stage = 'requested' AND ts >= ? THEN 1 ELSE 0 END), 0) AS requests1h,
+                 COALESCE(SUM(CASE WHEN stage = 'denied' AND ts >= ? THEN 1 ELSE 0 END), 0) AS denials1h,
+                 COALESCE(SUM(CASE WHEN stage = 'requested' AND ts >= ? THEN 1 ELSE 0 END), 0) AS requests24h,
+                 COALESCE(SUM(CASE WHEN stage = 'denied' AND ts >= ? THEN 1 ELSE 0 END), 0) AS denials24h
+               FROM audit WHERE agent = ?`,
+            )
+            .get(since1hIso, since1hIso, since24hIso, since24hIso, agentId) as
+            | { requests1h: number; denials1h: number; requests24h: number; denials24h: number }
+            | undefined;
+          return {
+            requests1h: row?.requests1h ?? 0,
+            denials1h: row?.denials1h ?? 0,
+            requests24h: row?.requests24h ?? 0,
+            denials24h: row?.denials24h ?? 0,
+          };
+        },
+        catch: toStorageError("getAgentAuditStats"),
+      }),
+    listStandingApprovals: () =>
+      Effect.try({
+        try: () => {
+          const rows = db
+            .prepare(
+              "SELECT agent_id, alias, scope, verified_only, created_at FROM standing_approvals ORDER BY created_at ASC",
+            )
+            .all() as {
+            agent_id: string;
+            alias: string;
+            scope: string;
+            verified_only: number;
+            created_at: string;
+          }[];
+          return rows.map((row) => ({
+            agentId: row.agent_id,
+            alias: row.alias,
+            scope: row.scope,
+            verifiedOnly: row.verified_only === 1,
+            createdAt: row.created_at,
+          }));
+        },
+        catch: toStorageError("listStandingApprovals"),
+      }),
+    upsertStandingApproval: (record) =>
+      Effect.try({
+        try: () => {
+          db.prepare(
+            `INSERT INTO standing_approvals (agent_id, alias, scope, verified_only, created_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(agent_id, alias, scope) DO UPDATE SET verified_only = excluded.verified_only`,
+          ).run(record.agentId, record.alias, record.scope, record.verifiedOnly ? 1 : 0, record.createdAt);
+        },
+        catch: toStorageError("upsertStandingApproval"),
+      }),
+    deleteStandingApprovals: (match) =>
+      Effect.try({
+        try: () => {
+          if (match.agentId !== undefined && match.alias !== undefined) {
+            db.prepare("DELETE FROM standing_approvals WHERE agent_id = ? OR alias = ?").run(match.agentId, match.alias);
+          } else if (match.agentId !== undefined) {
+            db.prepare("DELETE FROM standing_approvals WHERE agent_id = ?").run(match.agentId);
+          } else if (match.alias !== undefined) {
+            db.prepare("DELETE FROM standing_approvals WHERE alias = ?").run(match.alias);
+          }
+        },
+        catch: toStorageError("deleteStandingApprovals"),
       }),
     listAudit: () =>
       Effect.try({

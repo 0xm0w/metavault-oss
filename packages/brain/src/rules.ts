@@ -104,7 +104,11 @@ export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleH
   if (payload !== null && payload.mutating && read) {
     add("payload-mutating-method-on-readonly-scope", "high");
   }
-  if (payload !== null && payload.declaredMethod !== null) {
+  // GET and HEAD do not change state. A declared method is only a risk
+  // signal when it is a mutating verb. DELETE on a read scope still hits
+  // the high-weight mismatch above and this signal.
+  const declared = payload?.declaredMethod?.toUpperCase() ?? null;
+  if (declared !== null && declared !== "GET" && declared !== "HEAD") {
     add("carries-declared-http-method", "signal");
   }
 
@@ -122,6 +126,21 @@ export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleH
   if (history.requests24h >= 50) add("request-burst", "signal");
 
   return hits;
+}
+
+const HOSTNAME_TOKEN =
+  /\b[\w-]+\.(?:com|net|org|io|xyz|ru|cn|top|site|app|dev)\b/gi;
+
+// Standing read approvals must not become medium only because the reason
+// names the API host (api.cloudflare.com). A real URL, email, or named
+// exfil destination still counts.
+export function riskForStandingRead(req: CapabilityRequest, history: HistorySummary): Risk {
+  const hits = ruleHits(req, history).filter((hit) => {
+    if (hit.id !== "external-destination") return true;
+    const stripped = req.reason.replace(HOSTNAME_TOKEN, " ");
+    return DESTINATION.test(stripped);
+  });
+  return riskFromHits(hits);
 }
 
 export function riskFromHits(hits: readonly RuleHit[]): Risk {

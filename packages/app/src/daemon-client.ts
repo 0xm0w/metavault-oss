@@ -194,6 +194,13 @@ export async function readDaemonJson(path: string): Promise<unknown> {
   }
 }
 
+// Token holder for main-process long-lived connections (the GET /events
+// SSE watcher). The value stays inside main; it never crosses IPC into
+// preload or renderer code.
+export function daemonEventToken(): string | undefined {
+  return daemonToken();
+}
+
 export async function callDaemon(input: unknown): Promise<unknown> {
   const { method, path, body } = validateDaemonCall(input);
   let response: Response;

@@ -80,7 +80,7 @@ import {
   isAutoLockDue,
   canLockSessionNow,
   isSettingsTab,
-  SETTINGS_TABS,} from "../src/renderer/model.js";
+  SETTINGS_TABS, projectDesktopPreferences, isApprovalButtonArmed, normalizeNavigateSettingsTab, buildAddPayload, credentialBaseUrl } from "../src/renderer/model.js";
 import type { AuditEventLike, DeeplinkAddParams, PendingApproval, WardenSettingsLike } from "../src/renderer/types.js";
 
 const approval = (over: Partial<PendingApproval> = {}): PendingApproval => ({
@@ -96,6 +96,8 @@ const approval = (over: Partial<PendingApproval> = {}): PendingApproval => ({
   marshalExplanation: "Read-only Stripe scope from a known agent.",
   createdAtMs: 1_000,
   expiresAtMs: 61_000,
+  // projectApproval fails closed: any non-boolean (or missing) mark is false.
+  verified: false,
   ...over,
 });
 
@@ -136,11 +138,11 @@ describe("scope risk helpers", () => {
     expect(isReadOnlyScope("")).toBe(false);
   });
 
-  it("allows Always allow only for read-only low-risk approvals", () => {
-    expect(canAlwaysAllow(approval())).toBe(true);
-    expect(canAlwaysAllow(approval({ allowedScope: "charges.write" }))).toBe(false);
-    expect(canAlwaysAllow(approval({ risk: "medium" }))).toBe(false);
-    expect(canAlwaysAllow(approval({ risk: "high" }))).toBe(false);
+  it("allows Always allow only for read-only low-risk verified approvals", () => {
+    expect(canAlwaysAllow(approval({ verified: true }))).toBe(true);
+    expect(canAlwaysAllow(approval({ allowedScope: "charges.write", verified: true }))).toBe(false);
+    expect(canAlwaysAllow(approval({ risk: "medium", verified: true }))).toBe(false);
+    expect(canAlwaysAllow(approval({ risk: "high", verified: true }))).toBe(false);
     expect(canAlwaysAllow(approval({ verified: false }))).toBe(false);
   });
 
@@ -253,6 +255,13 @@ describe("payload projection (renderer never receives secrets)", () => {
     expect(projectAuditEvent(auditEvent())).toEqual(auditEvent());
     expect(projectAuditEvent({ ...auditEvent(), stage: "teleported" })).toBeNull();
     expect(projectAuditEvent({ ...auditEvent(), secret: "x" })).toBeNull();
+  });
+
+  it("projects verified as a boolean, failing closed to false", () => {
+    expect(projectApproval({ ...approval(), verified: true })?.verified).toBe(true);
+    expect(projectApproval({ ...approval(), verified: "yes" })?.verified).toBe(false);
+    const missing: Record<string, unknown> = projectApproval({ ...approval() }) as unknown as Record<string, unknown>;
+    expect(missing["verified"]).toBe(false);
   });
 });
 
@@ -1511,12 +1520,12 @@ describe("settings tabs", () => {
   it("every tab the UI renders passes the dispatcher predicate", () => {
     // Regression: a Connections tab unreachable by click because the
     // dispatcher whitelist dropped it.
-    for (const tab of ["general", "warden", "daemon", "security", "connections"]) {
+    for (const tab of ["general", "notifications", "warden", "daemon", "security", "connections"]) {
       expect(isSettingsTab(tab)).toBe(true);
     }
     expect(isSettingsTab("admin")).toBe(false);
     expect(isSettingsTab(undefined)).toBe(false);
-    expect(SETTINGS_TABS).toHaveLength(5);
+    expect(SETTINGS_TABS).toHaveLength(6);
   });
 });
 
@@ -1606,5 +1615,55 @@ describe("SSH tunnel projections", () => {
   it("projects proposal-tagged results and rejects junk proposals", () => {
     expect(projectSshTunnelResult({ kind: "proposal", proposal: validProposal })).toEqual({ kind: "proposal", proposal: validProposal });
     expect(projectSshTunnelResult({ kind: "proposal", proposal: { host: "" } })).toBeNull();
+  });
+});
+
+
+describe("desktop preferences, focus guard, and URL path preservation", () => {
+  it("projects desktop preferences safely and defaults popWindowOnApproval to false", () => {
+    const defaults = projectDesktopPreferences(null);
+    expect(defaults.popWindowOnApproval).toBe(false);
+    expect(defaults.minimizeToTrayOnClose).toBe(true);
+    expect(defaults.redactToastWhenLocked).toBe(true);
+    expect(defaults.soundMode).toBe("all");
+
+    const custom = projectDesktopPreferences({
+      popWindowOnApproval: true,
+      soundMode: "high-risk-only",
+      extraSecret: "ignored",
+    });
+    expect(custom.popWindowOnApproval).toBe(true);
+    expect(custom.soundMode).toBe("high-risk-only");
+    expect("extraSecret" in custom).toBe(false);
+  });
+
+  it("enforces the 500ms focus guard across card render and window focus", () => {
+    expect(isApprovalButtonArmed(1_499, 1_000, 500)).toBe(false);
+    expect(isApprovalButtonArmed(1_500, 1_000, 500)).toBe(true);
+    // Window refocused after card shown resets the 500ms guard window
+    expect(isApprovalButtonArmed(2_400, 1_000, 2_000)).toBe(false);
+    expect(isApprovalButtonArmed(2_500, 1_000, 2_000)).toBe(true);
+  });
+
+  it("maps deeplink settings sections cleanly", () => {
+    expect(normalizeNavigateSettingsTab("agents")).toBe("daemon");
+    expect(normalizeNavigateSettingsTab("notifications")).toBe("notifications");
+    expect(normalizeNavigateSettingsTab("tray")).toBe("notifications");
+    expect(normalizeNavigateSettingsTab("connections")).toBe("connections");
+    expect(normalizeNavigateSettingsTab("unknown")).toBe("general");
+  });
+
+  it("preserves base URL path segments (/v1, /api/graphql) in credentialBaseUrl and buildAddPayload", () => {
+    expect(credentialBaseUrl("api.openai.com/v1")).toBe("https://api.openai.com/v1");
+    expect(credentialBaseUrl("https://api.example.com/api/graphql/")).toBe("https://api.example.com/api/graphql");
+    const payload = buildAddPayload({
+      alias: " openai ",
+      scope: " chat.write ",
+      secret: "sk-test-secret-01",
+      website: "api.openai.com/v1",
+    });
+    expect(payload.website).toBe("https://api.openai.com/v1");
+    expect(payload.alias).toBe("openai");
+    expect(payload.scope).toBe("chat.write");
   });
 });

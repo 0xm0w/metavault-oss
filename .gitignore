@@ -15,9 +15,13 @@ metavault.token
 *.db-shm
 *.db-journal
 *.before-agent-hash*
-.env*
+.env
+.env.*
+!.env.example
 .dev.vars
 *.pem
 .wrangler/
 packages/app/package-lock.json
 packages/app/bundle/
+packages/app/dist/
+packages/app/release/

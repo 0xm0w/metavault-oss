@@ -243,3 +243,37 @@ What this proves, and what it does not:
 ## Adding a token from the IDE
 
 `request_enrollment` opens MetaVault OSS on the user's computer (`metavault://add?...`) with the add form prefilled and the secure input ready, and returns `launched: true`. The user types the token in MetaVault only. If the app could not be opened, or the daemon is not on the same machine, the link is returned instead.
+
+
+## Antigravity
+
+`~/.gemini/antigravity/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "metavault": {
+      "command": "node",
+      "args": ["C:/path/to/metavault-oss/dist/packages/mcp/src/server.js"],
+      "env": {
+        "METAVAULT_DAEMON_URL": "http://127.0.0.1:7077",
+        "METAVAULT_AGENT_ID": "antigravity",
+        "METAVAULT_IDE": "Antigravity"
+      }
+    }
+  }
+}
+```
+
+## MCP Resources, Prompts & Deeplinks
+
+- **Handshake `instructions`:** Sent automatically on MCP `initialize` so agents learn the zero-secret workflow without user copy-pasting.
+- **Resources:** `metavault://context/guide` (workflow & custom HTTP/GraphQL connector syntax) and `metavault://context/status` (live daemon lock state and enriched alias metadata).
+- **Prompts:** `use-secret` and `enroll-secret`.
+- **Supported `metavault://` (and legacy `openvault://`) Deeplink Routes:**
+  - `metavault://add?alias=...&scope=...&website=...&enrollmentId=...`
+  - `metavault://approve?grantId=...`
+  - `metavault://register?registrationId=...`
+  - `metavault://unlock?target=daemon|ui`
+  - `metavault://audit?requestId=...`
+  - `metavault://settings?section=general|notifications|warden|daemon|security|connections`

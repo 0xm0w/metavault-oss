@@ -59,9 +59,13 @@ export function assessBftQuorum(
     const cloudModel = requestedCloud !== "" && !requestedCloud.includes(":") ? requestedCloud : DEFAULT_META_API_MODEL;
     const metaKey = options.metaApiKey?.trim();
     const metaConfigured = metaKey !== undefined && metaKey !== "";
-    if (metaConfigured) {
-      const metaApiResult = yield* Effect.either(
-        requestMetaApiDecision(
+    const local = options.localEndpoint;
+    const localConfigured = local !== undefined && local.baseUrl.trim() !== "" && local.model.trim() !== "";
+
+    // Cloud and local wardens run together. A missing leg is a null result,
+    // not a failed Effect, so one unconfigured warden does not fail the pair.
+    const cloudEffect = metaConfigured
+      ? requestMetaApiDecision(
           {
             model: cloudModel,
             baseUrl: options.metaApiBaseUrl ?? DEFAULT_META_API_BASE_URL,
@@ -69,39 +73,35 @@ export function assessBftQuorum(
             prompt,
           },
           timeoutMs,
-        ).pipe(Effect.provide(FetchHttpClient.layer)),
-      );
-      if (metaApiResult._tag === "Right") {
-        const metaVerdict = enforceScopeSafety(metaApiResult.right, req.requestedScope, req.reason, {
-          tool: req.tool,
-          payload: req.payload,
-        });
-        verdicts.push({
-          name: "Meta Family of AIs",
-          role: `Chief Warden (Meta API: ${cloudModel})`,
-          decision: metaVerdict,
-        });
-      }
+        ).pipe(Effect.provide(FetchHttpClient.layer), Effect.either)
+      : Effect.succeed(null);
+    const localEffect = localConfigured
+      ? requestLocalDecision(local, prompt, options.localTimeoutMs ?? timeoutMs).pipe(Effect.either)
+      : Effect.succeed(null);
+    const [metaApiResult, localResult] = yield* Effect.all([cloudEffect, localEffect], { concurrency: 2 });
+
+    if (metaApiResult !== null && metaApiResult._tag === "Right") {
+      const metaVerdict = enforceScopeSafety(metaApiResult.right, req.requestedScope, req.reason, {
+        tool: req.tool,
+        payload: req.payload,
+      });
+      verdicts.push({
+        name: "Meta Family of AIs",
+        role: `Chief Warden (Meta API: ${cloudModel})`,
+        decision: metaVerdict,
+      });
     }
 
-    // 2. Local Co-Auditor: the user's own local endpoint, if configured.
-    const local = options.localEndpoint;
-    const localConfigured = local !== undefined && local.baseUrl.trim() !== "" && local.model.trim() !== "";
-    if (localConfigured) {
-      const localResult = yield* Effect.either(
-        requestLocalDecision(local, prompt, options.localTimeoutMs ?? timeoutMs),
-      );
-      if (localResult._tag === "Right") {
-        const localVerdict = enforceScopeSafety(localResult.right, req.requestedScope, req.reason, {
-          tool: req.tool,
-          payload: req.payload,
-        });
-        verdicts.push({
-          name: "Meta Family of AIs",
-          role: `Local Co-Auditor (${local.model.trim()} via your endpoint)`,
-          decision: localVerdict,
-        });
-      }
+    if (localResult !== null && localResult._tag === "Right" && localConfigured) {
+      const localVerdict = enforceScopeSafety(localResult.right, req.requestedScope, req.reason, {
+        tool: req.tool,
+        payload: req.payload,
+      });
+      verdicts.push({
+        name: "Meta Family of AIs",
+        role: `Local Co-Auditor (${local.model.trim()} via your endpoint)`,
+        decision: localVerdict,
+      });
     }
 
     // If no wardens returned a decision, fail with MarshalUnavailable
