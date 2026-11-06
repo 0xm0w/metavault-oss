@@ -18,7 +18,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyIdeConnect, inspectIdeConfig, type IdeApplyResult, type IdeHost, type IdeInspectResult } from "./ide-config.js";
 import { runtimePaths } from "./runtime-paths.js";
-// @ts-ignore app tsconfig rootDir is src; esbuild still bundles this module.
 import { hardenOwnerOnly } from "../../core/src/owner-acl.js";
 
 export const IDE_CONFIG_CHANNEL = "metavault:ide-config";

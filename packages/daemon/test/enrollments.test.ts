@@ -9,6 +9,19 @@ import { makeVaultServiceLive, VaultService, type VaultServiceService } from "..
 
 const SECRET = "[REDACTED]";
 const TOKEN = "test-daemon-token-enroll";
+
+function expectEnrollmentView(
+  body: unknown,
+  fields: { readonly status: string; readonly alias: string; readonly scope: string; readonly website: string },
+): void {
+  expect(body).toMatchObject(fields);
+  if (typeof body !== "object" || body === null) {
+    throw new Error("enrollment body was not an object");
+  }
+  const expiresAtMs = Object.getOwnPropertyDescriptor(body, "expiresAtMs")?.value as unknown;
+  expect(typeof expiresAtMs).toBe("number");
+  expect(Object.keys(body).sort()).toEqual(["alias", "expiresAtMs", "scope", "status", "website"]);
+}
 const BrainLowRisk = Layer.succeed(Brain, { assess: () => Effect.succeed({ risk: "low" as const, recommendedScope: "charges.read", requireApproval: true, explanation: "ok" }) });
 const FakeConnector = Layer.succeed(Connector, { execute: (_a, _s, secret) => Effect.succeed({ echoedLength: secret.length }) });
 
@@ -30,11 +43,11 @@ describe("enrollments", () => {
     expect(body.deeplink).toContain(`enrollment=${body.enrollmentId}`);
     expect(JSON.stringify(created.body)).not.toContain(SECRET);
     const pending = await handleVaultRequest(service, "GET", `/enrollments/${body.enrollmentId}`);
-    expect(pending.body).toEqual({ status: "pending", alias: "stripe", scope: "charges.read", website: "stripe.com", expiresAtMs: expect.any(Number) });
+    expectEnrollmentView(pending.body, { status: "pending", alias: "stripe", scope: "charges.read", website: "stripe.com" });
     const saved = await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET, website: "stripe.com", enrollmentId: body.enrollmentId }, { daemonToken: TOKEN, providedToken: TOKEN });
     expect(saved.status).toBe(201);
     const done = await handleVaultRequest(service, "GET", `/enrollments/${body.enrollmentId}`);
-    expect(done.body).toEqual({ status: "completed", alias: "stripe", scope: "charges.read", website: "stripe.com", expiresAtMs: expect.any(Number) });
+    expectEnrollmentView(done.body, { status: "completed", alias: "stripe", scope: "charges.read", website: "stripe.com" });
     const audit = await handleVaultRequest(service, "GET", "/audit");
     const stages = (audit.body as { events: { stage: string; alias: string }[] }).events.map((e) => e.stage);
     expect(stages).toContain("enrollment-created");
@@ -77,12 +90,11 @@ describe("enrollments", () => {
     );
     expect(replaced.status).toBe(201);
     expect(JSON.stringify(replaced.body)).not.toContain(second);
-    expect((await handleVaultRequest(service, "GET", `/enrollments/${enrollmentId}`)).body).toEqual({
+    expectEnrollmentView((await handleVaultRequest(service, "GET", `/enrollments/${enrollmentId}`)).body, {
       status: "completed",
       alias: "cloudflare",
       scope: "dns.write",
       website: "cloudflare.com",
-      expiresAtMs: expect.any(Number),
     });
     const requested = await handleVaultRequest(service, "POST", "/request", {
       agentId: "cursor",

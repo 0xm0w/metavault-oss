@@ -3054,7 +3054,7 @@ function renderSettings(view: HTMLElement): void {
       });
       return;
     }
-    if (authToggle.checked && !isBiometricsActive(localAuthStatus) && shouldPromptPinSetupOnEnable(localAuthStatus)) {
+    if (!isBiometricsActive(localAuthStatus) && shouldPromptPinSetupOnEnable(localAuthStatus)) {
       void (async () => {
         const outcome = await tryEnableWindowsHello();
         if (outcome === "on" || outcome === "canceled" || localAuthStatus.configured) return;
@@ -3881,7 +3881,6 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
 // that completes - through any source - advances the pages automatically.
 // The IDE-config inspection is polled while pages 2-3 are visible; it is the
 // honest check that the agent really wrote the config file.
-const IDE_TOKEN_PLACEHOLDER = "{env:METAVAULT_AGENT_TOKEN}";
 interface IdeInspectRowLike {
   readonly host: string;
   readonly path: string;
@@ -3950,31 +3949,6 @@ function startWizardInspection(): void {
   };
   tick();
   wizardInspectTimer = window.setInterval(tick, 2000);
-}
-
-// Builds the per-host metavault MCP entry this installation uses. With a
-// token it is the full, sealable entry; without, the token stays the
-// {env:...} placeholder so no secret is ever written into chat text.
-function wizardHostEntry(tab: string, env: Record<string, string>): Record<string, unknown> | null {
-  if (mcpRuntime === null) return null;
-  const envBase = { ...env, METAVAULT_DAEMON_URL: "http://127.0.0.1:7077" };
-  if (tab === "opencode") {
-    return {
-      type: "local",
-      command: mcpRuntime.command,
-      args: mcpRuntime.args,
-      enabled: true,
-      environment: { ...envBase, METAVAULT_AGENT_ID: "opencode", METAVAULT_IDE: "OpenCode", METAVAULT_AGENT_TOKEN: IDE_TOKEN_PLACEHOLDER },
-    };
-  }
-  const agentId = WIZARD_HOST_KEYS[tab];
-  if (agentId === undefined) return null;
-  const ideName = tab === "claude" ? "Claude Code" : tab === "cursor" ? "Cursor" : "VS Code";
-  return {
-    command: mcpRuntime.command,
-    args: mcpRuntime.args,
-    env: { ...envBase, METAVAULT_AGENT_ID: agentId, METAVAULT_IDE: ideName, METAVAULT_AGENT_TOKEN: IDE_TOKEN_PLACEHOLDER },
-  };
 }
 
 function renderWizardWardenStep(item: HTMLElement): void {
@@ -4162,7 +4136,6 @@ function renderOnboardingWizard(view: HTMLElement): void {
         seal.disabled = wizardSealing || mcpRuntime === null;
         seal.addEventListener("click", () => {
           const host = ideHost;
-          if (host === null) return;
           const needsRotate = wizardHostToken(host) === "" && agentsData.some((agent) => agent.id === host && !agent.revoked);
           const begin = (presenceProof?: string): void => {
             wizardSealing = true;

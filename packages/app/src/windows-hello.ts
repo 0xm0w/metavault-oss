@@ -85,16 +85,12 @@ function powershellPath(): string {
   return "powershell.exe";
 }
 
-function helloScript(mode: WindowsHelloMode, purpose: WindowsHelloPurpose): string | null {
-  if (mode !== "availability" && mode !== "verify") return null;
-  if (purpose !== "setup" && purpose !== "unlock") return null;
+function helloScript(mode: WindowsHelloMode, purpose: WindowsHelloPurpose): string {
   return HELLO_SCRIPT.replace("{{MODE}}", mode).replace("{{PURPOSE}}", purpose);
 }
 
 function runPowershell(mode: WindowsHelloMode, purpose: WindowsHelloPurpose, timeoutMs: number): Promise<string> {
-  const script = helloScript(mode, purpose);
-  if (script === null) return Promise.resolve("failed");
-  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  const encoded = Buffer.from(helloScript(mode, purpose), "utf16le").toString("base64");
   return new Promise((resolve) => {
     const child = spawn(
       powershellPath(),
@@ -123,9 +119,6 @@ function runPowershell(mode: WindowsHelloMode, purpose: WindowsHelloPurpose, tim
 export async function queryWindowsHello(mode: WindowsHelloMode, purpose: WindowsHelloPurpose): Promise<WindowsHelloLine> {
   if (process.platform !== "win32") {
     return "unavailable";
-  }
-  if (helloScript(mode, purpose) === null) {
-    return "failed";
   }
   try {
     const timeoutMs = mode === "verify" ? 120_000 : 8_000;

@@ -2293,7 +2293,11 @@ export function makeVaultServiceLive(
               );
             }
             const cutoff = now - PIN_SET_WINDOW_MS;
-            while (pinSetAt.length > 0 && pinSetAt[0]! <= cutoff) pinSetAt.shift();
+            while (pinSetAt.length > 0) {
+              const oldest = pinSetAt[0];
+              if (oldest === undefined || oldest > cutoff) break;
+              pinSetAt.shift();
+            }
             if (pinSetAt.length >= pinSetMaxPerWindow) {
               return yield* Effect.fail(
                 new StorageError({ message: "too many pin attempts", operation: "pin-throttled" }),
@@ -2335,13 +2339,15 @@ export function makeVaultServiceLive(
               return { ok: false, throttled: true, retryAfterMs: pinBlockedUntil - now } as const;
             }
             const current = yield* store.getLocalAuthRecord();
-            if (current.pinHash === null || current.salt === null) {
+            const salt = current.salt;
+            const pinHash = current.pinHash;
+            if (pinHash === null || salt === null) {
               // No PIN configured: verification is vacuous and must NOT
               // mint presence proofs - fail closed for remote approvals.
               return { ok: true } as const;
             }
-            const legacy = isLegacyPinHash(current.pinHash);
-            const ok = yield* Effect.promise(() => verifyPinAsync(pin, current.salt!, current.pinHash!));
+            const legacy = isLegacyPinHash(pinHash);
+            const ok = yield* Effect.promise(() => verifyPinAsync(pin, salt, pinHash));
             if (!ok) {
               pinFailures += 1;
               if (pinFailures >= UNLOCK_FREE_ATTEMPTS) {
@@ -2353,11 +2359,11 @@ export function makeVaultServiceLive(
             pinFailures = 0;
             pinBlockedUntil = 0;
             if (legacy) {
-              const upgraded = yield* Effect.promise(() => hashPinAsync(pin, current.salt!));
+              const upgraded = yield* Effect.promise(() => hashPinAsync(pin, salt));
               yield* store.setLocalAuthRecord({
                 ...current,
                 pinHash: upgraded,
-                salt: current.salt,
+                salt,
               });
             }
             const presenceProof = yield* mintPresenceProof();

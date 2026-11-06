@@ -17,12 +17,10 @@
 //   logs or persisted; only the issued certificate, CA, key and fingerprint
 //   land on disk, owner-only.
 import { createHash, randomBytes, timingSafeEqual, X509Certificate } from "node:crypto";
-import { tmpdir } from "node:os";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { Agent, request as httpsRequest } from "node:https";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { TLSSocket } from "node:tls";
 import { computePairingSas, PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/pairing.js";
 import {

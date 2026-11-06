@@ -11,9 +11,10 @@ export const VAULT_SECRET_ENV_KEYS = [
 ] as const;
 
 export function omitVaultSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const copy: NodeJS.ProcessEnv = { ...env };
-  for (const key of VAULT_SECRET_ENV_KEYS) {
-    delete copy[key];
+  const blocked = new Set<string>(VAULT_SECRET_ENV_KEYS);
+  const copy: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!blocked.has(key)) copy[key] = value;
   }
   return copy;
 }
