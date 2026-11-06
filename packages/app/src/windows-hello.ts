@@ -1,8 +1,7 @@
 import { ipcMain } from "electron";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { omitVaultSecrets } from "./child-env.js";
 
 // Windows Hello prompt for the Electron main process. The renderer never
 // sees the PIN. UserConsentVerifier shows the same Windows Hello PIN,
@@ -30,10 +29,8 @@ const LINES: ReadonlySet<string> = new Set([
 ]);
 
 const HELLO_SCRIPT = [
-  "param(",
-  '  [ValidateSet("availability","verify")][string]$Mode = "availability",',
-  '  [ValidateSet("setup","unlock")][string]$Purpose = "unlock"',
-  ")",
+  "$Mode = '{{MODE}}'",
+  "$Purpose = '{{PURPOSE}}'",
   '$ErrorActionPreference = "Stop"',
   "try {",
   "  $null = [Windows.Security.Credentials.UI.UserConsentVerifier, Windows.Security.Credentials.UI, ContentType = WindowsRuntime]",
@@ -88,12 +85,17 @@ function powershellPath(): string {
   return "powershell.exe";
 }
 
-function runPowershell(scriptPath: string, mode: WindowsHelloMode, purpose: WindowsHelloPurpose, timeoutMs: number): Promise<string> {
+function helloScript(mode: WindowsHelloMode, purpose: WindowsHelloPurpose): string {
+  return HELLO_SCRIPT.replace("{{MODE}}", mode).replace("{{PURPOSE}}", purpose);
+}
+
+function runPowershell(mode: WindowsHelloMode, purpose: WindowsHelloPurpose, timeoutMs: number): Promise<string> {
+  const encoded = Buffer.from(helloScript(mode, purpose), "utf16le").toString("base64");
   return new Promise((resolve) => {
     const child = spawn(
       powershellPath(),
-      ["-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-Mode", mode, "-Purpose", purpose],
-      { windowsHide: true },
+      ["-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", encoded],
+      { windowsHide: true, env: omitVaultSecrets(process.env) },
     );
     let stdout = "";
     const timer = setTimeout(() => {
@@ -118,17 +120,12 @@ export async function queryWindowsHello(mode: WindowsHelloMode, purpose: Windows
   if (process.platform !== "win32") {
     return "unavailable";
   }
-  const dir = await mkdtemp(join(tmpdir(), "ov-hello-"));
-  const scriptPath = join(dir, "hello.ps1");
   try {
-    await writeFile(scriptPath, HELLO_SCRIPT, "utf8");
     const timeoutMs = mode === "verify" ? 120_000 : 8_000;
-    const stdout = await runPowershell(scriptPath, mode, purpose, timeoutMs);
+    const stdout = await runPowershell(mode, purpose, timeoutMs);
     return classifyWindowsHelloOutput(stdout);
   } catch {
     return "failed";
-  } finally {
-    await rm(dir, { recursive: true, force: true });
   }
 }
 export function registerWindowsHelloIpc(): void {

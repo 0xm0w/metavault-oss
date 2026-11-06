@@ -5,7 +5,11 @@
 #   1. silent install, files/shortcuts/registry/PATH, launch, /health
 #   2. first-run passphrase setup + a stored credential (real encrypted DB)
 #   3. deliberate silent uninstall -> fixed app profile must be removed
-#   4. reinstall -> fresh password setup, old credentials/token absent
+#   4. reinstall -> fresh password setup, old credentials absent.
+#      This build keeps the daemon token in METAVAULT_DAEMON_TOKEN only.
+#      The harness sets that variable for candidate launches and rotates
+#      it on reinstall. The token file stays off disk. The previous
+#      published installer still writes its own metavault.token file.
 #   5. install-over-install (the update path, NSIS --updated flag) must
 #      never touch vault data
 #   6. final silent uninstall -> everything the installer added is gone,
@@ -48,7 +52,7 @@ function UserPath {
   [string](Get-Item "HKCU:\Environment").GetValue("Path", "", "DoNotExpandEnvironmentNames")
 }
 
-foreach ($k in @("META_API_KEY", "METAVAULT_META_API_KEY", "OPENCODE_API_KEY")) {
+foreach ($k in @("META_API_KEY", "METAVAULT_META_API_KEY", "OPENCODE_API_KEY", "METAVAULT_DAEMON_TOKEN")) {
   Remove-Item "Env:$k" -ErrorAction SilentlyContinue
 }
 
@@ -222,7 +226,19 @@ function Stop-App {
 
 function Launch-App-Wait-Health([string]$what) {
   Log "Launching ($what): $exe"
-  Start-Process -FilePath $exe | Out-Null
+  # UseShellExecute false so this process's METAVAULT_DAEMON_TOKEN reaches
+  # the packaged app. The app forwards that value to the bundled daemon and
+  # never writes metavault.token. A previous-release launch leaves the
+  # variable unset, so that older binary still creates its own token file.
+  $psi = New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  $psi.UseShellExecute = $false
+  if ([string]::IsNullOrWhiteSpace($env:METAVAULT_DAEMON_TOKEN)) {
+    [void]$psi.EnvironmentVariables.Remove("METAVAULT_DAEMON_TOKEN")
+  } else {
+    $psi.EnvironmentVariables["METAVAULT_DAEMON_TOKEN"] = $env:METAVAULT_DAEMON_TOKEN
+  }
+  [void][Diagnostics.Process]::Start($psi)
   $health = $null
   $deadline = (Get-Date).AddSeconds($HealthTimeoutSec)
   $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -237,8 +253,17 @@ function Launch-App-Wait-Health([string]$what) {
   Check ($health.status -eq "ok" -and $health.service -eq "vaultd") "bundled daemon answers /health ($what)"
 }
 
+function Set-SmokeDaemonToken {
+  $bytes = New-Object byte[] 32
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+  $env:METAVAULT_DAEMON_TOKEN = ([BitConverter]::ToString($bytes)).Replace("-", "").ToLowerInvariant()
+  $bytes = $null
+}
+
 function Read-DaemonToken {
-  Check (Test-Path $tokenFile) "daemon token file exists"
+  $fromEnv = $env:METAVAULT_DAEMON_TOKEN
+  if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv.Trim() }
   if (-not (Test-Path $tokenFile)) { return $null }
   return (Get-Content $tokenFile -Raw).Trim()
 }
@@ -297,7 +322,7 @@ function Check-Installed-Layout {
 function Check-VaultDataKept([string]$what) {
   Check (Test-Path $dbFile) "vault DB kept ($what)"
   Check (Test-Path $keyFile) "vault key file kept ($what)"
-  Check (Test-Path $tokenFile) "daemon token file kept ($what)"
+  Check (-not (Test-Path $tokenFile)) "daemon token file stays off disk ($what)"
 }
 
 function Uninstall-App([string]$what) {
@@ -347,6 +372,7 @@ if ($PreviousInstallerDir -ne "") {
   Stop-App
   $installer = $candidateInstaller
   Install-App 'candidate in-place upgrade over published release'
+  Set-SmokeDaemonToken
   Launch-App-Wait-Health 'candidate over published release'
   $status = Invoke-Daemon 'GET' '/key/status'
   Check ($status.mode -eq 'passphrase' -and $status.locked) 'published-to-candidate upgrade preserves locked password vault'
@@ -387,6 +413,7 @@ Test-PackagedMcp
 Check-Installed-Layout
 $sizeMb = [math]::Round(((Get-ChildItem $installDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
 Log "Install folder size: $sizeMb MB"
+Set-SmokeDaemonToken
 Launch-App-Wait-Health "clean install"
 
 $status = Invoke-Daemon "GET" "/key/status"
@@ -462,7 +489,7 @@ $testKeychain.Remove($sharedCredential)
 $sharedKey = $null; $sharedCredential = $null; $aes.Dispose()
 
 $testKeychain.Add((New-Object Windows.Security.Credentials.PasswordCredential('metavault-unrelated-ci','test-account','synthetic-unrelated')))
-$oldToken = Get-Content $tokenFile -Raw
+$oldToken = $env:METAVAULT_DAEMON_TOKEN
 # Interactive destructive warning must precede any change; Cancel preserves all.
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -512,7 +539,7 @@ if ($cancelHandle -eq [IntPtr]::Zero) { throw 'Warning has no native IDCANCEL co
 Start-Sleep -Seconds 3
 Check (Test-Path $exe) "Cancel retains installed program"
 Check-VaultDataKept "interactive Cancel"
-Check ((Get-Content $tokenFile -Raw) -eq $oldToken) "Cancel preserves existing token"
+Check ($env:METAVAULT_DAEMON_TOKEN -eq $oldToken) "Cancel preserves the session daemon token"
 Uninstall-App "deliberate wipe"
 Check-Cleanup
 Check (-not (Test-Path $dataDir)) "deliberate uninstall removes vault, key, token, settings and backups"
@@ -524,10 +551,12 @@ $testKeychain.Remove($other)
 
 # === 4. reinstall is fresh, old password/credential/token not retained ==
 Install-App "fresh reinstall after wipe"
+Set-SmokeDaemonToken
 Launch-App-Wait-Health "fresh reinstall"
 $status = Invoke-Daemon "GET" "/key/status"
 Check ($null -ne $status -and $status.mode -eq "uninitialized") "reinstall starts first-run setup, not previous password gate"
-Check ((Get-Content $tokenFile -Raw) -ne $oldToken) "reinstall generates a different daemon token"
+Check (-not (Test-Path $tokenFile)) "reinstall leaves the daemon token file off disk"
+Check ($env:METAVAULT_DAEMON_TOKEN -ne $oldToken) "reinstall session token differs from the wiped install"
 $oldToken = $null
 $smokePassphrase = "new-fresh-smoke-passphrase-84c2"
 $setup = Invoke-Daemon "POST" "/setup" @{ passphrase = $smokePassphrase }
@@ -562,5 +591,6 @@ Check (Test-Path $outside) "unrelated sentinel still exists"
 Remove-Item $outside -Force
 Remove-Item $outsideDir -Recurse -Force
 
+Remove-Item Env:METAVAULT_DAEMON_TOKEN -ErrorAction SilentlyContinue
 Log "Result: $(if ($script:failures -eq 0) { 'PASS' } else { "FAIL ($script:failures checks failed)" })"
 if ($script:failures -ne 0) { exit 1 }

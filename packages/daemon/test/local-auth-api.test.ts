@@ -76,12 +76,20 @@ describe("Local Authentication & Biometric API (#19)", () => {
     expect(res.status).toBe(200);
 
     // Verify PIN works
-    const checkValid = await handleVaultRequest(
+    const verifyNoToken = await handleVaultRequest(
       service,
       "POST",
       "/settings/local-auth/verify",
       { pin: "1234" },
       auth,
+    );
+    expect(verifyNoToken.status).toBe(401);
+    const checkValid = await handleVaultRequest(
+      service,
+      "POST",
+      "/settings/local-auth/verify",
+      { pin: "1234" },
+      withToken,
     );
     expect(checkValid.status).toBe(200);
     expect(checkValid.body).toMatchObject({ ok: true });
@@ -92,7 +100,7 @@ describe("Local Authentication & Biometric API (#19)", () => {
       "POST",
       "/settings/local-auth/verify",
       { pin: "0000" },
-      auth,
+      withToken,
     );
     expect(checkInvalid.status).toBe(200);
     expect(checkInvalid.body).toEqual({ ok: false });
@@ -117,5 +125,20 @@ describe("Local Authentication & Biometric API (#19)", () => {
       requireOnSettings: true,
       autoLockMinutes: 15,
     });
+  });
+
+  it("POST /settings/local-auth/pin rate-limits a second set inside the window", async () => {
+    const limited = await Effect.runPromise(
+      Effect.gen(function* () {
+        return yield* VaultService;
+      }).pipe(
+        Effect.provide(makeVaultServiceLive({ masterKey: Buffer.alloc(32, 9), pinSetMaxPerWindow: 1 })),
+        Effect.provide(Layer.mergeAll(VaultStoreTest(Buffer.alloc(32, 9)), BrainStub, FakeConnector)),
+      ),
+    );
+    const first = await handleVaultRequest(limited, "POST", "/settings/local-auth/pin", { pin: "1234" }, withToken);
+    expect(first.status).toBe(200);
+    const second = await handleVaultRequest(limited, "POST", "/settings/local-auth/pin", { pin: "5678" }, withToken);
+    expect(second.status).toBe(429);
   });
 });

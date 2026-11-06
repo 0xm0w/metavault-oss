@@ -23,6 +23,7 @@ export interface VaultWindowOptions {
     readonly height: number;
   };
   readonly icon?: string;
+  readonly show?: false;
   readonly webPreferences: {
     readonly preload: string;
     readonly nodeIntegration: false;
@@ -31,8 +32,8 @@ export interface VaultWindowOptions {
   };
 }
 
-export function buildWindowOptions(preloadPath: string): VaultWindowOptions {
-  return {
+export function buildWindowOptions(preloadPath: string, argv: readonly string[] = []): VaultWindowOptions {
+  const options: VaultWindowOptions = {
     width: 980,
     height: 720,
     minWidth: 880,
@@ -54,6 +55,10 @@ export function buildWindowOptions(preloadPath: string): VaultWindowOptions {
       sandbox: true,
     },
   };
+  if (argv.includes("--minimized") || argv.includes("--hidden")) {
+    return { ...options, show: false };
+  }
+  return options;
 }
 
 // Closing the window minimises to the tray (wallet pattern); only an

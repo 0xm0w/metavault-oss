@@ -14,7 +14,7 @@
     "id": "benign-read-standing-approval",
     "class": "benign-read",
     "description": "Marshal asks for approval, but a standing approval already covers this read.",
-    "request": { "agentId": "cursor", "ide": "Cursor", "tool": "http", "alias": "stripe", "requestedScope": "charges.read", "reason": "Weekly failed-charge report" },
+    "request": { "agentId": "cursor", "ide": "Cursor", "tool": "http", "alias": "stripe", "requestedScope": "charges.read", "reason": "Weekly failed-charge report", "verified": true },
     "historySummary": { "requests24h": 9, "denials24h": 0 },
     "historyCount": 2,
     "policy": { "ceilings": { "stripe": "charges.read" }, "standingApprovals": [{ "agentId": "cursor", "alias": "stripe", "scope": "charges.read" }], "rateLimitPerHour": 20 },

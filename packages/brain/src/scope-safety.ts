@@ -56,8 +56,8 @@ export function enforceScopeSafety(
     };
   }
 
-  const payloadPreview = summarizeHttpRequestPayload(extraUntrusted?.payload)?.preview ?? "";
-  const combinedText = [reason ?? "", extraUntrusted?.tool ?? "", requestedScope, payloadPreview]
+  const payloadSafety = summarizeHttpRequestPayload(extraUntrusted?.payload)?.safetyText ?? "";
+  const combinedText = [reason ?? "", extraUntrusted?.tool ?? "", requestedScope, payloadSafety]
     .filter((s) => s.trim() !== "")
     .join("\n");
 

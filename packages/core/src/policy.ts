@@ -125,10 +125,38 @@ export interface PolicyResult {
   reason: string;
 }
 
-const WRITE_MARKERS = [".write", ".create", ".update", ".delete"] as const;
+const GRAPHQL_MUTATION = /\bmutation\b/i;
+
+// Read is an explicit suffix. A wildcard, an unknown verb, or an empty
+// scope is a write so a new connector scope cannot skip approval.
+export function isExplicitReadScope(scope: string): boolean {
+  if (scope.includes("*")) return false;
+  return scope === "read" || scope.endsWith(".read") || scope.endsWith(":read");
+}
 
 export function isWriteScope(scope: string): boolean {
-  return WRITE_MARKERS.some((marker) => scope.includes(marker)) || scope.endsWith(":write");
+  return !isExplicitReadScope(scope);
+}
+
+export function sessionLeaseAllowed(input: {
+  readonly scope: string;
+  readonly risk: "low" | "medium" | "high" | undefined;
+  readonly payload: unknown;
+  readonly verified: boolean;
+}): boolean {
+  if (!input.verified) return false;
+  if (input.risk !== "low") return false;
+  if (isWriteScope(input.scope)) return false;
+  const summary = summarizeHttpRequestPayload(input.payload);
+  if (summary !== null && summary.mutating) return false;
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(input.payload);
+  } catch {
+    return false;
+  }
+  if (typeof serialized === "string" && GRAPHQL_MUTATION.test(serialized)) return false;
+  return true;
 }
 
 function resourcePrefix(scope: string): string {
@@ -231,14 +259,14 @@ export function evaluatePolicy(
     decision !== null ? decision.risk === "low" : options?.deterministicRisk === "low";
   const hasStandingApproval =
     cfg.disableStandingApprovals !== true &&
+    req.verified === true &&
     riskIsLow &&
     !isWriteScope(allowedScope) &&
     cfg.standingApprovals.some(
       (approval) =>
         approval.agentId === req.agentId &&
         approval.alias === req.alias &&
-        approval.scope === allowedScope &&
-        (!approval.verifiedOnly || req.verified === true),
+        approval.scope === allowedScope,
     );
 
   let requireApproval: boolean;

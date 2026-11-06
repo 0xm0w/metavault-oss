@@ -1,6 +1,6 @@
 import { isCardSecretPayload } from "../../core/src/card.js";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "@effect/platform";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import { Connector, type CredentialAuthStyle } from "../../core/src/connector.js";
 import { ConnectorFailed } from "../../core/src/errors.js";
 import { isWriteScope } from "../../core/src/policy.js";
@@ -53,6 +53,37 @@ const REDACTED_SECRET = "[REDACTED]";
 // Short tokens still have to be stripped. Four characters is the floor:
 // below that, substring replacement mangles ordinary JSON.
 const REDACTION_MIN_SECRET_LENGTH = 4;
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+function addRedactionVariants(variants: Set<string>, secret: string): void {
+  if (secret.length < REDACTION_MIN_SECRET_LENGTH) return;
+  const encoded = Buffer.from(secret, "utf8").toString("base64");
+  const encodedUrl = encoded.replace(/\+/g, "-").replace(/\//g, "_");
+  const percentUpper = encodeURIComponent(secret);
+  const percentLower = percentUpper.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
+  const jsonEscaped = JSON.stringify(secret).slice(1, -1);
+  const jsonSlashEscaped = jsonEscaped.replace(/\//g, "\\/");
+  const unicodeEscaped = jsonEscaped
+    .replace(/\//g, "\\u002f")
+    .replace(/\+/g, "\\u002b")
+    .replace(/&/g, "\\u0026")
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/=/g, "\\u003d");
+  for (const variant of [secret, percentUpper, percentLower, jsonEscaped, jsonSlashEscaped, unicodeEscaped, encoded, encoded.replace(/=+$/, ""), encodedUrl, encodedUrl.replace(/=+$/, "")]) {
+    if (variant.length >= REDACTION_MIN_SECRET_LENGTH) variants.add(variant);
+  }
+  const bytes = Buffer.from(secret, "utf8");
+  for (let pad = 0; pad < 3; pad++) {
+    const shifted = Buffer.concat([Buffer.alloc(pad), bytes]).toString("base64");
+    const drop = Math.ceil((pad * 8) / 6);
+    const sliced = shifted.slice(drop);
+    const stripped = sliced.replace(/=+$/, "");
+    for (const variant of [sliced, stripped, sliced.replace(/\+/g, "-").replace(/\//g, "_"), stripped.replace(/\+/g, "-").replace(/\//g, "_")]) {
+      if (variant.length >= REDACTION_MIN_SECRET_LENGTH) variants.add(variant);
+    }
+  }
+}
 
 /**
  * Replaces every occurrence of the injected credential in a response body
@@ -62,40 +93,23 @@ const REDACTION_MIN_SECRET_LENGTH = 4;
  * agent must never receive the secret string it enabled.
  *
  * Variants cover exact text, percent-encoding in both hex cases, JSON string
- * escapes (including \/ and \\u002f), and Base64/Base64-URL encodings (with
- * and without padding). Split/join avoids regex metacharacter surprises
- * since a token can contain arbitrary characters.
+ * escapes (including \/ , \\u002f, and the Go/Rails \\u0026 \\u003c \\u003e \\u003d
+ * forms), Base64 at every 3-byte alignment, and the password half of a
+ * basic `user:password` secret. Split/join avoids regex metacharacter surprises.
  */
 export function redactSecretFromBody(text: string, secret: string): string {
   if (secret.length < REDACTION_MIN_SECRET_LENGTH) {
     return text;
   }
-  const encoded = Buffer.from(secret, "utf8").toString("base64");
-  const encodedUrl = encoded.replace(/\+/g, "-").replace(/\//g, "_");
-  const percentUpper = encodeURIComponent(secret);
-  const percentLower = percentUpper.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
-  const jsonEscaped = JSON.stringify(secret).slice(1, -1);
-  const jsonSlashEscaped = jsonEscaped.replace(/\//g, "\\/");
-  const unicodeEscaped = jsonEscaped.replace(/\//g, "\\u002f").replace(/\+/g, "\\u002b");
-
-  const variants = new Set<string>([
-    secret,
-    percentUpper,
-    percentLower,
-    jsonEscaped,
-    jsonSlashEscaped,
-    unicodeEscaped,
-    encoded,
-    encoded.replace(/=+$/, ""),
-    encodedUrl,
-    encodedUrl.replace(/=+$/, ""),
-  ]);
-
+  const variants = new Set<string>();
+  addRedactionVariants(variants, secret);
+  const colon = secret.indexOf(":");
+  if (colon > 0 && colon < secret.length - 1) {
+    addRedactionVariants(variants, secret.slice(colon + 1));
+  }
   let out = text;
   for (const variant of variants) {
-    if (variant.length >= REDACTION_MIN_SECRET_LENGTH) {
-      out = out.split(variant).join(REDACTED_SECRET);
-    }
+    out = out.split(variant).join(REDACTED_SECRET);
   }
   return out;
 }
@@ -193,12 +207,20 @@ export function executeHttp(
       Effect.mapError(() => failed("ConnectorFailed: request failed")),
     );
     const status = response.status;
-    if (status < 200 || status >= 300) {
+    if (status === 0 || status < 200 || status >= 300) {
       return yield* Effect.fail(failedWithStatus(status));
     }
-    const text = yield* response.text.pipe(
-      Effect.mapError(() => failedWithStatus(status)),
-    );
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    yield* Stream.runForEach(response.stream, (chunk) => {
+      received += chunk.byteLength;
+      if (received > MAX_RESPONSE_BYTES) {
+        return Effect.fail(failed("ConnectorFailed: response body exceeds 10 MiB"));
+      }
+      chunks.push(chunk);
+      return Effect.void;
+    }).pipe(Effect.mapError((err) => (err instanceof ConnectorFailed ? err : failedWithStatus(status))));
+    const text = Buffer.concat(chunks).toString("utf8");
     // Redact the credential before parsing: an upstream echo of auth
     // material (headers, token metadata) must not reach the agent.
     const safeText = redactSecretFromBody(text, opts.secret);
@@ -214,7 +236,10 @@ export function executeHttp(
     }
     return { status, data };
   });
-  return program.pipe(Effect.provide(FetchHttpClient.layer));
+  return program.pipe(
+    Effect.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+    Effect.provide(FetchHttpClient.layer),
+  );
 }
 
 const DNS_WRITE_MARKERS = [".write", ".create", ".update", ".delete"];
@@ -480,18 +505,53 @@ export function makeConnectorLive(
   const cloudflareApiBase = options.cloudflareApiBase ?? DEFAULT_CLOUDFLARE_API_BASE;
   return Layer.succeed(Connector, {
     execute: (alias, scope, secret, payload, tool, route) => {
+      // Defense in depth: a payment card is never sent as a bearer token.
+      if (isCardSecretPayload(secret)) {
+        return Effect.fail(
+          new ConnectorFailed({ alias, message: "card credentials cannot be sent by the HTTP connector" }),
+        );
+      }
+      const baseUrl = route?.baseUrl?.trim() ?? "";
+      const dynamicTool = tool === "rest.call" || tool === "graphql.call" || (baseUrl !== "" && isRestPayload(payload));
+      if (dynamicTool) {
+        if (baseUrl === "") {
+          return Effect.fail(
+            new ConnectorFailed({
+              alias,
+              message: "NoConnectorRoute: credential has no pinned base URL",
+            }),
+          );
+        }
+        const resolved =
+          tool === "graphql.call" && !isRestPayload(payload)
+            ? resolveGraphql(baseUrl, scope, payload)
+            : resolveScopedRest(baseUrl, scope, payload);
+        if (typeof resolved === "string") {
+          return Effect.fail(new ConnectorFailed({ alias, message: resolved }));
+        }
+        return executeHttp({
+          url: resolved.url,
+          method: resolved.method,
+          secret,
+          ...(route?.auth !== undefined ? { auth: route.auth } : {}),
+          ...(resolved.body !== undefined ? { body: resolved.body } : {}),
+        }).pipe(
+          Effect.mapError(
+            (err) =>
+              new ConnectorFailed({
+                alias,
+                ...(err.status !== undefined ? { status: err.status } : {}),
+                message: err.message,
+              }),
+          ),
+        );
+      }
       const url = presets[alias];
       if (url === undefined) {
         // The core Connector contract admits only ConnectorFailed, so the
         // brief's UnknownAlias surfaces as the alias + message, never a secret.
         return Effect.fail(
           new ConnectorFailed({ alias, message: `UnknownAlias: ${alias}` }),
-        );
-      }
-      // Defense in depth: a payment card is never sent as a bearer token.
-      if (isCardSecretPayload(secret)) {
-        return Effect.fail(
-          new ConnectorFailed({ alias, message: "card credentials cannot be sent by the HTTP connector" }),
         );
       }
       if (payload === undefined) {
@@ -534,47 +594,21 @@ export function makeConnectorLive(
       const routeKey = `${alias}:${typeof tool === "string" ? tool : ""}`;
       const fixedRoute = toolRoutes[routeKey];
       if (fixedRoute !== undefined) {
+        let serialized = "";
+        try {
+          serialized = JSON.stringify(payload);
+        } catch {
+          return Effect.fail(new ConnectorFailed({ alias, message: "ConnectorFailed: GraphQL payload is not JSON" }));
+        }
+        if (/\bmutation\b/i.test(serialized) && !isWriteScope(scope)) {
+          return Effect.fail(new ConnectorFailed({ alias, message: "ConnectorFailed: GraphQL mutation requires a write scope" }));
+        }
         return executeHttp({
           url: fixedRoute,
           method: "POST",
           secret,
           ...(route?.auth !== undefined ? { auth: route.auth } : {}),
           body: payload,
-        }).pipe(
-          Effect.mapError(
-            (err) =>
-              new ConnectorFailed({
-                alias,
-                ...(err.status !== undefined ? { status: err.status } : {}),
-                message: err.message,
-              }),
-          ),
-        );
-      }
-      const baseUrl = route?.baseUrl?.trim() ?? "";
-      const dynamicTool = tool === "rest.call" || tool === "graphql.call" || (baseUrl !== "" && isRestPayload(payload));
-      if (dynamicTool) {
-        if (baseUrl === "") {
-          return Effect.fail(
-            new ConnectorFailed({
-              alias,
-              message: "NoConnectorRoute: credential has no pinned base URL",
-            }),
-          );
-        }
-        const resolved =
-          tool === "graphql.call" && !isRestPayload(payload)
-            ? resolveGraphql(baseUrl, scope, payload)
-            : resolveScopedRest(baseUrl, scope, payload);
-        if (typeof resolved === "string") {
-          return Effect.fail(new ConnectorFailed({ alias, message: resolved }));
-        }
-        return executeHttp({
-          url: resolved.url,
-          method: resolved.method,
-          secret,
-          ...(route?.auth !== undefined ? { auth: route.auth } : {}),
-          ...(resolved.body !== undefined ? { body: resolved.body } : {}),
         }).pipe(
           Effect.mapError(
             (err) =>

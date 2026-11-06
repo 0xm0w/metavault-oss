@@ -117,17 +117,40 @@ export function validateDaemonCall(input: unknown): DaemonCallRequest {
 export const DAEMON_BASE_URL = (
   metavaultEnv("DAEMON_URL") ?? "http://127.0.0.1:7077"
 ).replace(/\/+$/, "");
-const daemonBase = DAEMON_BASE_URL;
 
-// Daemon token for the human-decision routes: METAVAULT_DAEMON_TOKEN in the
-// environment, nothing else. The daemon never writes a token file, so there
-// is no on-disk copy for a same-UID IDE agent to read. When this app spawns
-// the bundled daemon it generates the token and both processes share it
-// through the environment. A daemon the app did not spawn (started by hand)
-// must be started with METAVAULT_DAEMON_TOKEN set to the same value.
+const PACKAGED_DAEMON_BASE_URL = "http://127.0.0.1:7077";
+
+// Packaged builds ignore METAVAULT_DAEMON_URL. Default false so unit tests
+// keep the env override. ESM live bindings will not update a const copied
+// at import, so callers must use getDaemonBaseUrl().
+let packagedBuild = false;
+
+export function setPackagedBuild(packaged: boolean): void {
+  packagedBuild = packaged;
+}
+
+export function getDaemonBaseUrl(): string {
+  if (packagedBuild) return PACKAGED_DAEMON_BASE_URL;
+  return (metavaultEnv("DAEMON_URL") ?? PACKAGED_DAEMON_BASE_URL).replace(/\/+$/, "");
+}
+
+// Daemon token for the human-decision routes. The env name is
+// METAVAULT_DAEMON_TOKEN, read only through metavaultEnv. Main pins the
+// session token with setDaemonToken and never copies it onto process.env.
+// A 401 clears only the cache so the next read prefers a changed
+// environment token, then falls back to the pinned session token.
 let cachedDaemonToken: string | undefined;
+let pinnedDaemonToken: string | undefined;
+
+export function setDaemonToken(token: string): void {
+  pinnedDaemonToken = token;
+  if (token !== "") {
+    cachedDaemonToken = token;
+  }
+}
+
 function daemonToken(): string | undefined {
-  if (cachedDaemonToken !== undefined) {
+  if (cachedDaemonToken !== undefined && cachedDaemonToken !== "") {
     return cachedDaemonToken;
   }
   const fromEnv = metavaultEnv("DAEMON_TOKEN");
@@ -135,13 +158,15 @@ function daemonToken(): string | undefined {
     cachedDaemonToken = fromEnv;
     return cachedDaemonToken;
   }
-  // No token available: guarded routes stay 401 until the env var exists.
+  if (pinnedDaemonToken !== undefined && pinnedDaemonToken !== "") {
+    return pinnedDaemonToken;
+  }
   return undefined;
 }
 
 const daemonFetch = async (method: string, path: string, body: unknown): Promise<Response> => {
   const token = daemonToken();
-  return fetch(`${daemonBase}${path}`, {
+  return fetch(`${getDaemonBaseUrl()}${path}`, {
     method,
     headers: {
       "content-type": "application/json",
@@ -150,6 +175,24 @@ const daemonFetch = async (method: string, path: string, body: unknown): Promise
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 };
+
+// Main-only read. Not on the renderer whitelist. Null on network error or
+// any non-OK status so a deeplink cannot treat a failure as trust.
+export async function readDaemonJson(path: string): Promise<unknown> {
+  try {
+    const token = daemonToken();
+    const response = await fetch(`${getDaemonBaseUrl()}${path}`, {
+      method: "GET",
+      headers: {
+        ...(token !== undefined ? { "x-metavault-token": token } : {}),
+      },
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 export async function callDaemon(input: unknown): Promise<unknown> {
   const { method, path, body } = validateDaemonCall(input);

@@ -12,14 +12,16 @@ export interface SecretAadContext {
 }
 
 const V2_PREFIX = "v2.";
+const GCM_IV_LENGTH = 12;
+const GCM_TAG_LENGTH = 16;
 
 export function buildSecretAad(ctx: SecretAadContext): Buffer {
   return Buffer.from(`metavault-cred-v2|${ctx.alias}|${ctx.kind ?? "secret"}`, "utf8");
 }
 
 export function encryptSecret(key: Buffer, plaintext: string, ctx?: SecretAadContext): string {
-  const iv = randomBytes(12);
-  const c = createCipheriv("aes-256-gcm", key, iv);
+  const iv = randomBytes(GCM_IV_LENGTH);
+  const c = createCipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_TAG_LENGTH });
   if (ctx !== undefined) {
     c.setAAD(buildSecretAad(ctx));
   }
@@ -38,7 +40,10 @@ export function decryptSecret(key: Buffer, blob: string, ctx?: SecretAadContext)
   if (iv === undefined || tag === undefined || ct === undefined) {
     throw new Error("Invalid ciphertext blob");
   }
-  const d = createDecipheriv("aes-256-gcm", key, iv);
+  if (iv.length !== GCM_IV_LENGTH || tag.length !== GCM_TAG_LENGTH) {
+    throw new Error("Invalid ciphertext blob");
+  }
+  const d = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_TAG_LENGTH });
   if (isV2) {
     if (ctx === undefined) {
       throw new Error("Missing AAD context for v2 ciphertext");

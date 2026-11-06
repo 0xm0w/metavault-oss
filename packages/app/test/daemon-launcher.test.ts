@@ -74,21 +74,58 @@ describe("bundled daemon launcher", () => {
     }
   });
 
-  it("mints a session daemon token on the env the child shares, without overwriting one", () => {
-    // When the app injects env it is typically process.env, so the minted
-    // token must land on the SAME object (daemon-client resolves it lazily
-    // from env) — never on a copy.
-    const env: Record<string, string> = {};
+  it("returns a session daemon token without writing it onto the env or process.env", () => {
+    const before = process.env["METAVAULT_DAEMON_TOKEN"];
+    const env: NodeJS.ProcessEnv = {};
     const token = ensureSessionDaemonToken(env);
     expect(token).toMatch(/^[0-9a-f]{64}$/);
-    expect(env["METAVAULT_DAEMON_TOKEN"]).toBe(token);
+    expect(env["METAVAULT_DAEMON_TOKEN"]).toBeUndefined();
+    expect(process.env["METAVAULT_DAEMON_TOKEN"]).toBe(before);
 
-    const explicitToken = ensureSessionDaemonToken({ METAVAULT_DAEMON_TOKEN: "user-set-token" });
-    expect(explicitToken).toBe("user-set-token");
+    const explicit: NodeJS.ProcessEnv = { METAVAULT_DAEMON_TOKEN: "user-set-token" };
+    expect(ensureSessionDaemonToken(explicit)).toBe("user-set-token");
+    expect(explicit["METAVAULT_DAEMON_TOKEN"]).toBe("user-set-token");
+    expect(process.env["METAVAULT_DAEMON_TOKEN"]).toBe(before);
 
-    // Distinct calls mint distinct tokens on distinct env objects.
     const second = ensureSessionDaemonToken({});
     expect(second).not.toBe(token);
     expect(second).toMatch(/^[0-9a-f]{64}$/);
+    expect(process.env["METAVAULT_DAEMON_TOKEN"]).toBe(before);
+
+    const base: NodeJS.ProcessEnv = { PATH: "x" };
+    const child = bundledDaemonEnv(base, "/data/metavault.db", "session-token");
+    expect(child).not.toBe(base);
+    expect(child["METAVAULT_DAEMON_TOKEN"]).toBe("session-token");
+    expect(base["METAVAULT_DAEMON_TOKEN"]).toBeUndefined();
+  });
+
+  it("treats a healthy vaultd that rejects the session token as port-occupied", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mv-launch-"));
+    server = createServer((req, res) => {
+      const path = (req.url ?? "").split("?")[0];
+      if (path === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok", service: "vaultd" }));
+        return;
+      }
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unauthorized" }));
+    });
+    await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", () => { resolve(); }));
+    const baseUrl = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    try {
+      const paths = bundledDaemonPaths(join(dir, "resources"), join(dir, "data"));
+      const result = await ensureBundledDaemon({
+        execPath: process.execPath,
+        paths,
+        baseUrl,
+        env: {},
+      });
+      expect(result.status).toBe("port-occupied");
+      expect(result.status).not.toBe("already-running");
+      expect(result.child).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

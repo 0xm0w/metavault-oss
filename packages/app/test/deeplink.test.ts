@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findVaultDeeplink, isDeeplinkAddParams, parseVaultDeeplink } from "../src/deeplink.js";
+import { findVaultDeeplink, isDeeplinkAddParams, parseVaultDeeplink, websiteFromTrustedEnrollment } from "../src/deeplink.js";
 
 describe("parseVaultDeeplink", () => {
   it("parses a full add link", () => {
@@ -32,5 +32,26 @@ describe("parseVaultDeeplink", () => {
     expect(findVaultDeeplink(["--flag"])).toBeNull();
     expect(isDeeplinkAddParams({ alias: "a", scope: "s", website: "", enrollmentId: "" })).toBe(true);
     expect(isDeeplinkAddParams({ alias: "a", scope: "s", website: "", enrollmentId: "", secret: "x" })).toBe(false);
+  });
+  it("accepts the legacy openvault scheme and rejects bidi", () => {
+    expect(parseVaultDeeplink("openvault://add?alias=stripe&scope=charges.read")?.alias).toBe("stripe");
+    expect(parseVaultDeeplink("metavault://add?alias=stripe&scope=charges.read&website=a\u202E.com")).toBeNull();
+    expect(parseVaultDeeplink("metavault://add?alias=str\u202Eipe&scope=charges.read")).toBeNull();
+  });
+});
+
+describe("websiteFromTrustedEnrollment", () => {
+  const params = { alias: "stripe", scope: "charges.read", website: "https://api.stripe.com", enrollmentId: "enr-1" };
+  const enrollment = { status: "pending", alias: "stripe", scope: "charges.read", website: "https://api.stripe.com" };
+  it("keeps the website only when the pending enrollment matches and is live", () => {
+    expect(websiteFromTrustedEnrollment(params, enrollment, 1_000, 2_000)).toEqual({ website: "https://api.stripe.com", untrusted: false });
+    expect(websiteFromTrustedEnrollment({ ...params, website: "" }, null, 1_000, null)).toEqual({ website: "", untrusted: false });
+  });
+  it("strips the website when the enrollment is missing, expired, or mismatched", () => {
+    expect(websiteFromTrustedEnrollment(params, null, 1_000, 2_000)).toEqual({ website: "", untrusted: true });
+    expect(websiteFromTrustedEnrollment(params, { ...enrollment, status: "completed" }, 1_000, 2_000).untrusted).toBe(true);
+    expect(websiteFromTrustedEnrollment(params, enrollment, 2_000, 2_000).website).toBe("");
+    expect(websiteFromTrustedEnrollment(params, { ...enrollment, website: "https://evil.example" }, 1_000, 2_000).website).toBe("");
+    expect(websiteFromTrustedEnrollment(params, { ...enrollment, alias: "other" }, 1_000, 2_000).untrusted).toBe(true);
   });
 });

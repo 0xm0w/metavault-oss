@@ -28,6 +28,7 @@ import {
   marshalStatusLine,
   normalizeWebsite,
   projectApproval,
+  payloadSummaryView,
   projectDevicesResponse,
   projectPairingSession,
   projectRemoteSettings,
@@ -143,13 +144,14 @@ describe("scope risk helpers", () => {
     expect(canAlwaysAllow(approval({ verified: false }))).toBe(false);
   });
 
-  it("offers a session lease only for a verified local write that is not high risk", () => {
-    const write = approval({ allowedScope: "charges.write", requestedScope: "charges.write", verified: true, risk: "medium" });
-    expect(canSessionLease(write)).toBe(true);
-    expect(canSessionLease(approval({ verified: true }))).toBe(false);
-    expect(canSessionLease({ ...write, verified: false })).toBe(false);
-    expect(canSessionLease({ ...write, origin: "remote" })).toBe(false);
-    expect(canSessionLease({ ...write, risk: "high" })).toBe(false);
+  it("offers a session lease only for a verified local low-risk read", () => {
+    const read = approval({ allowedScope: "charges.read", requestedScope: "charges.read", verified: true, risk: "low" });
+    expect(canSessionLease(read)).toBe(true);
+    expect(canSessionLease(approval({ allowedScope: "charges.write", verified: true, risk: "low" }))).toBe(false);
+    expect(canSessionLease({ ...read, verified: false })).toBe(false);
+    expect(canSessionLease({ ...read, origin: "remote" })).toBe(false);
+    expect(canSessionLease({ ...read, risk: "medium" })).toBe(false);
+    expect(canSessionLease({ ...read, risk: "high" })).toBe(false);
   });
 });
 
@@ -213,6 +215,34 @@ describe("payload projection (renderer never receives secrets)", () => {
     const noScope: Record<string, unknown> = { ...approval() };
     delete noScope["allowedScope"];
     expect(projectApproval(noScope)).toBeNull();
+  });
+
+  it("projects a payload summary and drops anything else inside it", () => {
+    const projected = projectApproval({
+      ...approval(),
+      payloadSummary: {
+        declaredMethod: "POST",
+        mutating: true,
+        preview: "x".repeat(500),
+        digest: "should-drop",
+        safetyText: "y".repeat(1000),
+      },
+    });
+    expect(projected?.payloadSummary).toEqual({
+      declaredMethod: "POST",
+      mutating: true,
+      preview: "x".repeat(400),
+    });
+    expect(projectApproval({ ...approval(), payloadSummary: { declaredMethod: "GET", mutating: false, preview: "ok", secret: "no" } })).toBeNull();
+    expect(payloadSummaryView(projected?.payloadSummary)).toEqual({
+      headline: "POST · mutating",
+      preview: "x".repeat(400),
+    });
+    expect(payloadSummaryView({ declaredMethod: null, mutating: false, preview: "" })).toEqual({
+      headline: "unspecified method · not mutating",
+      preview: "",
+    });
+    expect(payloadSummaryView(undefined)).toBeNull();
   });
 
   it("projects pending responses and audit events, dropping bad rows", () => {
@@ -459,10 +489,10 @@ describe("agent-computer warning visibility", () => {
 });
 
 describe("website, favicon and edit payload", () => {
-  it("builds favicon URLs from bare and full websites", () => {
-    expect(faviconUrl("cloudflare.com")).toBe("https://cloudflare.com/favicon.ico");
-    expect(faviconUrl("https://cloudflare.com/dns")).toBe("https://cloudflare.com/favicon.ico");
-    expect(faviconUrl("  Example.COM ")).toBe("https://example.com/favicon.ico");
+  it("builds a local monogram instead of fetching a remote favicon", () => {
+    expect(faviconUrl("cloudflare.com")).toMatch(/^data:image\/svg\+xml,/);
+    expect(decodeURIComponent(faviconUrl("https://cloudflare.com/dns") ?? "")).toContain(">C<");
+    expect(decodeURIComponent(faviconUrl("  Example.COM ") ?? "")).toContain(">E<");
     expect(faviconUrl("")).toBeNull();
     expect(faviconUrl("localhost")).toBeNull();
     for (const unsafe of ['example.com"><svg onload=alert(1)>', 'user@example.com', 'example.com:443', 'example.com\\evil', 'a'.repeat(254) + '.com']) expect(faviconUrl(unsafe)).toBeNull();
@@ -472,7 +502,7 @@ describe("website, favicon and edit payload", () => {
   it("omits empty secret from the edit payload so the daemon keeps the current secret", () => {
     expect(buildEditPayload({ scope: " dns.read ", website: "https://cloudflare.com/x", secret: "" })).toEqual({
       scope: "dns.read",
-      website: "cloudflare.com",
+      website: "https://cloudflare.com/x",
     });
     expect(buildEditPayload({ scope: "dns.read", website: "", secret: "new-secret" })).toEqual({
       scope: "dns.read",

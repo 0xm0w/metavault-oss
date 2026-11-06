@@ -131,4 +131,20 @@ describe("payload awareness (intent vs effect)", () => {
     ).filter((h) => h.id.startsWith("payload-"));
     expect(hits).toEqual([]);
   });
+
+  it("sees a GraphQL mutation past the 400-character preview", () => {
+    const hits = ruleHits(
+      {
+        agentId: "a",
+        ide: "Cursor",
+        tool: "graphql.call",
+        alias: "github",
+        requestedScope: "repo.read",
+        reason: "read the repository",
+        payload: { query: `${" ".repeat(500)} mutation { deleteRepo(id: 1) { id } }` },
+      },
+      history,
+    ).map((h) => h.id);
+    expect(hits).toContain("graphql-mutation-on-readonly-scope");
+  });
 });

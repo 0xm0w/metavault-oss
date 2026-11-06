@@ -110,7 +110,8 @@ export interface WardenKeyStatus {
   readonly verified: boolean;
 }
 
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
+
 
 export interface LocalAuthRecord {
   readonly enabled: boolean;
@@ -175,6 +176,40 @@ export function generatePinSalt(): string {
 
 export function isLegacyPinHash(expectedHash: string): boolean {
   return !expectedHash.startsWith(PIN_HASH_PREFIX);
+}
+
+function scryptAsync(
+  password: Buffer,
+  salt: Buffer,
+  keylen: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, keylen, options, (err, derived) => {
+      if (err !== null) reject(err);
+      else resolve(derived);
+    });
+  });
+}
+
+export async function hashPinAsync(pin: string, salt: string): Promise<string> {
+  const derived = await scryptAsync(
+    Buffer.from(pin.normalize("NFKC"), "utf8"),
+    Buffer.from(salt, "hex"),
+    32,
+    PIN_SCRYPT_PARAMS,
+  );
+  return `${PIN_HASH_PREFIX}${derived.toString("hex")}`;
+}
+
+export async function verifyPinAsync(pin: string, salt: string, expectedHash: string): Promise<boolean> {
+  if (!expectedHash.startsWith(PIN_HASH_PREFIX)) {
+    return verifyPin(pin, salt, expectedHash);
+  }
+  const actual = await hashPinAsync(pin, salt);
+  const bufA = Buffer.from(actual, "utf8");
+  const bufB = Buffer.from(expectedHash, "utf8");
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 }
 
 export function verifyPin(pin: string, salt: string, expectedHash: string): boolean {

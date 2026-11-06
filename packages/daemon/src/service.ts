@@ -42,6 +42,7 @@ import {
   evaluatePolicy,
   isAgentRateLimited,
   isWriteScope,
+  sessionLeaseAllowed,
   recordAgentRequest,
   velocityConfigForAgent,
   type AgentVelocityTracker,
@@ -53,11 +54,11 @@ import {
   WARDEN_KEY_MIN_LENGTH,
   WARDEN_KEY_SCOPE,
   generatePinSalt,
-  hashPin,
+  hashPinAsync,
   DEFAULT_META_API_WARDEN_MODEL,
   effectiveWardenModel,
   isLegacyPinHash,
-  verifyPin,
+  verifyPinAsync,
   type AgentSecuritySettings,
   type LocalAuthStatus,
   type WardenKeyStatus,
@@ -67,6 +68,15 @@ import { VaultStore, type AgentRecord, type DeviceAliasPolicy, type DeviceRecord
 import { ensureVaultCa, signLeafCertificate, spkiFingerprintFromPublicKeyPem, type VaultCa } from "../../core/src/vault-ca.js";
 import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
 import { credentialAuthStyle } from "../../connectors/src/http.js";
+import { summarizeHttpRequestPayload } from "../../core/src/payload.js";
+
+function metaApiOrigin(raw: string): string | null {
+  try {
+    return new URL(raw.trim()).origin;
+  } catch {
+    return null;
+  }
+}
 
 export interface CapabilityResult {
   readonly status: "executed" | "awaiting-approval" | "denied";
@@ -200,6 +210,11 @@ export interface PendingApproval {
   readonly transport?: string;
   readonly clientPid?: number | undefined;
   readonly clientProcess?: string | undefined;
+  readonly payloadSummary?: {
+    readonly declaredMethod: string | null;
+    readonly mutating: boolean;
+    readonly preview: string;
+  };
 }
 
 // Policy state the desktop app may see: the enforced ceiling per alias and
@@ -472,6 +487,8 @@ export interface VaultServiceOptions {
   readonly standingApprovals?: PolicyConfig["standingApprovals"];
   readonly modelId?: string;
   readonly enrollmentTtlMs?: number;
+  // Caps scrypt work on POST /settings/local-auth/pin. Tests pass 1.
+  readonly pinSetMaxPerWindow?: number;
   // Where vault-CA and gateway certificate files live (usually the DB's
   // directory). Pairing confirmation signs device certs with this CA.
   // Tests may inject vaultCa directly to skip the filesystem.
@@ -517,6 +534,7 @@ export function makeVaultServiceLive(
   const initialStandingApprovals = options.standingApprovals ?? [];
   const modelId = options.modelId ?? DEFAULT_META_API_WARDEN_MODEL;
   const enrollmentTtlMs = options.enrollmentTtlMs ?? DEFAULT_ENROLLMENT_TTL_MS;
+  const pinSetMaxPerWindow = Math.max(1, options.pinSetMaxPerWindow ?? 8);
 
   return Layer.effect(
     VaultService,
@@ -612,6 +630,8 @@ export function makeVaultServiceLive(
         });
       let pinFailures = 0;
       let pinBlockedUntil = 0;
+      const pinSetAt: number[] = [];
+      const PIN_SET_WINDOW_MS = 60_000;
       const agentManagement = yield* Effect.makeSemaphore(1);
       const sleepers = yield* Ref.make(new Map<string, Fiber.Fiber<void, StorageError>>());
       const aliases = yield* Ref.make(new Set<string>());
@@ -1473,7 +1493,18 @@ export function makeVaultServiceLive(
               };
             }
             let usedSessionLease = false;
-            if (!vaultLockedNow && deviceCtx === undefined && req.verified === true && credential.kind !== CARD_KIND) {
+            const leaseEligible =
+              !vaultLockedNow &&
+              deviceCtx === undefined &&
+              req.origin !== "remote" &&
+              credential.kind !== CARD_KIND &&
+              sessionLeaseAllowed({
+                scope: allowedScope,
+                risk: decision?.risk,
+                payload: req.payload,
+                verified: req.verified === true,
+              });
+            if (leaseEligible) {
               const key = sessionLeaseKey(req.agentId, req.alias, req.requestedScope);
               const lease = sessionLeases.get(key);
               if (
@@ -1622,11 +1653,17 @@ export function makeVaultServiceLive(
               );
             }
             const grantCredential = yield* store.getCredential(grant.request.alias);
+            const grantDecision = (yield* Ref.get(decisions)).get(grantId) ?? null;
             if (
-              grant.request.verified !== true ||
               grant.request.origin === "remote" ||
               grantCredential === undefined ||
-              grantCredential.kind === CARD_KIND
+              grantCredential.kind === CARD_KIND ||
+              !sessionLeaseAllowed({
+                scope: grant.allowedScope,
+                risk: grantDecision?.risk,
+                payload: grant.request.payload,
+                verified: grant.request.verified === true,
+              })
             ) {
               return yield* Effect.fail(
                 new PolicyDenied({
@@ -1737,6 +1774,7 @@ export function makeVaultServiceLive(
                 continue;
               }
               const decision = decisionMap.get(grant.grantId) ?? null;
+              const summary = summarizeHttpRequestPayload(grant.request.payload);
               const base: PendingApproval = {
                 grantId: grant.grantId,
                 agentId: grant.request.agentId,
@@ -1760,6 +1798,15 @@ export function makeVaultServiceLive(
                 ...(grant.request.deviceId !== undefined ? { deviceId: grant.request.deviceId } : {}),
                 ...(grant.request.origin !== undefined ? { origin: grant.request.origin } : {}),
                 ...(grant.request.transport !== undefined ? { transport: grant.request.transport } : {}),
+                ...(summary !== null
+                  ? {
+                      payloadSummary: {
+                        declaredMethod: summary.declaredMethod,
+                        mutating: summary.mutating,
+                        preview: summary.preview,
+                      },
+                    }
+                  : {}),
               };
               pending.push(hasMarshal ? { ...base, modelId: pendingModelId } : base);
             }
@@ -1797,6 +1844,13 @@ export function makeVaultServiceLive(
             // The Meta API model and the local endpoint model are separate
             // fields, so switching provider never carries a local tag to
             // the Meta API (or the reverse).
+            if (patch.metaApiBaseUrl !== undefined) {
+              const nextOrigin = metaApiOrigin(patch.metaApiBaseUrl);
+              const currentOrigin = metaApiOrigin(current.metaApiBaseUrl);
+              if (nextOrigin !== null && currentOrigin !== null && nextOrigin !== currentOrigin) {
+                yield* store.deleteCredential(WARDEN_KEY_ALIAS).pipe(Effect.catchAll(() => Effect.succeed(false)));
+              }
+            }
             const next: WardenSettings = {
               provider: patch.provider ?? current.provider,
               model: patch.model !== undefined ? patch.model.trim() : current.model,
@@ -2232,22 +2286,49 @@ export function makeVaultServiceLive(
 
         setLocalPin: (pin, currentPin) =>
           Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            if (now < pinBlockedUntil) {
+              return yield* Effect.fail(
+                new StorageError({ message: "too many pin attempts", operation: "pin-throttled" }),
+              );
+            }
+            const cutoff = now - PIN_SET_WINDOW_MS;
+            while (pinSetAt.length > 0) {
+              const oldest = pinSetAt[0];
+              if (oldest === undefined || oldest > cutoff) break;
+              pinSetAt.shift();
+            }
+            if (pinSetAt.length >= pinSetMaxPerWindow) {
+              return yield* Effect.fail(
+                new StorageError({ message: "too many pin attempts", operation: "pin-throttled" }),
+              );
+            }
+            pinSetAt.push(now);
             const current = yield* store.getLocalAuthRecord();
             if (current.pinHash !== null && current.salt !== null) {
-              const matches = verifyPin(currentPin ?? "", current.salt, current.pinHash);
+              const salt = current.salt;
+              const pinHash = current.pinHash;
+              const matches = yield* Effect.promise(() => verifyPinAsync(currentPin ?? "", salt, pinHash));
               if (!matches) {
+                pinFailures += 1;
+                if (pinFailures >= UNLOCK_FREE_ATTEMPTS) {
+                  const exp = pinFailures - UNLOCK_FREE_ATTEMPTS;
+                  pinBlockedUntil = now + Math.min(UNLOCK_MAX_BACKOFF_MS, UNLOCK_BASE_BACKOFF_MS * 2 ** exp);
+                }
                 return yield* Effect.fail(
                   new StorageError({ message: "invalid current pin", operation: "setLocalPin" }),
                 );
               }
             }
             const salt = generatePinSalt();
-            const pinHash = hashPin(pin, salt);
+            const pinHash = yield* Effect.promise(() => hashPinAsync(pin, salt));
             yield* store.setLocalAuthRecord({
               ...current,
               pinHash,
               salt,
             });
+            pinFailures = 0;
+            pinBlockedUntil = 0;
             return { ok: true } as const;
           }),
 
@@ -2258,13 +2339,15 @@ export function makeVaultServiceLive(
               return { ok: false, throttled: true, retryAfterMs: pinBlockedUntil - now } as const;
             }
             const current = yield* store.getLocalAuthRecord();
-            if (current.pinHash === null || current.salt === null) {
+            const salt = current.salt;
+            const pinHash = current.pinHash;
+            if (pinHash === null || salt === null) {
               // No PIN configured: verification is vacuous and must NOT
               // mint presence proofs - fail closed for remote approvals.
               return { ok: true } as const;
             }
-            const legacy = isLegacyPinHash(current.pinHash);
-            const ok = verifyPin(pin, current.salt, current.pinHash);
+            const legacy = isLegacyPinHash(pinHash);
+            const ok = yield* Effect.promise(() => verifyPinAsync(pin, salt, pinHash));
             if (!ok) {
               pinFailures += 1;
               if (pinFailures >= UNLOCK_FREE_ATTEMPTS) {
@@ -2276,10 +2359,11 @@ export function makeVaultServiceLive(
             pinFailures = 0;
             pinBlockedUntil = 0;
             if (legacy) {
+              const upgraded = yield* Effect.promise(() => hashPinAsync(pin, salt));
               yield* store.setLocalAuthRecord({
                 ...current,
-                pinHash: hashPin(pin, current.salt),
-                salt: current.salt,
+                pinHash: upgraded,
+                salt,
               });
             }
             const presenceProof = yield* mintPresenceProof();

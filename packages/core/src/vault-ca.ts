@@ -12,6 +12,7 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { hardenOwnerOnly } from "./owner-acl.js";
 import * as forge from "node-forge";
 
 export const VAULT_CA_KEY_FILE = "metavault-ca.key.pem";
@@ -55,6 +56,7 @@ export function spkiFingerprintFromCertPem(certPem: string): string {
 
 function writeSecretFile(path: string, contents: string): void {
   writeFileSync(path, contents, { encoding: "utf8", mode: 0o600 });
+  hardenOwnerOnly(path, false);
 }
 
 // Loads the vault CA from the vault directory, creating it on first use.

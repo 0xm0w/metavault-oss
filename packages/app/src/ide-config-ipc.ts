@@ -12,11 +12,13 @@
 // MCP config file only. It is the one allowed exception to "no secrets in
 // config"; everything else stays merge-protected.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { applyIdeConnect, inspectIdeConfig, type IdeApplyResult, type IdeHost, type IdeInspectResult } from "./ide-config.js";
+import { runtimePaths } from "./runtime-paths.js";
+import { hardenOwnerOnly } from "../../core/src/owner-acl.js";
 
 export const IDE_CONFIG_CHANNEL = "metavault:ide-config";
 
@@ -46,6 +48,10 @@ export function defaultIdeConfigIo(): IdeConfigIo {
     read: (path) => (existsSync(path) ? readFileSync(path, "utf8") : null),
     write: (path, data) => {
       writeFileSync(path, data, "utf8");
+      if (path.endsWith(".metavault-backup") && existsSync(path)) {
+        chmodSync(path, 0o600);
+        hardenOwnerOnly(path, false);
+      }
     },
     mkdir: (dir) => mkdirSync(dir, { recursive: true }),
   };
@@ -78,17 +84,76 @@ export interface IdeConfigApplyResult {
   readonly reason?: string;
 }
 
+export interface IdeRuntime {
+  readonly packaged: boolean;
+  readonly execPath: string;
+  readonly resourcesPath: string;
+  readonly repoRoot: string;
+  readonly dbPath: string;
+}
+
+export interface IdeConfigDeps {
+  readonly home?: string;
+  readonly io?: IdeConfigIo;
+  readonly runtime?: IdeRuntime;
+}
+
+function defaultIdeRuntime(): IdeRuntime {
+  return {
+    packaged: false,
+    execPath: process.execPath,
+    resourcesPath: "",
+    repoRoot: join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
+    dbPath: "",
+  };
+}
+
+const IDE_DAEMON_URL = "http://127.0.0.1:7077";
+
+const IDE_HOST_META: Record<string, { readonly agentId: string; readonly ideName: string; readonly opencode: boolean }> = {
+  opencode: { agentId: "opencode", ideName: "OpenCode", opencode: true },
+  "claude-code": { agentId: "claude-code", ideName: "Claude Code", opencode: false },
+  cursor: { agentId: "cursor", ideName: "Cursor", opencode: false },
+  vscode: { agentId: "vscode", ideName: "VS Code", opencode: false },
+};
+
+function canonicalIdeEntry(host: string, runtime: IdeRuntime): Record<string, unknown> | null {
+  const meta = IDE_HOST_META[host];
+  if (meta === undefined) return null;
+  const paths = runtimePaths(runtime);
+  const env = {
+    ...paths.env,
+    METAVAULT_DAEMON_URL: IDE_DAEMON_URL,
+    METAVAULT_AGENT_ID: meta.agentId,
+    METAVAULT_IDE: meta.ideName,
+  };
+  if (meta.opencode) {
+    return {
+      type: "local",
+      command: paths.command,
+      args: paths.args,
+      enabled: true,
+      environment: env,
+    };
+  }
+  return {
+    command: paths.command,
+    args: paths.args,
+    env,
+  };
+}
+
 export function ideConfigIpc(
   request: IdeConfigInspectRequest,
-  deps?: { home?: string; io?: IdeConfigIo },
+  deps?: IdeConfigDeps,
 ): Promise<readonly IdeConfigInspectRow[]>;
 export function ideConfigIpc(
   request: IdeConfigApplyRequest,
-  deps?: { home?: string; io?: IdeConfigIo },
+  deps?: IdeConfigDeps,
 ): Promise<IdeConfigApplyResult>;
 export function ideConfigIpc(
   request: IdeConfigRequest,
-  deps: { home?: string; io?: IdeConfigIo } = {},
+  deps: IdeConfigDeps = {},
 ): Promise<readonly IdeConfigInspectRow[] | IdeConfigApplyResult> {
   const home = deps.home ?? homedir();
   const io = deps.io ?? defaultIdeConfigIo();
@@ -97,8 +162,8 @@ export function ideConfigIpc(
       applyToHostConfig({
         home,
         io,
+        runtime: deps.runtime ?? defaultIdeRuntime(),
         ...(request.host !== undefined ? { host: request.host } : {}),
-        ...(request.entry !== undefined ? { entry: request.entry } : {}),
         ...(request.token !== undefined ? { token: request.token } : {}),
       }),
     );
@@ -116,20 +181,21 @@ function inspectAll({ home, io }: { home: string; io: IdeConfigIo }): readonly I
 function applyToHostConfig({
   home,
   io,
+  runtime,
   host,
-  entry,
   token,
 }: {
   home: string;
   io: IdeConfigIo;
+  runtime: IdeRuntime;
   host?: string;
-  entry?: unknown;
   token?: string;
 }): IdeConfigApplyResult {
   const location = ideConfigLocations(home).find((l) => l.host === host);
   if (location === undefined) {
     return { ok: false, reason: `unknown host: ${host ?? "<none>"}` };
   }
+  const entry = canonicalIdeEntry(location.host, runtime);
   const raw = io.read(location.path);
   const applied = applyIdeConnect({ raw: raw ?? "", containerKey: location.containerKey, entry, token: token ?? "" });
   if (!applied.ok) {

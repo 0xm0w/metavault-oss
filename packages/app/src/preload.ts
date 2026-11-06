@@ -50,7 +50,8 @@ const api: VaultApi = {
   pending: () => invoke("GET", "/pending"),
   policies: () => invoke("GET", "/policies"),
   agents: () => invoke("GET", "/agents"),
-  registerAgent: (id: string, name: string, rotate: boolean) => invoke("POST", rotate ? "/agents/rotate" : "/agents", { id, name }),
+  registerAgent: (id: string, name: string, rotate: boolean, presenceProof?: string) =>
+    invoke("POST", rotate ? "/agents/rotate" : "/agents", { id, name, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
   agentRegistrations: () => invoke("GET", "/agent-registrations"),
   decideAgentRegistration: (id: string, action: "approve" | "deny", code?: string) =>
     invoke("POST", `/agent-registrations/${encodeURIComponent(id)}/${action}`, action === "approve" ? { code } : {}),
@@ -92,7 +93,7 @@ const api: VaultApi = {
       if (typeof scope !== "string" || scope === "" || scope.length > 256) { return; }
       if (typeof website !== "string" || website.length > 253) { return; }
       if (typeof enrollmentId !== "string" || enrollmentId.length > 128) { return; }
-      handler({ alias, scope, website, enrollmentId });
+      handler({ alias, scope, website, enrollmentId, ...(record["untrusted"] === true ? { untrusted: true } : {}) });
     };
     ipcRenderer.on(DEEPLINK_CHANNEL, listener);
     return () => { ipcRenderer.removeListener(DEEPLINK_CHANNEL, listener); };
@@ -108,9 +109,11 @@ const api: VaultApi = {
   wardenKeyStatus: () => invoke("GET", "/settings/warden/key"),
   testWarden: () => invoke("POST", "/settings/warden/test"),
   getLocalAuthStatus: () => invoke("GET", "/settings/local-auth"),
-  updateLocalAuthSettings: (patch: LocalAuthPatchLike) => invoke("PATCH", "/settings/local-auth", patch),
+  updateLocalAuthSettings: (patch: LocalAuthPatchLike, presenceProof?: string) =>
+    invoke("PATCH", "/settings/local-auth", { ...patch, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
   getAgentSecuritySettings: () => invoke("GET", "/settings/security"),
-  updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => invoke("PATCH", "/settings/security", patch),
+  updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike, presenceProof?: string) =>
+    invoke("PATCH", "/settings/security", { ...patch, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
   // Remote Connections: pairing and device management. The daemon token
   // stays in main; the renderer only ever sees session/device state, never
   // the pairing code once consumed, and never any secret material.

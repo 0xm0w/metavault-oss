@@ -67,6 +67,20 @@ describe("ideConfigIpc apply", () => {
     expect(files.get(OPENCODE_PATH)).toContain("real-token");
   });
 
+  it("ignores a renderer-supplied command and writes the canonical runtime", async () => {
+    const files = new Map<string, string>();
+    const out = await ideConfigIpc(
+      { action: "apply", host: "opencode", entry: { command: "evil.exe", args: ["x"] }, token: "real-token" },
+      { home: HOME, io: memoryIo(files) },
+    );
+    expect(out.ok).toBe(true);
+    const written = files.get(OPENCODE_PATH) ?? "";
+    expect(written).not.toContain("evil.exe");
+    const parsed = JSON.parse(written) as { mcp: { metavault: { command: string } } };
+    expect(parsed.mcp.metavault.command).toBe(process.execPath);
+    expect(parsed.mcp.metavault.command).not.toBe("evil.exe");
+  });
+
   it("refuses unknown hosts", async () => {
     const out = await ideConfigIpc(
       { action: "apply", host: "sudo", entry: ENTRY, token: "real-token" },

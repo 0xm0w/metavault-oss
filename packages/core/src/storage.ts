@@ -1,8 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import Database from "better-sqlite3";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { hardenOwnerOnly } from "./owner-acl.js";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "./errors.js";
 import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, LEGACY_LOCAL_PROVIDERS, SUGGESTED_LOCAL_BASE_URL, defaultWardenSettings, normalizeWardenProvider, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
@@ -234,7 +235,27 @@ function toStorageError(operation: string) {
 
 // The store never sees the master key: ciphertext reaches it already
 // encrypted via crypto.ts (see KeySession in key-session.ts).
+function deleteAgentHashBackups(dbPath: string): void {
+  if (dbPath === ":memory:") return;
+  const parent = dirname(dbPath);
+  const prefix = `${basename(dbPath)}.before-agent-hash-`;
+  for (const name of readdirSync(parent)) {
+    if (name.startsWith(prefix)) rmSync(join(parent, name), { recursive: true, force: true });
+  }
+}
+
+function protectDatabaseFile(dbPath: string): void {
+  if (dbPath === ":memory:" || dbPath === "") return;
+  if (process.platform === "win32") {
+    hardenOwnerOnly(dbPath, false);
+    return;
+  }
+  chmodSync(dbPath, 0o600);
+}
+
 function makeStore(db: Database.Database): VaultStoreService {
+  db.exec("PRAGMA secure_delete=ON");
+  protectDatabaseFile(db.name);
   db.exec(
     `CREATE TABLE IF NOT EXISTS credentials (
        alias TEXT PRIMARY KEY,
@@ -372,7 +393,7 @@ function makeStore(db: Database.Database): VaultStoreService {
       const backup = `${backupDir}/vault.db.bak`;
       // Keep matching wrapped key and local daemon token with the private DB
       // snapshot. Never move originals or export this directory to agents.
-      for (const name of ["metavault.key.json", "metavault.token"]) {
+      for (const name of ["metavault.key.json"]) {
         const source = join(dirname(db.name), name);
         if (existsSync(source)) {
           const target = join(backupDir, name);
@@ -401,6 +422,7 @@ function makeStore(db: Database.Database): VaultStoreService {
     const result = db.pragma("wal_checkpoint(TRUNCATE)") as {busy:number}[];
     if (result.some(row=>row.busy !== 0)) throw new Error("agent migration cleanup is busy; close other vault processes and retry");
     db.exec("UPDATE local_migration_state SET cleanup_pending=0 WHERE name='agent-hash'");
+    deleteAgentHashBackups(db.name);
   }
   const agentTableCols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
   if (!agentTableCols.some((c) => c.name === "device_id")) {

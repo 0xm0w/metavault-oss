@@ -15,7 +15,7 @@
   "description": "MetaVault OSS desktop app — Electron shell over vaultd. Holds no secrets.",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.preload.json && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "pack:win": "npm run build && npm run bundle && electron-builder --win --publish never",
     "pack:mac": "electron-builder --mac --publish never",
     "pack:win:store": "electron-builder --win appx --publish never",
@@ -34,6 +34,10 @@
     "files": [
       "dist/**/*",
       "!dist/bin/**",
+      "!**/*.db*",
+      "!**/*.key*",
+      "!**/*.token",
+      "!**/*.log",
       "package.json",
       "icon.ico"
     ],

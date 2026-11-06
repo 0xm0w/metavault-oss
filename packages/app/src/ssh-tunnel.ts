@@ -3,6 +3,7 @@ import { connect } from "node:net";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, type WriteStream, chmodSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { omitVaultSecrets } from "./child-env.js";
 
 // App-managed outbound reverse-SSH transport for Remote Connections.
 //
@@ -281,8 +282,9 @@ export function resolveSshBinaries(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
   exists: (path: string) => boolean = existsSync,
+  allowOverride = true,
 ): SshBinaries | null {
-  const overrideDir = env["METAVAULT_SSH_BIN_DIR"];
+  const overrideDir = allowOverride ? env["METAVAULT_SSH_BIN_DIR"] : undefined;
   if (overrideDir !== undefined && overrideDir !== "") {
     const ext = platform === "win32" ? ".exe" : "";
     const ssh = join(overrideDir, `ssh${ext}`);
@@ -317,7 +319,7 @@ export function resolveSshBinaries(
 type IcaclsRun = (args: readonly string[]) => string;
 
 const defaultIcaclsRun: IcaclsRun = (args) =>
-  execFileSync("icacls", [...args], { encoding: "utf8" });
+  execFileSync("icacls", [...args], { encoding: "utf8", env: omitVaultSecrets(process.env) });
 
 // Trustee SIDs of every DACL access ACE on a path, uppercase, via
 // Directory/File.GetAccessControl + IdentityReference.Translate (mscorlib,
@@ -343,6 +345,7 @@ const defaultListAclSids: AclSidList = (path) => {
   try {
     out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8",
+      env: omitVaultSecrets(process.env),
     });
   } catch (err) {
     const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message;
@@ -359,7 +362,7 @@ const defaultListAclSids: AclSidList = (path) => {
 export function currentWindowsUserSid(): string | undefined {
   if (process.platform !== "win32") return undefined;
   try {
-    const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" });
+    const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", env: omitVaultSecrets(process.env) });
     const match = out.match(/"(S-1-5-21-[0-9-]+)"/);
     return match?.[1];
   } catch {
@@ -970,7 +973,7 @@ export class SshTunnelManager {
     const child = this.deps.spawnFn(this.deps.binaries.ssh, tunnelArgs(config, this.deps.paths), {
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
-      env: process.env,
+      env: omitVaultSecrets(process.env),
     });
     let forwardsUp = 0;
     let buffer = "";
