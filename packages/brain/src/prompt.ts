@@ -73,6 +73,7 @@ export function buildMarshalPrompt(
           `declaredMethod: ${escapeUntrustedValue(payload.declaredMethod ?? "none")}`,
           `payloadDigest: sha256:${payload.digest}`,
           `payloadPreview: ${escapeUntrustedValue(payload.preview)}`,
+          `payloadSafetyText: ${escapeUntrustedValue(payload.safetyText)}`,
           `</untrusted_http_payload>`,
         ].join("\n"),
   ].join("\n");

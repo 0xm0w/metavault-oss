@@ -206,7 +206,11 @@ function consumeStripped(
 ): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
   const proof = record["__presenceProof"];
   delete record["__presenceProof"];
-  if (issuer.consume(proof, scope, nowMs) !== null) {
+  const consumed = issuer.consume(proof, scope, nowMs);
+  if (consumed !== null) {
+    if (typeof consumed.daemonProof === "string" && consumed.daemonProof !== "") {
+      record["presenceProof"] = consumed.daemonProof;
+    }
     return { decision: { allow: true }, body: record };
   }
   return { decision: { allow: false, reason }, body: record };
@@ -264,7 +268,12 @@ export function guardAgentRotateCall(options: {
   readonly issuer: PresenceProofIssuer;
   readonly nowMs: number;
 }): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
-  if (!(options.method === "POST" && options.path === "/agents/rotate")) {
+  if (
+    !(
+      options.method === "POST" &&
+      (options.path === "/agents/rotate" || options.path === "/agents" || options.path === "/agents/revoke")
+    )
+  ) {
     return { decision: { allow: true }, body: options.body };
   }
   const record = copyBody(options.body);

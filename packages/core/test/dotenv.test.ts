@@ -55,11 +55,11 @@ line3'
     });
     expect(inferAliasAndScope("OPENAI_API_KEY")).toEqual({
       alias: "openai",
-      scope: "chat.completions",
+      scope: "models.read",
     });
     expect(inferAliasAndScope("ANTHROPIC_API_KEY")).toEqual({
       alias: "anthropic",
-      scope: "messages.create",
+      scope: "models.read",
     });
     expect(inferAliasAndScope("GH_TOKEN")).toEqual({
       alias: "github",
@@ -71,7 +71,7 @@ line3'
     });
     expect(inferAliasAndScope("GEMINI_API_KEY")).toEqual({
       alias: "gemini",
-      scope: "generateContent",
+      scope: "models.read",
     });
   });
 
@@ -112,7 +112,7 @@ CUSTOM_API_SECRET=supersecret
       {
         rawKey: "OPENAI_API_KEY",
         alias: "openai",
-        scope: "chat.completions",
+        scope: "models.read",
         value: "sk-proj-abc123",
       },
       {

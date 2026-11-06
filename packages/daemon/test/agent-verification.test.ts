@@ -188,17 +188,18 @@ describe("Agent Token Verification & Anti-Spoofing", () => {
           reason: "attacker trying to use standing approval silently",
         }),
       });
-      // MUST NOT be auto-executed! Must be routed to awaiting-approval with verified: false
-      const spoofBody = await spoofRes.json() as { status: string };
-      expect(spoofBody.status).toBe("awaiting-approval");
+      // MUST NOT be auto-executed! An unverified caller claiming an enrolled
+      // agent id is rejected outright (Task 4: unverified-enrolled-agent-spoof).
+      const spoofBody = await spoofRes.json() as { status: string; reason?: string };
+      expect(spoofBody.status).toBe("denied");
+      expect(spoofBody.reason).toBe("unverified-enrolled-agent-spoof");
 
       const checkPending = await (await fetch(`${daemon.base}/pending`, {
         headers: { "x-metavault-token": "test-daemon-token" },
       })).json() as { approvals: { agentId: string; verified: boolean }[] };
 
-      expect(checkPending.approvals.length).toBe(1);
-      expect(checkPending.approvals[0]?.agentId).toBe("cursor");
-      expect(checkPending.approvals[0]?.verified).toBe(false); // Flagged as UNVERIFIED!
+      // The spoofed request never reaches the approval queue.
+      expect(checkPending.approvals.length).toBe(0);
     } finally {
       await daemon.close();
     }

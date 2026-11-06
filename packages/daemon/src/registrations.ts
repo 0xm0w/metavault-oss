@@ -20,6 +20,8 @@ interface Entry {
   createdAt: number;
   expiresAt: number;
   attempts: number;
+  deviceId?: string;
+  origin: "local" | "remote";
   token?: string;
 }
 
@@ -30,6 +32,8 @@ export interface PendingRegistration {
   readonly ide: string;
   readonly code: string;
   readonly expiresAt: number;
+  readonly deviceId?: string;
+  readonly origin: "local" | "remote";
 }
 
 const TTL_MS = 10 * 60_000;
@@ -108,8 +112,10 @@ export class AgentRegistrations {
     });
   }
 
-  async create(input: { agentId: string; name: string; ide: string; claimHash: string }, agentExists: (id: string) => Promise<boolean>):
-    Promise<{ ok: true; id: string; code: string; expiresAt: number } | { ok: false; status: number; error: string }> {
+  async create(
+    input: { agentId: string; name: string; ide: string; claimHash: string; deviceId?: string },
+    agentExists: (id: string) => Promise<boolean>,
+  ): Promise<{ ok: true; id: string; code: string; expiresAt: number } | { ok: false; status: number; error: string }> {
     await this.sweep();
     const t = this.now();
     this.creates = this.creates.filter((x) => t - x < CREATE_WINDOW_MS);
@@ -121,10 +127,21 @@ export class AgentRegistrations {
     this.creates.push(t);
     const id = `reg_${randomBytes(12).toString("hex")}`;
     const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const origin: "local" | "remote" = input.deviceId !== undefined ? "remote" : "local";
     // Reserve the agent id before any await so concurrent requests cannot both pass.
     this.entries.set(id, {
-      id, agentId: input.agentId, name: input.name, ide: input.ide,
-      claimHash: Buffer.from(input.claimHash, "hex"), code, status: "pending", createdAt: t, expiresAt: t + TTL_MS, attempts: 0,
+      id,
+      agentId: input.agentId,
+      name: input.name,
+      ide: input.ide,
+      claimHash: Buffer.from(input.claimHash, "hex"),
+      code,
+      status: "pending",
+      createdAt: t,
+      expiresAt: t + TTL_MS,
+      attempts: 0,
+      ...(input.deviceId !== undefined ? { deviceId: input.deviceId } : {}),
+      origin,
     });
     if (await agentExists(input.agentId)) {
       this.entries.delete(id);
@@ -134,22 +151,50 @@ export class AgentRegistrations {
     return { ok: true, id, code, expiresAt: t + TTL_MS };
   }
 
+  async getPending(id: string): Promise<PendingRegistration | undefined> {
+    await this.sweep();
+    const e = this.entries.get(id);
+    if (e === undefined || e.status !== "pending") return undefined;
+    return {
+      id: e.id,
+      agentId: e.agentId,
+      name: e.name,
+      ide: e.ide,
+      code: e.code,
+      expiresAt: e.expiresAt,
+      ...(e.deviceId !== undefined ? { deviceId: e.deviceId } : {}),
+      origin: e.origin,
+    };
+  }
+
   async list(): Promise<PendingRegistration[]> {
     await this.sweep();
     return [...this.entries.values()]
       .filter((e) => e.status === "pending")
-      .map((e) => ({ id: e.id, agentId: e.agentId, name: e.name, ide: e.ide, code: e.code, expiresAt: e.expiresAt }));
+      .map((e) => ({
+        id: e.id,
+        agentId: e.agentId,
+        name: e.name,
+        ide: e.ide,
+        code: e.code,
+        expiresAt: e.expiresAt,
+        ...(e.deviceId !== undefined ? { deviceId: e.deviceId } : {}),
+        origin: e.origin,
+      }));
   }
 
   // The approval ties to the exact pending entry the user saw (id + code).
-  async approve(id: string, code: string, issueToken: (agentId: string, name: string) => Promise<string>):
-    Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  async approve(
+    id: string,
+    code: string,
+    issueToken: (agentId: string, name: string, deviceId?: string) => Promise<string>,
+  ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
     await this.sweep();
     const e = this.entries.get(id);
     if (e === undefined || e.status !== "pending") return { ok: false, status: 404, error: "registration not found or no longer pending" };
     const a = Buffer.from(code); const b = Buffer.from(e.code);
     if (a.length !== b.length || !timingSafeEqual(a, b)) return { ok: false, status: 403, error: "the code does not match this request" };
-    e.token = await issueToken(e.agentId, e.name);
+    e.token = await issueToken(e.agentId, e.name, e.deviceId);
     e.status = "approved";
     this.notify(id);
     this.registrationChanged(id);

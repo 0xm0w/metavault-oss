@@ -92,10 +92,10 @@ export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleH
   if (SYSTEM_PATHS.test(untrusted)) add("system-credential-path", "high");
   if (read && /\bmutation\b/i.test(body)) add("graphql-mutation-on-readonly-scope", "high");
 
-  const sensitive = SENSITIVE.test(reason);
-  const exfil = EXFIL_VERB.test(reason);
-  const destination = DESTINATION.test(reason);
-  const bulk = BULK.test(reason);
+  const sensitive = SENSITIVE.test(untrusted);
+  const exfil = EXFIL_VERB.test(untrusted);
+  const destination = DESTINATION.test(untrusted);
+  const bulk = BULK.test(untrusted);
 
   // The payload executes only after approval, but the human approves on the
   // stated intent: a declared state-changing method on a read-only scope is
@@ -114,9 +114,9 @@ export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleH
 
   if (sensitive && (exfil || destination)) add("sensitive-data-leaving", "high");
   if (bulk && exfil && destination) add("bulk-export-to-destination", "high");
-  if (DESTRUCTIVE.test(reason)) add("destructive-verb", read ? "high" : "signal");
-  if (read && MONEY.test(reason)) add("money-movement-on-read-scope", "high");
-  if (read && WRITE_INTENT.test(reason)) add("write-intent-on-read-scope", "signal");
+  if (DESTRUCTIVE.test(untrusted)) add("destructive-verb", read ? "high" : "signal");
+  if (read && MONEY.test(untrusted)) add("money-movement-on-read-scope", "high");
+  if (read && WRITE_INTENT.test(untrusted)) add("write-intent-on-read-scope", "signal");
 
   if (sensitive) add("sensitive-data-term", "signal");
   if (destination) add("external-destination", "signal");
@@ -135,9 +135,11 @@ const HOSTNAME_TOKEN =
 // names the API host (api.cloudflare.com). A real URL, email, or named
 // exfil destination still counts.
 export function riskForStandingRead(req: CapabilityRequest, history: HistorySummary): Risk {
+  const payload = summarizeHttpRequestPayload(req.payload);
+  const untrusted = payload?.safetyText ? `${req.reason}\n${payload.safetyText}` : req.reason;
   const hits = ruleHits(req, history).filter((hit) => {
     if (hit.id !== "external-destination") return true;
-    const stripped = req.reason.replace(HOSTNAME_TOKEN, " ");
+    const stripped = untrusted.replace(HOSTNAME_TOKEN, " ");
     return DESTINATION.test(stripped);
   });
   return riskFromHits(hits);
