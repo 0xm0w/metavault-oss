@@ -23,6 +23,7 @@ export const ALLOWED_DAEMON_CALLS: readonly DaemonCallRequest[] = [
   { method: "POST", path: "/approve" },
   { method: "POST", path: "/deny" },
   { method: "POST", path: "/approve-always" },
+  { method: "POST", path: "/approve-session" },
   { method: "POST", path: "/revoke" },
   { method: "GET", path: "/aliases" },
   { method: "GET", path: "/audit" },

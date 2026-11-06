@@ -5,6 +5,7 @@ import {
   buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
+  canSessionLease,
   credentialInitial,
   deriveVaultCards,
   faviconUrl,
@@ -530,6 +531,25 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
       }
     });
     buttons.append(alwaysBtn);
+  }
+  if (canSessionLease(hero)) {
+    const sessionBtn = el("button", "action btn-always", "Approve for 15 minutes (max 10 calls)") as HTMLButtonElement;
+    sessionBtn.type = "button";
+    sessionBtn.disabled = busy;
+    sessionBtn.addEventListener("click", () => {
+      const executeSession = (presenceProof?: string) => {
+        void runAction(
+          () => window.metavault.approveSession(hero.grantId, presenceProof),
+          "Approved for 15 minutes, up to 10 calls. The first call ran inside vaultd.",
+        );
+      };
+      if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
+        void confirmLocalPresence("Authenticate to approve capability", () => { executeSession(); });
+      } else {
+        executeSession();
+      }
+    });
+    buttons.append(sessionBtn);
   }
   card.append(buttons);
   return card;

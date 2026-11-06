@@ -29,6 +29,19 @@ export const DEFAULT_VELOCITY_CONFIG: AgentVelocityConfig = {
   circuitBreakerDurationMs: 60_000,
 };
 
+// Enrolled agents present a token. They get a wider burst budget so parallel
+// tool calls are not stalled, and a slightly higher failure threshold.
+// Unverified callers stay on DEFAULT_VELOCITY_CONFIG.
+export const VERIFIED_VELOCITY_CONFIG: AgentVelocityConfig = {
+  maxRequestsPerMinute: 60,
+  consecutiveFailureThreshold: 5,
+  circuitBreakerDurationMs: 60_000,
+};
+
+export function velocityConfigForAgent(verified: boolean | undefined): AgentVelocityConfig {
+  return verified === true ? VERIFIED_VELOCITY_CONFIG : DEFAULT_VELOCITY_CONFIG;
+}
+
 export interface AgentVelocityTracker {
   readonly windowStartMs: number;
   readonly requestsInWindow: number;
@@ -60,11 +73,19 @@ export function isAgentRateLimited(
   return { limited: false };
 }
 
+export interface RecordAgentRequestOptions {
+  // Discovery misses such as unknown-alias are not authentication failures.
+  // Leave this false to keep the request in the rate window without moving
+  // the circuit breaker.
+  readonly countFailure?: boolean;
+}
+
 export function recordAgentRequest(
   tracker: AgentVelocityTracker | undefined,
   nowMs: number,
   success: boolean,
   config: AgentVelocityConfig = DEFAULT_VELOCITY_CONFIG,
+  options?: RecordAgentRequestOptions,
 ): AgentVelocityTracker {
   const current = tracker ?? {
     windowStartMs: nowMs,
@@ -78,7 +99,12 @@ export function recordAgentRequest(
   const requestsInWindow = newWindow ? 1 : current.requestsInWindow + 1;
   const windowStartMs = newWindow ? nowMs : current.windowStartMs;
 
-  const consecutiveFailures = success ? 0 : current.consecutiveFailures + 1;
+  const countFailure = options?.countFailure !== false;
+  const consecutiveFailures = success
+    ? 0
+    : countFailure
+      ? current.consecutiveFailures + 1
+      : current.consecutiveFailures;
   let circuitBrokenUntilMs = current.circuitBrokenUntilMs;
 
   if (consecutiveFailures >= config.consecutiveFailureThreshold) {
@@ -122,11 +148,20 @@ export function escalateFinancialDecision(decision: MarshalDecision | null): Mar
   };
 }
 
+export interface PolicyEvaluationOptions {
+  // Risk from assessByRules when the warden did not return a decision
+  // (provider "none", or the model call failed closed to null). Standing
+  // approvals may use this. A non-null marshal decision is never replaced
+  // by it.
+  readonly deterministicRisk?: "low" | "medium" | "high";
+}
+
 export function evaluatePolicy(
   req: CapabilityRequest,
   decision: MarshalDecision | null,
   cfg: PolicyConfig,
   historyCount: number,
+  options?: PolicyEvaluationOptions,
 ): PolicyResult {
   const ceiling = cfg.ceilings[req.alias];
   if (ceiling === undefined) {
@@ -189,10 +224,14 @@ export function evaluatePolicy(
     return { allowedScope, requireApproval: true, reason: "financial-approval-required" };
   }
 
+  // A missing warden verdict is low only when the deterministic rules say
+  // so. That lets standing approvals survive provider "none" and an offline
+  // model. It does not auto-approve anything that lacks a standing approval.
+  const riskIsLow =
+    decision !== null ? decision.risk === "low" : options?.deterministicRisk === "low";
   const hasStandingApproval =
     cfg.disableStandingApprovals !== true &&
-    decision !== null &&
-    decision.risk === "low" &&
+    riskIsLow &&
     !isWriteScope(allowedScope) &&
     cfg.standingApprovals.some(
       (approval) =>
@@ -205,10 +244,10 @@ export function evaluatePolicy(
   let requireApproval: boolean;
   if (isWriteScope(allowedScope)) {
     requireApproval = true;
-  } else if (decision === null) {
-    requireApproval = true;
   } else if (hasStandingApproval) {
     requireApproval = false;
+  } else if (decision === null) {
+    requireApproval = true;
   } else if (decision.risk !== "low") {
     requireApproval = true;
   } else if (req.verified === false) {

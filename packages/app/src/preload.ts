@@ -42,6 +42,8 @@ const api: VaultApi = {
   deny: (grantId: string) => invoke("POST", "/deny", { grantId }),
   approveAlways: (grantId: string, presenceProof?: string) =>
     invoke("POST", "/approve-always", { grantId, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
+  approveSession: (grantId: string, presenceProof?: string) =>
+    invoke("POST", "/approve-session", { grantId, ...(presenceProof !== undefined ? { __presenceProof: presenceProof } : {}) }),
   revoke: (target: string) => invoke("POST", "/revoke", { target }),
   aliases: () => invoke("GET", "/aliases"),
   audit: () => invoke("GET", "/audit"),

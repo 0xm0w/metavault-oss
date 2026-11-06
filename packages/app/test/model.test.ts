@@ -12,6 +12,7 @@ import {
   buildEditPayload,
   buildPolicyRows,
   canAlwaysAllow,
+  canSessionLease,
   credentialInitial,
   derivePolicies,
   deriveVaultCards,
@@ -140,6 +141,15 @@ describe("scope risk helpers", () => {
     expect(canAlwaysAllow(approval({ risk: "medium" }))).toBe(false);
     expect(canAlwaysAllow(approval({ risk: "high" }))).toBe(false);
     expect(canAlwaysAllow(approval({ verified: false }))).toBe(false);
+  });
+
+  it("offers a session lease only for a verified local write that is not high risk", () => {
+    const write = approval({ allowedScope: "charges.write", requestedScope: "charges.write", verified: true, risk: "medium" });
+    expect(canSessionLease(write)).toBe(true);
+    expect(canSessionLease(approval({ verified: true }))).toBe(false);
+    expect(canSessionLease({ ...write, verified: false })).toBe(false);
+    expect(canSessionLease({ ...write, origin: "remote" })).toBe(false);
+    expect(canSessionLease({ ...write, risk: "high" })).toBe(false);
   });
 });
 

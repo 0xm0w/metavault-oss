@@ -174,7 +174,7 @@ describe("metavault CLI (in-process daemon wire)", () => {
     );
     expect(stored).toBeDefined();
     expect(stored?.ciphertext).not.toContain(CANARY);
-    expect(decryptSecret(MASTER_KEY, stored?.ciphertext ?? "")).toBe(CANARY);
+    expect(decryptSecret(MASTER_KEY, stored?.ciphertext ?? "", { alias: "stripe", kind: "secret" })).toBe(CANARY);
 
     // And the daemon can use the CLI-added credential immediately.
     const grantId = await requestPending();
@@ -535,7 +535,7 @@ OPENAI_API_KEY=sk-proj-import-openai-888
       throw new Error("expected store record");
     }
     expect(store.scopeCeiling).toBe("charges.read");
-    const decrypted = decryptSecret(MASTER_KEY, store.ciphertext);
+    const decrypted = decryptSecret(MASTER_KEY, store.ciphertext, { alias: "stripe", kind: "secret" });
     expect(decrypted).toBe("sk_test_import_stripe_999");
   });
 
@@ -560,7 +560,7 @@ OPENAI_API_KEY=sk-proj-import-openai-888
     };
 
     const c = capture({ spawnFn: mockSpawn });
-    const code = await runCli(["run", "--", "npm", "run", "dev"], c.deps);
+    const code = await runCli(["run", "--allow-alias", "stripe,openai", "--grant", "human-grant", "--", "npm", "run", "dev"], c.deps);
     expect(code).toBe(0);
     expect(commandSpawned).toBe("npm");
     expect(capturedEnv).toBeDefined();
@@ -569,6 +569,38 @@ OPENAI_API_KEY=sk-proj-import-openai-888
     }
     expect(capturedEnv["STRIPE_API_KEY"]).toBe("sk_test_import_stripe_999");
     expect(capturedEnv["OPENAI_API_KEY"]).toBe("sk-proj-import-openai-888");
+  });
+
+  it("does not spawn when run has no allow list", async () => {
+    let spawned = false;
+    const c = capture({
+      spawnFn: () => {
+        spawned = true;
+        return { on: () => undefined };
+      },
+    });
+    const code = await runCli(["run", "--", "npm", "run", "dev"], c.deps);
+    expect(code).toBe(2);
+    expect(spawned).toBe(false);
+    expect(c.err()).toContain("--allow-alias");
+  });
+
+  it("exports only the aliases named by --allow-alias", async () => {
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    const c = capture({
+      spawnFn: (_command, _args, options) => {
+        capturedEnv = options.env;
+        return {
+          on: (event, cb) => {
+            if (event === "close") cb(0);
+          },
+        };
+      },
+    });
+    const code = await runCli(["run", "--allow-alias", "stripe", "--grant", "human-grant", "--", "npm", "run", "dev"], c.deps);
+    expect(code).toBe(0);
+    expect(capturedEnv?.["STRIPE_API_KEY"]).toBe("sk_test_import_stripe_999");
+    expect(capturedEnv?.["OPENAI_API_KEY"] === "sk-proj-import-openai-888").toBe(false);
   });
 });
 

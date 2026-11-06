@@ -113,6 +113,7 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
             METAVAULT_DAEMON_URL: base,
             METAVAULT_AGENT_ID: "e2e-agent",
             METAVAULT_IDE: "Cursor",
+            METAVAULT_AGENT_TOKEN: "",
           },
         });
         client = new Client({ name: "e2e-client", version: "0.0.1" });

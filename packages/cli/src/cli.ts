@@ -128,7 +128,7 @@ interface ResolvedIo {
 }
 
 const USAGE =
-  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|pair [--host <h>] [--port <p>] [--name <n>] [--profile-dir <d>]|shim [--port <p>] [--profile-dir <d>]>\n";
+  "usage: metavault <agents list|agents add/rotate <id> [--name <name>] --out <new-private-file>|agents revoke <id>|init [--kdf scrypt|argon2id] [--legacy-keychain]|key status|key protect [--kdf scrypt|argon2id] [--keep-keychain]|unlock|lock|add <alias> --scope <s>|add-card <alias> [--scope <s>] [--website <w>]|import <path>|run --allow-alias <alias>[,more] [--grant <token>] -- <command...>|approve <grantId>|audit|revoke <target>|enroll --alias <a> --scope <s> [--website <w>]|enroll-status <enrollmentId>|pair [--host <h>] [--port <p>] [--name <n>] [--profile-dir <d>]|shim [--port <p>] [--profile-dir <d>]>\n";
 
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
@@ -698,7 +698,7 @@ function addProgram(
       return yield* Effect.fail(new UsageError({ message: "secret must not be empty" }));
     }
     const masterKey = yield* masterKeyEffect(deps, io);
-    const ciphertext = yield* Effect.sync(() => encryptSecret(masterKey, secret));
+    const ciphertext = yield* Effect.sync(() => encryptSecret(masterKey, secret, { alias, kind: "secret" }));
     yield* Effect.gen(function* () {
       const store = yield* VaultStore;
       yield* store.addCredential(alias, scope, ciphertext);
@@ -727,7 +727,7 @@ function importProgram(
     yield* Effect.gen(function* () {
       const store = yield* VaultStore;
       for (const item of items) {
-        const ciphertext = encryptSecret(masterKey, item.value);
+        const ciphertext = encryptSecret(masterKey, item.value, { alias: item.alias, kind: "secret" });
         yield* store.addCredential(item.alias, item.scope, ciphertext, `env:${item.rawKey}`);
       }
     }).pipe(Effect.provide(VaultStoreScoped(dbPath)));
@@ -740,36 +740,104 @@ function importProgram(
   });
 }
 
+export interface RunOptions {
+  readonly allowedAliases: readonly string[];
+  readonly commandAndArgs: readonly string[];
+  readonly grantToken?: string;
+}
+
+// `metavault run` used to decrypt every secret into the child environment.
+// Aliases must be named, and a non-interactive caller must present a
+// one-time human grant token so an agent shell cannot export the vault.
+export function parseRunArgs(args: readonly string[]): RunOptions | null {
+  const allowedAliases: string[] = [];
+  let grantToken: string | undefined;
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    if (arg === "--") {
+      i += 1;
+      break;
+    }
+    if (arg === "--allow-alias" || arg === "--only") {
+      const next = args[i + 1];
+      if (next === undefined || next.startsWith("-")) {
+        return null;
+      }
+      for (const item of next.split(",").map((s) => s.trim()).filter(Boolean)) {
+        allowedAliases.push(item);
+      }
+      i += 2;
+      continue;
+    }
+    if (arg === "--grant") {
+      const next = args[i + 1];
+      if (next === undefined || next.startsWith("-")) {
+        return null;
+      }
+      grantToken = next;
+      i += 2;
+      continue;
+    }
+    break;
+  }
+  const commandAndArgs = args.slice(i);
+  if (commandAndArgs.length === 0 || allowedAliases.length === 0) {
+    return null;
+  }
+  return { allowedAliases, commandAndArgs, ...(grantToken !== undefined ? { grantToken } : {}) };
+}
+
 function runProgram(
   deps: CliDeps,
   io: ResolvedIo,
-  commandAndArgs: readonly string[],
+  options: RunOptions,
 ): Effect.Effect<string, CliFailure> {
   return Effect.gen(function* () {
+    const commandAndArgs = options.commandAndArgs;
     if (commandAndArgs.length === 0) {
       return yield* Effect.fail(new UsageError({ message: "run requires a command to execute" }));
     }
+    const interactive = process.stdin.isTTY;
+    if (!interactive && (options.grantToken === undefined || options.grantToken === "")) {
+      return yield* Effect.fail(
+        new UsageError({ message: "run is non-interactive: pass --grant <token> from a human approval" }),
+      );
+    }
     const masterKey = yield* masterKeyEffect(deps, io);
     const dbPath = resolveDbPath(deps);
+    const allowed = new Set(options.allowedAliases);
 
     const envSecrets: Record<string, string> = {};
     yield* Effect.gen(function* () {
       const store = yield* VaultStore;
-      const aliases = yield* store.listCredentialAliases();
-      for (const alias of aliases) {
+      for (const alias of allowed) {
         const rec = yield* store.getCredential(alias);
-        // Payment cards are never exported into a child environment.
-        if (rec && rec.kind !== CARD_KIND) {
-          try {
-            const secret = decryptSecret(masterKey, rec.ciphertext);
-            const envKey = rec.website.startsWith("env:")
-              ? rec.website.slice(4)
-              : alias.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-            envSecrets[envKey] = secret;
-          } catch {
-            // Ignore un-decryptable records
-          }
+        if (rec === undefined) {
+          return yield* Effect.fail(new UsageError({ message: `unknown alias: ${alias}` }));
         }
+        if (rec.kind === CARD_KIND) {
+          return yield* Effect.fail(new UsageError({ message: `payment cards are not exported: ${alias}` }));
+        }
+        let secret: string;
+        try {
+          secret = decryptSecret(masterKey, rec.ciphertext, { alias, kind: rec.kind });
+        } catch {
+          return yield* Effect.fail(new UsageError({ message: `failed to decrypt alias: ${alias}` }));
+        }
+        const envKey = rec.website.startsWith("env:")
+          ? rec.website.slice(4)
+          : alias.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+        envSecrets[envKey] = secret;
+        const event: AuditEvent = {
+          ts: new Date().toISOString(),
+          agentId: "cli",
+          alias,
+          scope: rec.scopeCeiling,
+          stage: "exported",
+          detail: "secret exported to child process",
+        };
+        yield* store.appendAudit(event);
       }
     }).pipe(Effect.provide(VaultStoreScoped(dbPath)));
 
@@ -951,12 +1019,13 @@ function programFor(
       return importProgram(deps, io, filePath);
     }
     case "run": {
-      const rest = argv.slice(1);
-      const commandArgs = rest[0] === "--" ? rest.slice(1) : rest;
-      if (commandArgs.length === 0) {
-        return Effect.fail(new UsageError({ message: "run requires -- <command> [args...]" }));
+      const parsed = parseRunArgs(argv.slice(1));
+      if (parsed === null) {
+        return Effect.fail(
+          new UsageError({ message: "run requires --allow-alias <alias>[,more] [--grant <token>] -- <command>" }),
+        );
       }
-      return runProgram(deps, io, commandArgs);
+      return runProgram(deps, io, parsed);
     }
     case "approve": {
       const grantId = argv[1];

@@ -14,6 +14,13 @@ import { requestMetaApiDecision } from "./meta-api.js";
 import { DEFAULT_MARSHAL_MODEL, requestLocalDecision, requestOllamaDecision } from "./ollama.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 
+function clampDecision(dec: MarshalDecision, req: CapabilityRequest): MarshalDecision {
+  return enforceScopeSafety(dec, req.requestedScope, req.reason, {
+    tool: req.tool,
+    payload: req.payload,
+  });
+}
+
 export { MarshalInvalidOutput, MarshalUnavailable } from "../../core/src/errors.js";
 export { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
 export { MarshalDecisionSchema, parseMarshalDecision } from "./schema.js";
@@ -160,7 +167,7 @@ export function assessFromSettings(
   }
   if (settings.effort !== "deep") {
     return singlePass(settings, getKey, prompt, totalMs).pipe(
-      Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope, req.reason)),
+      Effect.map((dec) => clampDecision(dec, req)),
     );
   }
   const perPassMs = Math.floor(totalMs / 2);
@@ -171,17 +178,16 @@ export function assessFromSettings(
       first.risk === second.risk &&
       first.recommendedScope === second.recommendedScope &&
       first.requireApproval === second.requireApproval;
-    if (agrees) return enforceScopeSafety(first, req.requestedScope, req.reason);
+    if (agrees) return clampDecision(first, req);
     const risk = RISK_RANK[first.risk] >= RISK_RANK[second.risk] ? first.risk : second.risk;
-    return enforceScopeSafety(
+    return clampDecision(
       {
         risk,
         recommendedScope: narrowerScope(first.recommendedScope, second.recommendedScope),
         requireApproval: true,
         explanation: `deep verify disagreement; escalated. first: ${first.explanation}; verify: ${second.explanation}`,
       },
-      req.requestedScope,
-      req.reason,
+      req,
     );
   });
   return program.pipe(
@@ -207,7 +213,7 @@ export function BrainOllamaLive(model: string = DEFAULT_MARSHAL_MODEL, baseUrl?:
   return Layer.succeed(Brain, {
     assess: (req, historySummary, policyDigest) =>
       requestOllamaDecision(model, buildMarshalPrompt(req, historySummary, policyDigest), undefined, baseUrl).pipe(
-        Effect.map((dec) => enforceScopeSafety(dec, req.requestedScope)),
+        Effect.map((dec) => clampDecision(dec, req)),
         Effect.provide(FetchHttpClient.layer),
       ),
   });

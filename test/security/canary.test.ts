@@ -148,6 +148,7 @@ describe("canary sweep: audit, MCP, deeplink, settings, renderer IPC", () => {
       ide: "Cursor",
       fetchFn: daemonFetch,
       approvalWaitMs: 0,
+      agentToken: "",
       launchDeeplink: () => Promise.resolve(false),
     });
     client = new Client({ name: "canary-sweep-client", version: "0.0.1" });

@@ -48,6 +48,7 @@ describe("main-process daemon whitelist", () => {
       { method: "POST", path: "/approve" },
       { method: "POST", path: "/deny" },
       { method: "POST", path: "/approve-always" },
+      { method: "POST", path: "/approve-session" },
       { method: "POST", path: "/revoke" },
       { method: "GET", path: "/aliases" },
       { method: "GET", path: "/audit" },

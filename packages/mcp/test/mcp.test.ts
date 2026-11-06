@@ -83,6 +83,7 @@ beforeAll(async () => {
     ide: "Cursor",
     fetchFn: daemonFetch,
     approvalWaitMs: 0,
+    agentToken: "",
   });
   client = new Client({ name: "mcp-test-client", version: "0.0.1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -202,6 +203,7 @@ describe("MetaVault OSS MCP server (in-process client)", () => {
   it("reports a daemon outage as an MCP error without secrets", async () => {
     const downServer = createMetavaultMcpServer({
       daemonUrl: "http://127.0.0.1:7077",
+      agentToken: "",
       fetchFn: () => Promise.reject(new Error("connect ECONNREFUSED")),
     });
     const downClient = new Client({ name: "mcp-down-client", version: "0.0.1" });

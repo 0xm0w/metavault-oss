@@ -8,9 +8,9 @@ import type { HistorySummary } from "./prompt.js";
 // (packages/brain/eval/run-thesis.ts). It sees exactly what the model warden
 // sees (request metadata, the agent's stated reason, a canonical payload
 // summary, a history summary) and rates risk with keyword maps and a few
-// semantic combinations instead of a language model. It is not wired into
-// the daemon; the daemon's own deterministic layer is evaluatePolicy plus
-// enforceScopeSafety.
+// semantic combinations instead of a language model. The daemon calls it
+// for the standing-approval fast path and as deterministicRisk when the
+// marshal does not run. evaluatePolicy plus enforceScopeSafety still apply.
 //
 // Every rule that fires is reported in the explanation so a reviewer can see
 // why a request was escalated.

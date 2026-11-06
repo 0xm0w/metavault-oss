@@ -37,9 +37,12 @@ async function connect(agentId: string, agentToken?: string, waitMs = 0): Promis
     const presented = headers.get("x-metavault-agent-token") ?? undefined;
     const body: unknown = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
     const receipt = headers.get("x-metavault-grant-receipt") ?? undefined;
+    const waitRaw = url.searchParams.get("waitMs");
+    const grantWaitMs = waitRaw === null ? undefined : Number(waitRaw);
     const out = await handleVaultRequest(service, init?.method ?? "GET", url.pathname, body, {
       ...(presented !== undefined ? { providedAgentToken: presented } : {}),
       ...(receipt !== undefined ? { providedGrantReceipt: receipt } : {}),
+      ...(grantWaitMs !== undefined && Number.isFinite(grantWaitMs) ? { grantWaitMs } : {}),
     });
     return new Response(JSON.stringify(out.body), { status: out.status, headers: { "content-type": "application/json" } });
   };
@@ -50,7 +53,9 @@ async function connect(agentId: string, agentToken?: string, waitMs = 0): Promis
     fetchFn,
     approvalWaitMs: waitMs,
     approvalPollMs: 10,
-    ...(agentToken !== undefined ? { agentToken } : {}),
+    // An omitted token means this session is unverified. Empty string stops
+    // the server from picking up METAVAULT_AGENT_TOKEN from the parent env.
+    agentToken: agentToken ?? "",
   });
   const client = new Client({ name: `test-${agentId}`, version: "0.0.1" });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -180,6 +185,7 @@ describe("grant_status: the agent learns the user's decision", () => {
     const server = createMetavaultMcpServer({
       daemonUrl: "http://127.0.0.1:7077",
       agentId: "opencode-down",
+      agentToken: "",
       approvalWaitMs: 0,
       fetchFn: async (input, init) => {
         const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;

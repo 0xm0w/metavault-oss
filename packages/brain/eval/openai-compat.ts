@@ -234,7 +234,10 @@ export function openAICompatWarden(opts: OpenAICompatOptions): OpenAICompatRun {
     const okLog: CallLog = { caseId: c.id, attempts, status, ok: true, ...usageFields, latencyMs, error: null };
     calls.push(okLog);
     opts.onCall?.(okLog, spent);
-    return enforceScopeSafety(decoded.right, c.request.requestedScope, c.request.reason);
+    return enforceScopeSafety(decoded.right, c.request.requestedScope, c.request.reason, {
+      tool: c.request.tool,
+      payload: c.request.payload,
+    });
   };
 
   const summary = (): CostSummary => {

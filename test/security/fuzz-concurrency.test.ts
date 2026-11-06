@@ -314,6 +314,7 @@ describe("Adversarial Stress Testing & Fuzzing Suite (#22)", () => {
         daemonUrl: daemon.base,
         agentId: "fuzz-agent",
         ide: "Cursor",
+        agentToken: "",
         fetchFn: daemonFetch,
       });
 

@@ -25,6 +25,14 @@ import {
 } from "../src/device-client.js";
 import { DAEMON_TOKEN, GATEWAY_SECRET, makeStack, type Stack } from "./stack.js";
 
+// Windows Temp grants extra principals, so saveDeviceProfile refuses a
+// profile whose parent is Temp. Harden a private parent first.
+function profileDir(prefix: string): { root: string; dir: string } {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  hardenOwnerOnly(root, true);
+  return { root, dir: mkdtempSync(join(root, "profile-")) };
+}
+
 /** Poll until the condition holds (fixed sleeps are racy on a loaded CI runner). */
 async function until(cond: () => boolean, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -87,7 +95,7 @@ describe("device-client", () => {
     const material = await handshake;
 
     expect(material.devicePort).toBe(stack.gatewayDevicePort);
-    const dir = mkdtempSync(join(tmpdir(), "mv-device-"));
+    const { root, dir } = profileDir("mv-device-");
     saveDeviceProfile(dir, {
       deviceId,
       host: "127.0.0.1",
@@ -114,7 +122,7 @@ describe("device-client", () => {
     const policies = await fetch(`http://127.0.0.1:${String(shim.port)}/policies`, { headers: auth });
     expect(policies.status).toBe(403);
     await shim.close();
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }, 120_000);
 
   it("fails pairing with a wrong code without touching the vault session", async () => {
@@ -197,7 +205,7 @@ describe("device-client", () => {
     await until(() => sasSeen);
     const deviceId = await confirmOnVault(session.pairingId);
     const material = await handshake;
-    const dir = mkdtempSync(join(tmpdir(), "mv-device-pin-"));
+    const { root, dir } = profileDir("mv-device-pin-");
     saveDeviceProfile(dir, {
       deviceId,
       host: "127.0.0.1",
@@ -210,7 +218,7 @@ describe("device-client", () => {
     const res = await fetch(`http://127.0.0.1:${String(shim.port)}/health`, { headers: { "x-metavault-shim-token": "mvshim_test-token-2" } });
     expect(res.status).toBe(502);
     await shim.close();
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }, 120_000);
 
   it("shim demands its local token and refuses browser-style callers", async () => {
@@ -228,7 +236,7 @@ describe("device-client", () => {
     await until(() => sasSeen);
     const deviceId = await confirmOnVault(session.pairingId);
     const material = await handshake;
-    const dir = mkdtempSync(join(tmpdir(), "mv-device-auth-"));
+    const { root, dir } = profileDir("mv-device-auth-");
     saveDeviceProfile(dir, {
       deviceId,
       host: "127.0.0.1",
@@ -278,7 +286,7 @@ describe("device-client", () => {
       expect([401, 403]).toContain(badAgent.status);
     }
     await shim.close();
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }, 120_000);
 
   it("completes pairing under production rate-limit defaults with a human-paced comparison", async () => {

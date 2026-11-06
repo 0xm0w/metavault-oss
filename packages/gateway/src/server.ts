@@ -26,8 +26,12 @@ export const GATEWAY_ALLOWLIST: readonly { method: string; pattern: RegExp }[] =
   { method: "GET", pattern: /^\/health$/ },
   { method: "GET", pattern: /^\/aliases$/ },
   { method: "POST", pattern: /^\/request$/ },
+  { method: "GET", pattern: /^\/grants\/[^/]+$/ },
+  { method: "POST", pattern: /^\/grants\/[^/]+\/result$/ },
   { method: "POST", pattern: /^\/enrollments$/ },
   { method: "GET", pattern: /^\/enrollments\/[^/]+$/ },
+  { method: "POST", pattern: /^\/agent-registrations$/ },
+  { method: "POST", pattern: /^\/agent-registrations\/[^/]+\/claim$/ },
   { method: "POST", pattern: /^\/revoke$/ },
 ];
 
@@ -379,7 +383,14 @@ export function createGatewayServers(options: GatewayOptions): GatewayServers {
       if (typeof agentToken === "string" && agentToken !== "") {
         headers["x-metavault-agent-token"] = agentToken;
       }
-      const upstream = await fetch(`${daemonBase}${path}`, {
+      // Grant outcome routes are receipt-gated on the daemon. The receipt
+      // is not a vault secret; it is the single-request capability returned
+      // with that agent's own /request answer.
+      const grantReceipt = req.headers["x-metavault-grant-receipt"];
+      if (typeof grantReceipt === "string" && grantReceipt !== "") {
+        headers["x-metavault-grant-receipt"] = grantReceipt;
+      }
+      const upstream = await fetch(`${daemonBase}${path}${url.search}`, {
         method,
         headers,
         ...(bodyText !== undefined ? { body: bodyText } : {}),

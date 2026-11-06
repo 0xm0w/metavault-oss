@@ -91,7 +91,7 @@ export async function guardApprovalCall(options: {
   readonly getPending: () => Promise<unknown>;
   readonly getRemoteSettings: () => Promise<unknown>;
 }): Promise<{ readonly decision: RemoteApprovalDecision; readonly body: unknown }> {
-  if (options.path !== "/approve" && options.path !== "/approve-always") {
+  if (options.path !== "/approve" && options.path !== "/approve-always" && options.path !== "/approve-session") {
     return { decision: { allow: true }, body: options.body };
   }
   const record = typeof options.body === "object" && options.body !== null ? { ...(options.body as Record<string, unknown>) } : {};

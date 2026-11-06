@@ -19,7 +19,8 @@ export type AuditStage =
   | "credential-deleted"
   | "enrollment-created"
   | "enrollment-completed"
-  | "settings-changed";
+  | "settings-changed"
+  | "exported";
 
 export interface PendingApproval {
   readonly grantId: string;
@@ -406,6 +407,7 @@ export interface VaultApi {
   readonly approve: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly deny: (grantId: string) => Promise<unknown>;
   readonly approveAlways: (grantId: string, presenceProof?: string) => Promise<unknown>;
+  readonly approveSession: (grantId: string, presenceProof?: string) => Promise<unknown>;
   readonly revoke: (target: string) => Promise<unknown>;
   readonly aliases: () => Promise<unknown>;
   readonly audit: () => Promise<unknown>;
