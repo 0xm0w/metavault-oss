@@ -560,7 +560,7 @@ OPENAI_API_KEY=sk-proj-import-openai-888
     };
 
     const c = capture({ spawnFn: mockSpawn });
-    const code = await runCli(["run", "--allow-alias", "stripe,openai", "--grant", "human-grant", "--", "npm", "run", "dev"], c.deps);
+    const code = await runCli(["run", "--allow-alias", "stripe,openai", "--grant", "human-grant-token-0001", "--", "npm", "run", "dev"], c.deps);
     expect(code).toBe(0);
     expect(commandSpawned).toBe("npm");
     expect(capturedEnv).toBeDefined();
@@ -597,7 +597,7 @@ OPENAI_API_KEY=sk-proj-import-openai-888
         };
       },
     });
-    const code = await runCli(["run", "--allow-alias", "stripe", "--grant", "human-grant", "--", "npm", "run", "dev"], c.deps);
+    const code = await runCli(["run", "--allow-alias", "stripe", "--grant", "human-grant-token-0001", "--", "npm", "run", "dev"], c.deps);
     expect(code).toBe(0);
     expect(capturedEnv?.["STRIPE_API_KEY"]).toBe("sk_test_import_stripe_999");
     expect(capturedEnv?.["OPENAI_API_KEY"] === "sk-proj-import-openai-888").toBe(false);

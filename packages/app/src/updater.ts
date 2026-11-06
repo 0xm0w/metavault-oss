@@ -69,8 +69,13 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null): Pr
 
     // Configure autoUpdater
     // Download only after isOfferableUpdate() accepts the version.
+    // Until Windows Authenticode and macOS Developer ID signing are enabled in
+    // packages/app/package.json, automatic background installation requires
+    // explicit opt-in via METAVAULT_AUTO_UPDATE=1. Manual "Check for updates"
+    // in Settings stays available either way.
+    const autoUpdateDisabled = process.env["METAVAULT_AUTO_UPDATE"] !== "1";
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = !autoUpdateDisabled;
 
     autoUpdater.on("checking-for-update", () => {
       broadcast({ status: "checking" });
@@ -138,20 +143,23 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null): Pr
       }
     });
 
-    // Background check on launch after brief delay (if in production with update config)
-    setTimeout(() => {
-      try {
-        const resourcesDir = typeof process.resourcesPath === "string" ? process.resourcesPath : "";
-        const updateYml = join(resourcesDir, "app-update.yml");
-        if (existsSync(updateYml) && shouldAutoCheckForUpdates(app.getVersion())) {
-          void autoUpdater.checkForUpdates().catch(() => {
-            // Ignored on network failure
-          });
+    // Background check on launch after brief delay (if in production with update config).
+    // Skipped entirely for unsigned builds unless METAVAULT_AUTO_UPDATE=1.
+    if (!autoUpdateDisabled) {
+      setTimeout(() => {
+        try {
+          const resourcesDir = typeof process.resourcesPath === "string" ? process.resourcesPath : "";
+          const updateYml = join(resourcesDir, "app-update.yml");
+          if (existsSync(updateYml) && shouldAutoCheckForUpdates(app.getVersion())) {
+            void autoUpdater.checkForUpdates().catch(() => {
+              // Ignored on network failure
+            });
+          }
+        } catch {
+          // Ignored
         }
-      } catch {
-        // Ignored
-      }
-    }, 5000);
+      }, 5000);
+    }
   } catch {
     // Startup wins over updates: any failure above leaves the app running
     // with auto-update disabled.

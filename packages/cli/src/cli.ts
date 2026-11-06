@@ -799,9 +799,12 @@ function runProgram(
       return yield* Effect.fail(new UsageError({ message: "run requires a command to execute" }));
     }
     const interactive = process.stdin.isTTY;
-    if (!interactive && (options.grantToken === undefined || options.grantToken === "")) {
+    const trimmedGrant = options.grantToken?.trim() ?? "";
+    if (!interactive && !/^[a-zA-Z0-9_-]{16,128}$/.test(trimmedGrant)) {
       return yield* Effect.fail(
-        new UsageError({ message: "run is non-interactive: pass --grant <token> from a human approval" }),
+        new UsageError({
+          message: "run is non-interactive: pass a valid --grant <token> (16-128 alphanumeric/hyphen characters) from a human approval",
+        }),
       );
     }
     const masterKey = yield* masterKeyEffect(deps, io);

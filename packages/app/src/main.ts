@@ -1143,7 +1143,7 @@ if (!hasLock) {
         const reqMethod = typeof reqObj["method"] === "string" ? reqObj["method"] : "";
         const allowedFlyoutCall =
           reqMethod === "POST" &&
-          (reqPath === "/approve" || reqPath === "/deny" || /^\/agent-registrations\/[^/]+\/(approve|deny)$/.test(reqPath));
+          (reqPath === "/approve" || reqPath === "/deny" || /^\/agent-registrations\/[^/]+\/deny$/.test(reqPath));
         if (!allowedFlyoutCall) {
           throw new Error("MetaVault flyout request rejected");
         }
@@ -1203,6 +1203,11 @@ if (!hasLock) {
         return;
       }
       const next = locked === true;
+      // The renderer can always lock the UI immediately, but cannot unlock it
+      // while the daemon vault itself is locked.
+      if (!next && daemonLocked) {
+        return;
+      }
       if (uiLocked !== next) {
         uiLocked = next;
         if (uiLocked) {

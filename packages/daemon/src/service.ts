@@ -432,6 +432,7 @@ export interface VaultServiceService {
   readonly listPolicies: () => Effect.Effect<PoliciesState, StorageError>;
   readonly listAgents: () => Effect.Effect<AgentRecord[], StorageError>;
   readonly getAgentByToken: (token: string) => Effect.Effect<AgentRecord | undefined, StorageError>;
+  readonly verifyAndConsumePresenceProof: (token: string | undefined) => Effect.Effect<boolean>;
   readonly registerAgent: (id: string, name: string, rotate?: boolean, deviceId?: string) => Effect.Effect<AgentRecord, StorageError>;
   readonly revokeAgentToken: (id: string) => Effect.Effect<void, StorageError>;
   readonly listDevices: () => Effect.Effect<DeviceRecord[], StorageError>;
@@ -993,6 +994,12 @@ export function makeVaultServiceLive(
           yield* forgetGrantAudit(grantId);
           yield* interruptSleeper(grantId);
           const grantReq = consumed.request;
+          if (grantReq.deviceId !== undefined) {
+            const dev = yield* store.getDevice(grantReq.deviceId);
+            if (dev === undefined || dev.revoked) {
+              return yield* Effect.fail(new GrantRevoked({ grantId, message: "remote device has been revoked" }));
+            }
+          }
           const epoch = agentEpoch.get(grantReq.agentId) ?? 0;
           yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "approved", auditDetail, false, undefined, grantAuditExtras(auditCtx, "human"));
           const credential = yield* store.getCredential(grantReq.alias);
@@ -1419,6 +1426,15 @@ export function makeVaultServiceLive(
             }
             const storedCredential = yield* store.getCredential(req.alias);
             const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;
+            // Prevent unauthenticated callers from spoofing an active enrolled agent's ID
+            // to poison its velocity tracker, circuit breaker, or audit rate limit.
+            if (!req.verified) {
+              const registeredAgent = yield* store.getAgent(req.agentId);
+              if (registeredAgent !== undefined && !registeredAgent.revoked) {
+                return { status: "denied", reason: "unverified-enrolled-agent-spoof" } as const;
+              }
+            }
+            const velocityKey = `${req.verified ? "verified" : "unverified"}:${req.agentId}`;
             const since1hIso = new Date(now - HOUR_MS).toISOString();
             const since24hIso = new Date(now - DAY_MS).toISOString();
             const auditStats = yield* store.getAgentAuditStats(req.agentId, since1hIso, since24hIso);
@@ -1432,7 +1448,7 @@ export function makeVaultServiceLive(
 
             // Check granular agent rate limiting & burst circuit breaker (#18)
             const velocities = yield* Ref.get(agentVelocities);
-            const agentTracker = velocities.get(req.agentId);
+            const agentTracker = velocities.get(velocityKey);
             const velocityConfig = velocityConfigForAgent(req.verified);
             const velocityCheck = isAgentRateLimited(agentTracker, velocityConfig, now);
             if (velocityCheck.limited) {
@@ -1472,8 +1488,8 @@ export function makeVaultServiceLive(
               yield* Ref.update(agentVelocities, (map) => {
                 const next = new Map(map);
                 next.set(
-                  req.agentId,
-                  recordAgentRequest(next.get(req.agentId), now, false, velocityConfig, {
+                  velocityKey,
+                  recordAgentRequest(next.get(velocityKey), now, false, velocityConfig, {
                     countFailure: credential !== undefined,
                   }),
                 );
@@ -1633,7 +1649,7 @@ export function makeVaultServiceLive(
             if (result.allowedScope === null) {
               yield* Ref.update(agentVelocities, (map) => {
                 const next = new Map(map);
-                next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, false, velocityConfig));
+                next.set(velocityKey, recordAgentRequest(next.get(velocityKey), now, false, velocityConfig));
                 return next;
               });
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
@@ -1649,7 +1665,7 @@ export function makeVaultServiceLive(
             // Record successful capability validation in tracker
             yield* Ref.update(agentVelocities, (map) => {
               const next = new Map(map);
-              next.set(req.agentId, recordAgentRequest(next.get(req.agentId), now, true, velocityConfig));
+              next.set(velocityKey, recordAgentRequest(next.get(velocityKey), now, true, velocityConfig));
               return next;
             });
 
@@ -2206,6 +2222,7 @@ export function makeVaultServiceLive(
             return { ceilings, standingApprovals, agents };
           }),
 
+        verifyAndConsumePresenceProof: (token) => consumePresenceProof(token),
         listAgents: () => store.listAgents(),
         getAgentByToken: (token) => store.getAgentByToken(token),
         registerAgent: (id, name, rotate = false, deviceId) =>
@@ -2254,13 +2271,29 @@ export function makeVaultServiceLive(
             const device = yield* store.getDevice(id);
             if (device === undefined) return yield* Effect.fail(new StorageError({ message: "device not found", operation: "revokeDevice" }));
             yield* store.setDeviceRevoked(id, true);
+            const deviceGrants = yield* registry.invalidatePendingForDevice(id);
+            for (const grant of deviceGrants) {
+              agentEpoch.set(grant.request.agentId, (agentEpoch.get(grant.request.agentId) ?? 0) + 1);
+              grantResults.delete(grant.grantId);
+              notifyGrant(grant.grantId);
+              yield* forgetDecision(grant.grantId);
+              yield* forgetGrantAudit(grant.grantId);
+              yield* interruptSleeper(grant.grantId);
+            }
             const agents = yield* store.listAgents();
             for (const agent of agents) {
               if ((agent.deviceId ?? null) === id && !agent.revoked) {
                 yield* store.revokeAgent(agent.id);
+                agentEpoch.set(agent.id, (agentEpoch.get(agent.id) ?? 0) + 1);
                 clearSessionLeases((lease) => lease.agentId === agent.id);
                 const affected = yield* registry.invalidatePendingForAgent(agent.id);
-                for (const grant of affected) { notifyGrant(grant.grantId); yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
+                for (const grant of affected) {
+                  grantResults.delete(grant.grantId);
+                  notifyGrant(grant.grantId);
+                  yield* forgetDecision(grant.grantId);
+                  yield* forgetGrantAudit(grant.grantId);
+                  yield* interruptSleeper(grant.grantId);
+                }
                 yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== agent.id));
                 yield* store.deleteStandingApprovals({ agentId: agent.id });
               }

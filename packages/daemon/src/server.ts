@@ -674,10 +674,19 @@ export async function handleVaultRequest(
     if (method === "POST" && path === "/agent-registrations") {
       const agentId = input["agentId"]; const name = input["name"]; const ide = input["ide"]; const claimHash = input["claimHash"];
       if (typeof agentId !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(agentId) || typeof name !== "string" || name.trim().length === 0 || name.length > 100 || /[\x00-\x1f\x7f]/.test(name) || typeof ide !== "string" || ide.length > 100 || /[\x00-\x1f\x7f]/.test(ide) || typeof claimHash !== "string") return BAD_REQUEST;
-      const made = await regs.create({ agentId, name: name.trim(), ide: ide.trim(), claimHash }, async (id) => {
-        const agents = await Effect.runPromise(service.listAgents());
-        return agents.some((a) => a.id === id && !a.revoked);
-      });
+      const made = await regs.create(
+        {
+          agentId,
+          name: name.trim(),
+          ide: ide.trim(),
+          claimHash,
+          ...(deviceCtx !== undefined ? { deviceId: deviceCtx.deviceId } : {}),
+        },
+        async (id) => {
+          const agents = await Effect.runPromise(service.listAgents());
+          return agents.some((a) => a.id === id && !a.revoked);
+        },
+      );
       return made.ok ? { status: 200, body: { registrationId: made.id, code: made.code, expiresAt: made.expiresAt, status: "pending" } } : fail(made.status, made.error);
     }
     if (method === "GET" && path === "/agent-registrations") return { status: 200, body: { registrations: await regs.list() } };
@@ -707,7 +716,32 @@ export async function handleVaultRequest(
       if (m[2] === "deny") return (await regs.deny(id)) ? { status: 200, body: { status: "denied" } } : fail(404, "registration not found or no longer pending");
       const code = input["code"];
       if (typeof code !== "string" || !/^[0-9]{6}$/.test(code)) return BAD_REQUEST;
-      const out = await regs.approve(id, code, async (agentId, name) => (await Effect.runPromise(service.registerAgent(agentId, name))).token);
+      const pendingReg = await regs.getPending(id);
+      if (pendingReg === undefined) return fail(404, "registration not found or no longer pending");
+      if (pendingReg.origin === "remote") {
+        const proof = typeof input["presenceProof"] === "string" ? input["presenceProof"] : undefined;
+        const remoteSettings = await Effect.runPromise(service.getRemoteSettings());
+        if (remoteSettings.requireAuthForRemoteApproval) {
+          const proofOk = await Effect.runPromise(service.verifyAndConsumePresenceProof(proof));
+          if (!proofOk) {
+            return {
+              status: 403,
+              body: {
+                error: {
+                  _tag: "PresenceRequired",
+                  message: "remote agent registration approval requires fresh local presence (PIN)",
+                },
+              },
+            };
+          }
+        }
+      }
+      const out = await regs.approve(
+        id,
+        code,
+        async (agentId, name, regDeviceId) =>
+          (await Effect.runPromise(service.registerAgent(agentId, name, false, regDeviceId))).token,
+      );
       return out.ok ? { status: 200, body: { status: "approved" } } : fail(out.status, out.error);
     }
     return { status: 404, body: { error: { _tag: "NotFound", message: "not found" } } };
@@ -716,6 +750,22 @@ export async function handleVaultRequest(
     const input = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
     const id = input["id"]; const name = input["name"];
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) || typeof name !== "string" || name.trim().length === 0 || name.length > 100 || /[\x00-\x1f\x7f]/.test(name)) return BAD_REQUEST;
+    const localAuth = await Effect.runPromise(service.getLocalAuthStatus());
+    if (localAuth.enabled && localAuth.configured) {
+      const proof = typeof input["presenceProof"] === "string" ? input["presenceProof"] : undefined;
+      const proofOk = await Effect.runPromise(service.verifyAndConsumePresenceProof(proof));
+      if (!proofOk) {
+        return {
+          status: 403,
+          body: {
+            error: {
+              _tag: "PresenceRequired",
+              message: "agent token issuance or rotation requires fresh local presence (app PIN)",
+            },
+          },
+        };
+      }
+    }
     return run(service.registerAgent(id, name.trim(), path === "/agents/rotate"));
   }
   if (method === "GET" && path === "/agents") {

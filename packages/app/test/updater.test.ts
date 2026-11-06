@@ -50,9 +50,32 @@ describe("initAutoUpdater", () => {
     await updater.initAutoUpdater(() => null);
 
     expect(fakeUpdater.autoDownload).toBe(false);
-    expect(fakeUpdater.autoInstallOnAppQuit).toBe(true);
+    // Unsigned builds must not auto-install on quit unless explicitly opted in.
+    expect(fakeUpdater.autoInstallOnAppQuit).toBe(false);
     expect(registeredChannels()).toContain(updater.CHECK_UPDATES_CHANNEL);
     expect(registeredChannels()).toContain(updater.QUIT_AND_INSTALL_CHANNEL);
+  });
+
+  it("enables on-quit install when METAVAULT_AUTO_UPDATE=1 opts in", async () => {
+    const fakeUpdater = {
+      autoDownload: true,
+      autoInstallOnAppQuit: false,
+      on: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      quitAndInstall: vi.fn(),
+    };
+    vi.doMock("electron-updater", () => ({ autoUpdater: fakeUpdater }));
+    const prev = process.env["METAVAULT_AUTO_UPDATE"];
+    process.env["METAVAULT_AUTO_UPDATE"] = "1";
+    try {
+      const updater = await import("../src/updater.js");
+      await updater.initAutoUpdater(() => null);
+      expect(fakeUpdater.autoInstallOnAppQuit).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env["METAVAULT_AUTO_UPDATE"];
+      else process.env["METAVAULT_AUTO_UPDATE"] = prev;
+    }
   });
 
   // Regression test for the published v0.1.0 installer crash: a static

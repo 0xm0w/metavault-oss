@@ -17,12 +17,13 @@ case "${1:-run}" in
       --labels "metavault-ci" \
       --work /work
     for f in "${FILES[@]}"; do cp -f "./$f" "/state/$f"; done
-    chmod 600 /state/.credentials /state/.credentials_rsaparams
+    chmod 0600 /state/.runner /state/.credentials /state/.credentials_rsaparams
     echo "Registered. Delete runner-token.txt now."
     ;;
   run)
     [ -f /state/.runner ] || { echo "Not registered. Run the register step first (see README)." >&2; exit 1; }
     for f in "${FILES[@]}"; do cp -f "/state/$f" "./$f"; done
+    chmod 0600 .runner .credentials .credentials_rsaparams /state/.runner /state/.credentials /state/.credentials_rsaparams 2>/dev/null || true
     exec ./run.sh
     ;;
   *) echo "usage: entrypoint.sh register|run" >&2; exit 2 ;;

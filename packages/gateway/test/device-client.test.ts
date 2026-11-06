@@ -264,11 +264,22 @@ describe("device-client", () => {
     // The shim never supplies an agent identity. /request is an open
     // SUBMISSION channel by design: an unauthenticated caller may only
     // create a pending approval for the human, never execute - the
-    // response must carry no credential material.
-    const noAgent = await fetch(`${base}/request`, {
+    // response must carry no credential material. Note: an unverified
+    // caller claiming an ENROLLED agent id ("cursor") is rejected outright
+    // (unverified-enrolled-agent-spoof), so the pending-approval path is
+    // exercised with an unenrolled id.
+    const spoof = await fetch(`${base}/request`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-metavault-shim-token": "mvshim_secret-test-token" },
       body: JSON.stringify({ agentId: "cursor", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "x" }),
+    });
+    const spoofBody = (await spoof.json()) as { status?: string; reason?: string };
+    expect(spoofBody.status).toBe("denied");
+    expect(spoofBody.reason).toBe("unverified-enrolled-agent-spoof");
+    const noAgent = await fetch(`${base}/request`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-metavault-shim-token": "mvshim_secret-test-token" },
+      body: JSON.stringify({ agentId: "unenrolled-test-agent", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "x" }),
     });
     expect(noAgent.status).toBe(200);
     const noAgentBody = (await noAgent.json()) as { status?: string };
@@ -280,8 +291,9 @@ describe("device-client", () => {
       body: JSON.stringify({ agentId: "cursor", ide: "test", tool: "test", alias: "stripe", requestedScope: "charges.read", reason: "x" }),
     });
     if (badAgent.status === 200) {
-      const badBody = (await badAgent.json()) as { status?: string };
-      expect(badBody.status).toBe("awaiting-approval");
+      const badBody = (await badAgent.json()) as { status?: string; reason?: string };
+      expect(badBody.status).toBe("denied");
+      expect(badBody.reason).toBe("unverified-enrolled-agent-spoof");
     } else {
       expect([401, 403]).toContain(badAgent.status);
     }
