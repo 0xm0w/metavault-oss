@@ -30,30 +30,33 @@ export function bundledDaemonPaths(resourcesPath: string, dataDir: string): Bund
 
 // Environment for the bundled daemon. A fresh install has no key yet, so
 // first-run setup is on: the app then asks the user for a passphrase.
-// An explicit METAVAULT_DB_PATH from the user wins.
-export function bundledDaemonEnv(base: NodeJS.ProcessEnv, dbPath: string): NodeJS.ProcessEnv {
-  return {
+// An explicit METAVAULT_DB_PATH from the user wins. The session token is
+// set only on this new object, never on `base` or process.env.
+export function bundledDaemonEnv(base: NodeJS.ProcessEnv, dbPath: string, token?: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
     ...base,
     ELECTRON_RUN_AS_NODE: "1",
     METAVAULT_DB_PATH: base["METAVAULT_DB_PATH"] ?? dbPath,
     METAVAULT_FIRST_RUN_SETUP: "1",
   };
+  if (token !== undefined && token !== "") {
+    env["METAVAULT_DAEMON_TOKEN"] = token;
+  }
+  return env;
 }
 
-// The app owns the daemon token: it generates one per session, hands it to
-// the bundled daemon through the environment and keeps it in its own
-// process for the human-decision routes. Nothing is written to disk, so a
-// same-UID IDE agent cannot read a stable copy of the admin secret. An
-// explicitly set METAVAULT_DAEMON_TOKEN (e.g. the user running a daemon by
-// hand) is respected, not overwritten.
+// The app owns the daemon token: it generates one per session and hands it
+// to the bundled daemon on the child environment only. Nothing is written
+// to disk or to process.env, so a same-UID IDE agent cannot read a stable
+// copy of the admin secret. An explicitly set METAVAULT_DAEMON_TOKEN (e.g.
+// the user running a daemon by hand) is returned as-is and not copied onto
+// process.env.
 export function ensureSessionDaemonToken(base: NodeJS.ProcessEnv): string {
   const existing = base["METAVAULT_DAEMON_TOKEN"];
   if (existing !== undefined && existing !== "") {
     return existing;
   }
-  const token = randomBytes(32).toString("hex");
-  base["METAVAULT_DAEMON_TOKEN"] = token;
-  return token;
+  return randomBytes(32).toString("hex");
 }
 
 export async function daemonHealthy(baseUrl: string, timeoutMs = 1500): Promise<boolean> {
@@ -70,8 +73,24 @@ export async function daemonHealthy(baseUrl: string, timeoutMs = 1500): Promise<
 }
 
 export interface LaunchResult {
-  readonly status: "already-running" | "started" | "not-bundled";
+  readonly status: "already-running" | "started" | "not-bundled" | "port-occupied";
   readonly child?: ChildProcess;
+  readonly token?: string;
+}
+
+// A listener that answers /health as vaultd still has to accept this
+// session's token. 401/403 means some other vault owns the port.
+async function pendingAcceptsToken(baseUrl: string, token: string, timeoutMs = 1500): Promise<"ok" | "denied" | "unreachable"> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/pending`, {
+      headers: { "x-metavault-token": token },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.status === 401 || res.status === 403) return "denied";
+    return "ok";
+  } catch {
+    return "unreachable";
+  }
 }
 
 export async function ensureBundledDaemon(options: {
@@ -80,19 +99,22 @@ export async function ensureBundledDaemon(options: {
   readonly baseUrl: string;
   readonly env?: NodeJS.ProcessEnv;
 }): Promise<LaunchResult> {
-  if (await daemonHealthy(options.baseUrl)) return { status: "already-running" };
-  if (!existsSync(options.paths.script)) return { status: "not-bundled" };
+  const source = options.env ?? process.env;
+  const token = ensureSessionDaemonToken(source);
+  if (await daemonHealthy(options.baseUrl)) {
+    const pending = await pendingAcceptsToken(options.baseUrl, token);
+    if (pending === "ok") return { status: "already-running", token };
+    // Health says vaultd, but this token is refused or the protected route
+    // did not answer. Do not spawn a second daemon on the same port.
+    return { status: "port-occupied", token };
+  }
+  if (!existsSync(options.paths.script)) return { status: "not-bundled", token };
   mkdirSync(options.paths.dataDir, { recursive: true });
-  // Mint the session token on the env the child will inherit; when the
-  // caller passed this process's env, the main process keeps the same
-  // value for its own client (daemon-client resolves it lazily from env).
-  const env = options.env ?? process.env;
-  ensureSessionDaemonToken(env);
   const log = openSync(options.paths.logPath, "a");
   const child = spawn(options.execPath, [options.paths.script], {
-    env: bundledDaemonEnv(env, options.paths.dbPath),
+    env: bundledDaemonEnv(source, options.paths.dbPath, token),
     stdio: ["ignore", log, log],
     windowsHide: true,
   });
-  return { status: "started", child };
+  return { status: "started", child, token };
 }

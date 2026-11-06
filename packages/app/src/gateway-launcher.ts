@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
+import { omitVaultSecrets } from "./child-env.js";
 
 // Starts the remote-access gateway that ships inside the installed app
 // (resources/vaultd/gateway.cjs) when the user has enabled remote access.
@@ -40,7 +41,7 @@ export function bundledGatewayEnv(
 ): NodeJS.ProcessEnv {
   const pairingPort = options.port ?? GATEWAY_PORT;
   return {
-    ...base,
+    ...omitVaultSecrets(base),
     ELECTRON_RUN_AS_NODE: "1",
     METAVAULT_VAULT_DIR: options.vaultDir,
     METAVAULT_DAEMON_URL: options.daemonBaseUrl,

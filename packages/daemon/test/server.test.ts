@@ -88,7 +88,9 @@ describe("vaultd HTTP edge (handler level)", () => {
     const approveDenied = await handleVaultRequest(service, "POST", "/approve", { grantId }, withToken);
     expect(approveDenied.status).toBe(409);
 
-    const revoked = await handleVaultRequest(service, "POST", "/revoke", { target: "cursor" });
+    const openRevoke = await handleVaultRequest(service, "POST", "/revoke", { target: "cursor" });
+    expect(openRevoke.status).toBe(401);
+    const revoked = await handleVaultRequest(service, "POST", "/revoke", { target: "cursor" }, withToken);
     expect(revoked.status).toBe(200);
     const afterRevoke = await handleVaultRequest(service, "POST", "/request", {
       agentId: "cursor",

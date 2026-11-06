@@ -56,13 +56,14 @@ describe("credential-store", () => {
     if (!res.ok) expect(res.reason.length).toBeGreaterThan(0);
   });
 
-  it("on Windows, refuses to keep the credential when the user cannot be determined", () => {
+  it("on Windows, stores the credential from the process SID when USERNAME is empty", () => {
+    if (process.platform !== "win32") return;
     const d = tmp();
-    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     vi.stubEnv("USERNAME", "");
-    const res = storeCredentialPrivately(join(d, "agent.token"), "synthetic");
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.reason).toContain("Windows user");
+    const p = join(d, "agent.token");
+    const res = storeCredentialPrivately(p, "synthetic");
+    expect(res.ok).toBe(true);
+    expect(readFileSync(p, "utf8")).toBe("synthetic");
   });
 
   it.skipIf(process.platform === "win32")("on Windows, reports failure when the ACL restriction cannot be applied", () => {

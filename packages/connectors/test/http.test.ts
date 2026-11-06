@@ -237,6 +237,25 @@ describe("response secret redaction", () => {
     expect(out.data).toEqual({ ok: true, charges: 5, tag: "sk-r3d" });
     await mock.close();
   });
+
+  it("does not follow redirects", async () => {
+    let followed = 0;
+    const mock = await startServer((req, res) => {
+      if (req.url === "/next") {
+        followed += 1;
+        res.end(JSON.stringify({ leaked: true }));
+        return;
+      }
+      res.writeHead(302, { Location: "/next" });
+      res.end();
+    });
+    const err = await Effect.runPromise(
+      executeHttp({ url: `${mock.url}/start`, method: "GET", secret: "sk_long_secret_value_abcd" }).pipe(Effect.flip),
+    );
+    expect(err.status).toBe(302);
+    expect(followed).toBe(0);
+    await mock.close();
+  });
 });
 
 describe("ConnectorLive", () => {
@@ -569,6 +588,19 @@ describe("redactSecretFromBody", () => {
     const b64 = Buffer.from(secret, "utf8").toString("base64");
     expect(redactSecretFromBody(`x${b64}y`, secret)).toBe("x[REDACTED]y");
     expect(redactSecretFromBody("abcd", "ab")).toBe("abcd");
+  });
+
+  it("redacts base64 at every byte alignment, a basic password, and unicode escapes", () => {
+    const secret = "supersecret";
+    const bearer = Buffer.from(`Bearer ${secret}`).toString("base64");
+    const redactedBearer = redactSecretFromBody(bearer, secret);
+    expect(redactedBearer).toContain("[REDACTED]");
+    expect(redactedBearer).not.toContain(Buffer.from(secret).toString("base64").replace(/=+$/, ""));
+    const basic = Buffer.from(`user:${secret}`).toString("base64");
+    expect(redactSecretFromBody(basic, `user:${secret}`)).not.toContain(Buffer.from(secret).toString("base64").replace(/=+$/, ""));
+    const marked = "ab&c=d";
+    const unicode = marked.replace(/&/g, "\\u0026").replace(/=/g, "\\u003d");
+    expect(redactSecretFromBody(`x${unicode}y`, marked)).toBe("x[REDACTED]y");
   });
 });
 

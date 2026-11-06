@@ -30,6 +30,7 @@ const FakeConnector = Layer.succeed(Connector, {
 
 let service: VaultServiceService;
 let daemonCalls = 0;
+let enrolledAgentToken = "";
 
 // In-process stand-in for the vaultd HTTP wire: routes fetch calls to the
 // exact handler the node:http server delegates to, so no socket is needed.
@@ -42,7 +43,12 @@ const daemonFetch: DaemonFetch = async (input, init) => {
   const body: unknown =
     typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
   const receipt = new Headers(init?.headers).get("x-metavault-grant-receipt") ?? undefined;
-  const out = await handleVaultRequest(service, method, url.pathname, body, receipt !== undefined ? { providedGrantReceipt: receipt } : {});
+  const headers = new Headers(init?.headers);
+  const agentHeader = headers.get("x-metavault-agent-token") ?? undefined;
+  const out = await handleVaultRequest(service, method, url.pathname, body, {
+    ...(receipt !== undefined ? { providedGrantReceipt: receipt } : {}),
+    ...(agentHeader !== undefined && agentHeader !== "" ? { providedAgentToken: agentHeader } : {}),
+  });
   return new Response(JSON.stringify(out.body), {
     status: out.status,
     headers: { "content-type": "application/json" },
@@ -68,6 +74,8 @@ beforeAll(async () => {
     Effect.gen(function* () {
       const svc = yield* VaultService;
       yield* svc.seedCredential("stripe", "charges.read", SECRET);
+      const agent = yield* svc.registerAgent("cursor", "Cursor");
+      enrolledAgentToken = agent.token;
       return svc;
     }).pipe(
       Effect.provide(makeVaultServiceLive({ masterKey: Buffer.alloc(32, 7) })),
@@ -83,7 +91,7 @@ beforeAll(async () => {
     ide: "Cursor",
     fetchFn: daemonFetch,
     approvalWaitMs: 0,
-    agentToken: "",
+    agentToken: enrolledAgentToken,
   });
   client = new Client({ name: "mcp-test-client", version: "0.0.1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

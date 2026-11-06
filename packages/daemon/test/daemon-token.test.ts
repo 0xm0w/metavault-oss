@@ -124,7 +124,7 @@ describe("daemon token guard (handler level)", () => {
     expect(denyOk.status).toBe(200);
   });
 
-  it("leaves /request, /aliases, /audit, /policies and /revoke open without a token", async () => {
+  it("leaves /request, /aliases, /audit and /policies open and requires a token for /revoke", async () => {
     const service = await makeService();
     const created = await handleVaultRequest(service, "POST", "/request", req, auth);
     expect(created.status).toBe(200);
@@ -135,7 +135,9 @@ describe("daemon token guard (handler level)", () => {
       expect(res.status).toBe(200);
     }
     const revoked = await handleVaultRequest(service, "POST", "/revoke", { target: "cursor" }, auth);
-    expect(revoked.status).toBe(200);
+    expect(revoked.status).toBe(401);
+    const revokedOk = await handleVaultRequest(service, "POST", "/revoke", { target: "cursor" }, withToken);
+    expect(revokedOk.status).toBe(200);
   });
 });
 

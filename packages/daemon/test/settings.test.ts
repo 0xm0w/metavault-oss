@@ -148,6 +148,28 @@ describe("warden settings routes", () => {
     expect(changed[0]?.detail).not.toContain("api.meta.ai");
   });
 
+  it("rejects a meta API base that is not https or loopback http, and drops the key when the origin changes", async () => {
+    const service = await makeService();
+    for (const metaApiBaseUrl of ["http://evil.example/v1", "https://user:pw@api.meta.ai/v1", "file:///etc/passwd", ""]) {
+      const rejected = await handleVaultRequest(service, "PATCH", "/settings/warden", { metaApiBaseUrl }, withToken);
+      expect(rejected.status, metaApiBaseUrl).toBe(400);
+    }
+    const loopback = await handleVaultRequest(service, "PATCH", "/settings/warden", { metaApiBaseUrl: "http://127.0.0.1:9/v1" }, withToken);
+    expect(loopback.status).toBe(200);
+    await handleVaultRequest(service, "PATCH", "/settings/warden", { metaApiBaseUrl: "https://api.meta.ai/v1" }, withToken);
+    const put = await handleVaultRequest(service, "PUT", "/settings/warden/key", { key: META_KEY }, withToken);
+    expect(put.status).toBe(200);
+    const sameOrigin = await handleVaultRequest(service, "PATCH", "/settings/warden", { metaApiBaseUrl: "https://api.meta.ai/v2" }, withToken);
+    expect(sameOrigin.status).toBe(200);
+    const stillThere = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(stillThere.body).toEqual({ configured: true, verified: false });
+    const moved = await handleVaultRequest(service, "PATCH", "/settings/warden", { metaApiBaseUrl: "https://attacker.example/v1" }, withToken);
+    expect(moved.status).toBe(200);
+    const cleared = await handleVaultRequest(service, "GET", "/settings/warden/key", undefined, withToken);
+    expect(cleared.body).toEqual({ configured: false, verified: false });
+    expect(JSON.stringify(moved.body)).not.toContain(META_KEY);
+  });
+
   it("PUT key stores it encrypted: status is exactly {configured, verified}, raw key appears nowhere, DELETE clears", async () => {
     const service = await makeService();
 

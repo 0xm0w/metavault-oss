@@ -44,6 +44,12 @@ export interface PendingApproval {
   readonly deviceId?: string;
   readonly origin?: "local" | "remote";
   readonly transport?: string;
+  // Method and a short body preview. The raw payload never reaches the renderer.
+  readonly payloadSummary?: {
+    readonly declaredMethod: string | null;
+    readonly mutating: boolean;
+    readonly preview: string;
+  };
 }
 
 
@@ -150,6 +156,7 @@ export interface DeeplinkAddParams {
   readonly scope: string;
   readonly website: string;
   readonly enrollmentId: string;
+  readonly untrusted?: boolean;
 }
 
 export type WardenProvider = "none" | "meta-api" | "local" | "bft";
@@ -309,7 +316,7 @@ export interface SshTunnelBeginSetupInput {
 }
 
 export interface PresenceProofRequestLike {
-  readonly scope: "approve" | "settings-remote";
+  readonly scope: "approve" | "settings-remote" | "settings-local-auth" | "agents-rotate" | "settings-security";
   readonly grantId?: string;
   readonly pin?: string;
   readonly hello?: boolean;
@@ -396,7 +403,7 @@ export interface IdeConfigRequestLike {
 
 // The whole preload bridge surface: daemon API calls only, nothing else.
 export interface VaultApi {
-  readonly registerAgent: (id: string, name: string, rotate: boolean) => Promise<unknown>;
+  readonly registerAgent: (id: string, name: string, rotate: boolean, presenceProof?: string) => Promise<unknown>;
   readonly agentRegistrations: () => Promise<unknown>;
   readonly decideAgentRegistration: (id: string, action: "approve" | "deny", code?: string) => Promise<unknown>;
   readonly revokeAgent: (id: string) => Promise<unknown>;
@@ -431,7 +438,7 @@ export interface VaultApi {
   readonly wardenKeyStatus: () => Promise<unknown>;
   readonly testWarden: () => Promise<unknown>;
   readonly getLocalAuthStatus: () => Promise<unknown>;
-  readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike) => Promise<unknown>;
+  readonly updateLocalAuthSettings: (patch: LocalAuthPatchLike, presenceProof?: string) => Promise<unknown>;
   readonly getRemoteSettings: () => Promise<unknown>;
   readonly updateRemoteSettings: (patch: RemoteSettingsPatchLike, presenceProof?: string) => Promise<unknown>;
   readonly requestPresenceProof: (req: PresenceProofRequestLike) => Promise<{ token: string }>;
@@ -445,7 +452,7 @@ export interface VaultApi {
   readonly setDeviceAliasPolicy: (deviceId: string, alias: string, allowWrite: boolean) => Promise<unknown>;
   readonly listDeviceAliasPolicies: (deviceId: string) => Promise<unknown>;
   readonly getAgentSecuritySettings: () => Promise<unknown>;
-  readonly updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike) => Promise<unknown>;
+  readonly updateAgentSecuritySettings: (patch: AgentSecuritySettingsPatchLike, presenceProof?: string) => Promise<unknown>;
   readonly setLocalPin: (pin: string, currentPin?: string) => Promise<unknown>;
   readonly verifyLocalPin: (pin: string) => Promise<unknown>;
   readonly verifyBiometric: () => Promise<unknown>;

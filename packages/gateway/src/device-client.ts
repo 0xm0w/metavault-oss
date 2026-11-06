@@ -21,10 +21,27 @@ import { tmpdir } from "node:os";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { Agent, request as httpsRequest } from "node:https";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { TLSSocket } from "node:tls";
 import { computePairingSas, PAIRING_EXPORTER_LABEL, PAIRING_EXPORTER_LENGTH } from "../../core/src/pairing.js";
+import {
+  canonicalPath,
+  currentWindowsUserSid,
+  defaultListAclSids,
+  hardenOwnerOnly,
+  type HardenOptions,
+} from "../../core/src/owner-acl.js";
+export {
+  canonicalPath,
+  currentWindowsUserSid,
+  defaultListAclSids,
+  defaultReadAclSddl,
+  hardenOwnerOnly,
+  type AclSidList,
+  type HardenOptions,
+  type IcaclsRun,
+} from "../../core/src/owner-acl.js";
 import { generateRsaKeyPairPem, spkiFingerprintFromPublicKeyPem } from "../../core/src/vault-ca.js";
 import { isAllowlisted } from "./server.js";
 
@@ -64,6 +81,32 @@ interface GatewayTlsResponse {
   status: number;
   body: string;
   exporter?: Buffer;
+  peerFingerprint?: string;
+}
+
+// A fresh handshake every time. Session resumption can omit the peer
+// certificate and the exporter the SAS is bound to.
+const pairingAgent = new Agent({ keepAlive: false, maxCachedSessions: 0 });
+
+function capturePairingTls(socket: TLSSocket | null | undefined): { exporter?: Buffer; peerFingerprint?: string } {
+  if (socket === null || socket === undefined || typeof socket.getPeerCertificate !== "function") return {};
+  let exporter: Buffer | undefined;
+  try {
+    exporter = socket.exportKeyingMaterial(PAIRING_EXPORTER_LENGTH, PAIRING_EXPORTER_LABEL, Buffer.alloc(0));
+  } catch {
+    exporter = undefined;
+  }
+  let peerFingerprint: string | undefined;
+  try {
+    const peer = socket.getPeerCertificate(false) as { raw?: Buffer };
+    if (peer.raw !== undefined && peer.raw.length > 0) peerFingerprint = spkiFingerprintFromDerCert(peer.raw);
+  } catch {
+    peerFingerprint = undefined;
+  }
+  return {
+    ...(exporter !== undefined ? { exporter } : {}),
+    ...(peerFingerprint !== undefined ? { peerFingerprint } : {}),
+  };
 }
 
 function gatewayPost(options: {
@@ -90,33 +133,17 @@ function gatewayPost(options: {
         cert: options.cert,
         key: options.key,
         rejectUnauthorized: !options.trustOnFirstUse,
+        agent: pairingAgent,
         headers: { "content-type": "application/json" },
       },
       (res) => {
-        const socket = res.socket as TLSSocket | null;
-        let exporter: Buffer | undefined;
-        try {
-          exporter = socket?.exportKeyingMaterial(PAIRING_EXPORTER_LENGTH, PAIRING_EXPORTER_LABEL, Buffer.alloc(0));
-        } catch {
-          exporter = undefined;
-        }
-        if (options.expectedServerFingerprint !== undefined) {
-          try {
-            const peerRaw = socket?.getPeerCertificate(true).raw as Buffer | undefined;
-            const fp =
-              peerRaw === undefined
-                ? undefined
-                : spkiFingerprintFromDerCert(peerRaw);
-            if (fp !== options.expectedServerFingerprint) {
-              reject(new PairingError("transport", "gateway certificate fingerprint mismatch: refusing to talk to an unpinned peer"));
-              req.destroy();
-              return;
-            }
-          } catch {
-            reject(new PairingError("transport", "could not verify the pinned gateway certificate"));
-            req.destroy();
-            return;
-          }
+        const captured = capturePairingTls((req.socket ?? res.socket) as TLSSocket | null);
+        const exporter = captured.exporter;
+        const peerFingerprint = captured.peerFingerprint;
+        if (options.expectedServerFingerprint !== undefined && peerFingerprint !== options.expectedServerFingerprint) {
+          reject(new PairingError("transport", "gateway certificate fingerprint mismatch: refusing to talk to an unpinned peer"));
+          req.destroy();
+          return;
         }
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
@@ -125,6 +152,7 @@ function gatewayPost(options: {
             status: res.statusCode ?? 0,
             body: Buffer.concat(chunks).toString("utf8"),
             ...(exporter !== undefined ? { exporter } : {}),
+            ...(peerFingerprint !== undefined ? { peerFingerprint } : {}),
           });
         });
       },
@@ -174,10 +202,14 @@ export async function runPairingHandshake(options: {
       clientNonce,
     },
   });
-  if (begin.status !== 200 || begin.exporter === undefined) {
+  if (begin.status !== 200 || begin.exporter === undefined || begin.peerFingerprint === undefined) {
     throw new PairingError("rejected", `the vault rejected pairing (wrong/expired code or pairing not open) [${String(begin.status)}]`);
   }
+  const observedPeer = begin.peerFingerprint;
   const info = JSON.parse(begin.body) as { pairingId: string; serverNonce: string; serverCertFingerprint: string; devicePort?: number };
+  if (info.serverCertFingerprint !== observedPeer) {
+    throw new PairingError("transport", "gateway certificate fingerprint mismatch: refusing to talk to an unpinned peer");
+  }
   if (typeof info.devicePort !== "number" || !Number.isInteger(info.devicePort) || info.devicePort < 1 || info.devicePort > 65535) {
     throw new PairingError("transport", "vault did not announce its mTLS device port");
   }
@@ -211,6 +243,7 @@ export async function runPairingHandshake(options: {
       port: options.port,
       path: "/pair/status",
       trustOnFirstUse: true,
+      expectedServerFingerprint: observedPeer,
       body: { pairingId: info.pairingId },
     });
     if (status.status !== 200) {
@@ -250,189 +283,6 @@ export interface DeviceProfile {
   readonly serverCertFingerprint: string;
 }
 
-// Owner-only enforcement. POSIX mode bits are real protection there; on
-// Windows they are a no-op, so owner-only ACLs are applied with icacls and
-// then VERIFIED by parsing the effective ACL: inheritance stripping alone
-// does not remove another principal's preexisting explicit grant, and an
-// icacls exit code alone is never accepted as proof.
-export interface IcaclsRun {
-  (args: readonly string[]): string;
-}
-
-const defaultIcaclsRun: IcaclsRun = (args) =>
-  execFileSync("icacls", [...args], { encoding: "utf8" });
-
-// ACL verification is SDDL-based and locale-proof: icacls /save writes the
-// security descriptor with trustee SIDs, never account names, so localized
-// or domain-qualified look-alike names cannot defeat the check.
-// Returns the trustee SID of every DACL access ACE on a path, uppercase.
-export type AclSidList = (path: string) => string[];
-
-// Windows ACL verification: trustee SIDs come from .NET ACL APIs via
-// Windows PowerShell, never from names, icacls text, or /save SDDL. SDDL
-// stringification maps some trustees to aliases that cannot be resolved back
-// to a fixed SID - e.g. "LA" (SDDL_LOCAL_ADMIN) is S-1-5-21-<machine>-500,
-// machine-relative, so no static alias table can identify it. Get-Acl is
-// deliberately NOT used: it lives in the Microsoft.PowerShell.Security
-// module, whose autoload can fail on hosted runners. Directory/File.
-// GetAccessControl + IdentityReference.Translate are mscorlib APIs - always
-// loaded - and cover both the credential directory and each credential file. An unresolvable trustee yields its raw value, which never equals
-// the current user's SID, so the check fails closed. If PowerShell itself is
-// unavailable the listing throws and the caller refuses to store credentials.
-export const defaultListAclSids: AclSidList = (path) => {
-  // The path is embedded in the script: with -Command, trailing argv is
-  // appended to the command text, not bound to $args. Single quotes are
-  // doubled (PowerShell escaping); inside single quotes nothing interpolates.
-  const escaped = path.replace(/'/g, "''");
-  const script =
-    "$ErrorActionPreference = 'Stop'; " +
-    "try { " +
-    `$p = '${escaped}'; ` +
-    "$sd = $null; " +
-    "if ([System.IO.Directory]::Exists($p)) { $sd = [System.IO.Directory]::GetAccessControl($p) } " +
-    "elseif ([System.IO.File]::Exists($p)) { $sd = [System.IO.File]::GetAccessControl($p) } " +
-    "else { throw ('path not found: ' + $p) } " +
-    "$sd.Access | ForEach-Object { " +
-    "try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } " +
-    "catch { $_.IdentityReference.Value } } " +
-    "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
-  let out: string;
-  try {
-    out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-      encoding: "utf8",
-    });
-  } catch (err) {
-    const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message;
-    throw new Error(`could not read ACL trustee SIDs for ${path}: ${detail}`);
-  }
-  return out
-    .split(/\r?\n/)
-    .map((line) => line.trim().toUpperCase())
-    .filter((line) => line.length > 0);
-};
-
-export function defaultReadAclSddl(path: string): string {
-  const tmp = join(tmpdir(), `mv-acl-${randomBytes(6).toString("hex")}.txt`);
-  try {
-    execFileSync("icacls", [path, "/save", tmp, "/C"], { encoding: "utf8" });
-    const buf = readFileSync(tmp);
-    let content = buf.toString("utf8");
-    if (content.includes("\0")) content = buf.toString("utf16le");
-    content = content.replace(/^\uFEFF/, "");
-    return content.split(/\r?\n/).find((line) => /D:[A-Z]{0,4}\(/.test(line)) ?? "(unreadable)";
-  } catch {
-    return "(unavailable)";
-  } finally {
-    rmSync(tmp, { force: true });
-  }
-}
-
-export interface HardenOptions {
-  // Current user's SID (from whoami /user). REQUIRED on Windows: secret
-  // material ACLs are verified against this exact SID only, never against
-  // account names, and the operation fails closed when it is unavailable.
-  // Explicit null simulates an unresolvable SID (tests on real Windows);
-  // undefined resolves via whoami.
-  userSid?: string | null | undefined;
-  // Canonical absolute roots the path must live under. ACL-reset operations
-  // are never applied outside these roots, so an arbitrary user-selected
-  // existing directory cannot be re-ACLed through this code path.
-  allowedRoots: string[];
-  // Injectable for tests; production uses .NET ACL APIs via PowerShell.
-  listSids?: AclSidList | undefined;
-  // Injectable raw-SDDL reader for failure diagnostics.
-  rawSddl?: ((path: string) => string) | undefined;
-}
-
-// Canonical, reparse-point-safe containment: resolve symlinks/junctions on
-// the longest existing prefix, then compare path components (Windows ACL
-// checks are case-insensitive).
-function canonicalPath(p: string): string {
-  let current = resolve(p);
-  const missing: string[] = [];
-  for (;;) {
-    try {
-      const real = realpathSync.native(current);
-      return [real, ...missing.reverse()].join(sep);
-    } catch {
-      missing.push(basename(current));
-      const parent = dirname(current);
-      if (parent === current) return resolve(p);
-      current = parent;
-    }
-  }
-}
-
-function normalizeForContain(p: string): string {
-  let n = canonicalPath(p).toLowerCase().replace(/\\/g, "/");
-  while (n.length > 1 && n.endsWith("/")) n = n.slice(0, -1);
-  return n;
-}
-
-function assertWithinRoots(path: string, allowedRoots: string[]): void {
-  const resolved = normalizeForContain(path);
-  const inside = allowedRoots.some((root) => {
-    const r = normalizeForContain(root);
-    return resolved === r || resolved.startsWith(r + "/");
-  });
-  if (!inside) {
-    throw new Error(`refusing to modify ACLs outside the device credential root: ${path}`);
-  }
-}
-
-export function hardenOwnerOnly(
-  path: string,
-  isDir: boolean,
-  platform: NodeJS.Platform = process.platform,
-  run: IcaclsRun = defaultIcaclsRun,
-  opts?: HardenOptions,
-): void {
-  if (opts !== undefined) {
-    assertWithinRoots(path, opts.allowedRoots);
-  }
-  if (platform === "win32") {
-    const sid = opts?.userSid === undefined ? currentWindowsUserSid() : (opts.userSid ?? undefined);
-    if (sid === undefined || sid === "") {
-      throw new Error("cannot harden device credentials on Windows: current user SID is unavailable");
-    }
-    // Reset to inherited defaults, strip inheritance, grant the current
-    // user's SID alone (icacls *SID syntax is locale-proof) - then verify
-    // the EFFECTIVE ACL by SDDL. Exit codes are never trusted.
-    run([path, "/reset"]);
-    run([path, "/inheritance:r"]);
-    run([path, "/grant:r", `*${sid}:(F)`]);
-    const listSids = opts?.listSids ?? defaultListAclSids;
-    const sids = listSids(path);
-    if (sids.length === 0 || !sids.every((entry) => entry === sid.toUpperCase())) {
-      const rawSddl = opts?.rawSddl
-        ? opts.rawSddl(path)
-        : opts?.listSids
-          ? "(injected trustee list)"
-          : defaultReadAclSddl(path);
-      throw new Error(`refusing to store device credentials: could not make ${path} owner-only (effective ACL trustee SIDs: ${sids.join(", ") || "none"}; SDDL: ${rawSddl})`);
-    }
-    return;
-  }
-  chmodSync(path, isDir ? 0o700 : 0o600);
-  const mode = statSync(path).mode & 0o777;
-  const expected = isDir ? 0o700 : 0o600;
-  if (mode !== expected) {
-    throw new Error(`refusing to store device credentials without owner-only permissions on ${path}`);
-  }
-}
-
-// Best-effort current-user SID for ACL verification. Undefined when
-// unavailable; Windows credential storage fails closed in that case.
-export function currentWindowsUserSid(): string | undefined {
-  if (process.platform !== "win32") return undefined;
-  try {
-    const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" });
-    const match = out.match(/"(S-1-5-21-[0-9-]+)"/);
-    return match?.[1];
-  } catch {
-    return undefined;
-  }
-}
 
 // Files this module manages inside a device credential directory. Anything
 // else in a preexisting directory means the directory is not ours.
@@ -539,6 +389,7 @@ function pinnedRequest(device: LoadedDevice, options: {
   path: string;
   bodyText?: string;
   agentToken?: string;
+  grantReceipt?: string;
 }): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
@@ -557,6 +408,7 @@ function pinnedRequest(device: LoadedDevice, options: {
         headers: {
           "content-type": "application/json",
           ...(options.agentToken !== undefined ? { "x-metavault-agent-token": options.agentToken } : {}),
+          ...(options.grantReceipt !== undefined ? { "x-metavault-grant-receipt": options.grantReceipt } : {}),
         },
       },
       (res) => {
@@ -639,17 +491,28 @@ export function startShim(options: {
           return;
         }
         const chunks: Buffer[] = [];
+        let received = 0;
         for await (const chunk of req) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+          received += buf.length;
+          if (received > 65_536) {
+            res.writeHead(413, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: { _tag: "PayloadTooLarge", message: "request body too large" } }));
+            return;
+          }
+          chunks.push(buf);
         }
         const bodyText = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : undefined;
         const tokenHeader = req.headers["x-metavault-agent-token"];
         const agentToken = Array.isArray(tokenHeader) ? tokenHeader[0] : tokenHeader;
+        const receiptHeader = req.headers["x-metavault-grant-receipt"];
+        const grantReceipt = Array.isArray(receiptHeader) ? receiptHeader[0] : receiptHeader;
         const upstream = await pinnedRequest(device, {
           method,
-          path: url.pathname,
+          path: `${url.pathname}${url.search}`,
           ...(bodyText !== undefined ? { bodyText } : {}),
           ...(agentToken !== undefined && agentToken !== "" ? { agentToken } : {}),
+          ...(grantReceipt !== undefined && grantReceipt !== "" ? { grantReceipt } : {}),
         });
         res.writeHead(upstream.status, { "content-type": "application/json" });
         res.end(upstream.body);

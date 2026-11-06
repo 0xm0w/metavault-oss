@@ -72,14 +72,16 @@ describe("pending approvals queue", () => {
 
   it("approve-always executes once and makes the next identical request standing", async () => {
     const service = await makeService(brainReturning("low", "charges.read", true));
-    const created = await handleVaultRequest(service, "POST", "/request", req);
+    const agent = await Effect.runPromise(service.registerAgent("cursor", "Cursor"));
+    const verified = { ...req, agentToken: agent.token };
+    const created = await handleVaultRequest(service, "POST", "/request", verified);
     const grantId = (created.body as Record<string, unknown>)["grantId"] as string;
     const always = await handleVaultRequest(service, "POST", "/approve-always", { grantId }, withToken);
     expect(always.status).toBe(200);
     expect((always.body as Record<string, unknown>)["status"]).toBe("executed");
     expect(JSON.stringify(always.body)).not.toContain(CANARY);
 
-    const second = await handleVaultRequest(service, "POST", "/request", req);
+    const second = await handleVaultRequest(service, "POST", "/request", verified);
     expect((second.body as Record<string, unknown>)["status"]).toBe("executed");
     const pending = await handleVaultRequest(service, "GET", "/pending", undefined, withToken);
     expect((pending.body as { approvals: unknown[] }).approvals).toHaveLength(0);

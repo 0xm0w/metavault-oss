@@ -13,6 +13,9 @@ import { randomBytes } from "node:crypto";
 
 export const PRESENCE_PROOF_TTL_MS = 60_000;
 export const SETTINGS_REMOTE_PROOF_SCOPE = "settings:remote";
+export const SETTINGS_LOCAL_AUTH_PROOF_SCOPE = "settings:local-auth";
+export const AGENTS_ROTATE_PROOF_SCOPE = "agents:rotate";
+export const SETTINGS_SECURITY_PROOF_SCOPE = "settings:security";
 
 export class PresenceProofIssuer {
   private readonly proofs = new Map<string, { scope: string; expiresAtMs: number; daemonProof?: string | undefined }>();
@@ -80,6 +83,28 @@ export function remotePresenceRequired(grant: PendingLike | null, settingsRaw: u
   return requireAuth !== false;
 }
 
+function isWriteScope(scope: string): boolean {
+  if (scope.includes("*")) return true;
+  return !(scope === "read" || scope.endsWith(".read") || scope.endsWith(":read"));
+}
+
+function grantField(grant: PendingLike | null, key: "risk" | "allowedScope" | "scope"): string | undefined {
+  if (grant === null) return undefined;
+  const value = (grant as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+export function approvalPresenceRequired(
+  grant: PendingLike | null,
+  risk: string | undefined,
+  scope: string | undefined,
+  settingsRaw: unknown = null,
+): boolean {
+  if (remotePresenceRequired(grant, settingsRaw)) return true;
+  if (risk === "high") return true;
+  return typeof scope === "string" && isWriteScope(scope);
+}
+
 // Guards POST /approve and /approve-always at the IPC boundary. The proof
 // token travels in the request body as __presenceProof and is stripped
 // before forwarding to the daemon.
@@ -115,7 +140,9 @@ export async function guardApprovalCall(options: {
       body: record,
     };
   }
-  if (!remotePresenceRequired(grant, settingsRaw)) {
+  const risk = grantField(grant, "risk");
+  const scope = grantField(grant, "allowedScope") ?? grantField(grant, "scope");
+  if (!approvalPresenceRequired(grant, risk, scope, settingsRaw)) {
     return { decision: { allow: true }, body: record };
   }
   const consumed = options.issuer.consume(proof, `approve:${grantId}`, options.nowMs);
@@ -162,4 +189,90 @@ export function guardRemoteSettingsCall(options: {
     decision: { allow: false, reason: "disabling remote-approval presence requires fresh local presence (app PIN)" },
     body: record,
   };
+}
+
+const LOCAL_AUTH_WEAKEN_KEYS = ["enabled", "requireOnLaunch", "requireOnApproval", "requireOnSettings", "biometricEnabled"] as const;
+
+function copyBody(body: unknown): Record<string, unknown> {
+  return typeof body === "object" && body !== null ? { ...(body as Record<string, unknown>) } : {};
+}
+
+function consumeStripped(
+  record: Record<string, unknown>,
+  issuer: PresenceProofIssuer,
+  scope: string,
+  nowMs: number,
+  reason: string,
+): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
+  const proof = record["__presenceProof"];
+  delete record["__presenceProof"];
+  if (issuer.consume(proof, scope, nowMs) !== null) {
+    return { decision: { allow: true }, body: record };
+  }
+  return { decision: { allow: false, reason }, body: record };
+}
+
+export function guardLocalAuthCall(options: {
+  readonly method: string;
+  readonly path: string;
+  readonly body: unknown;
+  readonly issuer: PresenceProofIssuer;
+  readonly nowMs: number;
+}): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
+  if (!(options.method === "PATCH" && options.path === "/settings/local-auth")) {
+    return { decision: { allow: true }, body: options.body };
+  }
+  const record = copyBody(options.body);
+  const weakens = LOCAL_AUTH_WEAKEN_KEYS.some((key) => record[key] === false);
+  if (!weakens) return { decision: { allow: true }, body: options.body };
+  return consumeStripped(
+    record,
+    options.issuer,
+    SETTINGS_LOCAL_AUTH_PROOF_SCOPE,
+    options.nowMs,
+    "this approval requires fresh local presence (app PIN)",
+  );
+}
+
+export function guardSecuritySettingsCall(options: {
+  readonly method: string;
+  readonly path: string;
+  readonly body: unknown;
+  readonly issuer: PresenceProofIssuer;
+  readonly nowMs: number;
+}): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
+  if (!(options.method === "PATCH" && options.path === "/settings/security")) {
+    return { decision: { allow: true }, body: options.body };
+  }
+  const record = copyBody(options.body);
+  if (record["strictMode"] !== false && record["verifyCallerProcess"] !== false) {
+    return { decision: { allow: true }, body: options.body };
+  }
+  return consumeStripped(
+    record,
+    options.issuer,
+    SETTINGS_SECURITY_PROOF_SCOPE,
+    options.nowMs,
+    "this approval requires fresh local presence (app PIN)",
+  );
+}
+
+export function guardAgentRotateCall(options: {
+  readonly method: string;
+  readonly path: string;
+  readonly body: unknown;
+  readonly issuer: PresenceProofIssuer;
+  readonly nowMs: number;
+}): { readonly decision: RemoteApprovalDecision; readonly body: unknown } {
+  if (!(options.method === "POST" && options.path === "/agents/rotate")) {
+    return { decision: { allow: true }, body: options.body };
+  }
+  const record = copyBody(options.body);
+  return consumeStripped(
+    record,
+    options.issuer,
+    AGENTS_ROTATE_PROOF_SCOPE,
+    options.nowMs,
+    "this approval requires fresh local presence (app PIN)",
+  );
 }

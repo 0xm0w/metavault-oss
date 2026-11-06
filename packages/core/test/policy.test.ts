@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { escalateFinancialDecision, evaluatePolicy } from "../src/policy.js";
+import { escalateFinancialDecision, evaluatePolicy, isWriteScope, sessionLeaseAllowed } from "../src/policy.js";
 
 const cfg = { ceilings: { stripe: "charges.read" }, standingApprovals: [], rateLimitPerHour: 20 };
 const req = { agentId: "cursor", ide: "Cursor", tool: "http", alias: "stripe", requestedScope: "charges.read", reason: "list" };
@@ -31,19 +31,22 @@ describe("evaluatePolicy", () => {
     expect(result.allowedScope).toBe("charges.read");
     expect(result.requireApproval).toBe(false);
   });
-  it("standing approval covers a null decision when deterministic risk is low", () => {
+  it("standing approval covers a null decision when deterministic risk is low and the caller is verified", () => {
     const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
-    const honored = evaluatePolicy(req, null, c2, 0, { deterministicRisk: "low" });
+    const verified = { ...req, verified: true as const };
+    const honored = evaluatePolicy(verified, null, c2, 0, { deterministicRisk: "low" });
     expect(honored.requireApproval).toBe(false);
     expect(honored.reason).toBe("standing-approval");
-    expect(evaluatePolicy(req, null, c2, 0).requireApproval).toBe(true);
-    expect(evaluatePolicy(req, null, c2, 0, { deterministicRisk: "medium" }).requireApproval).toBe(true);
-    expect(evaluatePolicy(req, null, cfg, 0, { deterministicRisk: "low" }).requireApproval).toBe(true);
+    expect(evaluatePolicy(req, null, c2, 0, { deterministicRisk: "low" }).requireApproval).toBe(true);
+    expect(evaluatePolicy(verified, null, c2, 0).requireApproval).toBe(true);
+    expect(evaluatePolicy(verified, null, c2, 0, { deterministicRisk: "medium" }).requireApproval).toBe(true);
+    expect(evaluatePolicy(verified, null, cfg, 0, { deterministicRisk: "low" }).requireApproval).toBe(true);
   });
   it("standing approval covers a low-risk read even when the marshal asks for approval", () => {
     const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read" }] };
     const d = { risk: "low" as const, recommendedScope: "charges.read", requireApproval: true, explanation: "x" };
-    expect(evaluatePolicy(req, d, c2, 0).requireApproval).toBe(false);
+    expect(evaluatePolicy({ ...req, verified: true }, d, c2, 0).requireApproval).toBe(false);
+    expect(evaluatePolicy(req, d, c2, 0).requireApproval).toBe(true);
   });
   it("standing approval with verifiedOnly never applies to unverified or spoofed requests", () => {
     const c2 = { ...cfg, standingApprovals: [{ agentId: "cursor", alias: "stripe", scope: "charges.read", verifiedOnly: true }] };
@@ -180,5 +183,38 @@ describe("financial (payment card) aliases", () => {
     expect(e?.risk).toBe("high");
     expect(e?.requireApproval).toBe(true);
     expect(escalateFinancialDecision(null)).toBeNull();
+  });
+});
+
+describe("isWriteScope fail closed", () => {
+  it("treats only an explicit read suffix as a read", () => {
+    expect(isWriteScope("charges.read")).toBe(false);
+    expect(isWriteScope("user:read")).toBe(false);
+    expect(isWriteScope("read")).toBe(false);
+    expect(isWriteScope("charges.write")).toBe(true);
+    expect(isWriteScope("mail.send")).toBe(true);
+    expect(isWriteScope("chat.completions")).toBe(true);
+    expect(isWriteScope("repo:delete")).toBe(true);
+    expect(isWriteScope("*.read")).toBe(true);
+    expect(isWriteScope("*.*")).toBe(true);
+    expect(isWriteScope("foo")).toBe(true);
+    expect(isWriteScope("")).toBe(true);
+  });
+});
+
+describe("sessionLeaseAllowed", () => {
+  const ok = { scope: "charges.read", risk: "low" as const, payload: { method: "GET", path: "/v1/charges" }, verified: true };
+  it("allows a verified low-risk read with a non-mutating payload", () => {
+    expect(sessionLeaseAllowed(ok)).toBe(true);
+    expect(sessionLeaseAllowed({ ...ok, payload: undefined })).toBe(true);
+  });
+  it("rejects writes, higher risk, unverified callers, mutating methods, and GraphQL mutations", () => {
+    expect(sessionLeaseAllowed({ ...ok, scope: "charges.write" })).toBe(false);
+    expect(sessionLeaseAllowed({ ...ok, scope: "mail.send" })).toBe(false);
+    expect(sessionLeaseAllowed({ ...ok, risk: "medium" })).toBe(false);
+    expect(sessionLeaseAllowed({ ...ok, risk: undefined })).toBe(false);
+    expect(sessionLeaseAllowed({ ...ok, verified: false })).toBe(false);
+    expect(sessionLeaseAllowed({ ...ok, payload: { method: "POST", path: "/v1/charges" } })).toBe(false);
+    expect(sessionLeaseAllowed({ ...ok, payload: { query: "mutation { x }" } })).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ import { metavaultEnv } from "../../core/src/env.js";
 import { ensureGatewayCertificate, ensureVaultCa } from "../../core/src/vault-ca.js";
 import { retrieveMasterKey } from "../../core/src/keychain.js";
 import { VaultStore, VaultStoreLive } from "../../core/src/storage.js";
+import { hardenOwnerOnly } from "../../core/src/owner-acl.js";
 import type { CapabilityRequest } from "../../core/src/types.js";
 import {
   CapabilityRequestSchema,
@@ -85,6 +86,8 @@ export function statusForErrorTag(tag: string): number {
       return 423;
     case "CardInvalid":
       return 400;
+    case "RateLimited":
+      return 429;
     default:
       return 500;
   }
@@ -105,6 +108,9 @@ function safeErrorBody(err: unknown): SafeErrorBody {
     }
     if (tag === "StorageError" && operation === CARD_INVALID_OPERATION) {
       return { error: { _tag: "CardInvalid", message } };
+    }
+    if (tag === "StorageError" && operation === "pin-throttled") {
+      return { error: { _tag: "RateLimited", message } };
     }
     return { error: { _tag: tag, message } };
   }
@@ -135,7 +141,7 @@ export function validateLoopbackHttpHeaders(
     return { ok: false, status: 403, message: "forbidden host header" };
   }
   const origin = req.headers["origin"];
-  if (typeof origin === "string" && origin !== "null" && !origin.startsWith("file://")) {
+  if (typeof origin === "string") {
     return { ok: false, status: 403, message: "browser origin header not permitted" };
   }
   const secFetchSite = req.headers["sec-fetch-site"];
@@ -371,7 +377,9 @@ export function ensureGatewaySecret(dbPath: string): string {
   const existing = loadGatewaySecret(dbPath);
   if (existing !== undefined && existing !== "") return existing;
   const secret = randomBytes(32).toString("hex");
-  writeFileSync(gatewaySecretFilePath(dbPath), secret, { encoding: "utf8", mode: 0o600 });
+  const secretPath = gatewaySecretFilePath(dbPath);
+  writeFileSync(secretPath, secret, { encoding: "utf8", mode: 0o600 });
+  hardenOwnerOnly(secretPath, false);
   return secret;
 }
 
@@ -494,12 +502,7 @@ function isTokenProtected(method: string, path: string): boolean {
   ) {
     return true;
   }
-  if (
-    path.startsWith("/settings/local-auth") &&
-    method !== "GET" &&
-    path !== "/settings/local-auth/verify" &&
-    path !== "/settings/local-auth/verify-biometric"
-  ) {
+  if (path.startsWith("/settings/local-auth") && method !== "GET") {
     return true;
   }
   return false;
@@ -766,7 +769,7 @@ export async function handleVaultRequest(
     if (decoded.model !== undefined && decoded.model.trim() === "") {
       return BAD_REQUEST;
     }
-    if (decoded.metaApiBaseUrl !== undefined && decoded.metaApiBaseUrl.trim() === "") {
+    if (decoded.metaApiBaseUrl !== undefined && !isMetaApiBaseUrlAcceptable(decoded.metaApiBaseUrl)) {
       return BAD_REQUEST;
     }
     if (decoded.localBaseUrl !== undefined && !isLocalBaseUrlAcceptable(decoded.localBaseUrl)) {
@@ -862,11 +865,11 @@ export async function handleVaultRequest(
       return BAD_REQUEST;
     }
     const alias = decoded.alias.trim();
-    if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias)) {
-      return BAD_REQUEST;
-    }
     const scope = decoded.scope.trim();
     const website = (decoded.website ?? "").trim();
+    if (alias === WARDEN_KEY_ALIAS || !isSafeAlias(alias) || containsBidi(alias) || containsBidi(scope) || containsBidi(website)) {
+      return BAD_REQUEST;
+    }
     const reason = (decoded.reason ?? "").trim().slice(0, 256);
     const agentId = decoded.agentId !== undefined ? decoded.agentId.trim().slice(0, 128) : "";
     const created = await run(service.createEnrollment(alias, scope, website, reason === "" ? undefined : reason, agentId === "" ? undefined : agentId));
@@ -882,8 +885,8 @@ export async function handleVaultRequest(
     const found = await run(service.getEnrollment(id));
     if (found.status !== 200) { return found; }
     if (found.body === null) { return { status: 404, body: { error: { _tag: "NotFound", message: "enrollment not found" } } }; }
-    const record = found.body as { enrollmentId: string; status: string; alias: string; scope: string };
-    return { status: 200, body: { status: record.status, alias: record.alias, scope: record.scope } };
+    const record = found.body as { enrollmentId: string; status: string; alias: string; scope: string; website?: string; expiresAtMs?: number };
+    return { status: 200, body: { status: record.status, alias: record.alias, scope: record.scope, website: record.website ?? "", expiresAtMs: record.expiresAtMs ?? 0 } };
   }
   if (method === "GET" && path === "/key/status") {
     return run(service.keyStatus());
@@ -976,7 +979,12 @@ export async function handleVaultRequest(
       decoded === null ||
       decoded.alias.trim() === "" ||
       decoded.scope.trim() === "" ||
-      decoded.secret.trim() === ""
+      decoded.secret.trim() === "" ||
+      decoded.secret.trim().length < 8 ||
+      containsBidi(decoded.alias) ||
+      containsBidi(decoded.scope) ||
+      containsBidi(decoded.secret) ||
+      containsBidi(decoded.website ?? "")
     ) {
       return BAD_REQUEST;
     }
@@ -1035,7 +1043,16 @@ export async function handleVaultRequest(
     if (decoded.scope !== undefined && decoded.scope.trim() === "") {
       return BAD_REQUEST;
     }
-    if (decoded.secret !== undefined && decoded.secret !== "" && decoded.secret.trim() === "") {
+    if (decoded.secret !== undefined && decoded.secret !== "") {
+      const secret = decoded.secret.trim();
+      if (secret === "" || secret.length < 8 || containsBidi(secret)) {
+        return BAD_REQUEST;
+      }
+    }
+    if (decoded.website !== undefined && containsBidi(decoded.website)) {
+      return BAD_REQUEST;
+    }
+    if (decoded.scope !== undefined && containsBidi(decoded.scope)) {
       return BAD_REQUEST;
     }
     const patch: { scope?: string; website?: string; secret?: string } = {};
@@ -1297,6 +1314,29 @@ export async function handleVaultRequest(
     if (decoded === null) {
       return BAD_REQUEST;
     }
+    const daemonPresented = options?.deviceId !== undefined ? undefined : options?.providedToken;
+    const daemonOk =
+      options?.daemonToken !== undefined &&
+      options.daemonToken !== "" &&
+      tokenMatches(options.daemonToken, daemonPresented);
+    if (daemonOk) {
+      return run(service.revoke(decoded.target).pipe(Effect.map(() => ({ status: "revoked" as const }))));
+    }
+    const agentToken = options?.providedAgentToken?.trim();
+    if (agentToken === undefined || agentToken === "") {
+      return UNAUTHORIZED;
+    }
+    const agentRes = await run(service.getAgentByToken(agentToken));
+    if (agentRes.status !== 200 || agentRes.body === null || agentRes.body === undefined) {
+      return UNAUTHORIZED;
+    }
+    const agent = agentRes.body as { id: string; revoked: boolean };
+    if (agent.revoked) {
+      return { status: 403, body: { error: { _tag: "Revoked", message: "agent is revoked" } } };
+    }
+    if (decoded.target !== agent.id) {
+      return { status: 403, body: { error: { _tag: "Forbidden", message: "agent may only revoke itself" } } };
+    }
     return run(service.revoke(decoded.target).pipe(Effect.map(() => ({ status: "revoked" as const }))));
   }
 
@@ -1466,8 +1506,9 @@ export function createVaultHttpServer(
         const providedToken = (Array.isArray(header) ? header[0] : header) ?? bearerToken;
         const agentTokenHeader = req.headers["x-metavault-agent-token"];
         const rawAgentToken = Array.isArray(agentTokenHeader) ? agentTokenHeader[0] : agentTokenHeader;
+        const bearerIsDaemon = bearerToken !== undefined && tokenMatches(guardToken, bearerToken);
         const providedAgentToken =
-          rawAgentToken ?? (bearerToken !== undefined && bearerToken !== guardToken ? bearerToken : undefined);
+          rawAgentToken ?? (bearerToken !== undefined && !bearerIsDaemon ? bearerToken : undefined);
         const receiptHeader = req.headers["x-metavault-grant-receipt"];
         const providedGrantReceipt = Array.isArray(receiptHeader) ? receiptHeader[0] : receiptHeader;
         const clientPidHeader = req.headers["x-metavault-client-pid"];
@@ -1563,6 +1604,38 @@ export function createVaultHttpServer(
 // a keyless daemon refuses to start, as before.
 // The local endpoint is the user's own server. Empty clears it; otherwise it
 // must be an http(s) URL with no embedded credentials.
+const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/;
+
+export function containsBidi(value: string): boolean {
+  return BIDI_CONTROLS.test(value);
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
+}
+
+export function isMetaApiBaseUrlAcceptable(raw: string): boolean {
+  const value = raw.trim();
+  if (value === "") return false;
+  try {
+    const url = new URL(value);
+    if (url.username !== "" || url.password !== "") return false;
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && isLoopbackHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function metaApiOrigin(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function isLocalBaseUrlAcceptable(raw: string): boolean {
   const value = raw.trim();
   if (value === "") return true;

@@ -63,16 +63,19 @@ export function marshalStatusLine(modelId?: string): string {
   return `Marshal · ${modelId}`;
 }
 
-const WRITE_MARKERS = [".write", ".create", ".update", ".delete"] as const;
+// Mirrors packages/core/src/policy.ts. Read is an explicit suffix. A
+// wildcard, an unknown verb, or an empty scope is a write.
+export function isExplicitReadScope(scope: string): boolean {
+  if (scope.includes("*")) return false;
+  return scope === "read" || scope.endsWith(".read") || scope.endsWith(":read");
+}
 
-// Mirrors the daemon policy write test: a scope is a write when it carries
-// a write marker. Everything else with a non-empty name reads as read-only.
 export function isWriteScope(scope: string): boolean {
-  return WRITE_MARKERS.some((marker) => scope.includes(marker)) || scope.endsWith(":write");
+  return !isExplicitReadScope(scope);
 }
 
 export function isReadOnlyScope(scope: string): boolean {
-  return scope.length > 0 && !isWriteScope(scope);
+  return !isWriteScope(scope);
 }
 
 // "Always allow" creates a standing approval, so it is offered only where
@@ -81,14 +84,14 @@ export function canAlwaysAllow(approval: PendingApproval): boolean {
   return approval.risk === "low" && isReadOnlyScope(approval.allowedScope) && approval.verified !== false;
 }
 
-// Session lease is the write-side counterpart of Always allow: a verified
-// local grant, not a card (cards are escalated to high), not a remote origin.
+// Session lease is a short read-only low-risk grant. Writes and anything
+// the marshal did not rate low ask every time.
 export function canSessionLease(approval: PendingApproval): boolean {
   return (
     approval.verified === true &&
-    isWriteScope(approval.allowedScope) &&
+    isReadOnlyScope(approval.allowedScope) &&
     approval.origin !== "remote" &&
-    approval.risk !== "high"
+    approval.risk === "low"
   );
 }
 
@@ -133,11 +136,36 @@ export function faviconUrl(website: string): string | null {
   if (domain === "" || !domain.includes(".")) {
     return null;
   }
-  // Hostname only, never URL syntax supplied by a DOM field. Length bound
-  // also prevents oversized browser requests. International domains must use
-  // their ASCII punycode spelling here.
   if (domain.length > 253 || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(domain)) return null;
-  return `https://${domain}/favicon.ico`;
+  const letter = domain.charAt(0).toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#201A17"/><text x="16" y="21" text-anchor="middle" font-size="16" fill="#FAF9F6">${letter}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/;
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
+}
+
+// Stored connector base. Keeps a validated https origin and path. Bare hosts
+// get https. Loopback may use http. Userinfo, query, hash, and bidi are rejected.
+export function credentialBaseUrl(website: string): string {
+  const trimmed = website.trim();
+  if (trimmed === "") return "";
+  if (BIDI_CONTROLS.test(trimmed)) return "";
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return "";
+  }
+  if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") return "";
+  if (BIDI_CONTROLS.test(url.hostname) || BIDI_CONTROLS.test(url.pathname)) return "";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHost(url.hostname))) return "";
+  const path = url.pathname === "/" ? "" : url.pathname.replace(/\/$/, "");
+  return `${url.origin}${path}`;
 }
 
 export function buildEditPayload(input: {
@@ -147,7 +175,7 @@ export function buildEditPayload(input: {
 }): CredentialPatch {
   const payload: { scope?: string; website?: string; secret?: string } = {
     scope: input.scope.trim(),
-    website: normalizeWebsite(input.website),
+    website: credentialBaseUrl(input.website),
   };
   if (input.secret !== "") {
     payload.secret = input.secret;
@@ -165,7 +193,7 @@ export function buildAddPayload(input: {
     alias: input.alias.trim(),
     scope: input.scope.trim(),
     secret: input.secret,
-    website: normalizeWebsite(input.website),
+    website: credentialBaseUrl(input.website),
   };
 }
 
@@ -298,7 +326,36 @@ export function projectApproval(raw: unknown): PendingApproval | null {
   if (typeof deviceId === "string" && deviceId.length > 0) out = { ...out, deviceId };
   if (typeof transport === "string" && transport.length > 0) out = { ...out, transport };
   if (origin !== undefined) out = { ...out, origin };
+  const summary = projectPayloadSummary(raw["payloadSummary"]);
+  if (summary !== null) out = { ...out, payloadSummary: summary };
   return out;
+}
+
+export function payloadSummaryView(
+  summary: { readonly declaredMethod: string | null; readonly mutating: boolean; readonly preview: string } | undefined,
+): { readonly headline: string; readonly preview: string } | null {
+  if (summary === undefined) return null;
+  const method = summary.declaredMethod === null || summary.declaredMethod === "" ? "unspecified method" : summary.declaredMethod;
+  return {
+    headline: `${method} · ${summary.mutating ? "mutating" : "not mutating"}`,
+    preview: summary.preview,
+  };
+}
+
+function projectPayloadSummary(
+  raw: unknown,
+): { readonly declaredMethod: string | null; readonly mutating: boolean; readonly preview: string } | null {
+  if (!isRecord(raw)) return null;
+  const method = raw["declaredMethod"];
+  const mutating = raw["mutating"];
+  const preview = raw["preview"];
+  if (method !== null && typeof method !== "string") return null;
+  if (typeof mutating !== "boolean" || typeof preview !== "string") return null;
+  return {
+    declaredMethod: method === null ? null : method.slice(0, 16),
+    mutating,
+    preview: preview.slice(0, 400),
+  };
 }
 
 // The remote-approval gate: a request that arrived through the gateway

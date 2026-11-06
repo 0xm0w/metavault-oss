@@ -30,11 +30,11 @@ describe("enrollments", () => {
     expect(body.deeplink).toContain(`enrollment=${body.enrollmentId}`);
     expect(JSON.stringify(created.body)).not.toContain(SECRET);
     const pending = await handleVaultRequest(service, "GET", `/enrollments/${body.enrollmentId}`);
-    expect(pending.body).toEqual({ status: "pending", alias: "stripe", scope: "charges.read" });
+    expect(pending.body).toEqual({ status: "pending", alias: "stripe", scope: "charges.read", website: "stripe.com", expiresAtMs: expect.any(Number) });
     const saved = await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET, website: "stripe.com", enrollmentId: body.enrollmentId }, { daemonToken: TOKEN, providedToken: TOKEN });
     expect(saved.status).toBe(201);
     const done = await handleVaultRequest(service, "GET", `/enrollments/${body.enrollmentId}`);
-    expect(done.body).toEqual({ status: "completed", alias: "stripe", scope: "charges.read" });
+    expect(done.body).toEqual({ status: "completed", alias: "stripe", scope: "charges.read", website: "stripe.com", expiresAtMs: expect.any(Number) });
     const audit = await handleVaultRequest(service, "GET", "/audit");
     const stages = (audit.body as { events: { stage: string; alias: string }[] }).events.map((e) => e.stage);
     expect(stages).toContain("enrollment-created");
@@ -81,6 +81,8 @@ describe("enrollments", () => {
       status: "completed",
       alias: "cloudflare",
       scope: "dns.write",
+      website: "cloudflare.com",
+      expiresAtMs: expect.any(Number),
     });
     const requested = await handleVaultRequest(service, "POST", "/request", {
       agentId: "cursor",
@@ -168,5 +170,12 @@ describe("enrollments", () => {
     const id = (created.body as { enrollmentId: string }).enrollmentId;
     await new Promise((r) => setTimeout(r, 10));
     expect((await handleVaultRequest(service, "GET", `/enrollments/${id}`)).body).toMatchObject({ status: "expired" });
+  });
+  it("rejects bidi controls in alias, scope, and website", async () => {
+    const service = await makeService();
+    const bidi = "stripe\u202E.com";
+    expect((await handleVaultRequest(service, "POST", "/enrollments", { alias: bidi, scope: "charges.read" })).status).toBe(400);
+    expect((await handleVaultRequest(service, "POST", "/enrollments", { alias: "stripe", scope: "charges\u202E.read" })).status).toBe(400);
+    expect((await handleVaultRequest(service, "POST", "/enrollments", { alias: "stripe", scope: "charges.read", website: bidi })).status).toBe(400);
   });
 });

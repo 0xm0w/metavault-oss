@@ -101,9 +101,20 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
           throw new Error("daemon has no port");
         }
         const base = `http://127.0.0.1:${String(address.port)}`;
+        const registered = await fetch(`${base}/agents`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-metavault-token": TOKEN },
+          body: JSON.stringify({ id: "e2e-agent", name: "E2E" }),
+        });
+        expect(registered.status).toBe(200);
+        const agentToken = ((await registered.json()) as { token?: string }).token;
+        expect(typeof agentToken).toBe("string");
+        expect(agentToken !== undefined && agentToken.length).toBeGreaterThan(16);
 
         // Real MCP stdio server as a subprocess (built dist entry via node),
         // pointed at the test daemon exactly like an IDE host would be.
+        // The agent token is what lets this process revoke itself. A nameless
+        // caller cannot.
         const transport = new StdioClientTransport({
           command: process.execPath,
           args: [MCP_ENTRY],
@@ -113,7 +124,7 @@ describe("MCP <-> daemon e2e (real stdio subprocess, ephemeral port, stub brain,
             METAVAULT_DAEMON_URL: base,
             METAVAULT_AGENT_ID: "e2e-agent",
             METAVAULT_IDE: "Cursor",
-            METAVAULT_AGENT_TOKEN: "",
+            METAVAULT_AGENT_TOKEN: agentToken ?? "",
           },
         });
         client = new Client({ name: "e2e-client", version: "0.0.1" });

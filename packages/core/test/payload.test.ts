@@ -42,6 +42,9 @@ describe("summarizeHttpRequestPayload", () => {
     const summary = summarizeHttpRequestPayload({ data: "y".repeat(10_000) });
     expect(summary?.preview.length).toBe(400);
     expect(summary?.preview).toContain("yy");
+    expect(summary?.safetyText.length).toBeGreaterThan(400);
+    expect(summary?.safetyText).toContain("y".repeat(1000));
+    expect(summary?.safetyText.length).toBeLessThanOrEqual(65_536);
   });
 
   it("handles arrays, strings, numbers and booleans as payload content", () => {

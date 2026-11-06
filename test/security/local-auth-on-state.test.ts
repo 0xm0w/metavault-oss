@@ -106,7 +106,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
       "POST",
       "/settings/local-auth/verify",
       { pin: "00000" },
-      auth,
+      withToken,
     );
     expect(badVerify.status).toBe(200);
     expect(badVerify.body).toEqual({ ok: false });
@@ -116,7 +116,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
       "POST",
       "/settings/local-auth/verify",
       { pin: "54321" },
-      auth,
+      withToken,
     );
     expect(goodVerify.status).toBe(200);
     expect(goodVerify.body).toMatchObject({ ok: true });
@@ -172,12 +172,12 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     expect(vaultLocked).toBe(true); // Locked on cold start
 
     // Attempt unlock with wrong PIN fails
-    const failAttempt = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "1111" }, auth);
+    const failAttempt = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "1111" }, withToken);
     expect(failAttempt.body).toEqual({ ok: false });
     expect(vaultLocked).toBe(true);
 
     // Correct PIN unlocks
-    const successAttempt = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "9988" }, auth);
+    const successAttempt = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "9988" }, withToken);
     expect(successAttempt.body).toMatchObject({ ok: true });
     vaultLocked = false;
     expect(vaultLocked).toBe(false);
@@ -243,7 +243,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     await expect(attemptApproval()).rejects.toThrow("Local authentication required");
 
     // Perform PIN verification
-    const verifyRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "7777" }, auth);
+    const verifyRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "7777" }, withToken);
     expect(verifyRes.body).toMatchObject({ ok: true });
     pinVerified = true;
 
@@ -305,7 +305,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     ).rejects.toThrow("Settings action blocked: authentication required");
 
     // Authenticate with valid PIN
-    const verifyRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "2468" }, auth);
+    const verifyRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "2468" }, withToken);
     expect(verifyRes.body).toMatchObject({ ok: true });
     verifiedForSession = true;
 
@@ -328,7 +328,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     await handleVaultRequest(service, "POST", "/settings/local-auth/pin", { pin: "1357" }, withToken);
 
     // Biometrics initially disabled
-    const initialBio = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, auth);
+    const initialBio = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, withToken);
     expect(initialBio.status).toBe(200);
     expect(initialBio.body).toEqual({ ok: false });
 
@@ -345,7 +345,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     expect(isBiometricsActive(status)).toBe(true);
 
     // Biometric verification endpoint succeeds
-    const bioRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, auth);
+    const bioRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, withToken);
     expect(bioRes.status).toBe(200);
     expect(bioRes.body).toEqual({ ok: true });
     // Biometric success is caller-attested: it must never mint a remote
@@ -353,13 +353,13 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     expect((bioRes.body as { presenceProof?: unknown }).presenceProof).toBeUndefined();
 
     // PIN fallback remains active
-    const pinRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "1357" }, auth);
+    const pinRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "1357" }, withToken);
     expect(pinRes.status).toBe(200);
     expect(pinRes.body).toMatchObject({ ok: true });
 
     // Disable biometrics and verify rejection
     await handleVaultRequest(service, "PATCH", "/settings/local-auth", { biometricEnabled: false }, withToken);
-    const disabledBio = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, auth);
+    const disabledBio = await handleVaultRequest(service, "POST", "/settings/local-auth/verify-biometric", undefined, withToken);
     expect(disabledBio.body).toEqual({ ok: false });
   });
 
@@ -429,7 +429,7 @@ describe("Comprehensive ON-State Verification for Local Authentication Gates (#1
     expect(vaultLocked).toBe(true);
 
     // 3. Unlocking requires valid PIN
-    const unlockRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "6543" }, auth);
+    const unlockRes = await handleVaultRequest(service, "POST", "/settings/local-auth/verify", { pin: "6543" }, withToken);
     expect(unlockRes.body).toMatchObject({ ok: true });
     vaultLocked = false;
     expect(vaultLocked).toBe(false);

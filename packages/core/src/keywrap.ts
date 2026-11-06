@@ -15,6 +15,7 @@ import * as nodeCrypto from "node:crypto";
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { hardenOwnerOnly } from "./owner-acl.js";
 
 export type KdfName = "scrypt" | "argon2id";
 
@@ -80,6 +81,34 @@ function isScryptParams(p: ScryptParams | Argon2idParams): p is ScryptParams {
   return "N" in p;
 }
 
+const SCRYPT_MAX_R = 32;
+const SCRYPT_MAX_P = 8;
+const ARGON2_MAX_PASSES = 16;
+const ARGON2_MAX_PARALLELISM = 16;
+
+function boundedInt(value: number, min: number, max: number): boolean {
+  return Number.isInteger(value) && value >= min && value <= max;
+}
+
+function assertBoundedKdf(kdf: KdfName, params: ScryptParams | Argon2idParams): void {
+  if (kdf === "scrypt") {
+    if (!isScryptParams(params)) throw new Error("KDF name and parameters do not match");
+    const powerOfTwo = params.N >= 2 && (params.N & (params.N - 1)) === 0;
+    if (!boundedInt(params.N, 2, SCRYPT_MAX_N) || !powerOfTwo || !boundedInt(params.r, 1, SCRYPT_MAX_R) || !boundedInt(params.p, 1, SCRYPT_MAX_P)) {
+      throw new Error("key file KDF parameters exceed the allowed maximum");
+    }
+    return;
+  }
+  if (isScryptParams(params)) throw new Error("KDF name and parameters do not match");
+  if (
+    !boundedInt(params.memoryKiB, 1, ARGON2_MAX_MEMORY_KIB) ||
+    !boundedInt(params.passes, 1, ARGON2_MAX_PASSES) ||
+    !boundedInt(params.parallelism, 1, ARGON2_MAX_PARALLELISM)
+  ) {
+    throw new Error("key file KDF parameters exceed the allowed maximum");
+  }
+}
+
 type Argon2Fn = (
   algorithm: string,
   parameters: {
@@ -99,6 +128,7 @@ export function deriveKek(
   params: ScryptParams | Argon2idParams,
   salt: Buffer,
 ): Promise<Buffer> {
+  assertBoundedKdf(kdf, params);
   const secret = normalizePassphrase(passphrase);
   return new Promise((resolve, reject) => {
     const done = (err: Error | null, key: Buffer): void => {
@@ -189,9 +219,7 @@ export async function wrapMasterKey(
 
 export async function unwrapMasterKey(wrapped: WrappedMasterKey, passphrase: string): Promise<Buffer> {
   const { kdf, params } = wrapped;
-  if (isScryptParams(params) ? params.N > SCRYPT_MAX_N : params.memoryKiB > ARGON2_MAX_MEMORY_KIB) {
-    throw new Error("key file KDF parameters exceed the allowed maximum");
-  }
+  assertBoundedKdf(kdf, params);
   const kek = await deriveKek(passphrase, kdf, params, Buffer.from(wrapped.salt, "base64"));
   try {
     const decipher = createDecipheriv("aes-256-gcm", kek, Buffer.from(wrapped.iv, "base64"));
@@ -245,4 +273,5 @@ export function writeWrappedKeyFile(path: string, wrapped: WrappedMasterKey): vo
   const tmp = `${path}.tmp-${randomBytes(4).toString("hex")}`;
   writeFileSync(tmp, `${JSON.stringify(wrapped, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   renameSync(tmp, path);
+  hardenOwnerOnly(path, false);
 }

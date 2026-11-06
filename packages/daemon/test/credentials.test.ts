@@ -152,6 +152,18 @@ describe("POST /credentials", () => {
     expect((aliases.body as { aliases: string[] }).aliases).not.toContain("stripe");
   });
 
+  it("rejects a secret shorter than 8 characters", async () => {
+    const service = await makeService();
+    const res = await handleVaultRequest(
+      service,
+      "POST",
+      "/credentials",
+      { alias: "stripe", scope: "charges.read", secret: "short" },
+      { daemonToken: TOKEN, providedToken: TOKEN },
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("rejects malformed bodies with 400", async () => {
     const service = await makeService();
     const bad = await handleVaultRequest(
@@ -226,6 +238,15 @@ describe("website + PATCH/DELETE /credentials/:alias", () => {
     expect(grantId).toBeDefined();
     const approved = await handleVaultRequest(service, "POST", "/approve", { grantId }, { daemonToken: TOKEN, providedToken: TOKEN });
     expect((approved.body as { result?: { echoedLength?: number } }).result?.echoedLength).toBe("second-secret-longer".length);
+  });
+
+  it("PATCH rejects a short secret and a bidi website", async () => {
+    const service = await makeService();
+    await handleVaultRequest(service, "POST", "/credentials", { alias: "stripe", scope: "charges.read", secret: SECRET }, { daemonToken: TOKEN, providedToken: TOKEN });
+    const short = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { secret: "short" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(short.status).toBe(400);
+    const bidi = await handleVaultRequest(service, "PATCH", "/credentials/stripe", { website: "stripe\u202E.com" }, { daemonToken: TOKEN, providedToken: TOKEN });
+    expect(bidi.status).toBe(400);
   });
 
   it("PATCH rejects a whitespace-only secret with 400", async () => {

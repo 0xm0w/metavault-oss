@@ -7,5 +7,17 @@ release/
 openvault.token
 openvault.key
 *.key
+*.key.json
+metavault.key.json
+*.token
+metavault.token
+*.db-wal
+*.db-shm
+*.db-journal
+*.before-agent-hash*
+.env*
+.dev.vars
+*.pem
+.wrangler/
 packages/app/package-lock.json
 packages/app/bundle/

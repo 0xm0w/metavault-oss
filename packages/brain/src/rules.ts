@@ -84,15 +84,18 @@ export function ruleHits(req: CapabilityRequest, history: HistorySummary): RuleH
     hits.push({ id, weight });
   };
 
-  if (INJECTION.some((re) => re.test(reason))) add("injection-phrase", "high");
-  if (SHELL.some((re) => re.test(reason))) add("shell-or-exec", "high");
-  if (SYSTEM_PATHS.test(reason)) add("system-credential-path", "high");
+  const body = payload?.safetyText ?? "";
+  const untrusted = body === "" ? reason : `${reason}\n${body}`;
+  const read = !isWriteScope(req.requestedScope);
+  if (INJECTION.some((re) => re.test(untrusted))) add("injection-phrase", "high");
+  if (SHELL.some((re) => re.test(untrusted))) add("shell-or-exec", "high");
+  if (SYSTEM_PATHS.test(untrusted)) add("system-credential-path", "high");
+  if (read && /\bmutation\b/i.test(body)) add("graphql-mutation-on-readonly-scope", "high");
 
   const sensitive = SENSITIVE.test(reason);
   const exfil = EXFIL_VERB.test(reason);
   const destination = DESTINATION.test(reason);
   const bulk = BULK.test(reason);
-  const read = !isWriteScope(req.requestedScope);
 
   // The payload executes only after approval, but the human approves on the
   // stated intent: a declared state-changing method on a read-only scope is

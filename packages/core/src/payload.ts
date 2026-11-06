@@ -24,10 +24,14 @@ export interface HttpRequestPayloadSummary {
   // Bounded single-line preview of the serialized payload. Untrusted data:
   // escape before embedding anywhere instructions matter.
   readonly preview: string;
+  // Up to 64 KiB of the serialized payload for adversarial scanners.
+  // `preview` stays short for human display.
+  readonly safetyText: string;
 }
 
 const MUTATING_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const PREVIEW_LIMIT = 400;
+const SAFETY_LIMIT = 65_536;
 
 export function summarizeHttpRequestPayload(
   payload: unknown,
@@ -60,5 +64,6 @@ export function summarizeHttpRequestPayload(
     mutating: declaredMethod !== null && MUTATING_METHODS.has(declaredMethod),
     digest,
     preview: serialized.slice(0, PREVIEW_LIMIT),
+    safetyText: serialized.slice(0, SAFETY_LIMIT),
   };
 }

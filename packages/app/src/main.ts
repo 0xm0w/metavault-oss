@@ -1,8 +1,8 @@
 import { appendFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
-import { DAEMON_CALL_CHANNEL, DAEMON_BASE_URL, callDaemon } from "./daemon-client.js";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, Tray } from "electron";
+import { DAEMON_CALL_CHANNEL, callDaemon, getDaemonBaseUrl, readDaemonJson, setDaemonToken, setPackagedBuild } from "./daemon-client.js";
 import { PRESENCE_PROOF_CHANNEL, defaultGuardDeps, guardedDaemonCall, issuePresenceProof } from "./remote-approval-ipc.js";
 import { PresenceProofIssuer } from "./remote-approval-guard.js";
 import { bundledDaemonPaths, daemonHealthy, ensureBundledDaemon } from "./daemon-launcher.js";
@@ -12,7 +12,7 @@ import { bundledGatewayPaths, ensureBundledGateway, gatewayListening, GATEWAY_HO
 import { SshTunnelManager, resolveSshBinaries, sshTunnelPaths } from "./ssh-tunnel.js";
 import { SSH_TUNNEL_CHANNEL, SSH_TUNNEL_STATUS_CHANNEL, handleSshTunnelRequest } from "./ssh-tunnel-ipc.js";
 import type { ChildProcess } from "node:child_process";
-import { DEEPLINK_CHANNEL, findVaultDeeplink, parseVaultDeeplink, type DeeplinkAddParams } from "./deeplink.js";
+import { DEEPLINK_CHANNEL, findVaultDeeplink, parseVaultDeeplink, websiteFromTrustedEnrollment, type DeeplinkAddParams, type EnrollmentWebsiteRecord } from "./deeplink.js";
 import { PRELOAD_FILE_NAME, buildWindowOptions, shouldHideOnClose } from "./window-options.js";
 import { initAutoUpdater } from "./updater.js";
 import { runtimePaths } from "./runtime-paths.js";
@@ -52,6 +52,8 @@ function decodeIdeConfigRequest(input: unknown): IdeConfigRequest {
 // (resources/vaultd) and stops it again when you quit from the tray. A
 // daemon you started yourself (vaultd / metavault) is left alone.
 
+setPackagedBuild(app.isPackaged);
+
 const here = dirname(fileURLToPath(import.meta.url));
 const preloadPath = join(here, PRELOAD_FILE_NAME);
 const rendererPath = join(here, "renderer", "index.html");
@@ -87,7 +89,7 @@ async function runMcpSelfCheck(): Promise<void> {
   // over it, so checking before it is up would prove nothing.
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
-    if (await daemonHealthy(DAEMON_BASE_URL)) break;
+    if (await daemonHealthy(getDaemonBaseUrl())) break;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const runtime = runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") });
@@ -95,7 +97,7 @@ async function runMcpSelfCheck(): Promise<void> {
     command: runtime.command,
     args: runtime.args,
     env: runtime.env,
-    daemonUrl: DAEMON_BASE_URL,
+    daemonUrl: getDaemonBaseUrl(),
   }).catch((err: unknown): McpSelfCheckResult => ({ state: "failed", tools: [], detail: err instanceof Error ? err.message : "self-check error", checkedAt: new Date().toISOString() }));
 }
 if (app.isPackaged) {
@@ -119,10 +121,47 @@ let mainWindow: BrowserWindow | null = null;
 let pendingDeeplink: DeeplinkAddParams | null = null;
 let rendererReady = false;
 
+function enrollmentRecord(body: unknown): { readonly enrollment: EnrollmentWebsiteRecord | null; readonly expiresAtMs: number | null } {
+  if (typeof body !== "object" || body === null) return { enrollment: null, expiresAtMs: null };
+  const record = body as Record<string, unknown>;
+  const status = typeof record["status"] === "string" ? record["status"] : "";
+  const alias = typeof record["alias"] === "string" ? record["alias"] : "";
+  const scope = typeof record["scope"] === "string" ? record["scope"] : "";
+  const website = typeof record["website"] === "string" ? record["website"] : "";
+  return {
+    enrollment: { status, alias, scope, website },
+    expiresAtMs: typeof record["expiresAtMs"] === "number" ? record["expiresAtMs"] : null,
+  };
+}
+
+async function enrichDeeplink(params: DeeplinkAddParams): Promise<DeeplinkAddParams> {
+  let enrollment: EnrollmentWebsiteRecord | null = null;
+  let expiresAtMs: number | null = null;
+  if (params.enrollmentId !== "") {
+    const projected = enrollmentRecord(await readDaemonJson(`/enrollments/${encodeURIComponent(params.enrollmentId)}`));
+    enrollment = projected.enrollment;
+    expiresAtMs = projected.expiresAtMs;
+  }
+  const trusted = websiteFromTrustedEnrollment(params, enrollment, Date.now(), expiresAtMs);
+  return {
+    alias: params.alias,
+    scope: params.scope,
+    website: trusted.website,
+    enrollmentId: params.enrollmentId,
+    ...(trusted.untrusted ? { untrusted: true } : {}),
+  };
+}
+
+async function sendEnrichedDeeplink(window: BrowserWindow, params: DeeplinkAddParams): Promise<void> {
+  const enriched = await enrichDeeplink(params);
+  if (mainWindow !== window || window.isDestroyed()) return;
+  window.webContents.send(DEEPLINK_CHANNEL, enriched);
+}
+
 function routeDeeplink(params: DeeplinkAddParams): void {
   showWindow();
   if (mainWindow !== null && rendererReady) {
-    mainWindow.webContents.send(DEEPLINK_CHANNEL, params);
+    void sendEnrichedDeeplink(mainWindow, params);
   } else {
     pendingDeeplink = params;
   }
@@ -155,18 +194,48 @@ function showWindow(): void {
 }
 
 function bringWindowToFront(): void {
-  showWindow();
-  if (mainWindow !== null) {
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.focus();
-    mainWindow.setAlwaysOnTop(false);
+  if (mainWindow === null) {
+    createWindow();
+    return;
   }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.showInactive();
+  mainWindow.flashFrame(true);
+}
+
+function isAppWindowSender(event: { readonly sender: unknown; readonly senderFrame: unknown }): boolean {
+  const contents = mainWindow?.webContents;
+  if (contents === undefined) return false;
+  if (event.sender === contents) return true;
+  return event.senderFrame === contents.mainFrame;
+}
+
+function ideRuntime(): {
+  readonly packaged: boolean;
+  readonly execPath: string;
+  readonly resourcesPath: string;
+  readonly repoRoot: string;
+  readonly dbPath: string;
+} {
+  return {
+    packaged: app.isPackaged,
+    execPath: process.execPath,
+    resourcesPath: process.resourcesPath,
+    repoRoot: join(here, "..", "..", ".."),
+    dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db"),
+  };
 }
 
 function createWindow(): void {
   rendererReady = false;
   const isMinimizedStart = process.argv.includes("--minimized") || process.argv.includes("--hidden");
-  const window = new BrowserWindow(buildWindowOptions(preloadPath));
+  const window = new BrowserWindow(buildWindowOptions(preloadPath, process.argv));
+  window.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.setMenuBarVisibility(false);
   window.removeMenu();
   mainWindow = window;
@@ -200,7 +269,7 @@ function createWindow(): void {
     if (pendingDeeplink !== null) {
       const queued = pendingDeeplink;
       pendingDeeplink = null;
-      window.webContents.send(DEEPLINK_CHANNEL, queued);
+      void sendEnrichedDeeplink(window, queued);
     }
   });
   void window.loadFile(rendererPath);
@@ -260,10 +329,14 @@ if (!hasLock) {
     handleDeeplinkUrl(url);
   });
   void app.whenReady().then(() => {
+    app.setAppUserModelId("dev.metavault.app");
     Menu.setApplicationMenu(null);
     if (app.isPackaged) {
-      void ensureBundledDaemon({ execPath: process.execPath, paths: daemonPaths, baseUrl: DAEMON_BASE_URL })
+      void ensureBundledDaemon({ execPath: process.execPath, paths: daemonPaths, baseUrl: getDaemonBaseUrl() })
         .then((result) => {
+          if (typeof result.token === "string" && result.token !== "") {
+            setDaemonToken(result.token);
+          }
           if (result.child !== undefined) {
             bundledDaemon = result.child;
             result.child.once("exit", () => {
@@ -289,7 +362,7 @@ if (!hasLock) {
               execPath: process.execPath,
               paths: gatewayPaths,
               vaultDir: dataDir,
-              daemonBaseUrl: DAEMON_BASE_URL,
+              daemonBaseUrl: getDaemonBaseUrl(),
             });
             adoptGatewayChild(launched);
             return launched.status;
@@ -307,16 +380,25 @@ if (!hasLock) {
     }
     const presenceIssuer = new PresenceProofIssuer();
     const guardDeps = defaultGuardDeps(presenceIssuer);
-    ipcMain.handle(DAEMON_CALL_CHANNEL, async (_event, request: unknown) => guardedDaemonCall(request, guardDeps));
+    ipcMain.handle(DAEMON_CALL_CHANNEL, async (event, request: unknown) => {
+      if (!isAppWindowSender(event)) {
+        throw new Error("MetaVault request rejected");
+      }
+      return guardedDaemonCall(request, guardDeps);
+    });
     ipcMain.handle(PRESENCE_PROOF_CHANNEL, async (_event, input: unknown) => issuePresenceProof(input, guardDeps));
     ipcMain.handle("metavault:runtime-paths", () => runtimePaths({ packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, repoRoot: join(here, "..", "..", ".."), dbPath: process.env["METAVAULT_DB_PATH"] ?? join(process.cwd(), "metavault.db") }));
     ipcMain.handle("metavault:mcp-status", () => mcpSelfCheck);
-    ipcMain.handle(IDE_CONFIG_CHANNEL, async (_event, request: unknown) => {
+    ipcMain.handle(IDE_CONFIG_CHANNEL, async (event, request: unknown) => {
+      if (!isAppWindowSender(event)) {
+        return { ok: false, reason: "rejected" };
+      }
       try {
         const decoded = decodeIdeConfigRequest(request);
+        const runtime = ideRuntime();
         return decoded.action === "inspect"
-          ? await ideConfigIpc({ action: "inspect" }, {})
-          : await ideConfigIpc(decoded, {});
+          ? await ideConfigIpc({ action: "inspect" }, { runtime })
+          : await ideConfigIpc(decoded, { runtime });
       } catch (err) {
         return { ok: false, reason: err instanceof Error ? err.message : "malformed IDE-config request" };
       }
@@ -325,7 +407,7 @@ if (!hasLock) {
     // App-managed SSH tunnel for Remote Connections. Off unless the user
     // completed setup and left it connected; a restart then reconnects.
     // The status channel pushes every state change to the renderer.
-    const sshBinaries = resolveSshBinaries();
+    const sshBinaries = resolveSshBinaries(process.platform, process.env, existsSync, !app.isPackaged);
     if (sshBinaries !== null) {
       const gatewayPaths = bundledGatewayPaths(process.resourcesPath, dataDir);
       sshTunnel = new SshTunnelManager({
@@ -343,7 +425,7 @@ if (!hasLock) {
                 execPath: process.execPath,
                 paths: gatewayPaths,
                 vaultDir: dataDir,
-                daemonBaseUrl: DAEMON_BASE_URL,
+                daemonBaseUrl: getDaemonBaseUrl(),
               }));
             } catch {
               // Fall through to the listener check below.
@@ -368,6 +450,13 @@ if (!hasLock) {
     }
     ipcMain.on("metavault:bring-to-front", () => {
       bringWindowToFront();
+      if (Notification.isSupported()) {
+        const note = new Notification({ title: "MetaVault OSS", body: "A request needs your approval." });
+        note.on("click", () => {
+          showWindow();
+        });
+        note.show();
+      }
     });
     createWindow();
     createTray();

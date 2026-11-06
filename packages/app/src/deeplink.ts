@@ -17,6 +17,11 @@ export const MAX_SCOPE_LENGTH = 256;
 export const MAX_WEBSITE_LENGTH = 253;
 export const MAX_ENROLLMENT_LENGTH = 128;
 const MAX_URL_LENGTH = 2048;
+const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/;
+
+function hasBidi(value: string): boolean {
+  return BIDI_CONTROLS.test(value);
+}
 
 function capped(value: string | null, max: number): string | null {
   if (value === null) {
@@ -46,7 +51,7 @@ export function parseVaultDeeplink(raw: unknown): DeeplinkAddParams | null {
   } catch {
     return null;
   }
-  if ((url.protocol !== "metavault:" && url.protocol !== "metavault:") || url.hostname !== "add") {
+  if ((url.protocol !== "metavault:" && url.protocol !== "openvault:") || url.hostname !== "add") {
     return null;
   }
   // Duplicate known params are ambiguous: reject instead of picking one.
@@ -74,7 +79,34 @@ export function parseVaultDeeplink(raw: unknown): DeeplinkAddParams | null {
   if (enrollmentId === null) {
     return null;
   }
+  if (hasBidi(alias) || hasBidi(scope) || hasBidi(website) || hasBidi(enrollmentId)) {
+    return null;
+  }
   return { alias, scope, website, enrollmentId };
+}
+
+export interface EnrollmentWebsiteRecord {
+  readonly status: string;
+  readonly alias: string;
+  readonly scope: string;
+  readonly website: string;
+}
+
+// A website from a deeplink is kept only when a live pending enrollment
+// matches the alias, scope, and website and has not expired.
+export function websiteFromTrustedEnrollment(
+  params: DeeplinkAddParams,
+  enrollment: EnrollmentWebsiteRecord | null,
+  nowMs: number,
+  expiresAtMs: number | null,
+): { readonly website: string; readonly untrusted: boolean } {
+  const reject = { website: "", untrusted: true as const };
+  if (params.website === "") return { website: "", untrusted: false };
+  if (enrollment === null || enrollment.status !== "pending") return reject;
+  if (expiresAtMs !== null && nowMs >= expiresAtMs) return reject;
+  if (enrollment.alias !== params.alias || enrollment.scope !== params.scope) return reject;
+  if (enrollment.website !== params.website) return reject;
+  return { website: params.website, untrusted: false };
 }
 
 export function findVaultDeeplink(argv: readonly unknown[]): DeeplinkAddParams | null {

@@ -155,6 +155,7 @@ function parseScenario(value: unknown, index: number): EvalScenario {
     alias: stringField(requestRaw, "alias", `${where}.request`),
     requestedScope: stringField(requestRaw, "requestedScope", `${where}.request`),
     reason: stringField(requestRaw, "reason", `${where}.request`),
+    ...(requestRaw["verified"] === true ? { verified: true as const } : {}),
   };
   const historyRaw = value["historySummary"];
   if (!isRecord(historyRaw)) {

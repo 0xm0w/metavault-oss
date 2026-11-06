@@ -14,6 +14,8 @@ import {
   groupAuditByRequest,
   isCredentialFormComplete,
   isCardFormComplete,
+  isWriteScope,
+  payloadSummaryView,
   parseCardExpiry,
   cardLabel,
   marshalStatusLine,
@@ -162,7 +164,23 @@ let auditPage = 1;
 let auditPageSize = 10;
 let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "skill" = "claude";
 let localAuthStatus: LocalAuthStatusLike = { ...DEFAULT_LOCAL_AUTH_STATUS };
-let vaultLocked = false;
+let vaultLocked = true;
+
+function sealLockedVault(): void {
+  void window.metavault.lockVault().catch(() => undefined);
+  closeCredentialModal(false);
+  document.querySelectorAll(".vault-modal-overlay").forEach((node) => {
+    node.remove();
+  });
+  credentialModal = null;
+  vaultLocked = true;
+  settingsOpen = false;
+}
+
+function lockTheVault(): void {
+  sealLockedVault();
+  render();
+}
 let keyGate: KeyGate = null;
 let vaultKeyFingerprint: string | null = null;
 let initialAuthChecked = false;
@@ -454,6 +472,17 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   want.append(document.createTextNode(` on ${hero.alias}`));
   card.append(want);
   card.append(el("p", "reason", `“${hero.reason}”`));
+  const summaryView = payloadSummaryView(hero.payloadSummary);
+  if (summaryView !== null) {
+    const summary = el("p", "reason");
+    summary.textContent = summaryView.headline;
+    card.append(summary);
+    if (summaryView.preview !== "") {
+      const preview = el("p", "mono");
+      preview.textContent = summaryView.preview;
+      card.append(preview);
+    }
+  }
 
   const assess = el("div", "assess");
   const heading = el("b", "");
@@ -486,7 +515,11 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     const executeApproval = (presenceProof?: string) => {
       void runAction(() => window.metavault.approve(hero.grantId, presenceProof), "Approved — the grant executed inside vaultd and expired.");
     };
-    if (shouldRequireAuthForRemoteApproval(remoteSettings, hero)) {
+    if (
+      shouldRequireAuthForRemoteApproval(remoteSettings, hero) ||
+      hero.risk === "high" ||
+      isWriteScope(hero.allowedScope)
+    ) {
       obtainPresenceProof({ scope: "approve", grantId: hero.grantId }, (token) => { executeApproval(token); });
     } else if (shouldRequireAuthForApproval(localAuthStatus, hero.allowedScope, hero.risk)) {
       void confirmLocalPresence("Authenticate to approve capability", () => { executeApproval(); });
@@ -571,7 +604,6 @@ function paintApprovalDialog(): void {
   }
   const key = `${hero.grantId}|${String(approvals.length)}|${busy ? "1" : "0"}`;
   if (existing !== null && approvalDialogKey === key) return;
-  const previousGrant = approvalDialogKey.split("|")[0] ?? "";
   approvalDialogKey = key;
   existing?.remove();
   const overlay = el("div", "approval-overlay");
@@ -608,8 +640,29 @@ function paintApprovalDialog(): void {
   });
   overlay.append(dialog);
   document.body.append(overlay);
-  if (previousGrant !== hero.grantId) {
-    dialog.querySelector<HTMLButtonElement>(".btn-approve")?.focus();
+  const shownAt = Date.now();
+  const approve = dialog.querySelector<HTMLButtonElement>(".btn-approve");
+  if (approve !== null) {
+    const armedAt = shownAt + 500;
+    const blockUntilArmed = (event: Event): void => {
+      if (Date.now() >= armedAt) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    approve.addEventListener("click", blockUntilArmed, true);
+    approve.addEventListener("keydown", (event) => {
+      if (Date.now() >= armedAt) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+  }
+  const deny = dialog.querySelector<HTMLButtonElement>(".btn-deny");
+  if (deny !== null) {
+    deny.focus();
+  } else {
+    dialog.tabIndex = -1;
+    dialog.focus();
   }
 }
 
@@ -724,7 +777,11 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
   if (prefill !== undefined) {
     nameInput.value = prefill.alias;
     scopeInput.value = prefill.scope;
-    websiteInput.value = prefill.website;
+    if (prefill.untrusted === true) {
+      dialog.append(el("p", "alert is-warn", "This link's website was not confirmed by a pending enrollment, so it was not filled in."));
+    } else {
+      websiteInput.value = prefill.website;
+    }
     secretInput.value = "";
   }
 
@@ -1154,7 +1211,7 @@ function promptVerifyPin(title: string, onVerified: () => void): void {
 // the vault. No configured PIN means no proof: fail closed, visibly.
 function obtainPresenceProof(req: PresenceProofRequestLike, onToken: (token: string) => void): void {
   if (!localAuthStatus.configured) {
-    notice = "Set an app PIN in Settings before approving remote requests. Windows Hello alone cannot authorize them.";
+    notice = "Set an app PIN in Settings before this change. Windows Hello alone cannot authorize it.";
     render();
     return;
   }
@@ -1163,11 +1220,11 @@ function obtainPresenceProof(req: PresenceProofRequestLike, onToken: (token: str
   const dialog = el("div", "vault-modal");
   dialog.style.maxWidth = "400px";
   const header = el("div", "vault-modal-header");
-  header.append(el("h2", "vault-modal-title", "Approve a remote request"));
+  header.append(el("h2", "vault-modal-title", "Confirm it's you"));
   const closeBtn = el("button", "vault-modal-close", "\u00D7") as HTMLButtonElement;
   header.append(closeBtn);
   dialog.append(header);
-  dialog.append(el("p", "vault-modal-sub", "This request came from a paired device. Enter your vault PIN to approve it."));
+  dialog.append(el("p", "vault-modal-sub", "Enter your app PIN. Windows Hello cannot authorize this change."));
   const errorBox = el("p", "vault-modal-error");
   errorBox.hidden = true;
   dialog.append(errorBox);
@@ -2951,15 +3008,16 @@ function renderSettings(view: HTMLElement): void {
     const offBtn = el("button", "action", "Turn off") as HTMLButtonElement;
     offBtn.type = "button";
     offBtn.addEventListener("click", () => {
-      void runSettingsAction(async () => {
-        const raw = await window.metavault.updateLocalAuthSettings(
-          localAuthStatus.configured
-            ? { biometricEnabled: false }
-            : { biometricEnabled: false, enabled: false },
-        );
-        const projected = projectLocalAuthStatus(raw);
-        if (projected !== null) localAuthStatus = projected;
-        localAuthNotice = null;
+      const patch = localAuthStatus.configured
+        ? { biometricEnabled: false as const }
+        : { biometricEnabled: false as const, enabled: false as const };
+      obtainPresenceProof({ scope: "settings-local-auth" }, (token) => {
+        void runSettingsAction(async () => {
+          const raw = await window.metavault.updateLocalAuthSettings(patch, token);
+          const projected = projectLocalAuthStatus(raw);
+          if (projected !== null) localAuthStatus = projected;
+          localAuthNotice = null;
+        });
       });
     });
     helloBtns.append(offBtn);
@@ -2984,6 +3042,18 @@ function renderSettings(view: HTMLElement): void {
   authToggle.type = "checkbox";
   authToggle.checked = localAuthStatus.enabled;
   authToggle.addEventListener("change", () => {
+    if (!authToggle.checked) {
+      authToggle.checked = true;
+      obtainPresenceProof({ scope: "settings-local-auth" }, (token) => {
+        void runSettingsAction(async () => {
+          const raw = await window.metavault.updateLocalAuthSettings({ enabled: false }, token);
+          const projected = projectLocalAuthStatus(raw);
+          if (projected !== null) localAuthStatus = projected;
+          render();
+        });
+      });
+      return;
+    }
     if (authToggle.checked && !isBiometricsActive(localAuthStatus) && shouldPromptPinSetupOnEnable(localAuthStatus)) {
       void (async () => {
         const outcome = await tryEnableWindowsHello();
@@ -3022,8 +3092,19 @@ function renderSettings(view: HTMLElement): void {
     launchToggle.type = "checkbox";
     launchToggle.checked = localAuthStatus.requireOnLaunch;
     launchToggle.addEventListener("change", () => {
+      if (!launchToggle.checked) {
+        launchToggle.checked = true;
+        obtainPresenceProof({ scope: "settings-local-auth" }, (token) => {
+          void runSettingsAction(async () => {
+            const raw = await window.metavault.updateLocalAuthSettings({ requireOnLaunch: false }, token);
+            const projected = projectLocalAuthStatus(raw);
+            if (projected !== null) localAuthStatus = projected;
+          });
+        });
+        return;
+      }
       void runSettingsAction(async () => {
-        const raw = await window.metavault.updateLocalAuthSettings({ requireOnLaunch: launchToggle.checked });
+        const raw = await window.metavault.updateLocalAuthSettings({ requireOnLaunch: true });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -3042,8 +3123,19 @@ function renderSettings(view: HTMLElement): void {
     apprToggle.type = "checkbox";
     apprToggle.checked = localAuthStatus.requireOnApproval;
     apprToggle.addEventListener("change", () => {
+      if (!apprToggle.checked) {
+        apprToggle.checked = true;
+        obtainPresenceProof({ scope: "settings-local-auth" }, (token) => {
+          void runSettingsAction(async () => {
+            const raw = await window.metavault.updateLocalAuthSettings({ requireOnApproval: false }, token);
+            const projected = projectLocalAuthStatus(raw);
+            if (projected !== null) localAuthStatus = projected;
+          });
+        });
+        return;
+      }
       void runSettingsAction(async () => {
-        const raw = await window.metavault.updateLocalAuthSettings({ requireOnApproval: apprToggle.checked });
+        const raw = await window.metavault.updateLocalAuthSettings({ requireOnApproval: true });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -3062,8 +3154,19 @@ function renderSettings(view: HTMLElement): void {
     settingsToggle.type = "checkbox";
     settingsToggle.checked = localAuthStatus.requireOnSettings;
     settingsToggle.addEventListener("change", () => {
+      if (!settingsToggle.checked) {
+        settingsToggle.checked = true;
+        obtainPresenceProof({ scope: "settings-local-auth" }, (token) => {
+          void runSettingsAction(async () => {
+            const raw = await window.metavault.updateLocalAuthSettings({ requireOnSettings: false }, token);
+            const projected = projectLocalAuthStatus(raw);
+            if (projected !== null) localAuthStatus = projected;
+          });
+        });
+        return;
+      }
       void runSettingsAction(async () => {
-        const raw = await window.metavault.updateLocalAuthSettings({ requireOnSettings: settingsToggle.checked });
+        const raw = await window.metavault.updateLocalAuthSettings({ requireOnSettings: true });
         const projected = projectLocalAuthStatus(raw);
         if (projected !== null) localAuthStatus = projected;
       });
@@ -3121,8 +3224,7 @@ function renderSettings(view: HTMLElement): void {
     const lockNowBtn = el("button", "action btn-deny", "Lock session now") as HTMLButtonElement;
     lockNowBtn.type = "button";
     lockNowBtn.addEventListener("click", () => {
-      vaultLocked = true;
-      render();
+      lockTheVault();
     });
     authBtns.append(lockNowBtn);
   }
@@ -3433,9 +3535,20 @@ function renderSettings(view: HTMLElement): void {
   strictToggle.type = "checkbox";
   strictToggle.checked = agentSecuritySettings.strictMode;
   strictToggle.addEventListener("change", () => {
+    if (!strictToggle.checked) {
+      strictToggle.checked = true;
+      obtainPresenceProof({ scope: "settings-security" }, (token) => {
+        void runSettingsAction(async () => {
+          await window.metavault.updateAgentSecuritySettings({ strictMode: false }, token);
+          agentSecuritySettings = { ...agentSecuritySettings, strictMode: false };
+          render();
+        });
+      });
+      return;
+    }
     void runSettingsAction(async () => {
-      await window.metavault.updateAgentSecuritySettings({ strictMode: strictToggle.checked });
-      agentSecuritySettings = { ...agentSecuritySettings, strictMode: strictToggle.checked };
+      await window.metavault.updateAgentSecuritySettings({ strictMode: true });
+      agentSecuritySettings = { ...agentSecuritySettings, strictMode: true };
       render();
     });
   });
@@ -3452,9 +3565,20 @@ function renderSettings(view: HTMLElement): void {
   procToggle.type = "checkbox";
   procToggle.checked = agentSecuritySettings.verifyCallerProcess;
   procToggle.addEventListener("change", () => {
+    if (!procToggle.checked) {
+      procToggle.checked = true;
+      obtainPresenceProof({ scope: "settings-security" }, (token) => {
+        void runSettingsAction(async () => {
+          await window.metavault.updateAgentSecuritySettings({ verifyCallerProcess: false }, token);
+          agentSecuritySettings = { ...agentSecuritySettings, verifyCallerProcess: false };
+          render();
+        });
+      });
+      return;
+    }
     void runSettingsAction(async () => {
-      await window.metavault.updateAgentSecuritySettings({ verifyCallerProcess: procToggle.checked });
-      agentSecuritySettings = { ...agentSecuritySettings, verifyCallerProcess: procToggle.checked };
+      await window.metavault.updateAgentSecuritySettings({ verifyCallerProcess: true });
+      agentSecuritySettings = { ...agentSecuritySettings, verifyCallerProcess: true };
       render();
     });
   });
@@ -3551,8 +3675,8 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
   const management = el("div", "agent-skill-box");
   management.append(el("p", "settings-copy", "Tokens are shown only when generated. Rotate to replace an existing IDE token, then update that IDE config. Rotation cancels pending requests and standing approvals. Existing configs keep working after migration until you rotate them."));
   const createControl = (id: string, name: string, rotate: boolean): void => {
-    const action = () => { void runSettingsAction(async () => {
-      const raw = await window.metavault.registerAgent(id, name, rotate);
+    const action = (presenceProof?: string) => { void runSettingsAction(async () => {
+      const raw = await window.metavault.registerAgent(id, name, rotate, presenceProof);
       const minted = projectAgentsResponse([raw])[0];
       if (minted === undefined || minted.token === "") throw new Error("No token returned");
       newAgentTokens.set(id, minted.token);
@@ -3561,7 +3685,11 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
 
       settingsMessage = { text: "Token generated. Copy the config now; it cannot be shown again after this app closes.", ok: true };
     }); };
-    if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to manage agent", action); else action();
+    if (rotate) {
+      obtainPresenceProof({ scope: "agents-rotate" }, (token) => { action(token); });
+      return;
+    }
+    if (shouldRequireAuthForSettings(localAuthStatus)) void confirmLocalPresence("Authenticate to manage agent", () => { action(); }); else action();
   };
   for (const agent of agentsData) {
     const row = el("div", "btns");
@@ -4033,20 +4161,25 @@ function renderOnboardingWizard(view: HTMLElement): void {
         seal.type = "button";
         seal.disabled = wizardSealing || mcpRuntime === null;
         seal.addEventListener("click", () => {
-          wizardSealing = true;
-          wizardIdeMessage = null;
-          render();
-          const run = async (): Promise<void> => {
+          const host = ideHost;
+          if (host === null) return;
+          const needsRotate = wizardHostToken(host) === "" && agentsData.some((agent) => agent.id === host && !agent.revoked);
+          const begin = (presenceProof?: string): void => {
+            wizardSealing = true;
+            wizardIdeMessage = null;
+            render();
+            void run(presenceProof);
+          };
+          const run = async (presenceProof?: string): Promise<void> => {
             try {
-              const host = ideHost;
               let token = wizardHostToken(host);
               if (token === "") {
                 // Mint the agent token here, then seal it in one go. An
                 // already-registered agent is rotated in place: the daemon
                 // requires explicit rotation, and the old token (with its
                 // standing approvals) is retired.
-                const rotated = agentsData.some((agent) => agent.id === host && !agent.revoked);
-                const raw = await window.metavault.registerAgent(host, ideNameOf(activeAgentTab), rotated);
+                const rotated = needsRotate;
+                const raw = await window.metavault.registerAgent(host, ideNameOf(activeAgentTab), rotated, presenceProof);
                 const minted = projectAgentsResponse([raw])[0];
                 if (minted === undefined || minted.token === "") throw new Error("No token returned");
                 newAgentTokens.set(host, minted.token);
@@ -4056,9 +4189,7 @@ function renderOnboardingWizard(view: HTMLElement): void {
                   wizardIdeMessage = { text: "Rotated the existing agent token (standing approvals for it were reset).", ok: true };
                 }
               }
-              const entry = wizardHostEntry(activeAgentTab, mcpRuntime !== null ? mcpRuntime.env : {});
-              if (entry === null) throw new Error("Runtime paths are not available yet - reopen the app once the daemon answers.");
-              const out = await window.metavault.ideConfig({ action: "apply", host, entry, token });
+              const out = await window.metavault.ideConfig({ action: "apply", host, token });
               const record = (typeof out === "object" && out !== null ? out : {}) as Record<string, unknown>;
               if (record["ok"] !== true) {
                 const reason = typeof record["reason"] === "string" ? record["reason"] : "unknown error";
@@ -4075,10 +4206,14 @@ function renderOnboardingWizard(view: HTMLElement): void {
               render();
             }
           };
+          if (needsRotate) {
+            obtainPresenceProof({ scope: "agents-rotate" }, (token) => { begin(token); });
+            return;
+          }
           if (shouldRequireAuthForSettings(localAuthStatus)) {
-            void confirmLocalPresence("Authenticate to write the IDE config", () => { void run(); });
+            void confirmLocalPresence("Authenticate to write the IDE config", () => { begin(); });
           } else {
-            void run();
+            begin();
           }
         });
         page.append(seal);
@@ -4609,14 +4744,12 @@ async function refresh(): Promise<void> {
     if (projAuth !== null) {
       if (!initialAuthChecked) {
         initialAuthChecked = true;
-        if (shouldLockOnLaunch(projAuth)) {
-          vaultLocked = true;
-        }
+        vaultLocked = shouldLockOnLaunch(projAuth);
       }
       localAuthStatus = projAuth;
     }
     if (isAutoLockDue(localAuthStatus, lastUserActivityTs, Date.now()) && !vaultLocked) {
-      vaultLocked = true;
+      sealLockedVault();
     }
     const projectedWarden = projectWardenSettings(wardenRaw);
     if (projectedWarden !== null) {
@@ -4888,8 +5021,7 @@ function start(): void {
   const lockHeaderBtn = document.querySelector<HTMLButtonElement>("#lock-session-btn");
   if (lockHeaderBtn !== null) {
     lockHeaderBtn.addEventListener("click", () => {
-      vaultLocked = true;
-      render();
+      lockTheVault();
     });
   }
   void refreshTracked();

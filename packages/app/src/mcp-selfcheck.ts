@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { omitVaultSecrets } from "./child-env.js";
 
 // Launch-time check that the bundled MCP server (resources/vaultd/mcp.cjs)
 // starts, completes the MCP handshake and exposes exactly the expected
@@ -64,7 +65,7 @@ export async function checkMcpRuntime(options: {
     let phase: "initialize" | "tools" = "initialize";
     let settled = false;
     const child = spawn(options.command, [...options.args], {
-      env: { ...process.env, ...options.env, METAVAULT_DAEMON_URL: options.daemonUrl },
+      env: { ...omitVaultSecrets({ ...process.env, ...options.env }), METAVAULT_DAEMON_URL: options.daemonUrl },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });

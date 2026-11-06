@@ -1,4 +1,16 @@
-import { PresenceProofIssuer, SETTINGS_REMOTE_PROOF_SCOPE, guardApprovalCall, guardRemoteSettingsCall } from "./remote-approval-guard.js";
+import {
+  PresenceProofIssuer,
+  guardAgentRotateCall,
+  guardApprovalCall,
+  guardLocalAuthCall,
+  guardRemoteSettingsCall,
+  guardSecuritySettingsCall,
+} from "./remote-approval-guard.js";
+
+const SETTINGS_REMOTE_PROOF_SCOPE = "settings:remote";
+const SETTINGS_LOCAL_AUTH_PROOF_SCOPE = "settings:local-auth";
+const AGENTS_ROTATE_PROOF_SCOPE = "agents:rotate";
+const SETTINGS_SECURITY_PROOF_SCOPE = "settings:security";
 import { callDaemon, validateDaemonCall, type DaemonCallRequest } from "./daemon-client.js";
 import { queryWindowsHello } from "./windows-hello.js";
 
@@ -9,7 +21,7 @@ import { queryWindowsHello } from "./windows-hello.js";
 export const PRESENCE_PROOF_CHANNEL = "metavault:presence-proof";
 
 export interface PresenceProofRequest {
-  readonly scope: "approve" | "settings-remote";
+  readonly scope: "approve" | "settings-remote" | "settings-local-auth" | "agents-rotate" | "settings-security";
   readonly grantId?: string;
   readonly pin?: string;
   readonly hello?: boolean;
@@ -59,6 +71,12 @@ export async function issuePresenceProof(input: unknown, deps: GuardDeps): Promi
     scopeKey = `approve:${req.grantId}`;
   } else if (req.scope === "settings-remote") {
     scopeKey = SETTINGS_REMOTE_PROOF_SCOPE;
+  } else if (req.scope === "settings-local-auth") {
+    scopeKey = SETTINGS_LOCAL_AUTH_PROOF_SCOPE;
+  } else if (req.scope === "agents-rotate") {
+    scopeKey = AGENTS_ROTATE_PROOF_SCOPE;
+  } else if (req.scope === "settings-security") {
+    scopeKey = SETTINGS_SECURITY_PROOF_SCOPE;
   } else {
     throw new Error("malformed presence proof request");
   }
@@ -88,19 +106,50 @@ export async function issuePresenceProof(input: unknown, deps: GuardDeps): Promi
 // handler. Throws with a safe reason when the guard rejects.
 export async function guardedDaemonCall(request: unknown, deps: GuardDeps): Promise<unknown> {
   const validated: DaemonCallRequest = validateDaemonCall(request);
+  const nowMs = deps.nowMs();
   const settingsGuard = guardRemoteSettingsCall({
     method: validated.method,
     path: validated.path,
     body: validated.body,
     issuer: deps.issuer,
-    nowMs: deps.nowMs(),
+    nowMs,
   });
   if (!settingsGuard.decision.allow) {
     throw new Error(settingsGuard.decision.reason ?? "rejected by remote settings guard");
   }
-  const approvalGuard = await guardApprovalCall({
+  const localAuthGuard = guardLocalAuthCall({
+    method: validated.method,
     path: validated.path,
     body: settingsGuard.body,
+    issuer: deps.issuer,
+    nowMs,
+  });
+  if (!localAuthGuard.decision.allow) {
+    throw new Error(localAuthGuard.decision.reason ?? "rejected by local auth guard");
+  }
+  const securityGuard = guardSecuritySettingsCall({
+    method: validated.method,
+    path: validated.path,
+    body: localAuthGuard.body,
+    issuer: deps.issuer,
+    nowMs,
+  });
+  if (!securityGuard.decision.allow) {
+    throw new Error(securityGuard.decision.reason ?? "rejected by security settings guard");
+  }
+  const rotateGuard = guardAgentRotateCall({
+    method: validated.method,
+    path: validated.path,
+    body: securityGuard.body,
+    issuer: deps.issuer,
+    nowMs,
+  });
+  if (!rotateGuard.decision.allow) {
+    throw new Error(rotateGuard.decision.reason ?? "rejected by agent rotate guard");
+  }
+  const approvalGuard = await guardApprovalCall({
+    path: validated.path,
+    body: rotateGuard.body,
     issuer: deps.issuer,
     nowMs: deps.nowMs(),
     getPending: deps.getPending,

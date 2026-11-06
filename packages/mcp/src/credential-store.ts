@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { hardenOwnerOnly } from "../../core/src/owner-acl.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -27,13 +27,8 @@ export function storeCredentialPrivately(path: string, token: string): { ok: tru
   try {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeFileSync(path, token, { mode: 0o600 });
-    if (process.platform === "win32") {
-      const user = process.env["USERNAME"];
-      if (user === undefined || user === "") return { ok: false, reason: "cannot determine the Windows user to restrict the file to" };
-      execFileSync("icacls", [path, "/inheritance:r", "/grant:r", `${user}:F`], { stdio: "ignore" });
-    } else {
-      chmodSync(path, 0o600);
-    }
+    hardenOwnerOnly(dirname(path), true);
+    hardenOwnerOnly(path, false);
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message.slice(0, 120) : "write failed" };

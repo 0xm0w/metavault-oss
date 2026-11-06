@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PresenceProofIssuer,
   SETTINGS_REMOTE_PROOF_SCOPE,
+  approvalPresenceRequired,
   guardApprovalCall,
   guardRemoteSettingsCall,
   remotePresenceRequired,
@@ -134,6 +135,31 @@ describe("remote approval guard (trusted boundary)", () => {
       ...makeCalls({ requireAuthForRemoteApproval: false }),
     });
     expect(result.decision.allow).toBe(true);
+  });
+
+  it("requires a proof for local high-risk and write approvals, and still for remote", async () => {
+    expect(approvalPresenceRequired({ grantId: "g", origin: "local" }, "high", "charges.read")).toBe(true);
+    expect(approvalPresenceRequired({ grantId: "g", origin: "local" }, "low", "charges.read")).toBe(false);
+    expect(approvalPresenceRequired({ grantId: "g", origin: "remote" }, "low", "charges.read")).toBe(true);
+    const pending = {
+      approvals: [
+        { grantId: "g-high", origin: "local", risk: "high", allowedScope: "charges.read" },
+        { grantId: "g-read", origin: "local", risk: "low", allowedScope: "charges.read" },
+        { grantId: "g-remote", origin: "remote", risk: "low", allowedScope: "charges.read" },
+      ],
+    };
+    const calls = {
+      getPending: () => Promise.resolve(pending),
+      getRemoteSettings: () => Promise.resolve({ requireAuthForRemoteApproval: true }),
+    };
+    const issuer = new PresenceProofIssuer();
+    const high = await guardApprovalCall({ path: "/approve", body: { grantId: "g-high" }, issuer, nowMs: NOW, ...calls });
+    expect(high.decision.allow).toBe(false);
+    expect(high.decision.reason).toMatch(/local presence/);
+    const read = await guardApprovalCall({ path: "/approve", body: { grantId: "g-read" }, issuer, nowMs: NOW, ...calls });
+    expect(read.decision.allow).toBe(true);
+    const remote = await guardApprovalCall({ path: "/approve", body: { grantId: "g-remote" }, issuer, nowMs: NOW, ...calls });
+    expect(remote.decision.allow).toBe(false);
   });
 
   it("remotePresenceRequired fires for remote origin and fails closed for unknown origin", () => {

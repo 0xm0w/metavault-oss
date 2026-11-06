@@ -107,6 +107,14 @@ describe("loopback header gate", () => {
       );
       expect(origin.status).toBe(403);
       expect(origin.body).toContain("browser origin header not permitted");
+      for (const value of ["null", "file://"]) {
+        const blocked = await rawPost(
+          address.port,
+          { host: `127.0.0.1:${String(address.port)}`, origin: value, "content-type": "application/json" },
+          "{}",
+        );
+        expect(blocked.status).toBe(403);
+      }
       const type = await rawPost(
         address.port,
         { host: `127.0.0.1:${String(address.port)}`, "content-type": "text/plain" },
