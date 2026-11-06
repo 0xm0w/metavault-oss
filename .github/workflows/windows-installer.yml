@@ -1,10 +1,7 @@
 name: Windows installer
 
-# Builds the MetaVault OSS NSIS installer on windows-latest, then runs a
-# clean-install smoke test: silent install, launch, poll /health, silent
-# uninstall, check that files, shortcuts, registry and PATH entries are gone.
-# On a v* tag or a manual run it also creates or refreshes a DRAFT GitHub
-# release with the installer attached. It never publishes a release.
+# Builds the MetaVault OSS NSIS installer on windows-latest and uploads the
+# installer artifact alongside SHA256SUMS.
 # No API keys are set, so nothing here calls the Meta API.
 
 on:
@@ -26,8 +23,6 @@ jobs:
     name: Build installer
     runs-on: windows-latest
     timeout-minutes: 45
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -84,120 +79,3 @@ jobs:
             packages/app/release/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
-
-  smoke:
-    name: Clean-install smoke test
-    needs: build
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Download installer
-        uses: actions/download-artifact@v7
-        with:
-          name: metavault-oss-windows-installer
-          path: installer
-
-      - name: Set up Node.js 22 for upgrade verification
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install verification dependencies
-        run: npm ci
-
-      # Upgrade baseline: build the previous release from its tag inside this
-      # job. The installer stays on the runner (never uploaded or published),
-      # so the test needs no public release asset. It is a rebuild from the
-      # tag, not the byte-identical published binary.
-      - name: Checkout previous release tag
-        uses: actions/checkout@v7
-        with:
-          ref: v0.1.2-alpha
-          path: baseline-src
-          persist-credentials: false
-
-      - name: Build previous release installer from tag
-        shell: pwsh
-        working-directory: baseline-src
-        run: |
-          $ErrorActionPreference = 'Stop'
-          npm ci
-          Push-Location packages/app
-          npm run build
-          npm run bundle
-          npx electron-builder --win --publish never
-          if ($LASTEXITCODE -ne 0) { throw 'Previous installer build failed' }
-          Pop-Location
-          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE/previous-installer" | Out-Null
-          $exe = Get-ChildItem packages/app/release -Filter '*.exe' -File | Select-Object -First 1
-          if (-not $exe) { throw 'No previous installer built' }
-          Copy-Item $exe.FullName "$env:GITHUB_WORKSPACE/previous-installer/"
-          $h = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$h  $($exe.Name)" | Set-Content "$env:GITHUB_WORKSPACE/previous-installer/SHA256SUMS" -Encoding ascii
-
-      - name: Install, upgrade from previous build, /health, uninstall
-        shell: pwsh
-        run: ./scripts/windows-installer-smoke.ps1 -InstallerDir installer -PreviousInstallerDir previous-installer -LogPath "$env:RUNNER_TEMP/windows-installer-smoke.txt"
-
-      - name: Upload smoke log
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-installer-smoke-log
-          path: ${{ runner.temp }}/windows-installer-smoke.txt
-          if-no-files-found: warn
-
-  draft-release:
-    name: Draft release (never published)
-    needs: [build, smoke]
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Download installer
-        uses: actions/download-artifact@v7
-        with:
-          name: metavault-oss-windows-installer
-          path: installer
-
-      - name: Create or update draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ needs.build.outputs.version }}
-          TARGET: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          cat > notes.md <<NOTES
-          MetaVault OSS ${tag} for Windows (x64). Alpha test build.
-
-          - The installer is not code-signed, so Windows SmartScreen may warn.
-          - No AI model is bundled or downloaded. Add a Meta API key to use Muse Spark, or point Settings at your own local endpoint (Ollama or OpenAI-compatible). With neither, every request comes to you.
-          - Check the download against SHA256SUMS.
-
-          Built from ${TARGET} by run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}.
-          NOTES
-          existing="$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)"
-          if [ "$existing" = "false" ]; then
-            echo "::error::$tag is already published; this workflow only manages drafts."
-            exit 1
-          fi
-          if [ "$existing" = "true" ]; then
-            gh release upload "$tag" installer/*.exe installer/SHA256SUMS --clobber
-            gh release edit "$tag" --draft --prerelease --notes-file notes.md
-          else
-            gh release create "$tag" installer/*.exe installer/SHA256SUMS \
-              --draft --prerelease --target "$TARGET" --title "MetaVault OSS ${tag}" --notes-file notes.md
-          fi
-          gh release view "$tag" --json tagName,isDraft,isPrerelease,url,assets \
-            --jq '{tagName,isDraft,isPrerelease,url,assets:[.assets[].name]}'

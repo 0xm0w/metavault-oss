@@ -51,7 +51,7 @@ A published NSIS build exists (`MetaVault-OSS-0.1.2-alpha-win-x64.exe`, plus `SH
 
 **Do not install the older `v0.1.0` build**: it crashes at startup with `ERR_MODULE_NOT_FOUND` (`electron-updater` was missing from the packaged app). It also bundled a local model. The published installer is `0.1.2-alpha`. Source in this repository is `0.1.4-alpha` and is ahead of that installer. Neither build bundles or downloads a model. The default warden is Muse Spark via the Meta API. The app's update check never offers v0.1.0 to an alpha install.
 
-The installer is built by the `Windows installer` workflow on `windows-latest`, which also runs a clean-install smoke test (silent install, launch, `/health`, uninstall) on the exact `.exe` before it reaches the release.
+The installer is built by the `Windows installer` workflow on `windows-latest`, which uploads the `.exe` and `SHA256SUMS` as a workflow artifact. // CI: clean-install smoke test and draft-release jobs were removed from the workflow; build-only now
 
 - Assisted install: you accept the alpha terms (`packages/app/TERMS.txt`), choose the folder, and get a desktop shortcut and a Start menu shortcut. `bin\` is added to your user PATH (`metavault`, `vaultd`).
 - The vault daemon, CLI and MCP server ship inside the app (`resources\vaultd`) and run on the app's own runtime, so no Node install is needed. On first launch the app starts the daemon and asks you to create a password. Vault data lives in `%APPDATA%\MetaVault OSS`.
@@ -330,7 +330,7 @@ fail-closed whitelist before rendering.
 
 ## Verification
 
-Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come from an earlier run on the demo-class machine (RTX 3070 8 GB) with the previous local model. The Windows installer row is now checked by CI: every PR runs the clean-install smoke test on `windows-latest`. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
+Tests were re-run on 2026-11-03. The rehearsal, MCP, GUI and video rows come from an earlier run on the demo-class machine (RTX 3070 8 GB) with the previous local model. The Windows installer row was previously checked by CI with a clean-install smoke test; that CI check has been removed. No live Muse Glimmer 30B eval output is committed yet. Full detail, raw outputs, and live screenshots: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 | Gate | Result |
 |---|---|
