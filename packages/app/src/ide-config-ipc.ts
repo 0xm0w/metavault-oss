@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyIdeConnect, inspectIdeConfig, type IdeApplyResult, type IdeHost, type IdeInspectResult } from "./ide-config.js";
 import { runtimePaths } from "./runtime-paths.js";
-import { hardenOwnerOnly } from "../../core/src/owner-acl.js";
+import { hardenPathPermissions } from "./ssh-tunnel.js";
 
 export const IDE_CONFIG_CHANNEL = "metavault:ide-config";
 
@@ -34,6 +34,7 @@ export function ideConfigLocations(home: string = homedir()): readonly IdeConfig
     { host: "claude-code", containerKey: "mcpServers", path: join(home, ".claude.json") },
     { host: "cursor", containerKey: "mcpServers", path: join(home, ".cursor", "mcp.json") },
     { host: "vscode", containerKey: "servers", path: join(home, ".vscode", "mcp.json") },
+    { host: "antigravity", containerKey: "mcpServers", path: join(home, ".gemini", "antigravity", "mcp_config.json") },
   ];
 }
 
@@ -50,7 +51,7 @@ export function defaultIdeConfigIo(): IdeConfigIo {
       writeFileSync(path, data, "utf8");
       if (path.endsWith(".metavault-backup") && existsSync(path)) {
         chmodSync(path, 0o600);
-        hardenOwnerOnly(path, false);
+        hardenPathPermissions(path, false);
       }
     },
     mkdir: (dir) => mkdirSync(dir, { recursive: true }),
@@ -110,11 +111,12 @@ function defaultIdeRuntime(): IdeRuntime {
 
 const IDE_DAEMON_URL = "http://127.0.0.1:7077";
 
-const IDE_HOST_META: Record<string, { readonly agentId: string; readonly ideName: string; readonly opencode: boolean }> = {
+const IDE_HOST_META: Record<string, { readonly agentId: string; readonly ideName: string; readonly opencode: boolean; readonly vscode?: boolean }> = {
   opencode: { agentId: "opencode", ideName: "OpenCode", opencode: true },
   "claude-code": { agentId: "claude-code", ideName: "Claude Code", opencode: false },
   cursor: { agentId: "cursor", ideName: "Cursor", opencode: false },
-  vscode: { agentId: "vscode", ideName: "VS Code", opencode: false },
+  vscode: { agentId: "vscode", ideName: "VS Code", opencode: false, vscode: true },
+  antigravity: { agentId: "antigravity", ideName: "Antigravity", opencode: false },
 };
 
 function canonicalIdeEntry(host: string, runtime: IdeRuntime): Record<string, unknown> | null {
@@ -134,6 +136,14 @@ function canonicalIdeEntry(host: string, runtime: IdeRuntime): Record<string, un
       args: paths.args,
       enabled: true,
       environment: env,
+    };
+  }
+  if (meta.vscode === true) {
+    return {
+      type: "stdio",
+      command: paths.command,
+      args: paths.args,
+      env,
     };
   }
   return {

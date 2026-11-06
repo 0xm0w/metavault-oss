@@ -157,7 +157,7 @@ installed executable and bundled server, with no source checkout or separate Nod
 Copy the static agent instructions there too. Raw tokens are shown only at creation;
 after restarting the app, rotate to get a replacement config. See [token lifecycle](docs/MCP.md#agent-token-lifecycle).
 
-**Source development only:** build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, VS Code, Codex and OpenCode** — each with its own `METAVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `metavault-mcp` bin from `packages/mcp/package.json`); the server reads `METAVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `METAVAULT_AGENT_ID` and `METAVAULT_IDE`.
+**Source development only:** build once (`npx tsc -p tsconfig.json --outDir dist`), start the daemon or desktop app, then paste the snippet for your host. Copy-paste configs for **Claude Code, Cursor, Antigravity, VS Code, Codex and OpenCode** — each with its own `METAVAULT_AGENT_ID`, which audit and revoke are keyed by — are in [docs/MCP.md](docs/MCP.md). Hosts launch `node dist/packages/mcp/src/server.js` (or the packaged `metavault-mcp` bin from `packages/mcp/package.json`); the server reads `METAVAULT_DAEMON_URL` (default `http://127.0.0.1:7077`), `METAVAULT_AGENT_ID` and `METAVAULT_IDE`.
 Example (Cursor shape; other hosts differ only in wrapping — see [docs/MCP.md](docs/MCP.md)):
 
 ```json
@@ -177,7 +177,7 @@ Example (Cursor shape; other hosts differ only in wrapping — see [docs/MCP.md]
 }
 ```
 
-Tools exposed to agents (exactly five): `request_capability({alias, scope, reason, tool?, payload?})`, `list_aliases()`, `request_enrollment({alias, scope, website?})`, `enrollment_status({enrollmentId})`, `revoke({target})`. There is deliberately no approve tool — approval belongs to the human, in the app. Agents receive `executed`, `awaiting-approval` (with a `grantId`), or `denied` — never a secret value.
+Tools exposed to agents (all eight, plus MCP `instructions`, `resources` `metavault://context/guide` & `metavault://context/status`, and `prompts` `use-secret` & `enroll-secret`): `request_capability({alias, scope, reason, tool?, payload?})`, `grant_status({grantId})`, `list_aliases()`, `request_enrollment({alias, scope, website?, reason?})`, `enrollment_status({enrollmentId})`, `register_agent({agentId?, name?})`, `registration_status({registrationId})`, `revoke({target})`. There is deliberately no approve tool — approval belongs to the human, in the app (or tray flyout / `metavault://approve` deeplink). Agents receive `executed`, `awaiting-approval` (with `grantId`), `vault-locked` (with `metavault://unlock`), or `denied` — never a secret value.
 ## Settings: the warden (Settings page)
 
 The desktop app's **Settings** page chooses who judges capability requests. Deterministic policy stays the floor in every configuration: the warden can narrow or escalate, never widen.

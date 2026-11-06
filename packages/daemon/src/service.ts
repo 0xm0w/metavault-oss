@@ -1,7 +1,9 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Ref } from "effect";
 import { Brain } from "../../brain/src/brain.js";
-import { assessByRules } from "../../brain/src/rules.js";
+import { assessByRules, riskForStandingRead } from "../../brain/src/rules.js";
+import { publishVaultEvent } from "./live-events.js";
+import { invalidateWardenCache } from "./warden-cache.js";
 import { Connector } from "../../core/src/connector.js";
 import { decryptSecret, encryptSecret } from "../../core/src/crypto.js";
 import {
@@ -67,7 +69,7 @@ import {
 import { VaultStore, type AgentRecord, type DeviceAliasPolicy, type DeviceRecord, type VaultStoreService } from "../../core/src/storage.js";
 import { ensureVaultCa, signLeafCertificate, spkiFingerprintFromPublicKeyPem, type VaultCa } from "../../core/src/vault-ca.js";
 import type { AuditEvent, CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
-import { credentialAuthStyle } from "../../connectors/src/http.js";
+import { credentialAuthStyle, describePublicCredential } from "../../connectors/src/http.js";
 import { summarizeHttpRequestPayload } from "../../core/src/payload.js";
 
 function metaApiOrigin(raw: string): string | null {
@@ -87,6 +89,8 @@ export interface CapabilityResult {
   readonly receipt?: string;
   readonly result?: unknown;
   readonly reason?: string;
+  readonly allowedCeiling?: string;
+  readonly vaultLocked?: boolean;
 }
 
 // Channel metadata the daemon trusts only when it arrives with the
@@ -331,6 +335,9 @@ export interface PublicCredentialMeta {
   readonly scopeCeiling: string;
   readonly website: string;
   readonly kind: CredentialKind;
+  readonly baseUrl: string;
+  readonly authStyle: "bearer" | "api-key" | "basic";
+  readonly supportedTools: readonly string[];
   readonly card?: CardPublicMeta;
 }
 
@@ -361,6 +368,10 @@ export interface VaultServiceService {
   ) => Effect.Effect<EnrollmentRecord, StorageError>;
   readonly getEnrollment: (
     enrollmentId: string,
+  ) => Effect.Effect<EnrollmentRecord | null, StorageError>;
+  readonly waitForEnrollment: (
+    enrollmentId: string,
+    waitMs: number,
   ) => Effect.Effect<EnrollmentRecord | null, StorageError>;
   readonly updateCredential: (
     alias: string,
@@ -500,7 +511,7 @@ export const DEFAULT_ENROLLMENT_TTL_MS = 600_000;
 export const ENROLLMENT_REASON_MAX_LENGTH = 256;
 export const MAX_PENDING_ENROLLMENTS = 100;
 
-const DEFAULT_GRANT_TTL_MS = 60_000;
+const DEFAULT_GRANT_TTL_MS = 180_000;
 const DEFAULT_RATE_LIMIT_PER_HOUR = 20;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -561,7 +572,7 @@ export function makeVaultServiceLive(
       // Set for the whole connector call. The grant is already "executed" in the
       // registry so it cannot be approved twice, but the result does not exist
       // yet. Callers must see a non-terminal grant until this flag drops.
-      const grantExecution = new Map<string, { agentId: string }>();
+      const grantExecution = new Map<string, { agentId: string; done: Promise<void>; finish: () => void }>();
       // In-memory only. A human "approve for 15 minutes" stores one lease
       // per agent+alias+scope. Lock, revoke, and a locked request drop them.
       const SESSION_LEASE_TTL_MS = 15 * 60_000;
@@ -595,9 +606,24 @@ export function makeVaultServiceLive(
       };
       const waitForGrant = (grantId: string, waitMs: number): Effect.Effect<void> =>
         Effect.gen(function* () {
+          const capped = Math.min(20_000, Math.max(0, Math.floor(waitMs)));
+          const inflight = grantExecution.get(grantId);
+          if (inflight !== undefined) {
+            if (capped === 0) return;
+            yield* Effect.promise(
+              () =>
+                new Promise<void>((resolve) => {
+                  const timer = setTimeout(resolve, capped);
+                  void inflight.done.then(() => {
+                    clearTimeout(timer);
+                    resolve();
+                  });
+                }),
+            );
+            return;
+          }
           const existing = yield* registry.get(grantId);
           if (existing === undefined || existing.status !== "pending") return;
-          const capped = Math.min(20_000, Math.max(0, Math.floor(waitMs)));
           if (capped === 0) return;
           yield* Effect.async<undefined>((resume) => {
             let done = false;
@@ -618,7 +644,7 @@ export function makeVaultServiceLive(
             set.add(finish);
             const timer = setTimeout(finish, capped);
             void Effect.runPromise(registry.get(grantId)).then((grant) => {
-              if (grant === undefined || grant.status !== "pending") finish();
+              if (grant === undefined || (grant.status !== "pending" && !grantExecution.has(grantId))) finish();
             });
             return Effect.sync(() => {
               clearTimeout(timer);
@@ -640,6 +666,36 @@ export function makeVaultServiceLive(
       const standing = yield* Ref.make<PolicyConfig["standingApprovals"]>([
         ...initialStandingApprovals,
       ]);
+      // Boot only proceeds if the persisted standing approvals are
+      // readable; a storage failure here is fatal, not silent data loss.
+      const persistedStanding = yield* Effect.orDie(store.listStandingApprovals());
+      if (persistedStanding.length > 0) {
+        yield* Ref.update(standing, (list) => {
+          const next = [...list];
+          for (const row of persistedStanding) {
+            const exists = next.some(
+              (entry) => entry.agentId === row.agentId && entry.alias === row.alias && entry.scope === row.scope,
+            );
+            if (!exists) {
+              next.push({
+                agentId: row.agentId,
+                alias: row.alias,
+                scope: row.scope,
+                ...(row.verifiedOnly ? { verifiedOnly: true as const } : {}),
+              });
+            }
+          }
+          return next;
+        });
+      }
+      const enrollmentWaiters = new Map<string, Set<() => void>>();
+      const notifyEnrollment = (enrollmentId: string, status: string): void => {
+        publishVaultEvent({ type: "enrollment.changed", enrollmentId, status });
+        const set = enrollmentWaiters.get(enrollmentId);
+        if (set === undefined) return;
+        enrollmentWaiters.delete(enrollmentId);
+        for (const finish of [...set]) finish();
+      };
       // Marshal decision per pending grant, kept so the app can show the
       // assessment (and so approve-always can re-check it server-side).
       const decisions = yield* Ref.make(new Map<string, MarshalDecision | null>());
@@ -780,7 +836,17 @@ export function makeVaultServiceLive(
             detail,
           };
           const event: AuditEvent = { ...(withModel ? { ...base, modelId: modelOverride ?? modelId } : base), ...extras };
-          return store.appendAudit(event);
+          return store.appendAudit(event).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                publishVaultEvent({
+                  type: "audit.appended",
+                  stage,
+                  ...(extras?.requestId !== undefined ? { requestId: extras.requestId } : {}),
+                });
+              }),
+            ),
+          );
         });
 
       const interruptSleeper = (grantId: string): Effect.Effect<void> =>
@@ -885,6 +951,21 @@ export function makeVaultServiceLive(
         GrantExpired | GrantRevoked | ConnectorFailed | StorageError
       > =>
         Effect.gen(function* () {
+          const preview = yield* registry.get(grantId);
+          let finishExecution = (): void => {};
+          const done = new Promise<void>((resolve) => {
+            finishExecution = () => {
+              finishExecution = () => {};
+              resolve();
+            };
+          });
+          grantExecution.set(grantId, {
+            agentId: preview?.request.agentId ?? "",
+            done,
+            finish: () => {
+              finishExecution();
+            },
+          });
           const now = yield* Clock.currentTimeMillis;
           const auditCtx = (yield* Ref.get(grantAudit)).get(grantId);
           const consumed = yield* registry.consumeForExecution(grantId, now).pipe(
@@ -921,7 +1002,10 @@ export function makeVaultServiceLive(
             );
           }
           if ((agentEpoch.get(grantReq.agentId) ?? 0) !== epoch) return yield* Effect.fail(new GrantRevoked({grantId}));
-          grantExecution.set(grantId, { agentId: grantReq.agentId });
+          const tracked = grantExecution.get(grantId);
+          if (tracked !== undefined) {
+            grantExecution.set(grantId, { ...tracked, agentId: grantReq.agentId });
+          }
           const execExit = yield* Effect.exit(executeGrant(grantReq, consumed.allowedScope, credential));
           const nowMs = yield* Clock.currentTimeMillis;
           for (const [key, entry] of grantResults) if (entry.expiresAt <= nowMs) grantResults.delete(key);
@@ -947,7 +1031,6 @@ export function makeVaultServiceLive(
                 expiresAt: nowMs + 300_000,
               });
             }
-            grantExecution.delete(grantId);
             yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "denied", "connector-failed", false, undefined, grantAuditExtras(auditCtx, "human"));
             return yield* Effect.failCause(execExit.cause);
           }
@@ -955,10 +1038,12 @@ export function makeVaultServiceLive(
           if ((agentEpoch.get(grantReq.agentId) ?? 0) === epoch) {
             grantResults.set(grantId, { result, agentId: grantReq.agentId, epoch, expiresAt: nowMs + 300_000 });
           }
-          grantExecution.delete(grantId);
           yield* audit(grantReq.agentId, grantReq.alias, consumed.allowedScope, "executed", "executed", false, undefined, grantAuditExtras(auditCtx, "human"));
           return { status: "executed", result } as const;
         }).pipe(Effect.ensuring(Effect.sync(() => {
+          const entry = grantExecution.get(grantId);
+          entry?.finish();
+          grantExecution.delete(grantId);
           notifyGrant(grantId);
         })));
 
@@ -997,6 +1082,7 @@ export function makeVaultServiceLive(
                               next.set(enrollmentId, { ...existing, status: "completed" });
                               return next;
                             });
+                            notifyEnrollment(enrollmentId, "completed");
                             yield* audit("agent", alias, existing.scope, "enrollment-completed", `enrollment completed: ${alias}`, false);
                           }),
                   ),
@@ -1041,6 +1127,7 @@ export function makeVaultServiceLive(
                     next.set(enrollmentId, { ...existing, status: "completed" });
                     return next;
                   });
+                  notifyEnrollment(enrollmentId, "completed");
                   yield* audit("human", alias, ceiling, "credential-added", `credential replaced: ${alias} (${ceiling})`, false);
                   yield* audit("agent", alias, ceiling, "enrollment-completed", `enrollment completed: ${alias}`, false);
                   return true;
@@ -1089,6 +1176,7 @@ export function makeVaultServiceLive(
             const enrollmentId = yield* Effect.sync(() => randomUUID());
             const record: EnrollmentRecord = { enrollmentId, alias, scope, website: website ?? "", status: "pending", expiresAtMs: now + enrollmentTtlMs, ...(owner !== undefined ? { agentId: owner } : {}) };
             yield* Ref.update(enrollments, (map) => { const next = new Map(map); next.set(enrollmentId, record); return next; });
+            notifyEnrollment(enrollmentId, "pending");
             const cappedReason = (reason ?? "").trim().slice(0, ENROLLMENT_REASON_MAX_LENGTH);
             yield* audit(owner ?? "agent", alias, scope, "enrollment-created", cappedReason === "" ? `enrollment created: ${alias}` : `enrollment created: ${alias}: ${cappedReason}`, false);
             return record;
@@ -1102,6 +1190,41 @@ export function makeVaultServiceLive(
             if (record === undefined) { return null; }
             if (record.status === "pending" && record.expiresAtMs <= now) { return { ...record, status: "expired" as const }; }
             return record;
+          }),
+
+        waitForEnrollment: (enrollmentId, waitMs) =>
+          Effect.gen(function* () {
+            const capped = Math.min(25_000, Math.max(0, Math.floor(waitMs)));
+            const current = yield* Ref.get(enrollments);
+            const existing = current.get(enrollmentId);
+            if (existing === undefined || existing.status !== "pending" || capped === 0) {
+              return yield* service.getEnrollment(enrollmentId);
+            }
+            yield* Effect.async<undefined>((resume) => {
+              let settled = false;
+              const finish = (): void => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                const set = enrollmentWaiters.get(enrollmentId);
+                set?.delete(finish);
+                if (set !== undefined && set.size === 0) enrollmentWaiters.delete(enrollmentId);
+                resume(Effect.succeed(undefined));
+              };
+              let set = enrollmentWaiters.get(enrollmentId);
+              if (set === undefined) {
+                set = new Set();
+                enrollmentWaiters.set(enrollmentId, set);
+              }
+              set.add(finish);
+              const timer = setTimeout(finish, capped);
+              return Effect.sync(() => {
+                clearTimeout(timer);
+                const waiting = enrollmentWaiters.get(enrollmentId);
+                waiting?.delete(finish);
+              });
+            });
+            return yield* service.getEnrollment(enrollmentId);
           }),
 
         updateCredential: (alias, patch) =>
@@ -1150,6 +1273,7 @@ export function makeVaultServiceLive(
               yield* interruptSleeper(grant.grantId);
             }
             yield* Ref.update(standing, (list) => list.filter((entry) => entry.alias !== alias));
+            yield* store.deleteStandingApprovals({ alias });
             yield* store.deleteCredential(alias);
             yield* Ref.update(aliases, (set) => {
               const next = new Set(set);
@@ -1167,11 +1291,15 @@ export function makeVaultServiceLive(
               .map((m): PublicCredentialMeta => {
                 const kind = m.kind ?? "secret";
                 const card = kind === CARD_KIND ? parseCardPublicMeta(m.publicMeta ?? "") : null;
+                const described = describePublicCredential(m.alias, m.website, m.publicMeta ?? "");
                 return {
                   alias: m.alias,
                   scopeCeiling: m.scopeCeiling,
                   website: m.website,
                   kind,
+                  baseUrl: described.baseUrl,
+                  authStyle: described.authStyle,
+                  supportedTools: described.supportedTools,
                   ...(card !== null ? { card } : {}),
                 };
               }),
@@ -1226,12 +1354,22 @@ export function makeVaultServiceLive(
           Effect.tryPromise({
             try: () => keySession.unlock(passphrase),
             catch: () => new StorageError({ message: "unlock failed", operation: "unlock" }),
-          }),
+          }).pipe(
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                if (result === "unlocked") {
+                  publishVaultEvent({ type: "vault.lock_changed", daemonLocked: false });
+                }
+              }),
+            ),
+          ),
 
         lockVault: () =>
           Effect.sync(() => {
             clearSessionLeases();
             keySession.lock();
+            invalidateWardenCache();
+            publishVaultEvent({ type: "vault.lock_changed", daemonLocked: true });
           }),
 
         setupVault: (passphrase) =>
@@ -1281,7 +1419,9 @@ export function makeVaultServiceLive(
             }
             const storedCredential = yield* store.getCredential(req.alias);
             const credential = req.alias === WARDEN_KEY_ALIAS ? undefined : storedCredential;
-            const auditEvents = yield* store.listAudit();
+            const since1hIso = new Date(now - HOUR_MS).toISOString();
+            const since24hIso = new Date(now - DAY_MS).toISOString();
+            const auditStats = yield* store.getAgentAuditStats(req.agentId, since1hIso, since24hIso);
             const requestId = yield* Effect.sync(() => randomUUID());
             yield* audit(req.agentId, req.alias, req.requestedScope, "requested", req.verified ? "capability requested (verified)" : "capability requested (unverified)", false, undefined, { requestId, ...(req.verified !== undefined ? { verified: req.verified } : {}), ...deviceAuditExtras });
 
@@ -1299,19 +1439,14 @@ export function makeVaultServiceLive(
               const reason = velocityCheck.reason ?? "rate-limit-velocity";
               yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
+              // Velocity can only deny with these reasons; scope-above-ceiling
+              // exits earlier in the elevation check.
               return { status: "denied", reason } as const;
             }
-            const agentEvents = auditEvents.filter((e) => e.agentId === req.agentId);
-            const within = (e: AuditEvent, windowMs: number) => now - Date.parse(e.ts) < windowMs;
-            const historyCount = agentEvents.filter(
-              (e) => e.stage === "requested" && within(e, HOUR_MS),
-            ).length;
+            const historyCount = auditStats.requests1h;
             const historySummary = {
-              requests24h: agentEvents.filter(
-                (e) => e.stage === "requested" && within(e, DAY_MS),
-              ).length,
-              denials24h: agentEvents.filter((e) => e.stage === "denied" && within(e, DAY_MS))
-                .length,
+              requests24h: auditStats.requests24h,
+              denials24h: auditStats.denials24h,
             };
 
             const ceilings: Record<string, string> =
@@ -1346,7 +1481,13 @@ export function makeVaultServiceLive(
               });
               yield* audit(req.agentId, req.alias, req.requestedScope, "policy", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", reason, false, undefined, { requestId, decisionSource: "policy", ...deviceAuditExtras });
-              return { status: "denied", reason } as const;
+              return {
+                status: "denied",
+                reason,
+                ...(reason === "scope-above-ceiling" && credential !== undefined
+                  ? { allowedCeiling: credential.scopeCeiling }
+                  : {}),
+              } as const;
             }
             yield* Ref.update(aliases, (set) => {
               const next = new Set(set);
@@ -1362,11 +1503,12 @@ export function makeVaultServiceLive(
             const effectiveModel = effectiveWardenModel(wardenSettings);
             const marshalModelId = effectiveModel.trim() !== "" ? effectiveModel : modelId;
             const rulesDecision = assessByRules(req, historySummary);
+            const standingRisk = riskForStandingRead(req, historySummary);
             const standingFastPath =
               credential.kind !== CARD_KIND &&
               deviceCtx === undefined &&
               !isWriteScope(req.requestedScope) &&
-              rulesDecision.risk === "low" &&
+              standingRisk === "low" &&
               standingNow.some(
                 (entry) =>
                   entry.agentId === req.agentId &&
@@ -1374,11 +1516,43 @@ export function makeVaultServiceLive(
                   entry.scope === req.requestedScope &&
                   (entry.verifiedOnly !== true || req.verified === true),
               );
+            let leaseFastPath = false;
+            if (
+              !standingFastPath &&
+              standingRisk === "low" &&
+              credential.kind !== CARD_KIND &&
+              deviceCtx === undefined &&
+              req.origin !== "remote" &&
+              !isWriteScope(req.requestedScope) &&
+              sessionLeaseAllowed({
+                scope: req.requestedScope,
+                risk: "low",
+                payload: req.payload,
+                verified: req.verified === true,
+              })
+            ) {
+              const lease = sessionLeases.get(sessionLeaseKey(req.agentId, req.alias, req.requestedScope));
+              leaseFastPath =
+                lease !== undefined && lease.expiresAtMs > now && lease.remainingCalls > 0 && lease.scope === req.requestedScope;
+            }
             let decision: MarshalDecision | null = null;
             let latencyMs: number | undefined;
             let usedRulesFastPath = false;
             if (standingFastPath) {
-              decision = rulesDecision;
+              decision = {
+                risk: "low",
+                recommendedScope: rulesDecision.recommendedScope,
+                requireApproval: rulesDecision.requireApproval && standingRisk !== rulesDecision.risk,
+                explanation: rulesDecision.explanation,
+              };
+              usedRulesFastPath = true;
+            } else if (leaseFastPath) {
+              decision = {
+                risk: "low",
+                recommendedScope: rulesDecision.recommendedScope,
+                requireApproval: true,
+                explanation: rulesDecision.explanation,
+              };
               usedRulesFastPath = true;
             } else if (marshalRan) {
               const assessStarted = yield* Clock.currentTimeMillis;
@@ -1463,7 +1637,11 @@ export function makeVaultServiceLive(
                 return next;
               });
               yield* audit(req.agentId, req.alias, req.requestedScope, "denied", result.reason, marshalRan, marshalRan ? marshalModelId : undefined, { requestId, decisionSource: finalDecisionSource, ...deviceAuditExtras });
-              return { status: "denied", reason: result.reason } as const;
+              return {
+                status: "denied",
+                reason: result.reason,
+                ...(result.reason === "scope-above-ceiling" ? { allowedCeiling: credential.scopeCeiling } : {}),
+              } as const;
             }
             const allowedScope = result.allowedScope;
             if ((agentEpoch.get(req.agentId) ?? 0) !== epoch) return { status: "denied", reason: "agent-credentials-changed" } as const;
@@ -1549,7 +1727,26 @@ export function makeVaultServiceLive(
                 }
                 return next;
               });
-              return { status: "awaiting-approval", grantId, receipt, reason: result.reason } as const;
+              const pendingGrants = yield* registry.listGrants();
+              const pendingNow = yield* Clock.currentTimeMillis;
+              let pendingCount = 0;
+              for (const grant of pendingGrants) {
+                if (grant.status === "pending" && grant.expiresAtMs > pendingNow) pendingCount += 1;
+              }
+              publishVaultEvent({
+                type: "pending.changed",
+                pendingCount,
+                addedGrantId: grantId,
+                ...(decision?.risk !== undefined ? { risk: decision.risk } : {}),
+                ...(req.origin !== undefined ? { origin: req.origin } : {}),
+              });
+              return {
+                status: "awaiting-approval",
+                grantId,
+                receipt,
+                reason: result.reason,
+                ...(vaultLockedNow ? { vaultLocked: true as const } : {}),
+              } as const;
             }
 
             yield* audit(req.agentId, req.alias, allowedScope, "approved", usedSessionLease ? "approved by session lease" : "auto-approved by policy", usedSessionLease ? false : marshalRan, !usedSessionLease && marshalRan ? marshalModelId : undefined, { requestId, decisionSource: usedSessionLease ? "policy" : finalDecisionSource, ...deviceAuditExtras });
@@ -1611,6 +1808,7 @@ export function makeVaultServiceLive(
             const epoch = agentEpoch.get(grant.request.agentId) ?? 0;
             const executed = yield* consumeAndExecute(grantId, "approved by human (always allow)");
             if ((agentEpoch.get(grant.request.agentId) ?? 0) !== epoch) return executed;
+            const verifiedOnly = grant.request.verified === true;
             yield* Ref.update(standing, (list) => {
               const exists = list.some(
                 (entry) =>
@@ -1626,9 +1824,16 @@ export function makeVaultServiceLive(
                       agentId: grant.request.agentId,
                       alias: grant.request.alias,
                       scope: grant.allowedScope,
-                      verifiedOnly: grant.request.verified === true,
+                      ...(verifiedOnly ? { verifiedOnly: true as const } : {}),
                     },
                   ];
+            });
+            yield* store.upsertStandingApproval({
+              agentId: grant.request.agentId,
+              alias: grant.request.alias,
+              scope: grant.allowedScope,
+              verifiedOnly,
+              createdAt: new Date().toISOString(),
             });
             yield* audit(
               grant.request.agentId,
@@ -1708,8 +1913,17 @@ export function makeVaultServiceLive(
           Effect.gen(function* () {
             const affected = yield* registry.revokePendingFor(agentIdOrAlias);
             clearSessionLeases((lease) => lease.agentId === agentIdOrAlias || lease.alias === agentIdOrAlias);
+            yield* Ref.update(standing, (list) =>
+              list.filter((entry) => entry.agentId !== agentIdOrAlias && entry.alias !== agentIdOrAlias),
+            );
+            yield* store.deleteStandingApprovals({ agentId: agentIdOrAlias, alias: agentIdOrAlias });
             for (const [key, entry] of grantResults) if (entry.agentId === agentIdOrAlias) grantResults.delete(key);
-            for (const [key, entry] of grantExecution) if (entry.agentId === agentIdOrAlias) grantExecution.delete(key);
+            for (const [key, entry] of grantExecution) {
+              if (entry.agentId === agentIdOrAlias) {
+                entry.finish();
+                grantExecution.delete(key);
+              }
+            }
             for (const grant of affected) {
               notifyGrant(grant.grantId);
               const auditCtx = (yield* Ref.get(grantAudit)).get(grant.grantId);
@@ -1862,6 +2076,7 @@ export function makeVaultServiceLive(
               localModel: patch.localModel !== undefined ? patch.localModel.trim() : current.localModel,
             };
             yield* store.setWardenSettings(next);
+            invalidateWardenCache();
             if (
               patch.provider !== undefined ||
               patch.model !== undefined ||
@@ -1893,12 +2108,14 @@ export function makeVaultServiceLive(
             }
             const blob = yield* withKey((key) => encryptSecret(key, trimmed, { alias: WARDEN_KEY_ALIAS, kind: "secret" }));
             yield* store.addCredential(WARDEN_KEY_ALIAS, WARDEN_KEY_SCOPE, blob, "");
+            invalidateWardenCache();
             return { configured: true, verified: false } as const;
           }),
 
         deleteWardenKey: () =>
           Effect.gen(function* () {
             yield* store.deleteCredential(WARDEN_KEY_ALIAS);
+            invalidateWardenCache();
             return { configured: false, verified: false } as const;
           }),
 
@@ -2001,6 +2218,7 @@ export function makeVaultServiceLive(
             const affected = yield* registry.invalidatePendingForAgent(id);
             for (const grant of affected) { notifyGrant(grant.grantId); yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
             yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== id));
+            yield* store.deleteStandingApprovals({ agentId: id });
             const token = `ov_agent_${id.replace(/[^a-zA-Z0-9_-]/g, "")}_${randomBytes(16).toString("hex")}`;
             yield* store.addAgent(id, name, token, deviceId);
             const created = yield* store.getAgent(id);
@@ -2017,6 +2235,7 @@ export function makeVaultServiceLive(
             const affected = yield* registry.invalidatePendingForAgent(id);
             for (const grant of affected) { notifyGrant(grant.grantId); yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
             yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== id));
+            yield* store.deleteStandingApprovals({ agentId: id });
           }).pipe(agentManagement.withPermits(1)),
         listDevices: () => store.listDevices(),
         getDeviceByFingerprint: (fingerprint) => store.getDeviceByFingerprint(fingerprint),
@@ -2043,6 +2262,7 @@ export function makeVaultServiceLive(
                 const affected = yield* registry.invalidatePendingForAgent(agent.id);
                 for (const grant of affected) { notifyGrant(grant.grantId); yield* forgetDecision(grant.grantId); yield* forgetGrantAudit(grant.grantId); yield* interruptSleeper(grant.grantId); }
                 yield* Ref.update(standing, (entries) => entries.filter((entry) => entry.agentId !== agent.id));
+                yield* store.deleteStandingApprovals({ agentId: agent.id });
               }
             }
             yield* store.deleteDeviceAliasPolicies(id);

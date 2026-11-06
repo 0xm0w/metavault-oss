@@ -19,6 +19,8 @@ function memoryIo(files: Map<string, string>): IdeConfigIo {
 
 const HOME = "C:\\Users\\demo";
 const OPENCODE_PATH = join(HOME, ".config", "opencode", "opencode.json");
+const ANTIGRAVITY_PATH = join(HOME, ".gemini", "antigravity", "mcp_config.json");
+const VSCODE_PATH = join(HOME, ".vscode", "mcp.json");
 
 const ENTRY = {
   command: "exe",
@@ -27,14 +29,17 @@ const ENTRY = {
 };
 
 describe("ideConfigIpc inspect", () => {
-  it("returns one row per supported host with the token state", async () => {
+  it("returns one row per supported host (including antigravity) with the token state", async () => {
     const files = new Map<string, string>();
     files.set(OPENCODE_PATH, JSON.stringify({ mcp: { metavault: ENTRY } }));
     const rows = await ideConfigIpc({ action: "inspect" }, { home: HOME, io: memoryIo(files) });
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     const opencode = rows.find((r) => r.host === "opencode");
     expect(opencode?.path).toBe(OPENCODE_PATH);
     expect(opencode?.result.hasBlock).toBe(true);
+    const antigravity = rows.find((r) => r.host === "antigravity");
+    expect(antigravity?.path).toBe(ANTIGRAVITY_PATH);
+    expect(antigravity?.result.hasBlock).toBe(false);
   });
 });
 
@@ -53,6 +58,33 @@ describe("ideConfigIpc apply", () => {
     const block = ((written["mcp"] as Record<string, unknown>)["metavault"]) as { environment: Record<string, string> };
     expect(block.environment["METAVAULT_AGENT_TOKEN"]).toBe("real-token");
     expect(files.get(out.backupPath as string)).toBe(JSON.stringify({ provider: { x: 1 }, mcp: { metavault: ENTRY } }));
+  });
+
+  it("writes antigravity mcpServers block and vscode stdio servers block", async () => {
+    const files = new Map<string, string>();
+    const agOut = await ideConfigIpc(
+      { action: "apply", host: "antigravity", token: "ag-token" },
+      { home: HOME, io: memoryIo(files) },
+    );
+    expect(agOut.ok).toBe(true);
+    expect(agOut.path).toBe(ANTIGRAVITY_PATH);
+    const agJson = JSON.parse(files.get(ANTIGRAVITY_PATH) as string) as {
+      mcpServers: { metavault: { env: Record<string, string> } };
+    };
+    expect(agJson.mcpServers.metavault.env["METAVAULT_AGENT_ID"]).toBe("antigravity");
+    expect(agJson.mcpServers.metavault.env["METAVAULT_AGENT_TOKEN"]).toBe("ag-token");
+
+    const vsOut = await ideConfigIpc(
+      { action: "apply", host: "vscode", token: "vs-token" },
+      { home: HOME, io: memoryIo(files) },
+    );
+    expect(vsOut.ok).toBe(true);
+    expect(vsOut.path).toBe(VSCODE_PATH);
+    const vsJson = JSON.parse(files.get(VSCODE_PATH) as string) as {
+      servers: { metavault: { type: string; env: Record<string, string> } };
+    };
+    expect(vsJson.servers.metavault.type).toBe("stdio");
+    expect(vsJson.servers.metavault.env["METAVAULT_AGENT_TOKEN"]).toBe("vs-token");
   });
 
   it("creates the file when missing and skips the backup", async () => {

@@ -1,8 +1,11 @@
 import { buildAgentInstructions, type AgentInstructionsContext } from "./onboarding.js";
+import { playEarcon, previewEarcon } from "./audio.js";
 import {
   filterAuditGroups,
   paginate,
+  buildAddPayload,
   buildEditPayload,
+  credentialBaseUrl,
   buildPolicyRows,
   canAlwaysAllow,
   canSessionLease,
@@ -75,6 +78,10 @@ import {
   projectKeyGate,
   type KeyGate,
   isSettingsTab,
+  DEFAULT_DESKTOP_PREFERENCES,
+  projectDesktopPreferences,
+  isApprovalButtonArmed,
+  normalizeNavigateSettingsTab,
   mcpStatusText,
   projectMcpStatus,
   type McpStatus,
@@ -95,6 +102,10 @@ import type {
   PoliciesData,
   SecurityPostureReportLike,
   LocalAuthStatusLike,
+  DesktopPreferencesLike,
+  DesktopPreferencesPatchLike,
+  NavigateLike,
+  SoundModeLike,
   UpdaterStatusLike,
   WardenKeyStatusLike,
   WardenSettingsLike,
@@ -162,23 +173,56 @@ let auditAliasFilter = "all";
 let auditDateRangeFilter = "all";
 let auditPage = 1;
 let auditPageSize = 10;
-let activeAgentTab: "claude" | "cursor" | "vscode" | "codex" | "opencode" | "skill" = "claude";
+let activeAgentTab: "claude" | "cursor" | "antigravity" | "vscode" | "codex" | "opencode" | "skill" = "claude";
 let localAuthStatus: LocalAuthStatusLike = { ...DEFAULT_LOCAL_AUTH_STATUS };
+let desktopPrefs: DesktopPreferencesLike = { ...DEFAULT_DESKTOP_PREFERENCES };
+let canLockDaemonNow = false;
+let headerLockMenuOpen = false;
+let queuedNavigation: NavigateLike | null = null;
+let lastWindowFocusAt = Date.now();
+window.addEventListener("focus", () => {
+  lastWindowFocusAt = Date.now();
+});
 let vaultLocked = true;
 
-function sealLockedVault(): void {
-  void window.metavault.lockVault().catch(() => undefined);
+function closeTransientOverlays(): void {
   closeCredentialModal(false);
   document.querySelectorAll(".vault-modal-overlay").forEach((node) => {
     node.remove();
   });
   credentialModal = null;
-  vaultLocked = true;
+  headerLockMenuOpen = false;
   settingsOpen = false;
 }
 
-function lockTheVault(): void {
-  sealLockedVault();
+function reportUiLockSafe(locked: boolean): void {
+  if (typeof window.metavault.reportUiLock === "function") {
+    window.metavault.reportUiLock(locked);
+  }
+}
+
+function lockUiSession(syncMain = true): void {
+  closeTransientOverlays();
+  vaultLocked = true;
+  if (syncMain) {
+    if (typeof window.metavault.lockUi === "function") {
+      void window.metavault.lockUi().catch(() => undefined);
+    }
+    reportUiLockSafe(true);
+  }
+  render();
+}
+
+function lockVaultDaemon(): void {
+  closeTransientOverlays();
+  if (canLockSessionNow(localAuthStatus)) {
+    vaultLocked = true;
+    reportUiLockSafe(true);
+  }
+  void window.metavault
+    .lockVault()
+    .then(() => refreshTracked())
+    .catch(() => undefined);
   render();
 }
 let keyGate: KeyGate = null;
@@ -215,6 +259,7 @@ let settingsFocusOnOpen = false;
 
 const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
   general: "General",
+  notifications: "Notifications & Tray",
   warden: "Warden",
   daemon: "Daemon",
   security: "Security",
@@ -507,12 +552,17 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   );
   card.append(fine);
 
+  const cardShownAt = Date.now();
+  const isCardArmed = (): boolean => isApprovalButtonArmed(Date.now(), cardShownAt, lastWindowFocusAt);
+
   const buttons = el("div", "btns");
   const approveBtn = el("button", "action btn-approve", "Approve once") as HTMLButtonElement;
   approveBtn.type = "button";
   approveBtn.disabled = busy;
   approveBtn.addEventListener("click", () => {
+    if (!isCardArmed()) return;
     const executeApproval = (presenceProof?: string) => {
+      playEarcon("decision-approved", desktopPrefs.soundMode);
       void runAction(() => window.metavault.approve(hero.grantId, presenceProof), "Approved — the grant executed inside vaultd and expired.");
     };
     if (
@@ -531,6 +581,7 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
   denyBtn.type = "button";
   denyBtn.disabled = busy;
   denyBtn.addEventListener("click", () => {
+    playEarcon("decision-denied", desktopPrefs.soundMode);
     void runAction(() => window.metavault.deny(hero.grantId), "Denied — the agent was told no, with the allowed ceiling.");
   });
   const blockBtn = el("button", "action btn-deny", "Block agent") as HTMLButtonElement;
@@ -551,7 +602,9 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     alwaysBtn.type = "button";
     alwaysBtn.disabled = busy;
     alwaysBtn.addEventListener("click", () => {
+      if (!isCardArmed()) return;
       const executeAlways = (presenceProof?: string) => {
+        playEarcon("decision-approved", desktopPrefs.soundMode);
         void runAction(
           () => window.metavault.approveAlways(hero.grantId, presenceProof),
           `Standing approval saved for ${hero.agentId} · ${hero.allowedScope}. Read-only low-risk only; writes still ask every time.`,
@@ -570,7 +623,9 @@ function buildApprovalCard(hero: PendingApproval): HTMLElement {
     sessionBtn.type = "button";
     sessionBtn.disabled = busy;
     sessionBtn.addEventListener("click", () => {
+      if (!isCardArmed()) return;
       const executeSession = (presenceProof?: string) => {
+        playEarcon("decision-approved", desktopPrefs.soundMode);
         void runAction(
           () => window.metavault.approveSession(hero.grantId, presenceProof),
           "Approved for 15 minutes, up to 10 calls. The first call ran inside vaultd.",
@@ -641,22 +696,24 @@ function paintApprovalDialog(): void {
   overlay.append(dialog);
   document.body.append(overlay);
   const shownAt = Date.now();
-  const approve = dialog.querySelector<HTMLButtonElement>(".btn-approve");
-  if (approve !== null) {
-    const armedAt = shownAt + 500;
+  dialog.querySelectorAll<HTMLButtonElement>(".btn-approve, .btn-always").forEach((btn) => {
     const blockUntilArmed = (event: Event): void => {
-      if (Date.now() >= armedAt) return;
+      if (isApprovalButtonArmed(Date.now(), shownAt, lastWindowFocusAt)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
     };
-    approve.addEventListener("click", blockUntilArmed, true);
-    approve.addEventListener("keydown", (event) => {
-      if (Date.now() >= armedAt) return;
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }, true);
-  }
+    btn.addEventListener("click", blockUntilArmed, true);
+    btn.addEventListener(
+      "keydown",
+      (event) => {
+        if (isApprovalButtonArmed(Date.now(), shownAt, lastWindowFocusAt)) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      },
+      true,
+    );
+  });
   const deny = dialog.querySelector<HTMLButtonElement>(".btn-deny");
   if (deny !== null) {
     deny.focus();
@@ -843,17 +900,23 @@ function openCredentialModal(prefill?: DeeplinkAddParams): void {
               expYear: expiry.expYear,
               cvv: cardCvvInput.value.trim(),
             },
-            websiteInput.value.trim(),
+            credentialBaseUrl(websiteInput.value),
           );
           for (const input of cardFields) {
             input.value = "";
           }
         } else {
+          const addPayload = buildAddPayload({
+            alias: nameInput.value,
+            scope: scopeInput.value,
+            secret: secretInput.value,
+            website: websiteInput.value,
+          });
           await window.metavault.addCredential(
-            nameInput.value.trim(),
-            scopeInput.value.trim(),
-            secretInput.value,
-            websiteInput.value.trim(),
+            addPayload.alias,
+            addPayload.scope,
+            addPayload.secret,
+            addPayload.website,
             prefill?.enrollmentId,
           );
         }
@@ -2613,6 +2676,94 @@ function renderSettings(view: HTMLElement): void {
   modeSection.append(modeGroup);
   view.append(modeSection);
 
+  // 0b. Notifications & System Tray
+  const notifSection = settingsSection(
+    "Notifications & system tray",
+    "Control background tray behavior, OS toast banners, privacy redaction while locked, focus protection, and notification chimes.",
+    "notifications",
+  );
+  const updateDesktopPref = (patch: DesktopPreferencesPatchLike): void => {
+    desktopPrefs = { ...desktopPrefs, ...patch };
+    if (typeof window.metavault.desktopPrefsUpdate === "function") {
+      void window.metavault
+        .desktopPrefsUpdate(patch)
+        .then((raw) => {
+          if (typeof raw === "object" && raw !== null && "prefs" in raw) {
+            desktopPrefs = projectDesktopPreferences((raw as { prefs?: unknown }).prefs);
+          }
+          render();
+        })
+        .catch(() => {
+          render();
+        });
+    } else {
+      render();
+    }
+  };
+  const appendPrefToggle = (
+    labelText: string,
+    checked: boolean,
+    onChange: (next: boolean) => void,
+  ): void => {
+    const row = el("div", "settings-row");
+    row.append(el("span", "settings-row-label", labelText));
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = checked;
+    box.addEventListener("change", () => {
+      onChange(box.checked);
+    });
+    row.append(box);
+    notifSection.append(row);
+  };
+  appendPrefToggle("Minimize to tray when closing window", desktopPrefs.minimizeToTrayOnClose, (v) => {
+    updateDesktopPref({ minimizeToTrayOnClose: v });
+  });
+  appendPrefToggle("Start minimized at Windows login", desktopPrefs.startMinimizedAtLogin, (v) => {
+    updateDesktopPref({ startMinimizedAtLogin: v });
+  });
+  appendPrefToggle("Show OS toast notifications", desktopPrefs.toastNotificationsEnabled, (v) => {
+    updateDesktopPref({ toastNotificationsEnabled: v });
+  });
+  appendPrefToggle("Hide request details in notifications while locked", desktopPrefs.redactToastWhenLocked, (v) => {
+    updateDesktopPref({ redactToastWhenLocked: v });
+  });
+  appendPrefToggle("Pop window to front on pending approval (Off by default)", desktopPrefs.popWindowOnApproval, (v) => {
+    updateDesktopPref({ popWindowOnApproval: v });
+  });
+
+  const soundRow = el("div", "settings-row");
+  soundRow.append(el("span", "settings-row-label", "Notification sounds"));
+  const soundControls = el("div", "settings-btns");
+  const segGroup = el("div", "segmented-sound-group");
+  const soundOptions: readonly { readonly id: SoundModeLike; readonly label: string }[] = [
+    { id: "all", label: "All events" },
+    { id: "high-risk-only", label: "High-risk & writes only" },
+    { id: "off", label: "Muted" },
+  ];
+  for (const opt of soundOptions) {
+    const btn = el(
+      "button",
+      `action segmented-sound-btn${desktopPrefs.soundMode === opt.id ? " is-active" : ""}`,
+      opt.label,
+    ) as HTMLButtonElement;
+    btn.type = "button";
+    btn.setAttribute("aria-pressed", desktopPrefs.soundMode === opt.id ? "true" : "false");
+    btn.addEventListener("click", () => {
+      updateDesktopPref({ soundMode: opt.id });
+    });
+    segGroup.append(btn);
+  }
+  const previewSoundBtn = el("button", "action", "Preview sound") as HTMLButtonElement;
+  previewSoundBtn.type = "button";
+  previewSoundBtn.addEventListener("click", () => {
+    previewEarcon(desktopPrefs.soundMode === "off" ? "all" : desktopPrefs.soundMode);
+  });
+  soundControls.append(segGroup, previewSoundBtn);
+  soundRow.append(soundControls);
+  notifSection.append(soundRow);
+  view.append(notifSection);
+
   // 1. Provider
   const providerSection = settingsSection("Warden provider", "", "warden");
   const providerCopy: Record<WardenSettingsLike["provider"], string> = {
@@ -3220,14 +3371,27 @@ function renderSettings(view: HTMLElement): void {
   });
   authBtns.append(pinBtn);
 
-  if (canLockSessionNow(localAuthStatus)) {
-    const lockNowBtn = el("button", "action btn-deny", "Lock session now") as HTMLButtonElement;
-    lockNowBtn.type = "button";
-    lockNowBtn.addEventListener("click", () => {
-      lockTheVault();
-    });
-    authBtns.append(lockNowBtn);
-  }
+  const lockUiNowBtn = el("button", "action", "Lock UI") as HTMLButtonElement;
+  lockUiNowBtn.type = "button";
+  lockUiNowBtn.disabled = !canLockSessionNow(localAuthStatus);
+  lockUiNowBtn.title = canLockSessionNow(localAuthStatus)
+    ? "Lock UI screen behind Windows Hello / App PIN (standing read approvals keep working)"
+    : "Enable Windows Hello or App PIN above to use Lock UI";
+  lockUiNowBtn.addEventListener("click", () => {
+    lockUiSession(true);
+  });
+  authBtns.append(lockUiNowBtn);
+
+  const lockDaemonNowBtn = el("button", "action btn-deny", "Lock Vault Daemon") as HTMLButtonElement;
+  lockDaemonNowBtn.type = "button";
+  lockDaemonNowBtn.disabled = !canLockDaemonNow;
+  lockDaemonNowBtn.title = canLockDaemonNow
+    ? "Zero master key in vaultd until passphrase unlock"
+    : "Protect vault with a passphrase to enable daemon lock";
+  lockDaemonNowBtn.addEventListener("click", () => {
+    lockVaultDaemon();
+  });
+  authBtns.append(lockDaemonNowBtn);
 
   const authActionRow = el("div", "settings-row");
   authActionRow.append(el("span", "settings-row-label", "App PIN"));
@@ -3515,6 +3679,31 @@ function renderSettings(view: HTMLElement): void {
   policiesRow.append(el("span", "settings-row-label", "Ceilings and standing approvals"));
   policiesRow.append(policiesBtn);
   policySection.append(policiesRow);
+
+  const secLockRow = el("div", "settings-row");
+  secLockRow.append(el("span", "settings-row-label", "Lock controls"));
+  const secLockBtns = el("div", "settings-btns");
+  const secLockUi = el("button", "action", "Lock UI") as HTMLButtonElement;
+  secLockUi.type = "button";
+  secLockUi.disabled = !canLockSessionNow(localAuthStatus);
+  secLockUi.title = canLockSessionNow(localAuthStatus)
+    ? "Lock UI screen behind Windows Hello / App PIN (standing read approvals keep working)"
+    : "Enable Windows Hello or App PIN in General settings to use Lock UI";
+  secLockUi.addEventListener("click", () => {
+    lockUiSession(true);
+  });
+  const secLockDaemon = el("button", "action btn-deny", "Lock Vault Daemon") as HTMLButtonElement;
+  secLockDaemon.type = "button";
+  secLockDaemon.disabled = !canLockDaemonNow;
+  secLockDaemon.title = canLockDaemonNow
+    ? "Zero master key in vaultd until passphrase unlock"
+    : "Protect vault with a passphrase to enable daemon lock";
+  secLockDaemon.addEventListener("click", () => {
+    lockVaultDaemon();
+  });
+  secLockBtns.append(secLockUi, secLockDaemon);
+  secLockRow.append(secLockBtns);
+  policySection.append(secLockRow);
   view.append(policySection);
 
 
@@ -3655,6 +3844,7 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
   const tabs = [
     { id: "claude", label: "Claude Code" },
     { id: "cursor", label: "Cursor" },
+    { id: "antigravity", label: "Antigravity" },
     { id: "vscode", label: "VS Code" },
     { id: "codex", label: "Codex" },
     { id: "opencode", label: "OpenCode" },
@@ -3712,7 +3902,7 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
   addAgent.addEventListener("click", () => { createControl(customId.value.trim(), customName.value.trim(), false); });
   management.append(customId, customName, addAgent);
   for (const [id, token] of newAgentTokens) {
-    if (["cursor", "claude-code", "vscode", "codex", "opencode"].includes(id)) continue;
+    if (["cursor", "claude-code", "antigravity", "vscode", "codex", "opencode"].includes(id)) continue;
     const once = el("pre", "", `${id}: ${token}`);
     const copy = el("button", "action", `Copy ${id} token`) as HTMLButtonElement; copy.type = "button";
     copy.addEventListener("click", () => { void navigator.clipboard.writeText(token); });
@@ -3763,6 +3953,27 @@ function renderAgentIntegrationBox(host: HTMLElement): void {
               METAVAULT_AGENT_ID: "cursor",
               METAVAULT_AGENT_TOKEN: findAgentToken("cursor"),
               METAVAULT_IDE: "Cursor",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
+  } else if (activeAgentTab === "antigravity") {
+    configPath = "~/.gemini/antigravity/mcp_config.json";
+    codeSnippet = JSON.stringify(
+      {
+        mcpServers: {
+          metavault: {
+            command: mcpRuntime?.command ?? "<runtime-unavailable-reopen-app>",
+            args: mcpRuntime?.args ?? [],
+            env: {
+              ...mcpRuntime?.env,
+              METAVAULT_DAEMON_URL: "http://127.0.0.1:7077",
+              METAVAULT_AGENT_ID: "antigravity",
+              METAVAULT_AGENT_TOKEN: findAgentToken("antigravity"),
+              METAVAULT_IDE: "Antigravity",
             },
           },
         },
@@ -3894,6 +4105,7 @@ let wizardSealing = false;
 const WIZARD_HOST_KEYS: Record<string, string> = {
   claude: "claude-code",
   cursor: "cursor",
+  antigravity: "antigravity",
   vscode: "vscode",
 };
 
@@ -4231,6 +4443,7 @@ function ideNameOf(tab: string): string {
   switch (tab) {
     case "claude": return "Claude Code";
     case "cursor": return "Cursor";
+    case "antigravity": return "Antigravity";
     case "vscode": return "VS Code";
     case "opencode": return "OpenCode";
     case "codex": return "Codex";
@@ -4446,10 +4659,105 @@ function renderPosture(view: HTMLElement): void {
 }
 
 
+function flushQueuedNavigation(): void {
+  const pendingNav = queuedNavigation;
+  queuedNavigation = null;
+  if (pendingNav !== null) {
+    applyNavigation(pendingNav);
+  }
+}
+
+function applyNavigation(nav: NavigateLike): void {
+  if (nav.kind === "unlock") {
+    const passEl = document.querySelector<HTMLInputElement>("#vault-passphrase-input");
+    if (passEl !== null) {
+      passEl.focus();
+      return;
+    }
+    const pinEl = document.querySelector<HTMLInputElement>(".lock-screen input[type='password']");
+    pinEl?.focus();
+    return;
+  }
+  if (vaultLocked || keyGate !== null) {
+    queuedNavigation = nav;
+    return;
+  }
+  if (nav.kind === "approval") {
+    settingsOpen = false;
+    currentView = "approval";
+    approvalDialogDismissed = false;
+    if (nav.id !== undefined && nav.id !== "") {
+      selectedGrantId = nav.id;
+    }
+    render();
+    const heroCard = document.querySelector<HTMLElement>(".hero");
+    heroCard?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (nav.kind === "registration") {
+    settingsOpen = false;
+    currentView = "vault";
+    render();
+    const regInput = document.querySelector<HTMLInputElement>(".registration-code");
+    regInput?.focus();
+    regInput?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (nav.kind === "audit") {
+    settingsOpen = false;
+    currentView = "audit";
+    if (nav.id !== undefined && nav.id !== "") {
+      auditFilter = nav.id;
+      expandedAuditIds.add(nav.id);
+      auditPage = 1;
+    }
+    render();
+    return;
+  }
+  if (nav.kind === "settings") {
+    openSettings(normalizeNavigateSettingsTab(nav.section));
+    return;
+  }
+  nav.kind satisfies "add-credential";
+  settingsOpen = false;
+  currentView = "vault";
+  closeCredentialModal(false);
+  render();
+  openCredentialModal();
+}
+
 function render(): void {
+  const canLockUi = canLockSessionNow(localAuthStatus);
+  const showHeaderLock = !vaultLocked && keyGate === null && (canLockUi || canLockDaemonNow);
+  const lockWrap = document.querySelector<HTMLElement>("#header-lock-wrap");
   const lockHeaderBtn = document.querySelector<HTMLButtonElement>("#lock-session-btn");
+  const lockMenu = document.querySelector<HTMLElement>("#header-lock-menu");
+  const lockUiItem = document.querySelector<HTMLButtonElement>("#header-lock-ui-btn");
+  const lockDaemonItem = document.querySelector<HTMLButtonElement>("#header-lock-daemon-btn");
+  if (lockWrap !== null) {
+    lockWrap.hidden = !showHeaderLock;
+  }
+  if (!showHeaderLock) {
+    headerLockMenuOpen = false;
+  }
   if (lockHeaderBtn !== null) {
-    lockHeaderBtn.hidden = !(canLockSessionNow(localAuthStatus) && !vaultLocked);
+    lockHeaderBtn.hidden = !showHeaderLock;
+    lockHeaderBtn.setAttribute("aria-expanded", headerLockMenuOpen && showHeaderLock ? "true" : "false");
+  }
+  if (lockMenu !== null) {
+    lockMenu.hidden = !(headerLockMenuOpen && showHeaderLock);
+  }
+  if (lockUiItem !== null) {
+    lockUiItem.disabled = !canLockUi;
+    lockUiItem.title = canLockUi
+      ? "Lock UI behind Windows Hello / App PIN (standing read approvals keep working)"
+      : "Set App PIN or Windows Hello in Settings to enable UI Lock";
+  }
+  if (lockDaemonItem !== null) {
+    lockDaemonItem.disabled = !canLockDaemonNow;
+    lockDaemonItem.title = canLockDaemonNow
+      ? "Zero master key in vaultd until passphrase unlock"
+      : "Protect vault with a passphrase to enable daemon lock";
   }
   const view = mustElement("#view");
   // Capture the audit filter caret before the old input is discarded, so
@@ -4478,6 +4786,7 @@ function render(): void {
   } else {
     lockedSettingsOpen = false;
     if (queuedDeeplink !== null && openQueuedDeeplink !== null) window.setTimeout(openQueuedDeeplink, 0);
+    if (queuedNavigation !== null) window.setTimeout(flushQueuedNavigation, 0);
   }
   if (keyGate !== null) {
     settingsOpen = false;
@@ -4532,6 +4841,7 @@ function render(): void {
           const res = await window.metavault.verifyWindowsHello("unlock");
           if (res.ok) {
             vaultLocked = false;
+            reportUiLockSafe(false);
             lastUserActivityTs = Date.now();
             render();
             return;
@@ -4564,6 +4874,7 @@ function render(): void {
           const res = (await window.metavault.verifyLocalPin(pin)) as { ok?: boolean } | null;
           if (res?.ok) {
             vaultLocked = false;
+            reportUiLockSafe(false);
             lastUserActivityTs = Date.now();
             render();
           } else {
@@ -4633,6 +4944,12 @@ async function refresh(): Promise<void> {
     const keyStatusRaw = await window.metavault.keyStatus().catch(() => null);
     vaultKeyFingerprint = keyStatusRaw !== null && typeof keyStatusRaw === "object" && "fingerprint" in keyStatusRaw && typeof keyStatusRaw.fingerprint === "string" && /^[a-f0-9]{24}$/.test(keyStatusRaw.fingerprint) ? keyStatusRaw.fingerprint : null;
     keyGate = projectKeyGate(keyStatusRaw);
+    canLockDaemonNow =
+      keyGate === null &&
+      keyStatusRaw !== null &&
+      typeof keyStatusRaw === "object" &&
+      "mode" in keyStatusRaw &&
+      (keyStatusRaw as { mode?: unknown }).mode === "passphrase";
     if (keyGate !== null) {
       newAgentTokens.clear();
       setDaemonStatus(true);
@@ -4692,7 +5009,9 @@ async function refresh(): Promise<void> {
       if (soonest !== undefined) {
         selectedGrantId = soonest.grantId;
       }
-      window.metavault.bringToFront();
+      if (desktopPrefs.popWindowOnApproval) {
+        window.metavault.bringToFront();
+      }
     }
     approvals = nextApprovals;
     aliases = projectAliasesResponse(aliasesRaw);
@@ -4710,7 +5029,9 @@ async function refresh(): Promise<void> {
         nextRegs.push({ id: o["id"], agentId: o["agentId"], name: o["name"], ide: o["ide"], code: o["code"] });
       }
     }
-    if (nextRegs.some((r) => !pendingRegistrations.some((p) => p.id === r.id))) window.metavault.bringToFront();
+    if (desktopPrefs.popWindowOnApproval && nextRegs.some((r) => !pendingRegistrations.some((p) => p.id === r.id))) {
+      window.metavault.bringToFront();
+    }
     pendingRegistrations = nextRegs;
     securityPosture = projectSecurityPosture(postureRaw);
     const projAuth = projectLocalAuthStatus(localAuthRaw);
@@ -4718,11 +5039,12 @@ async function refresh(): Promise<void> {
       if (!initialAuthChecked) {
         initialAuthChecked = true;
         vaultLocked = shouldLockOnLaunch(projAuth);
+        reportUiLockSafe(vaultLocked);
       }
       localAuthStatus = projAuth;
     }
     if (isAutoLockDue(localAuthStatus, lastUserActivityTs, Date.now()) && !vaultLocked) {
-      sealLockedVault();
+      lockUiSession(true);
     }
     const projectedWarden = projectWardenSettings(wardenRaw);
     if (projectedWarden !== null) {
@@ -4967,6 +5289,11 @@ function start(): void {
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && credentialModal === null) {
+      if (headerLockMenuOpen) {
+        headerLockMenuOpen = false;
+        render();
+        return;
+      }
       if (document.querySelector("#approval-dialog") !== null) {
         dismissApprovalDialog();
         return;
@@ -4993,8 +5320,64 @@ function start(): void {
   });
   const lockHeaderBtn = document.querySelector<HTMLButtonElement>("#lock-session-btn");
   if (lockHeaderBtn !== null) {
-    lockHeaderBtn.addEventListener("click", () => {
-      lockTheVault();
+    lockHeaderBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      headerLockMenuOpen = !headerLockMenuOpen;
+      render();
+    });
+  }
+  document.querySelector<HTMLButtonElement>("#header-lock-ui-btn")?.addEventListener("click", () => {
+    headerLockMenuOpen = false;
+    lockUiSession(true);
+  });
+  document.querySelector<HTMLButtonElement>("#header-lock-daemon-btn")?.addEventListener("click", () => {
+    headerLockMenuOpen = false;
+    lockVaultDaemon();
+  });
+  document.addEventListener("click", (event) => {
+    if (!headerLockMenuOpen) return;
+    const wrap = document.querySelector("#header-lock-wrap");
+    if (wrap !== null && event.target instanceof Node && wrap.contains(event.target)) return;
+    headerLockMenuOpen = false;
+    render();
+  });
+  if (typeof window.metavault.desktopPrefsGet === "function") {
+    void window.metavault
+      .desktopPrefsGet()
+      .then((raw) => {
+        desktopPrefs = projectDesktopPreferences(raw);
+        render();
+      })
+      .catch(() => undefined);
+  }
+  if (typeof window.metavault.lockStateGet === "function") {
+    void window.metavault
+      .lockStateGet()
+      .then((st) => {
+        if (st.uiLocked && !vaultLocked) {
+          lockUiSession(false);
+        }
+      })
+      .catch(() => undefined);
+  }
+  if (typeof window.metavault.onLockState === "function") {
+    window.metavault.onLockState(({ uiLocked, daemonLocked }) => {
+      if (uiLocked && !vaultLocked) {
+        lockUiSession(false);
+      }
+      if (daemonLocked && keyGate === null) {
+        void refreshTracked();
+      }
+    });
+  }
+  if (typeof window.metavault.onNavigate === "function") {
+    window.metavault.onNavigate((nav) => {
+      applyNavigation(nav);
+    });
+  }
+  if (typeof window.metavault.onPlaySound === "function") {
+    window.metavault.onPlaySound((cue) => {
+      playEarcon(cue, desktopPrefs.soundMode);
     });
   }
   void refreshTracked();

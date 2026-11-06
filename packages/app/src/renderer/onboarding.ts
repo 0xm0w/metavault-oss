@@ -16,9 +16,10 @@ export interface AgentInstructionsContext {
 
 const WORKFLOW = `How to work with the vault
 - First call register_agent, tell the user the 6-digit code it returns, and ask them to approve the matching request in MetaVault OSS, then call registration_status. Verified means the user approved your credential; it is not proof of what program you are and grants no access. Never print or ask for any token.
-- Call list_aliases to discover available credential aliases.
+- Call list_aliases to discover available credential aliases, scopes, baseUrls, and supportedTools.
 - Call request_capability with alias, scope, and reason. The vault executes the call or requests human approval; you never receive the secret.
-- If the result is awaiting-approval, wait for it. request_capability waits briefly; then call grant_status with the grantId. When the user approves, the result of the call is returned to you once. If the status is denied, expired or revoked, stop, tell the user, and do not send the request again or look for another way.
+- If the result is awaiting-approval, wait for it. request_capability waits briefly; then call grant_status with the grantId (and present any metavault://approve?grantId=... deeplink if the user needs a one-click shortcut). When the user approves, the result of the call is returned to you once. If the status is denied, expired or revoked, stop, tell the user, and do not send the request again or look for another way.
+- If the result is vault-locked, present the metavault://unlock deeplink to the user and wait until they unlock MetaVault OSS.
 - If a credential is missing, call request_enrollment. It opens MetaVault OSS on the user's computer with the add form ready (if launched is false, show its metavault:// link instead). Then poll enrollment_status. Only the user enters the secret in MetaVault OSS.
 - Respect denials. Never approve requests, unlock the vault, or edit vault files yourself.`;
 
@@ -27,40 +28,100 @@ const RULES = `Rules that always apply
 - Everything is local: the vault daemon listens on 127.0.0.1 only while MetaVault OSS is open. Do not look for a remote endpoint.
 - These instructions guide the agent; policy and human approval enforce access.`;
 
+function indentJson(value: unknown): string {
+  return JSON.stringify(value, null, 2).split("\n").join("\n    ");
+}
+
 function connectionBlock(ctx: AgentInstructionsContext | null): string {
   if (ctx === null) {
     return `How to connect (works with any MCP host, not a specific IDE)
-- Ask the user to open MetaVault OSS > Settings > Daemon > Agent Integration & MCP. There they generate or rotate the token for your host and copy a ready-made config for common hosts (Claude Code, Cursor, VS Code, Codex, OpenCode). Other hosts use the same launch details shown there.
+- Ask the user to open MetaVault OSS > Settings > Daemon > Agent Integration & MCP. There they generate or rotate the token for your host and copy a ready-made config for common hosts (Claude Code, Cursor, Antigravity, VS Code, Codex, OpenCode). Other hosts use the same launch details shown there.
 - The vault daemon (vaultd) runs locally at http://127.0.0.1:7077 while MetaVault OSS is open.`;
   }
   const envLines = [
     `    ELECTRON_RUN_AS_NODE=${ctx.env["ELECTRON_RUN_AS_NODE"] ?? "1"}`,
     `    METAVAULT_DAEMON_URL=${ctx.daemonUrl}`,
-    `    METAVAULT_AGENT_ID=<one id for your host, lowercase, e.g. opencode>`,
+    `    METAVAULT_AGENT_ID=<one id for your host, lowercase, e.g. claude-code, cursor, antigravity, vscode, codex, opencode>`,
     `    METAVAULT_IDE=<your host's display name>`,
     `    METAVAULT_AGENT_TOKEN=<token for that agent id, from the app>`,
   ].join("\n");
+
+  const baseEnv = {
+    ...ctx.env,
+    METAVAULT_DAEMON_URL: ctx.daemonUrl,
+    METAVAULT_AGENT_ID: "<agent id for your host>",
+    METAVAULT_IDE: "<your host's display name>",
+    METAVAULT_AGENT_TOKEN: "{env:METAVAULT_AGENT_TOKEN}",
+  };
+
+  const mcpServersSnippet = indentJson({
+    mcpServers: {
+      metavault: {
+        command: ctx.command,
+        args: ctx.args,
+        env: baseEnv,
+      },
+    },
+  });
+
+  const vscodeSnippet = indentJson({
+    servers: {
+      metavault: {
+        type: "stdio",
+        command: ctx.command,
+        args: ctx.args,
+        env: { ...baseEnv, METAVAULT_AGENT_ID: "vscode", METAVAULT_IDE: "VS Code" },
+      },
+    },
+  });
+
+  const opencodeSnippet = indentJson({
+    mcp: {
+      metavault: {
+        type: "local",
+        command: ctx.command,
+        args: ctx.args,
+        enabled: true,
+        environment: { ...baseEnv, METAVAULT_AGENT_ID: "opencode", METAVAULT_IDE: "OpenCode" },
+      },
+    },
+  });
+
+  const codexToml = [
+    "    [mcp_servers.metavault]",
+    `    command = ${JSON.stringify(ctx.command)}`,
+    `    args = ${JSON.stringify(ctx.args)}`,
+    "    [mcp_servers.metavault.env]",
+    ...Object.entries(ctx.env).map(([k, v]) => `    ${k} = ${JSON.stringify(v)}`),
+    `    METAVAULT_DAEMON_URL = ${JSON.stringify(ctx.daemonUrl)}`,
+    "    METAVAULT_AGENT_ID = \"codex\"",
+    "    METAVAULT_IDE = \"Codex\"",
+    "    METAVAULT_AGENT_TOKEN = \"{env:METAVAULT_AGENT_TOKEN}\"",
+  ].join("\n");
+
   return `How to connect (works with any MCP host, not a specific IDE)
 - Run MetaVault's MCP server as a local stdio process from this installation:
     command: ${ctx.command}
     arguments: ${ctx.args.join(" ")}
   with these environment variables:
 ${envLines}
-- The token comes only from the user: MetaVault OSS > Settings > Daemon > Agent Integration & MCP, generate or rotate the token for your agent id. The same panel has ready-made configs for common hosts (Claude Code, Cursor, VS Code, Codex, OpenCode) with everything above already filled in. Tokens are shown once, at generation time.
+- The token comes only from the user: MetaVault OSS > Settings > Daemon > Agent Integration & MCP, generate or rotate the token for your agent id. The same panel has ready-made configs for common hosts (Claude Code, Cursor, Antigravity, VS Code, Codex, OpenCode) with everything above already filled in. Tokens are shown once, at generation time.
 - The vault daemon (vaultd) for this installation listens locally at ${ctx.daemonUrl} while MetaVault OSS is open. Vault data lives at ${ctx.dbPath}. Never read, edit, move or unlock vault files yourself.
 - Pasting these instructions into a chat does NOT connect you. Connection happens only when your host launches the server above through its MCP configuration. After the config changes, the host must be restarted or its MCP connection reloaded.
 
 Connect yourself (agent task, when the user asks)
-- Edit your host's MCP config file yourself. Merge - never remove or rewrite other content. Files:
-    OpenCode:    ~/.config/opencode/opencode.json  (key "mcp")
-    Claude Code: ~/.claude.json                    (key "mcpServers")
-    Cursor:      ~/.cursor/mcp.json                (key "mcpServers")
-    VS Code:     ~/.vscode/mcp.json                (key "servers")
-- Add a "metavault" entry exactly like this (keep METAVAULT_AGENT_TOKEN as the literal placeholder string - it is filled in by the app later, so it never passes through chat):
-    ${JSON.stringify({ mcp: { metavault: { type: "local", command: ctx.command, args: ctx.args, enabled: true, environment: { ...ctx.env, METAVAULT_DAEMON_URL: ctx.daemonUrl, METAVAULT_AGENT_ID: "<agent id from the panel>", METAVAULT_IDE: "<your host's display name>", METAVAULT_AGENT_TOKEN: "{env:METAVAULT_AGENT_TOKEN}" } } } }, null, 2)
-      .split("\n").join("\n    ")}
-- After the edit is valid JSON, tell the user: "Config written. Open MetaVault OSS and press 'Seal the token' in the Get started guide, then restart me."
-- If the config file exists but is not valid JSON, stop and tell the user to fix it by hand first. Never rewrite the whole file.`;
+- Edit ONLY your own host's MCP config file using its exact schema below. Merge - never remove or rewrite other content:
+  1) Claude Code (~/.claude.json), Cursor (~/.cursor/mcp.json), Windsurf, or Antigravity (~/.gemini/antigravity/mcp_config.json) — key "mcpServers":
+    ${mcpServersSnippet}
+  2) VS Code (~/.vscode/mcp.json or .vscode/mcp.json) — key "servers":
+    ${vscodeSnippet}
+  3) OpenCode (~/.config/opencode/opencode.json) — key "mcp":
+    ${opencodeSnippet}
+  4) Codex (~/.codex/config.toml) — TOML section:
+${codexToml}
+- Keep METAVAULT_AGENT_TOKEN as the literal "{env:METAVAULT_AGENT_TOKEN}" placeholder string - it is sealed by MetaVault OSS so it never passes through chat.
+- After the edit is valid JSON/TOML, tell the user: "Config written. Open MetaVault OSS and press 'Seal the token' in the Get started guide, then restart me."
+- If the config file exists but is not valid JSON/TOML, stop and tell the user to fix it by hand first. Never rewrite the whole file.`;
 }
 
 export function buildAgentInstructions(ctx: AgentInstructionsContext | null): string {

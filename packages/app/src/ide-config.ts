@@ -1,7 +1,7 @@
 // Agent-led IDE connection, main-process side (pure string logic).
 //
-// Flow: the OpenCode (or Claude/Cursor) agent merges its own MCP config
-// block itself following the copied agent instructions, with
+// Flow: the OpenCode (or Claude/Cursor/Antigravity/VS Code) agent merges its
+// own MCP config block itself following the copied agent instructions, with
 // METAVAULT_AGENT_TOKEN set to the "{env:METAVAULT_AGENT_TOKEN}" placeholder
 // so no secret passes through chat. The app then seals the real token into
 // the file with one button. This module owns the merge/patch logic:
@@ -14,7 +14,7 @@
 // The token placeholder is the one exception to "no secrets in config":
 // the user never types it and it never appears in a chat.
 
-export type IdeHost = "opencode" | "claude-code" | "cursor" | "vscode";
+export type IdeHost = "opencode" | "claude-code" | "cursor" | "vscode" | "antigravity";
 
 export type ContainerKey = "mcp" | "mcpServers" | "servers";
 

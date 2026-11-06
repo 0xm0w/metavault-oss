@@ -23,7 +23,7 @@ export interface VaultWindowOptions {
     readonly height: number;
   };
   readonly icon?: string;
-  readonly show?: false;
+  readonly show: false;
   readonly webPreferences: {
     readonly preload: string;
     readonly nodeIntegration: false;
@@ -48,6 +48,7 @@ export function buildWindowOptions(preloadPath: string, argv: readonly string[] 
       height: 40,
     },
     icon: join(preloadPath, "..", "renderer", "icon.ico"),
+    show: false,
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,
@@ -55,14 +56,26 @@ export function buildWindowOptions(preloadPath: string, argv: readonly string[] 
       sandbox: true,
     },
   };
+  // --minimized / --hidden still construct with show: false. The caller
+  // decides whether ready-to-show may reveal the window. argv is read so
+  // the flag stays part of the contract.
   if (argv.includes("--minimized") || argv.includes("--hidden")) {
-    return { ...options, show: false };
+    return options;
   }
   return options;
 }
 
-// Closing the window minimises to the tray (wallet pattern); only an
-// explicit quit from the tray menu actually closes it.
-export function shouldHideOnClose(isQuitting: boolean): boolean {
-  return !isQuitting;
+export const APPROVAL_FOCUS_GUARD_MS = 500;
+
+// True only after the guard window. An in-flight Enter or Space must not
+// activate Approve.
+export function approvalActivationAllowed(shownAtMs: number, nowMs: number): boolean {
+  return nowMs >= shownAtMs + APPROVAL_FOCUS_GUARD_MS;
+}
+
+// Closing the window minimises to the tray when the preference says so.
+// An explicit quit always closes.
+export function shouldHideOnClose(isQuitting: boolean, minimizeToTrayOnClose = true): boolean {
+  if (isQuitting) return false;
+  return minimizeToTrayOnClose;
 }

@@ -44,6 +44,8 @@
     ${endIf}
   ${endIf}
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MetaVault OSS"
+  DeleteRegKey HKCU "Software\Classes\metavault"
+  DeleteRegKey HKCU "Software\Classes\openvault"
   DetailPrint "Removing $INSTDIR\bin from your user PATH..."
   System::Call 'kernel32::SetEnvironmentVariable(t "METAVAULT_BIN_DIR", t "$INSTDIR\bin")'
   nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d = [Environment]::GetEnvironmentVariable('METAVAULT_BIN_DIR'); if ([string]::IsNullOrEmpty($$d)) { exit 1 }; $$k = Get-Item 'HKCU:\Environment'; $$p = [string]$$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); $$parts = @($$p -split ';' | Where-Object { $$_ -ne '' }); if ($$parts -contains $$d) { Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Type ExpandString -Value ((@($$parts | Where-Object { $$_ -ne $$d })) -join ';') }"`
