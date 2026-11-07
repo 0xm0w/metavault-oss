@@ -21,6 +21,8 @@ describe("default warden settings", () => {
       localBaseUrl: "",
       localApi: "ollama",
       localModel: "",
+      jevBaseUrl: "https://api.typesafe.ai",
+      jevModel: "jev-1.14.0",
     });
     expect(DEFAULT_META_API_WARDEN_MODEL).toBe("muse-spark-1.3");
     expect(defaultWardenSettings()).toEqual(DEFAULT_WARDEN_SETTINGS);
@@ -36,7 +38,7 @@ describe("default warden settings", () => {
 
 describe("normalizeWardenProvider", () => {
   it("keeps current providers and maps legacy ollama/builtin to local", () => {
-    for (const p of ["none", "meta-api", "local", "bft"] as const) {
+    for (const p of ["none", "meta-api", "local", "bft", "jev"] as const) {
       expect(normalizeWardenProvider(p)).toBe(p);
     }
     expect(normalizeWardenProvider("ollama")).toBe("local");
@@ -81,6 +83,8 @@ describe("wardenSettingsFromRow", () => {
       localBaseUrl: "",
       localApi: "ollama",
       localModel: "",
+      jevBaseUrl: "https://api.typesafe.ai",
+      jevModel: "jev-1.14.0",
     });
     expect(wardenSettingsFromRow({ ...base, provider: "local", local_api: "openai", local_base_url: "http://h:8000/v1", local_model: "m" })).toMatchObject({
       provider: "local",

@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import Database from "better-sqlite3";
@@ -9,6 +9,17 @@ import { StorageError } from "./errors.js";
 import { DEFAULT_AGENT_SECURITY_SETTINGS, DEFAULT_LOCAL_AUTH_RECORD, DEFAULT_WARDEN_SETTINGS, LEGACY_LOCAL_PROVIDERS, SUGGESTED_LOCAL_BASE_URL, defaultWardenSettings, normalizeWardenProvider, type AgentSecuritySettings, type LocalAuthRecord, type WardenSettings } from "./settings.js";
 import type { AuditEvent, DecisionSource, Risk } from "./types.js";
 import { CARD_KIND, SECRET_KIND, type CredentialKind } from "./card.js";
+import type {
+  ProjectRecord,
+  ProjectEnvironmentRecord,
+  ProjectEnvironment,
+  ProjectLinkRecord,
+  ProjectLinkKind,
+  ProjectEnvRequirementRecord,
+  ProjectPluginRecord,
+  ShiftHandoffRecord,
+  ShiftHandoffType,
+} from "./spine.js";
 
 // kind is "secret" (API key / token) or "card" (payment card). publicMeta
 // is non-secret JSON kept in clear (for cards: brand + last 4 only).
@@ -18,6 +29,8 @@ export interface CredentialRecord {
   readonly website: string;
   readonly kind: CredentialKind;
   readonly publicMeta: string;
+  readonly projectId?: string;
+  readonly env?: string;
 }
 
 export interface CredentialMeta {
@@ -26,6 +39,8 @@ export interface CredentialMeta {
   readonly website: string;
   readonly kind?: CredentialKind;
   readonly publicMeta?: string;
+  readonly projectId?: string;
+  readonly env?: string;
 }
 
 export interface AgentRecord {
@@ -65,6 +80,8 @@ export interface VaultStoreService {
     website?: string,
     kind?: CredentialKind,
     publicMeta?: string,
+    projectId?: string,
+    env?: string,
   ) => Effect.Effect<void, StorageError>;
   readonly updateCredential: (
     alias: string,
@@ -77,6 +94,52 @@ export interface VaultStoreService {
   readonly getCredential: (
     alias: string,
   ) => Effect.Effect<CredentialRecord | undefined, StorageError>;
+  readonly getScopedCredential: (
+    alias: string,
+    projectId?: string,
+    env?: string,
+  ) => Effect.Effect<CredentialRecord | undefined, StorageError>;
+  readonly createProject: (
+    project: Omit<ProjectRecord, "createdAt">,
+  ) => Effect.Effect<ProjectRecord, StorageError>;
+  readonly getProject: (idOrSlug: string) => Effect.Effect<ProjectRecord | undefined, StorageError>;
+  readonly listProjects: () => Effect.Effect<ProjectRecord[], StorageError>;
+  readonly deleteProject: (id: string) => Effect.Effect<void, StorageError>;
+  readonly upsertProjectEnvironment: (
+    env: ProjectEnvironmentRecord,
+  ) => Effect.Effect<void, StorageError>;
+  readonly listProjectEnvironments: (
+    projectId: string,
+  ) => Effect.Effect<ProjectEnvironmentRecord[], StorageError>;
+  readonly addProjectLink: (
+    link: Omit<ProjectLinkRecord, "id">,
+  ) => Effect.Effect<ProjectLinkRecord, StorageError>;
+  readonly listProjectLinks: (
+    projectId: string,
+  ) => Effect.Effect<ProjectLinkRecord[], StorageError>;
+  readonly deleteProjectLink: (id: string) => Effect.Effect<void, StorageError>;
+  readonly upsertProjectEnvRequirement: (
+    req: Omit<ProjectEnvRequirementRecord, "id">,
+  ) => Effect.Effect<ProjectEnvRequirementRecord, StorageError>;
+  readonly listProjectEnvRequirements: (
+    projectId: string,
+    env?: string,
+  ) => Effect.Effect<ProjectEnvRequirementRecord[], StorageError>;
+  readonly setProjectPlugin: (record: ProjectPluginRecord) => Effect.Effect<void, StorageError>;
+  readonly listProjectPlugins: (
+    projectId: string,
+  ) => Effect.Effect<ProjectPluginRecord[], StorageError>;
+  readonly recordShiftHandoff: (
+    handoff: Omit<ShiftHandoffRecord, "id" | "createdAt">,
+  ) => Effect.Effect<ShiftHandoffRecord, StorageError>;
+  readonly getLatestShiftHandoff: (
+    projectId: string,
+    branch?: string,
+  ) => Effect.Effect<ShiftHandoffRecord | undefined, StorageError>;
+  readonly listShiftHandoffs: (
+    projectId: string,
+    limit?: number,
+  ) => Effect.Effect<ShiftHandoffRecord[], StorageError>;
   readonly listCredentialAliases: () => Effect.Effect<string[], StorageError>;
   readonly appendAudit: (e: AuditEvent) => Effect.Effect<void, StorageError>;
   readonly listAudit: () => Effect.Effect<AuditEvent[], StorageError>;
@@ -157,6 +220,8 @@ interface CredentialRow {
   readonly website: string | null;
   readonly kind: string | null;
   readonly public_meta: string | null;
+  readonly project_id?: string | null;
+  readonly env?: string | null;
 }
 
 interface CredentialMetaRow {
@@ -165,6 +230,8 @@ interface CredentialMetaRow {
   readonly website: string | null;
   readonly kind: string | null;
   readonly public_meta: string | null;
+  readonly project_id?: string | null;
+  readonly env?: string | null;
 }
 
 function toKind(raw: string | null): CredentialKind {
@@ -201,6 +268,8 @@ export function wardenSettingsFromRow(row: WardenSettingsRow): WardenSettings {
       localBaseUrl: row.local_base_url !== "" ? row.local_base_url : SUGGESTED_LOCAL_BASE_URL.ollama,
       localApi,
       localModel: row.model,
+      jevBaseUrl: DEFAULT_WARDEN_SETTINGS.jevBaseUrl,
+      jevModel: DEFAULT_WARDEN_SETTINGS.jevModel,
     };
   }
   return {
@@ -211,6 +280,8 @@ export function wardenSettingsFromRow(row: WardenSettingsRow): WardenSettings {
     localBaseUrl: row.local_base_url,
     localApi,
     localModel: row.local_model,
+    jevBaseUrl: DEFAULT_WARDEN_SETTINGS.jevBaseUrl,
+    jevModel: DEFAULT_WARDEN_SETTINGS.jevModel,
   };
 }
 
@@ -364,6 +435,56 @@ function makeStore(db: Database.Database): VaultStoreService {
        created_at TEXT NOT NULL,
        PRIMARY KEY (agent_id, alias, scope)
      );
+     CREATE TABLE IF NOT EXISTS projects (
+       id TEXT PRIMARY KEY,
+       slug TEXT UNIQUE NOT NULL,
+       name TEXT NOT NULL,
+       root_path TEXT UNIQUE NOT NULL,
+       stack_tags_json TEXT NOT NULL DEFAULT '[]',
+       created_at TEXT NOT NULL
+     );
+     CREATE TABLE IF NOT EXISTS project_environments (
+       project_id TEXT NOT NULL,
+       env TEXT NOT NULL,
+       require_approval_for_reads INTEGER NOT NULL DEFAULT 0,
+       allow_agent_writes INTEGER NOT NULL DEFAULT 0,
+       PRIMARY KEY (project_id, env)
+     );
+     CREATE TABLE IF NOT EXISTS project_links (
+       id TEXT PRIMARY KEY,
+       source_project_id TEXT NOT NULL,
+       target_project_id TEXT NOT NULL,
+       kind TEXT NOT NULL,
+       contract_paths_json TEXT NOT NULL DEFAULT '[]'
+     );
+     CREATE TABLE IF NOT EXISTS project_env_requirements (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       env TEXT NOT NULL DEFAULT 'all',
+       alias TEXT NOT NULL,
+       required INTEGER NOT NULL DEFAULT 1,
+       scope_ceiling TEXT NOT NULL DEFAULT '',
+       description TEXT NOT NULL DEFAULT ''
+     );
+     CREATE TABLE IF NOT EXISTS project_plugins (
+       project_id TEXT NOT NULL,
+       plugin_id TEXT NOT NULL,
+       enabled INTEGER NOT NULL DEFAULT 1,
+       config_json TEXT NOT NULL DEFAULT '{}',
+       PRIMARY KEY (project_id, plugin_id)
+     );
+     CREATE TABLE IF NOT EXISTS shift_handoffs (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       branch TEXT NOT NULL,
+       agent_id TEXT NOT NULL,
+       ide TEXT NOT NULL,
+       checkpoint_type TEXT NOT NULL,
+       summary TEXT NOT NULL,
+       details_json TEXT NOT NULL DEFAULT '{}',
+       created_at TEXT NOT NULL
+     );
+     CREATE INDEX IF NOT EXISTS idx_shift_handoffs_proj_branch ON shift_handoffs(project_id, branch, created_at);
      CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit(agent, ts);`,
   );
   const cols = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[];
@@ -375,6 +496,32 @@ function makeStore(db: Database.Database): VaultStoreService {
   }
   if (!cols.some((c) => c.name === "public_meta")) {
     db.exec("ALTER TABLE credentials ADD COLUMN public_meta TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.some((c) => c.name === "project_id")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN project_id TEXT NOT NULL DEFAULT 'global'");
+  }
+  if (!cols.some((c) => c.name === "env")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN env TEXT NOT NULL DEFAULT 'all'");
+  }
+  const pkCols = (db.prepare("PRAGMA table_info(credentials)").all() as { name: string; pk: number }[]).filter((c) => c.pk > 0);
+  if (pkCols.length <= 1) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS credentials_v2 (
+        alias TEXT NOT NULL,
+        ceiling TEXT NOT NULL,
+        ciphertext TEXT NOT NULL,
+        website TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'secret',
+        public_meta TEXT NOT NULL DEFAULT '',
+        project_id TEXT NOT NULL DEFAULT 'global',
+        env TEXT NOT NULL DEFAULT 'all',
+        PRIMARY KEY (project_id, env, alias)
+      );
+      INSERT OR IGNORE INTO credentials_v2 (alias, ceiling, ciphertext, website, kind, public_meta, project_id, env)
+        SELECT alias, ceiling, ciphertext, website, kind, public_meta, project_id, env FROM credentials;
+      DROP TABLE credentials;
+      ALTER TABLE credentials_v2 RENAME TO credentials;
+    `);
   }
   const auditCols = db.prepare("PRAGMA table_info(audit)").all() as { name: string }[];
   const auditColumnDefs: Record<string, string> = {
@@ -397,20 +544,76 @@ function makeStore(db: Database.Database): VaultStoreService {
     }
   }
   const insertCredential = db.prepare(
-    "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext, website, kind, public_meta) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO credentials (alias, ceiling, ciphertext, website, kind, public_meta, project_id, env) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const selectCredential = db.prepare(
-    "SELECT ceiling, ciphertext, website, kind, public_meta FROM credentials WHERE alias = ?",
+    "SELECT ceiling, ciphertext, website, kind, public_meta, project_id, env FROM credentials WHERE alias = ? ORDER BY CASE WHEN project_id = 'global' THEN 0 ELSE 1 END ASC LIMIT 1",
+  );
+  const selectScopedExact = db.prepare(
+    "SELECT ceiling, ciphertext, website, kind, public_meta, project_id, env FROM credentials WHERE alias = ? AND project_id = ? AND env = ?",
+  );
+  const selectScopedAllEnv = db.prepare(
+    "SELECT ceiling, ciphertext, website, kind, public_meta, project_id, env FROM credentials WHERE alias = ? AND project_id = ? AND env = 'all'",
+  );
+  const selectScopedGlobal = db.prepare(
+    "SELECT ceiling, ciphertext, website, kind, public_meta, project_id, env FROM credentials WHERE alias = ? AND project_id = 'global' AND env = 'all'",
   );
   const updateCredentialStmt = db.prepare(
     "UPDATE credentials SET ceiling = ?, ciphertext = ?, website = ? WHERE alias = ?",
   );
   const deleteCredentialStmt = db.prepare("DELETE FROM credentials WHERE alias = ?");
   const selectCredentials = db.prepare(
-    "SELECT alias, ceiling, website, kind, public_meta FROM credentials ORDER BY alias ASC",
+    "SELECT alias, ceiling, website, kind, public_meta, project_id, env FROM credentials ORDER BY alias ASC",
   );
   const selectAliases = db.prepare(
     "SELECT alias FROM credentials ORDER BY alias ASC",
+  );
+  const insertProjectStmt = db.prepare(
+    "INSERT INTO projects (id, slug, name, root_path, stack_tags_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  const selectProjectByIdOrSlug = db.prepare(
+    "SELECT id, slug, name, root_path, stack_tags_json, created_at FROM projects WHERE id = ? OR slug = ?",
+  );
+  const selectProjectsStmt = db.prepare(
+    "SELECT id, slug, name, root_path, stack_tags_json, created_at FROM projects ORDER BY name ASC",
+  );
+  const deleteProjectStmt = db.prepare("DELETE FROM projects WHERE id = ?");
+  const upsertProjectEnvStmt = db.prepare(
+    "INSERT OR REPLACE INTO project_environments (project_id, env, require_approval_for_reads, allow_agent_writes) VALUES (?, ?, ?, ?)",
+  );
+  const selectProjectEnvsStmt = db.prepare(
+    "SELECT project_id, env, require_approval_for_reads, allow_agent_writes FROM project_environments WHERE project_id = ? ORDER BY env ASC",
+  );
+  const insertProjectLinkStmt = db.prepare(
+    "INSERT OR REPLACE INTO project_links (id, source_project_id, target_project_id, kind, contract_paths_json) VALUES (?, ?, ?, ?, ?)",
+  );
+  const selectProjectLinksStmt = db.prepare(
+    "SELECT id, source_project_id, target_project_id, kind, contract_paths_json FROM project_links WHERE source_project_id = ? OR target_project_id = ?",
+  );
+  const deleteProjectLinkStmt = db.prepare("DELETE FROM project_links WHERE id = ?");
+  const upsertProjectEnvReqStmt = db.prepare(
+    "INSERT OR REPLACE INTO project_env_requirements (id, project_id, env, alias, required, scope_ceiling, description) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  );
+  const selectProjectEnvReqsStmt = db.prepare(
+    "SELECT id, project_id, env, alias, required, scope_ceiling, description FROM project_env_requirements WHERE project_id = ? AND (env = ? OR ? = 'all' OR env = 'all') ORDER BY alias ASC",
+  );
+  const upsertProjectPluginStmt = db.prepare(
+    "INSERT OR REPLACE INTO project_plugins (project_id, plugin_id, enabled, config_json) VALUES (?, ?, ?, ?)",
+  );
+  const selectProjectPluginsStmt = db.prepare(
+    "SELECT project_id, plugin_id, enabled, config_json FROM project_plugins WHERE project_id = ?",
+  );
+  const insertShiftHandoffStmt = db.prepare(
+    "INSERT INTO shift_handoffs (id, project_id, branch, agent_id, ide, checkpoint_type, summary, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  const selectLatestHandoffBranchStmt = db.prepare(
+    "SELECT id, project_id, branch, agent_id, ide, checkpoint_type, summary, details_json, created_at FROM shift_handoffs WHERE project_id = ? AND branch = ? ORDER BY created_at DESC LIMIT 1",
+  );
+  const selectLatestHandoffAnyStmt = db.prepare(
+    "SELECT id, project_id, branch, agent_id, ide, checkpoint_type, summary, details_json, created_at FROM shift_handoffs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+  );
+  const selectShiftHandoffsStmt = db.prepare(
+    "SELECT id, project_id, branch, agent_id, ide, checkpoint_type, summary, details_json, created_at FROM shift_handoffs WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
   );
   const insertAudit = db.prepare(
     "INSERT INTO audit (ts, agent, alias, scope, stage, detail, model_id, request_id, risk, recommended_scope, decision_source, latency_ms, explanation, verified, client_pid, client_process, device_id, origin, transport) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -564,10 +767,19 @@ function makeStore(db: Database.Database): VaultStoreService {
   );
 
   return {
-    addCredential: (alias, scopeCeiling, ciphertext, website, kind, publicMeta) =>
+    addCredential: (alias, scopeCeiling, ciphertext, website, kind, publicMeta, projectId, env) =>
       Effect.try({
         try: () => {
-          insertCredential.run(alias, scopeCeiling, ciphertext, website ?? "", kind ?? SECRET_KIND, publicMeta ?? "");
+          insertCredential.run(
+            alias,
+            scopeCeiling,
+            ciphertext,
+            website ?? "",
+            kind ?? SECRET_KIND,
+            publicMeta ?? "",
+            projectId ?? "global",
+            env ?? "all",
+          );
         },
         catch: toStorageError("addCredential"),
       }),
@@ -591,15 +803,383 @@ function makeStore(db: Database.Database): VaultStoreService {
           const row = selectCredential.get(alias) as CredentialRow | undefined;
           return row === undefined
             ? undefined
-            : { scopeCeiling: row.ceiling, ciphertext: row.ciphertext, website: row.website ?? "", kind: toKind(row.kind), publicMeta: row.public_meta ?? "" };
+            : {
+                scopeCeiling: row.ceiling,
+                ciphertext: row.ciphertext,
+                website: row.website ?? "",
+                kind: toKind(row.kind),
+                publicMeta: row.public_meta ?? "",
+                ...(row.project_id && row.project_id !== "global" ? { projectId: row.project_id } : {}),
+                ...(row.env && row.env !== "all" ? { env: row.env } : {}),
+              };
         },
         catch: toStorageError("getCredential"),
+      }),
+    getScopedCredential: (alias, projectId, env) =>
+      Effect.try({
+        try: () => {
+          let row: CredentialRow | undefined;
+          if (projectId && env) {
+            row = selectScopedExact.get(alias, projectId, env) as CredentialRow | undefined;
+          }
+          if (!row && projectId) {
+            row = selectScopedAllEnv.get(alias, projectId) as CredentialRow | undefined;
+          }
+          if (!row) {
+            row = selectScopedGlobal.get(alias) as CredentialRow | undefined;
+          }
+          if (!row) {
+            row = selectCredential.get(alias) as CredentialRow | undefined;
+          }
+          return row === undefined
+            ? undefined
+            : {
+                scopeCeiling: row.ceiling,
+                ciphertext: row.ciphertext,
+                website: row.website ?? "",
+                kind: toKind(row.kind),
+                publicMeta: row.public_meta ?? "",
+                projectId: row.project_id ?? "global",
+                env: row.env ?? "all",
+              };
+        },
+        catch: toStorageError("getScopedCredential"),
+      }),
+    createProject: (project) =>
+      Effect.try({
+        try: () => {
+          const createdAt = new Date().toISOString();
+          insertProjectStmt.run(
+            project.id,
+            project.slug,
+            project.name,
+            project.rootPath,
+            JSON.stringify(project.stackTags),
+            createdAt,
+          );
+          return {
+            ...project,
+            stackTags: project.stackTags,
+            createdAt,
+          };
+        },
+        catch: toStorageError("createProject"),
+      }),
+    getProject: (idOrSlug) =>
+      Effect.try({
+        try: () => {
+          const row = selectProjectByIdOrSlug.get(idOrSlug, idOrSlug) as
+            | {
+                id: string;
+                slug: string;
+                name: string;
+                root_path: string;
+                stack_tags_json: string;
+                created_at: string;
+              }
+            | undefined;
+          if (!row) return undefined;
+          return {
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            rootPath: row.root_path,
+            stackTags: JSON.parse(row.stack_tags_json || "[]") as string[],
+            createdAt: row.created_at,
+          };
+        },
+        catch: toStorageError("getProject"),
+      }),
+    listProjects: () =>
+      Effect.try({
+        try: () => {
+          const rows = selectProjectsStmt.all() as {
+            id: string;
+            slug: string;
+            name: string;
+            root_path: string;
+            stack_tags_json: string;
+            created_at: string;
+          }[];
+          return rows.map((r) => ({
+            id: r.id,
+            slug: r.slug,
+            name: r.name,
+            rootPath: r.root_path,
+            stackTags: JSON.parse(r.stack_tags_json || "[]") as string[],
+            createdAt: r.created_at,
+          }));
+        },
+        catch: toStorageError("listProjects"),
+      }),
+    deleteProject: (id) =>
+      Effect.try({
+        try: () => {
+          deleteProjectStmt.run(id);
+        },
+        catch: toStorageError("deleteProject"),
+      }),
+    upsertProjectEnvironment: (env) =>
+      Effect.try({
+        try: () => {
+          upsertProjectEnvStmt.run(
+            env.projectId,
+            env.env,
+            env.requireApprovalForReads ? 1 : 0,
+            env.allowAgentWrites ? 1 : 0,
+          );
+        },
+        catch: toStorageError("upsertProjectEnvironment"),
+      }),
+    listProjectEnvironments: (projectId) =>
+      Effect.try({
+        try: () => {
+          const rows = selectProjectEnvsStmt.all(projectId) as {
+            project_id: string;
+            env: string;
+            require_approval_for_reads: number;
+            allow_agent_writes: number;
+          }[];
+          return rows.map((r) => ({
+            projectId: r.project_id,
+            env: r.env as ProjectEnvironment,
+            requireApprovalForReads: r.require_approval_for_reads === 1,
+            allowAgentWrites: r.allow_agent_writes === 1,
+          }));
+        },
+        catch: toStorageError("listProjectEnvironments"),
+      }),
+    addProjectLink: (link) =>
+      Effect.try({
+        try: () => {
+          const id = createHash("sha256")
+            .update(`${link.sourceProjectId}:${link.targetProjectId}:${link.kind}`)
+            .digest("hex")
+            .slice(0, 16);
+          insertProjectLinkStmt.run(
+            id,
+            link.sourceProjectId,
+            link.targetProjectId,
+            link.kind,
+            JSON.stringify(link.contractPaths),
+          );
+          return {
+            id,
+            ...link,
+            contractPaths: link.contractPaths,
+          };
+        },
+        catch: toStorageError("addProjectLink"),
+      }),
+    listProjectLinks: (projectId) =>
+      Effect.try({
+        try: () => {
+          const rows = selectProjectLinksStmt.all(projectId, projectId) as {
+            id: string;
+            source_project_id: string;
+            target_project_id: string;
+            kind: string;
+            contract_paths_json: string;
+          }[];
+          return rows.map((r) => ({
+            id: r.id,
+            sourceProjectId: r.source_project_id,
+            targetProjectId: r.target_project_id,
+            kind: r.kind as ProjectLinkKind,
+            contractPaths: JSON.parse(r.contract_paths_json || "[]") as string[],
+          }));
+        },
+        catch: toStorageError("listProjectLinks"),
+      }),
+    deleteProjectLink: (id) =>
+      Effect.try({
+        try: () => {
+          deleteProjectLinkStmt.run(id);
+        },
+        catch: toStorageError("deleteProjectLink"),
+      }),
+    upsertProjectEnvRequirement: (req) =>
+      Effect.try({
+        try: () => {
+          const id = createHash("sha256")
+            .update(`${req.projectId}:${req.env}:${req.alias}`)
+            .digest("hex")
+            .slice(0, 16);
+          upsertProjectEnvReqStmt.run(
+            id,
+            req.projectId,
+            req.env,
+            req.alias,
+            req.required ? 1 : 0,
+            req.scopeCeiling,
+            req.description,
+          );
+          return {
+            id,
+            ...req,
+            env: req.env,
+            required: req.required,
+            scopeCeiling: req.scopeCeiling,
+            description: req.description,
+          };
+        },
+        catch: toStorageError("upsertProjectEnvRequirement"),
+      }),
+    listProjectEnvRequirements: (projectId, env = "all") =>
+      Effect.try({
+        try: () => {
+          const rows = selectProjectEnvReqsStmt.all(projectId, env, env) as {
+            id: string;
+            project_id: string;
+            env: string;
+            alias: string;
+            required: number;
+            scope_ceiling: string;
+            description: string;
+          }[];
+          return rows.map((r) => ({
+            id: r.id,
+            projectId: r.project_id,
+            env: r.env,
+            alias: r.alias,
+            required: r.required === 1,
+            scopeCeiling: r.scope_ceiling,
+            description: r.description,
+          }));
+        },
+        catch: toStorageError("listProjectEnvRequirements"),
+      }),
+    setProjectPlugin: (record) =>
+      Effect.try({
+        try: () => {
+          upsertProjectPluginStmt.run(
+            record.projectId,
+            record.pluginId,
+            record.enabled ? 1 : 0,
+            JSON.stringify(record.config),
+          );
+        },
+        catch: toStorageError("setProjectPlugin"),
+      }),
+    listProjectPlugins: (projectId) =>
+      Effect.try({
+        try: () => {
+          const rows = selectProjectPluginsStmt.all(projectId) as {
+            project_id: string;
+            plugin_id: string;
+            enabled: number;
+            config_json: string;
+          }[];
+          return rows.map((r) => ({
+            projectId: r.project_id,
+            pluginId: r.plugin_id,
+            enabled: r.enabled === 1,
+            config: JSON.parse(r.config_json || "{}") as Record<string, unknown>,
+          }));
+        },
+        catch: toStorageError("listProjectPlugins"),
+      }),
+    recordShiftHandoff: (handoff) =>
+      Effect.try({
+        try: () => {
+          const id = randomBytes(12).toString("hex");
+          const createdAt = new Date().toISOString();
+          insertShiftHandoffStmt.run(
+            id,
+            handoff.projectId,
+            handoff.branch,
+            handoff.agentId,
+            handoff.ide,
+            handoff.checkpointType,
+            handoff.summary,
+            JSON.stringify(handoff.details),
+            createdAt,
+          );
+          return {
+            id,
+            ...handoff,
+            details: handoff.details,
+            createdAt,
+          };
+        },
+        catch: toStorageError("recordShiftHandoff"),
+      }),
+    getLatestShiftHandoff: (projectId, branch) =>
+      Effect.try({
+        try: () => {
+          const row = (
+            branch
+              ? selectLatestHandoffBranchStmt.get(projectId, branch)
+              : selectLatestHandoffAnyStmt.get(projectId)
+          ) as
+            | {
+                id: string;
+                project_id: string;
+                branch: string;
+                agent_id: string;
+                ide: string;
+                checkpoint_type: string;
+                summary: string;
+                details_json: string;
+                created_at: string;
+              }
+            | undefined;
+          if (!row) return undefined;
+          return {
+            id: row.id,
+            projectId: row.project_id,
+            branch: row.branch,
+            agentId: row.agent_id,
+            ide: row.ide,
+            checkpointType: row.checkpoint_type as ShiftHandoffType,
+            summary: row.summary,
+            details: JSON.parse(row.details_json || "{}") as Record<string, unknown>,
+            createdAt: row.created_at,
+          };
+        },
+        catch: toStorageError("getLatestShiftHandoff"),
+      }),
+    listShiftHandoffs: (projectId, limit = 20) =>
+      Effect.try({
+        try: () => {
+          const rows = selectShiftHandoffsStmt.all(projectId, limit) as {
+            id: string;
+            project_id: string;
+            branch: string;
+            agent_id: string;
+            ide: string;
+            checkpoint_type: string;
+            summary: string;
+            details_json: string;
+            created_at: string;
+          }[];
+          return rows.map((r) => ({
+            id: r.id,
+            projectId: r.project_id,
+            branch: r.branch,
+            agentId: r.agent_id,
+            ide: r.ide,
+            checkpointType: r.checkpoint_type as ShiftHandoffType,
+            summary: r.summary,
+            details: JSON.parse(r.details_json || "{}") as Record<string, unknown>,
+            createdAt: r.created_at,
+          }));
+        },
+        catch: toStorageError("listShiftHandoffs"),
       }),
     listCredentials: () =>
       Effect.try({
         try: () => {
           const rows = selectCredentials.all() as CredentialMetaRow[];
-          return rows.map((row) => ({ alias: row.alias, scopeCeiling: row.ceiling, website: row.website ?? "", kind: toKind(row.kind), publicMeta: row.public_meta ?? "" }));
+          return rows.map((row) => ({
+            alias: row.alias,
+            scopeCeiling: row.ceiling,
+            website: row.website ?? "",
+            kind: toKind(row.kind),
+            publicMeta: row.public_meta ?? "",
+            ...(row.project_id && row.project_id !== "global" ? { projectId: row.project_id } : {}),
+            ...(row.env && row.env !== "all" ? { env: row.env } : {}),
+          }));
         },
         catch: toStorageError("listCredentials"),
       }),

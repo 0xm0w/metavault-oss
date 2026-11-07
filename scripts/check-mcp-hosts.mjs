@@ -40,14 +40,34 @@ const daemon = await startVaultDaemon({
 });
 const daemonUrl = `http://127.0.0.1:${daemon.address().port}`;
 
-const EXPECTED_TOOLS = ["enrollment_status", "grant_status", "list_aliases", "register_agent", "registration_status", "request_capability", "request_enrollment", "revoke"];
+const EXPECTED_TOOLS = [
+  "check_pulse",
+  "enrollment_status",
+  "grant_status",
+  "handoff_context",
+  "immunize_bug",
+  "list_aliases",
+  "register_agent",
+  "registration_status",
+  "request_capability",
+  "request_enrollment",
+  "revoke",
+  "run_preflight",
+];
 
 let failures = 0;
 for (const host of ["vscode", "claude-code"]) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["dist/packages/mcp/src/server.js"],
-    env: { ...process.env, METAVAULT_DAEMON_URL: daemonUrl, METAVAULT_AGENT_ID: host, METAVAULT_IDE: host },
+    env: {
+      ...process.env,
+      METAVAULT_DAEMON_URL: daemonUrl,
+      METAVAULT_AGENT_ID: host,
+      METAVAULT_IDE: host,
+      METAVAULT_CREDENTIAL_PATH: join(dir, `${host}.token`),
+      METAVAULT_AGENT_TOKEN: "",
+    },
   });
   const client = new Client({ name: `metavault-check-${host}`, version: "0.0.0" });
   const t = performance.now();

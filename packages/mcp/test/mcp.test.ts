@@ -107,7 +107,7 @@ afterAll(async () => {
 });
 
 describe("MetaVault OSS MCP server (in-process client)", () => {
-  it("handshake exposes instructions, resources, prompts, MCP_VERSION, and all eight tools", async () => {
+  it("handshake exposes instructions, resources, prompts, MCP_VERSION, and all twelve tools", async () => {
     expect(MCP_VERSION).toBe("0.1.4-alpha");
     expect(client.getServerVersion()?.version).toBe(MCP_VERSION);
     const instructions = client.getInstructions() ?? "";
@@ -117,18 +117,25 @@ describe("MetaVault OSS MCP server (in-process client)", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map((t) => t.name).sort()).toEqual([
+      "check_pulse",
       "enrollment_status",
       "grant_status",
+      "handoff_context",
+      "immunize_bug",
       "list_aliases",
       "register_agent",
       "registration_status",
       "request_capability",
       "request_enrollment",
       "revoke",
+      "run_preflight",
     ]);
 
     const resources = await client.listResources();
     expect(resources.resources.map((r) => r.uri).sort()).toEqual([
+      "jevault://nervous-system/handoff",
+      "jevault://nervous-system/pulse",
+      "jevault://project/contracts",
       "metavault://context/guide",
       "metavault://context/status",
     ]);
@@ -144,18 +151,22 @@ describe("MetaVault OSS MCP server (in-process client)", () => {
     expect(prompts.prompts.map((p) => p.name).sort()).toEqual(["enroll-secret", "use-secret"]);
   });
 
-  it("lists the eight tools with object input schemas", async () => {
+  it("lists the twelve tools with object input schemas", async () => {
     const listed = await client.listTools();
     const names = listed.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "check_pulse",
       "enrollment_status",
       "grant_status",
+      "handoff_context",
+      "immunize_bug",
       "list_aliases",
       "register_agent",
       "registration_status",
       "request_capability",
       "request_enrollment",
       "revoke",
+      "run_preflight",
     ]);
     for (const tool of listed.tools) {
       expect(tool.inputSchema.type).toBe("object");

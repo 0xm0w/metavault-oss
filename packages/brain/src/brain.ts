@@ -13,6 +13,7 @@ import { enforceScopeSafety, narrowerScope } from "./scope-safety.js";
 import { requestMetaApiDecision } from "./meta-api.js";
 import { DEFAULT_MARSHAL_MODEL, requestLocalDecision, requestOllamaDecision } from "./ollama.js";
 import { buildMarshalPrompt, type HistorySummary } from "./prompt.js";
+import { DEFAULT_JEV_BASE_URL, DEFAULT_JEV_MODEL, requestJevDecision } from "./jev.js";
 
 function clampDecision(dec: MarshalDecision, req: CapabilityRequest): MarshalDecision {
   return enforceScopeSafety(dec, req.requestedScope, req.reason, {
@@ -46,6 +47,17 @@ export {
   requestMetaApiDecision,
   type MetaApiRequest,
 } from "./meta-api.js";
+export {
+  DEFAULT_JEV_BASE_URL,
+  DEFAULT_JEV_MODEL,
+  JEV_DOCS_URL,
+  JEV_INPUT_PRICE_PER_MTOK,
+  composeJevDecision,
+  requestJevDecision,
+  requestJevDecisionWithUsage,
+  type JevRequest,
+  type JevUsage,
+} from "./jev.js";
 export {
   assessBftQuorum,
   type BftConsensusDecision,
@@ -125,6 +137,11 @@ function singlePass(
             ),
     ).pipe(Effect.provide(FetchHttpClient.layer));
   }
+  if (settings.provider === "jev") {
+    return Effect.fail(
+      new MarshalUnavailable({ message: "MarshalUnavailable: Jev provider evaluates via assessFromSettings" }),
+    );
+  }
   if (settings.provider === "bft") {
     return Effect.fail(
       new MarshalUnavailable({ message: "MarshalUnavailable: BFT provider evaluates via assessBftQuorum" }),
@@ -151,6 +168,33 @@ export function assessFromSettings(
 ): Effect.Effect<MarshalDecision, MarshalUnavailableT | MarshalInvalidOutputT> {
   const prompt = buildMarshalPrompt(req, historySummary, policyDigest);
   const totalMs = effortTimeoutMs(settings);
+  if (settings.provider === "jev") {
+    return Effect.flatMap(
+      getKey === undefined ? Effect.succeed<string | null>(null) : getKey(),
+      (key) => {
+        const apiKey = key ?? process.env["JEV_API_KEY"] ?? process.env["TYPESAFE_API_KEY"] ?? "";
+        if (apiKey.trim() === "") {
+          return Effect.fail(
+            new MarshalUnavailable({ message: "MarshalUnavailable: Jev / TypeSafe API key not configured" }),
+          );
+        }
+        return requestJevDecision(
+          {
+            model: settings.jevModel ?? DEFAULT_JEV_MODEL,
+            baseUrl: settings.jevBaseUrl ?? DEFAULT_JEV_BASE_URL,
+            apiKey,
+            req,
+            history: historySummary,
+            policyDigest,
+          },
+          totalMs,
+        ).pipe(
+          Effect.map((dec) => clampDecision(dec, req)),
+          Effect.provide(FetchHttpClient.layer),
+        );
+      },
+    );
+  }
   if (settings.provider === "bft") {
     return Effect.flatMap(
       getKey === undefined ? Effect.succeed<string | null>(null) : getKey(),

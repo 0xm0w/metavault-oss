@@ -851,6 +851,8 @@ export async function handleVaultRequest(
       ...(decoded.localBaseUrl !== undefined ? { localBaseUrl: decoded.localBaseUrl } : {}),
       ...(decoded.localApi !== undefined ? { localApi: decoded.localApi } : {}),
       ...(decoded.localModel !== undefined ? { localModel: decoded.localModel } : {}),
+      ...(decoded.jevBaseUrl !== undefined ? { jevBaseUrl: decoded.jevBaseUrl } : {}),
+      ...(decoded.jevModel !== undefined ? { jevModel: decoded.jevModel } : {}),
     };
     return run(service.updateWardenSettings(patch));
   }

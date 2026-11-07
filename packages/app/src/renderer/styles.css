@@ -1584,17 +1584,16 @@ body.is-simple-mode .verbose-note {
 .settings-advanced > summary { cursor: pointer; font-weight: 600; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 
-/* Locked screen: centered welcome, settings bottom-left */
-body.is-locked .app-header,
+/* Locked screen: keep the draggable caption row, hide app controls */
 body.is-locked .sidebar,
 body.is-locked .app-footer,
 body.is-locked #banner { display: none !important; }
-body.is-locked .shell-body { display: block; }
-body.is-locked .shell-main { display: block; min-height: 100vh; padding: 0; background: linear-gradient(180deg, #ffffff 0%, var(--pink-soft) 100%); }
+body.is-locked .header-right { display: none; }
+body.is-locked .shell-main { display: flex; min-height: 0; padding: 0; background: linear-gradient(180deg, #ffffff 0%, var(--pink-soft) 100%); }
 body.is-locked .view { padding: 0; max-width: none; }
 .lock-shell {
   position: relative;
-  min-height: 100vh;
+  min-height: 100%;
   width: 100%;
   box-sizing: border-box;
   display: flex;

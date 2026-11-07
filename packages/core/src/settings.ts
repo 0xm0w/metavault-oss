@@ -25,7 +25,7 @@ export const AgentSecuritySettingsPatchSchema = Schema.Struct({
 
 // "local" is a bring-your-own endpoint: Ollama or any OpenAI-compatible
 // server the user already runs. MetaVault ships and downloads no model.
-export type WardenProvider = "none" | "meta-api" | "local" | "bft";
+export type WardenProvider = "none" | "meta-api" | "local" | "bft" | "jev";
 export type LocalEndpointApi = "ollama" | "openai";
 
 export interface WardenSettings {
@@ -40,6 +40,8 @@ export interface WardenSettings {
   readonly localBaseUrl: string;
   readonly localApi: LocalEndpointApi;
   readonly localModel: string;
+  readonly jevBaseUrl?: string | undefined;
+  readonly jevModel?: string | undefined;
 }
 
 // Out-of-box default: Muse Spark on the Meta Model API. No model is bundled
@@ -52,9 +54,12 @@ export const DEFAULT_WARDEN_SETTINGS: WardenSettings = {
   localBaseUrl: "",
   localApi: "ollama",
   localModel: "",
+  jevBaseUrl: "https://api.typesafe.ai",
+  jevModel: "jev-1.14.0",
 };
 
 export const DEFAULT_META_API_WARDEN_MODEL = "muse-spark-1.3";
+export const DEFAULT_JEV_WARDEN_MODEL = "jev-1.14.0";
 
 // Suggestions shown as placeholders for the bring-your-own local endpoint.
 // A Meta open model is recommended; nothing here is downloaded by MetaVault.
@@ -70,7 +75,7 @@ export const LEGACY_LOCAL_PROVIDERS = ["ollama", "builtin"] as const;
 export type LegacyLocalProvider = (typeof LEGACY_LOCAL_PROVIDERS)[number];
 
 export function normalizeWardenProvider(raw: string): WardenProvider | null {
-  if (raw === "none" || raw === "meta-api" || raw === "local" || raw === "bft") return raw;
+  if (raw === "none" || raw === "meta-api" || raw === "local" || raw === "bft" || raw === "jev") return raw;
   if ((LEGACY_LOCAL_PROVIDERS as readonly string[]).includes(raw)) return "local";
   return null;
 }
@@ -82,6 +87,7 @@ export function localEndpointConfigured(settings: Pick<WardenSettings, "localBas
 // The model id that will actually answer for the selected provider.
 export function effectiveWardenModel(settings: WardenSettings): string {
   if (settings.provider === "local") return settings.localModel;
+  if (settings.provider === "jev") return settings.jevModel ?? DEFAULT_JEV_WARDEN_MODEL;
   if (settings.provider === "none") return "";
   return settings.model;
 }
@@ -91,17 +97,21 @@ export function defaultWardenSettings(): WardenSettings {
 }
 
 export const WardenSettingsSchema = Schema.Struct({
-  provider: Schema.Literal("none", "meta-api", "local", "bft"),
+  provider: Schema.Literal("none", "meta-api", "local", "bft", "jev"),
   model: Schema.String,
   effort: Schema.Literal("fast", "standard", "deep"),
   metaApiBaseUrl: Schema.String,
   localBaseUrl: Schema.String,
   localApi: Schema.Literal("ollama", "openai"),
   localModel: Schema.String,
+  jevBaseUrl: Schema.optional(Schema.String),
+  jevModel: Schema.optional(Schema.String),
 });
 
 export const WARDEN_KEY_ALIAS = "warden-meta-api";
 export const WARDEN_KEY_SCOPE = "warden.meta";
+export const JEV_KEY_ALIAS = "warden-jev-api";
+export const JEV_KEY_SCOPE = "warden.jev";
 export const WARDEN_KEY_MIN_LENGTH = 8;
 
 export interface WardenKeyStatus {

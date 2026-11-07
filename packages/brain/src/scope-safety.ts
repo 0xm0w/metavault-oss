@@ -63,7 +63,7 @@ export function enforceScopeSafety(
 
   if (combinedText !== "") {
     const isAdversarial =
-      /(?:classify|mark|set|return|rate)\s+(?:this|operation|request)?\s*(?:as)?\s*(?:risk)?\s*low/i.test(combinedText) ||
+      /(?:classify|mark|set|return|rate)\s+(?:(?:this|the)\s+)?(?:operation|request)?\s*(?:as\s*)?(?:risk\s*)?low/i.test(combinedText) ||
       /(?:requireapproval|require_approval)\s*(?:false|no|none)/i.test(combinedText) ||
       /(?:ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+override|developer\s+mode)/i.test(combinedText) ||
       /(?:approve|grant|execute)\s+[\w.:-]*write/i.test(combinedText) ||

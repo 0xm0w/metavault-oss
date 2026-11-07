@@ -2090,6 +2090,8 @@ export function makeVaultServiceLive(
               localBaseUrl: patch.localBaseUrl !== undefined ? patch.localBaseUrl.trim() : current.localBaseUrl,
               localApi: patch.localApi ?? current.localApi,
               localModel: patch.localModel !== undefined ? patch.localModel.trim() : current.localModel,
+              jevBaseUrl: patch.jevBaseUrl !== undefined ? patch.jevBaseUrl.trim() : current.jevBaseUrl,
+              jevModel: patch.jevModel !== undefined ? patch.jevModel.trim() : current.jevModel,
             };
             yield* store.setWardenSettings(next);
             invalidateWardenCache();
@@ -2100,7 +2102,9 @@ export function makeVaultServiceLive(
               patch.metaApiBaseUrl !== undefined ||
               patch.localBaseUrl !== undefined ||
               patch.localApi !== undefined ||
-              patch.localModel !== undefined
+              patch.localModel !== undefined ||
+              patch.jevBaseUrl !== undefined ||
+              patch.jevModel !== undefined
             ) {
               yield* audit(
                 "human",

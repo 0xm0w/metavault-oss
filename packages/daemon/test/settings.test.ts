@@ -48,6 +48,8 @@ const DEFAULTS = {
   localBaseUrl: "",
   localApi: "ollama",
   localModel: "",
+  jevBaseUrl: "https://api.typesafe.ai",
+  jevModel: "jev-1.14.0",
 };
 
 describe("warden settings routes", () => {

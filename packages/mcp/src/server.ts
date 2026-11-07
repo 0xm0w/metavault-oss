@@ -101,6 +101,31 @@ const RequestEnrollmentToolSchema = Schema.Struct({
   website: Schema.optional(Schema.String),
 });
 
+const CheckPulseToolSchema = Schema.Struct({
+  projectSlug: Schema.optional(Schema.String),
+  diffs: Schema.optional(Schema.Unknown),
+});
+
+const RunPreflightToolSchema = Schema.Struct({
+  projectSlug: Schema.optional(Schema.String),
+  targetEnv: Schema.optional(Schema.String),
+});
+
+const HandoffContextToolSchema = Schema.Struct({
+  action: Schema.Literal("read", "checkpoint"),
+  projectSlug: Schema.optional(Schema.String),
+  branch: Schema.optional(Schema.String),
+  summary: Schema.optional(Schema.String),
+  details: Schema.optional(Schema.Unknown),
+});
+
+const ImmunizeBugToolSchema = Schema.Struct({
+  title: Schema.String,
+  rootCause: Schema.String,
+  fileGlob: Schema.optional(Schema.String),
+  projectSlug: Schema.optional(Schema.String),
+});
+
 type RequestCapabilityToolInput = Schema.Schema.Type<typeof RequestCapabilityToolSchema>;
 
 function toolInputSchema<A, I>(schema: Schema.Schema<A, I>): Tool["inputSchema"] {
@@ -159,6 +184,30 @@ const TOOLS: readonly Tool[] = [
     name: "revoke",
     description: "Revoke pending and future grants for an agent id or alias target.",
     inputSchema: toolInputSchema(RevokeSchema),
+  },
+  {
+    name: "check_pulse",
+    description:
+      "Run the Jevault local coding nervous system pulse on the current project or diff to detect test weakening, mock leaks, contract breaks, or incomplete UI states.",
+    inputSchema: toolInputSchema(CheckPulseToolSchema),
+  },
+  {
+    name: "run_preflight",
+    description:
+      "Run the Jevault ship readiness preflight gate: multi-env vault secret parity, migration safety, and dynamic PR checklist with signed Ship Receipt.",
+    inputSchema: toolInputSchema(RunPreflightToolSchema),
+  },
+  {
+    name: "handoff_context",
+    description:
+      "Read or checkpoint cross-IDE session continuity and architectural context on the current branch.",
+    inputSchema: toolInputSchema(HandoffContextToolSchema),
+  },
+  {
+    name: "immunize_bug",
+    description:
+      "Turn a bug root cause, postmortem, or human correction into an active project guardrail.",
+    inputSchema: toolInputSchema(ImmunizeBugToolSchema),
   },
 ];
 
@@ -242,7 +291,7 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
   while (daemonUrlEnd > 0 && rawDaemonUrl[daemonUrlEnd - 1] === "/") daemonUrlEnd--;
   const daemonUrl = rawDaemonUrl.slice(0, daemonUrlEnd);
   const agentId = options.agentId ?? metavaultEnv("AGENT_ID") ?? "mcp-agent";
-  const credentialPath = options.credentialPath ?? defaultCredentialPath(agentId);
+  const credentialPath = options.credentialPath ?? metavaultEnv("CREDENTIAL_PATH") ?? defaultCredentialPath(agentId);
   let agentToken: string | undefined = options.agentToken ?? metavaultEnv("AGENT_TOKEN") ?? loadStoredCredential(credentialPath);
   // When daemonUrl points at a remote-access shim (DD7 loopback channel),
   // the shim requires this local token; unset it is simply not sent.
@@ -558,6 +607,24 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         description: "Current aliases, credential routing metadata, and lock state.",
         mimeType: "application/json",
       },
+      {
+        uri: "jevault://nervous-system/pulse",
+        name: "Jevault workspace pulse",
+        description: "Live health, active blocks, and findings across all plugins.",
+        mimeType: "application/json",
+      },
+      {
+        uri: "jevault://nervous-system/handoff",
+        name: "Cross-IDE Shift Handoff",
+        description: "Latest architectural brief and flight checkpoints for this branch.",
+        mimeType: "text/markdown",
+      },
+      {
+        uri: "jevault://project/contracts",
+        name: "Cross-project contract radar",
+        description: "Linked consumer projects, shared schemas, and env requirements.",
+        mimeType: "application/json",
+      },
     ],
   }));
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
@@ -592,6 +659,42 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
             uri,
             mimeType: "application/json",
             text: JSON.stringify(status),
+          },
+        ],
+      };
+    }
+    if (uri === "jevault://nervous-system/pulse" || uri === "metavault://nervous-system/pulse") {
+      const pulse = await daemonJson("/pulse");
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(pulse ?? { status: "pass", findings: [], daemonReachable: false }),
+          },
+        ],
+      };
+    }
+    if (uri === "jevault://nervous-system/handoff" || uri === "metavault://nervous-system/handoff") {
+      const handoff = await daemonJson("/handoff/global");
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "text/markdown",
+            text: typeof handoff?.["summary"] === "string" ? handoff["summary"] : "No handoff recorded for current branch.",
+          },
+        ],
+      };
+    }
+    if (uri === "jevault://project/contracts" || uri === "metavault://project/contracts") {
+      const contracts = await daemonJson("/contracts/global");
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(contracts ?? { links: [], envRequirements: [] }),
           },
         ],
       };
@@ -748,6 +851,37 @@ export function createMetavaultMcpServer(options: MetavaultMcpOptions = {}): Ser
         return await handleRegistrationStatus();
       case "revoke":
         return handleRevoke(args);
+      case "check_pulse": {
+        const decoded = await decode(CheckPulseToolSchema, args ?? {});
+        if (decoded === null) {
+          return errorResult("invalid arguments for check_pulse");
+        }
+        return callDaemon("POST", "/pulse", decoded);
+      }
+      case "run_preflight": {
+        const decoded = await decode(RunPreflightToolSchema, args ?? {});
+        if (decoded === null) {
+          return errorResult("invalid arguments for run_preflight");
+        }
+        return callDaemon("POST", "/preflight", decoded);
+      }
+      case "handoff_context": {
+        const decoded = await decode(HandoffContextToolSchema, args ?? {});
+        if (decoded === null) {
+          return errorResult("invalid arguments for handoff_context");
+        }
+        if (decoded.action === "checkpoint") {
+          return callDaemon("POST", "/handoff", decoded);
+        }
+        return callDaemon("GET", `/handoff/${encodeURIComponent(decoded.projectSlug ?? "global")}`);
+      }
+      case "immunize_bug": {
+        const decoded = await decode(ImmunizeBugToolSchema, args ?? {});
+        if (decoded === null) {
+          return errorResult("invalid arguments for immunize_bug");
+        }
+        return callDaemon("POST", "/immunize", decoded);
+      }
       default:
         return errorResult(`unknown tool: ${name}`);
     }

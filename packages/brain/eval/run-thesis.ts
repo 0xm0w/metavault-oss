@@ -8,10 +8,12 @@ import { Effect } from "effect";
 import { evaluatePolicy, type PolicyConfig } from "../../core/src/policy.js";
 import type { WardenSettings } from "../../core/src/settings.js";
 import type { CapabilityRequest, MarshalDecision } from "../../core/src/types.js";
-import { assessFromSettings } from "../src/brain.js";
+import { assessFromSettings, enforceScopeSafety } from "../src/brain.js";
 import type { HistorySummary } from "../src/prompt.js";
 import { assessByRules, stricterDecision } from "../src/rules.js";
 import { DEFAULT_META_API_BASE_URL, DEFAULT_META_API_MODEL } from "../src/meta-api.js";
+import { DEFAULT_JEV_BASE_URL, DEFAULT_JEV_MODEL, JEV_INPUT_PRICE_PER_MTOK, requestJevDecisionWithUsage } from "../src/jev.js";
+import { FetchHttpClient } from "@effect/platform";
 import { openAICompatWarden, type CallLog, type CostSummary, type OpenAICompatRun, type Pricing } from "./openai-compat.js";
 
 // Research benchmark: does the model warden catch high-risk agent requests
@@ -329,7 +331,7 @@ export const META_PRICING: Pricing = {
   url: "https://dev.meta.ai/docs/pricing-rate-limits",
 };
 
-export type Provider = "ollama" | "openai-compat" | "meta-api";
+export type Provider = "ollama" | "openai-compat" | "meta-api" | "jev";
 
 export function formatCostReport(s: CostSummary): string[] {
   const usd = (v: number | null): string => (v === null ? "n/a" : `$${v.toFixed(6)}`);
@@ -378,7 +380,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (arg === "--oracle") mode = "oracle";
     else if (arg === "--rules-only") mode = "rules-only";
     else if (arg === "--live") mode = "live";
-    else if (arg === "--provider" && (next === "ollama" || next === "openai-compat" || next === "meta-api")) { provider = next; i += 1; }
+    else if (arg === "--provider" && (next === "ollama" || next === "openai-compat" || next === "meta-api" || next === "jev")) { provider = next; i += 1; }
     else if (arg === "--model" && next !== undefined) { model = next; i += 1; }
     else if (arg === "--effort" && (next === "fast" || next === "standard" || next === "deep")) { effort = next; i += 1; }
     else if (arg === "--set" && next !== undefined) { set = next; i += 1; }
@@ -403,6 +405,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const cases = parseThesisCases(JSON.parse(readFileSync(join(evalDir(), `${set}.json`), "utf8")) as unknown);
   const unavailable: WardenFn = () => Promise.resolve(null);
   let remote: OpenAICompatRun | undefined;
+  let jevUsageLine: (() => string) | undefined;
   let wardenLine: string;
   let warden: WardenFn;
   if (mode === "oracle") {
@@ -423,6 +426,47 @@ export async function main(argv: readonly string[]): Promise<number> {
       localModel: model,
     });
     wardenLine = `warden: ollama ${model}, effort=${effort} (assessFromSettings + enforceScopeSafety)`;
+  } else if (provider === "jev") {
+    model ??= DEFAULT_JEV_MODEL;
+    baseUrl ??= DEFAULT_JEV_BASE_URL;
+    apiKeyEnv ??= "TYPESAFE_API_KEY";
+    const apiKey = process.env[apiKeyEnv];
+    if (apiKey === undefined || apiKey.trim() === "") {
+      process.stderr.write(`${apiKeyEnv} is not set; not running (pending a key)\n`);
+      return 3;
+    }
+    const key = apiKey.trim();
+    const jevModel = model;
+    const jevBaseUrl = baseUrl;
+    let jevInputTokens = 0;
+    warden = (c) => {
+      const digest = `${c.request.alias} ceiling=${c.ceiling}`;
+      return Effect.runPromise(
+        requestJevDecisionWithUsage(
+          { model: jevModel, baseUrl: jevBaseUrl, apiKey: key, req: c.request, history: c.history, policyDigest: digest },
+          30_000,
+        ).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.map((result) => {
+            jevInputTokens += result.usage.inputTokens;
+            const req = c.request;
+            return enforceScopeSafety(result.decision, req.requestedScope, req.reason, {
+              tool: req.tool,
+              payload: req.payload,
+            });
+          }),
+          Effect.catchTags({
+            MarshalUnavailable: () => Effect.succeed(null as MarshalDecision | null),
+            MarshalInvalidOutput: () => Effect.succeed(null as MarshalDecision | null),
+          }),
+        ),
+      );
+    };
+    wardenLine = `warden: jev ${jevModel} at ${jevBaseUrl} (key from $${apiKeyEnv}, never logged), single System One request per gated call (risk choice + approval/exfil/injection/mutating nouls), decision composed in code + enforceScopeSafety, $42/B input tokens, ~$${(JEV_INPUT_PRICE_PER_MTOK / 1e6).toFixed(6)}/req at 500 tok`;
+    jevUsageLine = () => {
+      const cost = (jevInputTokens / 1e6) * JEV_INPUT_PRICE_PER_MTOK;
+      return `jev usage: input_tokens ${String(jevInputTokens)}  est cost $${cost.toFixed(6)}`;
+    };
   } else {
     const isMeta = provider === "meta-api";
     model ??= isMeta ? DEFAULT_META_API_MODEL : undefined;
@@ -494,6 +538,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const cost = remote?.summary();
   let report = formatThesisReport(header, cases, outcomes, summaries);
   if (cost !== undefined) report += `\n${formatCostReport(cost).join("\n")}\n`;
+  if (jevUsageLine !== undefined) report += `\n${jevUsageLine()}\n`;
   process.stdout.write(report);
   if (outDir !== undefined) {
     mkdirSync(outDir, { recursive: true });
